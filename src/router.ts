@@ -26,13 +26,13 @@ import {
   getMessagingGroupAgents,
   getMessagingGroupWithAgentCount,
 } from './db/messaging-groups.js';
-import { findSessionForAgent } from './db/sessions.js';
+import { findSessionByAgentGroup, findSessionForAgent, updateSession } from './db/sessions.js';
 import { startTypingRefresh, stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
-import { wakeContainer } from './container-runner.js';
+import { killContainer, wakeContainer } from './container-runner.js';
 import { getSession } from './db/sessions.js';
-import type { AgentGroup, MessagingGroup, MessagingGroupAgent } from './types.js';
+import type { AgentGroup, MessagingGroup, MessagingGroupAgent, Session } from './types.js';
 import type { InboundEvent } from './channels/adapter.js';
 
 function generateId(): string {
@@ -394,6 +394,17 @@ function evaluateEngage(
   }
 }
 
+function findExistingSession(
+  agent: MessagingGroupAgent,
+  mg: MessagingGroup,
+  threadId: string | null,
+  effectiveSessionMode: 'shared' | 'per-thread' | 'agent-shared',
+): Session | undefined {
+  if (effectiveSessionMode === 'agent-shared') return findSessionByAgentGroup(agent.agent_group_id);
+  const lookupThreadId = effectiveSessionMode === 'shared' ? null : threadId;
+  return findSessionForAgent(agent.agent_group_id, mg.id, lookupThreadId);
+}
+
 async function deliverToAgent(
   agent: MessagingGroupAgent,
   agentGroup: AgentGroup,
@@ -412,8 +423,6 @@ async function deliverToAgent(
     effectiveSessionMode = 'per-thread';
   }
 
-  const { session, created } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
-
   // The inbound row's (channel_type, platform_id, thread_id) is the address
   // the agent's reply will be delivered to. Normally it mirrors the source
   // (stamped from the event). When the caller supplied `replyTo` (CLI admin
@@ -425,16 +434,36 @@ async function deliverToAgent(
   };
 
   // Command gate: classify slash commands before they reach the container.
-  // Filtered commands are dropped silently. Denied admin commands get a
-  // permission-denied response written directly to messages_out.
+  // /new is handled before resolveSession so the existing session can be
+  // closed and a fresh one created. Filtered commands are dropped silently.
+  // Denied admin commands get a permission-denied response.
   if (event.message.kind === 'chat' || event.message.kind === 'chat-sdk') {
     const gate = gateCommand(event.message.content, userId, agent.agent_group_id);
     if (gate.action === 'filter') {
       log.debug('Filtered command dropped by gate', { agentGroupId: agent.agent_group_id });
       return;
     }
+    if (gate.action === 'new_session') {
+      const existing = findExistingSession(agent, mg, event.threadId, effectiveSessionMode);
+      if (existing) {
+        killContainer(existing.id, '/new command');
+        updateSession(existing.id, { status: 'closed' });
+        log.info('Session reset by /new', { oldSessionId: existing.id, agentGroupId: agent.agent_group_id });
+      }
+      const { session: newSession } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
+      writeOutboundDirect(newSession.agent_group_id, newSession.id, {
+        id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: 'chat',
+        platformId: deliveryAddr.platformId,
+        channelType: deliveryAddr.channelType,
+        threadId: deliveryAddr.threadId,
+        content: JSON.stringify({ text: 'Контекст сброшен. Начинаем с чистого листа.' }),
+      });
+      return;
+    }
     if (gate.action === 'deny') {
-      writeOutboundDirect(session.agent_group_id, session.id, {
+      const { session: denySession } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
+      writeOutboundDirect(denySession.agent_group_id, denySession.id, {
         id: `deny-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',
         platformId: deliveryAddr.platformId,
@@ -446,6 +475,8 @@ async function deliverToAgent(
       return;
     }
   }
+
+  const { session, created } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
 
   writeSessionMessage(session.agent_group_id, session.id, {
     id: messageIdForAgent(event.message.id, agent.agent_group_id),

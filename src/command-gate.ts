@@ -9,10 +9,15 @@
  */
 import { getDb, hasTable } from './db/connection.js';
 
-export type GateResult = { action: 'pass' } | { action: 'filter' } | { action: 'deny'; command: string };
+export type GateResult =
+  | { action: 'pass' }
+  | { action: 'filter' }
+  | { action: 'deny'; command: string }
+  | { action: 'new_session' };
 
 const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/remote-control']);
 const ADMIN_COMMANDS = new Set(['/clear', '/compact', '/context', '/cost', '/files']);
+const SESSION_COMMANDS = new Set(['/new']);
 
 /**
  * Classify a message and decide whether it should reach the container.
@@ -34,6 +39,8 @@ export function gateCommand(content: string, userId: string | null, agentGroupId
   const command = text.split(/\s/)[0].toLowerCase();
 
   if (FILTERED_COMMANDS.has(command)) return { action: 'filter' };
+
+  if (SESSION_COMMANDS.has(command)) return { action: 'new_session' };
 
   if (ADMIN_COMMANDS.has(command)) {
     if (isAdmin(userId, agentGroupId)) {
