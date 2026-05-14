@@ -18,7 +18,7 @@ The right frame is: does this agent need its own memory and context that builds 
 
 ### When NOT to use
 
-- **One-off lookups or short tasks** — use the SDK `Agent` tool instead. It's stateless, spins up and completes in one shot, and leaves no persistent footprint.
+- **One-off lookups or short tasks** — use the SDK `Task` tool instead. It's stateless, spins up and completes in one shot, and leaves no persistent footprint.
 - **Work that finishes before the user's next message** — agents persist indefinitely. Don't create one for something you could do inline.
 
 ### Writing good `instructions`
