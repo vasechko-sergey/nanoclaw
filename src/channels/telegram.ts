@@ -258,7 +258,11 @@ registerChannelAdapter('telegram', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({
-                commands: [{ command: 'new', description: 'Начать новый разговор' }],
+                commands: [
+                  { command: 'new', description: 'Начать новый разговор' },
+                  { command: 'people', description: 'Список людей в памяти' },
+                  { command: 'find', description: 'Найти человека: /find Имя' },
+                ],
               }),
             });
           } catch (err) {
