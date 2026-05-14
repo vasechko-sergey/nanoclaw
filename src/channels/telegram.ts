@@ -238,15 +238,33 @@ registerChannelAdapter('telegram', {
           onInbound: createPairingInterceptor(botUsernamePromise, hostConfig.onInbound, token),
         };
         const result = await withRetry(() => bridge.setup(intercepted), 'bridge.setup');
-        // Register the bot command menu — /new is the only command shown.
-        // Best-effort: a failure here doesn't block the adapter from starting.
-        fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            commands: [{ command: 'new', description: 'Начать новый разговор' }],
-          }),
-        }).catch((err) => log.warn('Telegram setMyCommands failed', { err }));
+        // Register the bot command menu — /new is the only command.
+        // Scope-specific overrides from previous installs take priority over the
+        // default scope, so we delete them first, then set the default.
+        // Best-effort: failures here don't block the adapter from starting.
+        void (async () => {
+          try {
+            const scopesToClear = ['all_private_chats', 'all_group_chats', 'all_chat_administrators'];
+            await Promise.all(
+              scopesToClear.map((type) =>
+                fetch(`https://api.telegram.org/bot${token}/deleteMyCommands`, {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ scope: { type } }),
+                }),
+              ),
+            );
+            await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                commands: [{ command: 'new', description: 'Начать новый разговор' }],
+              }),
+            });
+          } catch (err) {
+            log.warn('Telegram setMyCommands failed', { err });
+          }
+        })();
         return result;
       },
     };
