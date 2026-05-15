@@ -36,10 +36,7 @@ beforeEach(() => {
 describe('readonlyMountArgs', () => {
   it('returns --mount flag with type=bind and readonly', () => {
     const args = readonlyMountArgs('/host/path', '/container/path');
-    expect(args).toEqual([
-      '--mount',
-      'type=bind,source=/host/path,target=/container/path,readonly',
-    ]);
+    expect(args).toEqual(['--mount', 'type=bind,source=/host/path,target=/container/path,readonly']);
   });
 });
 
@@ -52,12 +49,8 @@ describe('stopContainer', () => {
   });
 
   it('rejects names with shell metacharacters', () => {
-    expect(() => stopContainer('foo; rm -rf /')).toThrow(
-      'Invalid container name',
-    );
-    expect(() => stopContainer('foo$(whoami)')).toThrow(
-      'Invalid container name',
-    );
+    expect(() => stopContainer('foo; rm -rf /')).toThrow('Invalid container name');
+    expect(() => stopContainer('foo$(whoami)')).toThrow('Invalid container name');
     expect(() => stopContainer('foo`id`')).toThrow('Invalid container name');
     expect(mockExecSync).not.toHaveBeenCalled();
   });
@@ -90,11 +83,10 @@ describe('ensureContainerRuntimeRunning', () => {
     ensureContainerRuntimeRunning();
 
     expect(mockExecSync).toHaveBeenCalledTimes(2);
-    expect(mockExecSync).toHaveBeenNthCalledWith(
-      2,
-      `${CONTAINER_RUNTIME_BIN} system start`,
-      { stdio: 'pipe', timeout: 30000 },
-    );
+    expect(mockExecSync).toHaveBeenNthCalledWith(2, `${CONTAINER_RUNTIME_BIN} system start`, {
+      stdio: 'pipe',
+      timeout: 30000,
+    });
     expect(logger.info).toHaveBeenCalledWith('Container runtime started');
   });
 
