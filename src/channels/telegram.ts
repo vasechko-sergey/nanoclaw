@@ -238,9 +238,8 @@ registerChannelAdapter('telegram', {
           onInbound: createPairingInterceptor(botUsernamePromise, hostConfig.onInbound, token),
         };
         const result = await withRetry(() => bridge.setup(intercepted), 'bridge.setup');
-        // Register the bot command menu — /new is the only command.
-        // Scope-specific overrides from previous installs take priority over the
-        // default scope, so we delete them first, then set the default.
+        // Register the bot command menu. Scope-specific overrides from previous
+        // installs take priority over the default scope, so we delete them first.
         // Best-effort: failures here don't block the adapter from starting.
         void (async () => {
           try {
@@ -260,6 +259,7 @@ registerChannelAdapter('telegram', {
               body: JSON.stringify({
                 commands: [
                   { command: 'new', description: 'Начать новый разговор' },
+                  { command: 'surf', description: 'Прогноз серфинга' },
                   { command: 'people', description: 'Список людей в памяти' },
                   { command: 'find', description: 'Найти человека: /find Имя' },
                 ],
