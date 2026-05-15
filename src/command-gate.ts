@@ -13,11 +13,20 @@ export type GateResult =
   | { action: 'pass' }
   | { action: 'filter' }
   | { action: 'deny'; command: string }
-  | { action: 'new_session' };
+  | { action: 'new_session' }
+  | { action: 'rewrite'; text: string };
 
 const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/remote-control']);
 const ADMIN_COMMANDS = new Set(['/clear', '/compact', '/context', '/cost', '/files']);
 const SESSION_COMMANDS = new Set(['/new']);
+
+// Slash commands that Claude Code doesn't know — rewrite to plain text so the
+// agent handles them naturally via its CLAUDE.local.md instructions.
+const REWRITE_COMMANDS: Record<string, (rest: string) => string> = {
+  '/surf': () => 'прогноз серфинга',
+  '/people': () => 'покажи список людей из памяти',
+  '/find': (rest) => (rest ? `что знаешь о ${rest}` : 'кого помнишь?'),
+};
 
 /**
  * Classify a message and decide whether it should reach the container.
@@ -41,6 +50,12 @@ export function gateCommand(content: string, userId: string | null, agentGroupId
   if (FILTERED_COMMANDS.has(command)) return { action: 'filter' };
 
   if (SESSION_COMMANDS.has(command)) return { action: 'new_session' };
+
+  const rewriter = REWRITE_COMMANDS[command];
+  if (rewriter) {
+    const rest = text.slice(command.length).trim();
+    return { action: 'rewrite', text: rewriter(rest) };
+  }
 
   if (ADMIN_COMMANDS.has(command)) {
     if (isAdmin(userId, agentGroupId)) {

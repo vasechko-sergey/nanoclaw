@@ -461,8 +461,19 @@ async function deliverToAgent(
       });
       return;
     }
+    if (gate.action === 'rewrite') {
+      event = {
+        ...event,
+        message: { ...event.message, content: JSON.stringify({ text: gate.text }) },
+      };
+    }
     if (gate.action === 'deny') {
-      const { session: denySession } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
+      const { session: denySession } = resolveSession(
+        agent.agent_group_id,
+        mg.id,
+        event.threadId,
+        effectiveSessionMode,
+      );
       writeOutboundDirect(denySession.agent_group_id, denySession.id, {
         id: `deny-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',
