@@ -90,6 +90,25 @@ function readInboundFields(message: InboundMessage): InboundFields {
  * are logged but never propagated, so a Telegram outage can't undo a successful
  * pairing or trigger the interceptor's fail-open path.
  */
+async function leaveGroupChat(token: string, platformId: string): Promise<void> {
+  const chatId = platformId.split(':').slice(1).join(':');
+  if (!chatId) return;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/leaveChat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId }),
+    });
+    if (!res.ok) {
+      log.warn('Telegram leaveChat non-OK', { status: res.status, platformId });
+    } else {
+      log.info('Telegram: left group chat (TELEGRAM_LEAVE_GROUP_CHATS=true)', { platformId });
+    }
+  } catch (err) {
+    log.warn('Telegram: failed to leave group chat', { platformId, err });
+  }
+}
+
 async function sendPairingConfirmation(token: string, platformId: string): Promise<void> {
   const chatId = platformId.split(':').slice(1).join(':');
   if (!chatId) return;
@@ -114,9 +133,14 @@ function createPairingInterceptor(
   botUsernamePromise: Promise<string | null>,
   hostOnInbound: ChannelSetup['onInbound'],
   token: string,
+  leaveGroupChats: boolean,
 ): ChannelSetup['onInbound'] {
   return async (platformId, threadId, message) => {
     try {
+      if (leaveGroupChats && isGroupPlatformId(platformId)) {
+        await leaveGroupChat(token, platformId);
+        return;
+      }
       const botUsername = await botUsernamePromise;
       if (!botUsername) {
         hostOnInbound(platformId, threadId, message);
@@ -197,9 +221,10 @@ function createPairingInterceptor(
 
 registerChannelAdapter('telegram', {
   factory: () => {
-    const env = readEnvFile(['TELEGRAM_BOT_TOKEN']);
+    const env = readEnvFile(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_LEAVE_GROUP_CHATS']);
     if (!env.TELEGRAM_BOT_TOKEN) return null;
     const token = env.TELEGRAM_BOT_TOKEN;
+    const leaveGroupChats = env.TELEGRAM_LEAVE_GROUP_CHATS === 'true';
     const telegramAdapter = createTelegramAdapter({
       botToken: token,
       mode: 'polling',
@@ -235,7 +260,7 @@ registerChannelAdapter('telegram', {
       async setup(hostConfig: ChannelSetup) {
         const intercepted: ChannelSetup = {
           ...hostConfig,
-          onInbound: createPairingInterceptor(botUsernamePromise, hostConfig.onInbound, token),
+          onInbound: createPairingInterceptor(botUsernamePromise, hostConfig.onInbound, token, leaveGroupChats),
         };
         const result = await withRetry(() => bridge.setup(intercepted), 'bridge.setup');
         // Register the bot command menu. Scope-specific overrides from previous
