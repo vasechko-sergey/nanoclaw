@@ -36,14 +36,14 @@ beforeEach(() => {
 describe('readonlyMountArgs', () => {
   it('returns --mount flag with type=bind and readonly', () => {
     const args = readonlyMountArgs('/host/path', '/container/path');
-    expect(args).toEqual(['--mount', 'type=bind,source=/host/path,target=/container/path,readonly']);
+    expect(args).toEqual(['-v', '/host/path:/container/path:ro']);
   });
 });
 
 describe('stopContainer', () => {
   it('calls docker stop for valid container names', () => {
     stopContainer('nanoclaw-test-123');
-    expect(mockExecSync).toHaveBeenCalledWith(`${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-test-123`, {
+    expect(mockExecSync).toHaveBeenCalledWith(`${CONTAINER_RUNTIME_BIN} stop nanoclaw-test-123`, {
       stdio: 'pipe',
     });
   });
@@ -72,25 +72,7 @@ describe('ensureContainerRuntimeRunning', () => {
     expect(log.debug).toHaveBeenCalledWith('Container runtime already running');
   });
 
-  it('auto-starts when system status fails', () => {
-    // First call (system status) fails
-    mockExecSync.mockImplementationOnce(() => {
-      throw new Error('not running');
-    });
-    // Second call (system start) succeeds
-    mockExecSync.mockReturnValueOnce('');
-
-    ensureContainerRuntimeRunning();
-
-    expect(mockExecSync).toHaveBeenCalledTimes(2);
-    expect(mockExecSync).toHaveBeenNthCalledWith(2, `${CONTAINER_RUNTIME_BIN} system start`, {
-      stdio: 'pipe',
-      timeout: 30000,
-    });
-    expect(logger.info).toHaveBeenCalledWith('Container runtime started');
-  });
-
-  it('throws when both status and start fail', () => {
+  it('throws when runtime info fails', () => {
     mockExecSync.mockImplementation(() => {
       throw new Error('failed');
     });
@@ -124,10 +106,10 @@ describe('cleanupOrphans', () => {
 
     // ls + 2 stop calls (only running nanoclaw- containers)
     expect(mockExecSync).toHaveBeenCalledTimes(3);
-    expect(mockExecSync).toHaveBeenNthCalledWith(2, `${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-group1-111`, {
+    expect(mockExecSync).toHaveBeenNthCalledWith(2, `${CONTAINER_RUNTIME_BIN} stop nanoclaw-group1-111`, {
       stdio: 'pipe',
     });
-    expect(mockExecSync).toHaveBeenNthCalledWith(3, `${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-group2-222`, {
+    expect(mockExecSync).toHaveBeenNthCalledWith(3, `${CONTAINER_RUNTIME_BIN} stop nanoclaw-group2-222`, {
       stdio: 'pipe',
     });
     expect(log.info).toHaveBeenCalledWith('Stopped orphaned containers', {
@@ -137,7 +119,7 @@ describe('cleanupOrphans', () => {
   });
 
   it('does nothing when no orphans exist', () => {
-    mockExecSync.mockReturnValueOnce('[]');
+    mockExecSync.mockReturnValueOnce('');
 
     cleanupOrphans();
 
@@ -159,11 +141,7 @@ describe('cleanupOrphans', () => {
   });
 
   it('continues stopping remaining containers when one stop fails', () => {
-    const lsOutput = JSON.stringify([
-      { status: 'running', configuration: { id: 'nanoclaw-a-1' } },
-      { status: 'running', configuration: { id: 'nanoclaw-b-2' } },
-    ]);
-    mockExecSync.mockReturnValueOnce(lsOutput);
+    mockExecSync.mockReturnValueOnce('nanoclaw-a-1\nnanoclaw-b-2\n');
     // First stop fails
     mockExecSync.mockImplementationOnce(() => {
       throw new Error('already stopped');

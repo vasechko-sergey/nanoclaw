@@ -133,6 +133,17 @@ export interface Session {
 
 // ── Session DB entities ──
 
+/** Minimal message shape used by the compact / session-command skills. */
+export interface NewMessage {
+  id: string;
+  content: string;
+  timestamp: string;
+  chat_jid?: string;
+  sender_name?: string;
+  sender?: string;
+  is_from_me?: boolean;
+}
+
 export type MessageInKind = 'chat' | 'chat-sdk' | 'task' | 'webhook' | 'system';
 export type MessageInStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
