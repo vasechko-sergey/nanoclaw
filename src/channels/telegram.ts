@@ -13,7 +13,7 @@ import { upsertUser } from '../modules/permissions/db/users.js';
 import { createChatSdkBridge, type ReplyContext } from './chat-sdk-bridge.js';
 import { sanitizeTelegramLegacyMarkdown } from './telegram-markdown-sanitize.js';
 import { registerChannelAdapter } from './channel-registry.js';
-import type { ChannelAdapter, ChannelSetup, InboundMessage } from './adapter.js';
+import type { ChannelAdapter, ChannelSetup, InboundMessage, OutboundMessage } from './adapter.js';
 import { tryConsume } from './telegram-pairing.js';
 
 /**
@@ -242,6 +242,52 @@ registerChannelAdapter('telegram', {
 
     const wrapped: ChannelAdapter = {
       ...bridge,
+      async deliver(
+        platformId: string,
+        threadId: string | null,
+        message: OutboundMessage,
+      ): Promise<string | undefined> {
+        const content = message.content as Record<string, unknown>;
+
+        if (content.operation === 'send_photo') {
+          if (!message.files || message.files.length === 0) {
+            log.warn('Telegram sendPhoto: no file in message, dropping', { platformId });
+            return undefined;
+          }
+
+          const chatId = platformId.split(':').slice(1).join(':');
+          if (!chatId) {
+            log.warn('Telegram sendPhoto: could not extract chatId', { platformId });
+            return bridge.deliver(platformId, threadId, message);
+          }
+
+          const file = message.files[0];
+          const caption = (content.caption as string) || undefined;
+
+          const form = new FormData();
+          form.append('chat_id', chatId);
+          form.append('photo', new Blob([file.data]), file.filename);
+          if (caption) form.append('caption', caption);
+
+          try {
+            const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+              method: 'POST',
+              body: form,
+            });
+            const json = (await res.json()) as { ok: boolean; result?: { message_id?: number }; description?: string };
+            if (!json.ok) {
+              log.warn('Telegram sendPhoto non-OK', { status: res.status, description: json.description, platformId });
+              return undefined;
+            }
+            return json.result?.message_id != null ? String(json.result.message_id) : undefined;
+          } catch (e) {
+            log.warn('Telegram sendPhoto failed', { platformId, err: e });
+            return undefined;
+          }
+        }
+
+        return bridge.deliver(platformId, threadId, message);
+      },
       resolveChannelName: async (platformId: string) => {
         const chatId = platformId.split(':').slice(1).join(':');
         if (!chatId) return null;

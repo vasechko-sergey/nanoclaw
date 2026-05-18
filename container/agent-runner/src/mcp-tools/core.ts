@@ -178,6 +178,59 @@ export const sendFile: McpToolDefinition = {
   },
 };
 
+export const sendPhoto: McpToolDefinition = {
+  tool: {
+    name: 'send_photo',
+    description:
+      'Send an image as an inline Telegram photo (displays in-chat rather than as a download). ' +
+      'Only works on Telegram destinations. If you have only one destination, you can omit `to`.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        to: { type: 'string', description: 'Destination name. Optional if you have only one destination.' },
+        path: { type: 'string', description: 'Image file path (relative to /workspace/agent/ or absolute)' },
+        caption: { type: 'string', description: 'Optional caption text' },
+        filename: { type: 'string', description: 'Display filename (default: basename of path)' },
+      },
+      required: ['path'],
+    },
+  },
+  async handler(args) {
+    const filePath = args.path as string;
+    if (!filePath) return err('path is required');
+
+    const routing = resolveRouting(args.to as string | undefined);
+    if ('error' in routing) return err(routing.error);
+
+    const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve('/workspace/agent', filePath);
+    if (!fs.existsSync(resolvedPath)) return err(`File not found: ${filePath}`);
+
+    const id = generateId();
+    const filename = (args.filename as string) || path.basename(resolvedPath);
+
+    const outboxDir = path.join('/workspace/outbox', id);
+    fs.mkdirSync(outboxDir, { recursive: true });
+    fs.copyFileSync(resolvedPath, path.join(outboxDir, filename));
+
+    writeMessageOut({
+      id,
+      in_reply_to: getCurrentInReplyTo(),
+      kind: 'chat',
+      platform_id: routing.platform_id,
+      channel_type: routing.channel_type,
+      thread_id: routing.thread_id,
+      content: JSON.stringify({
+        operation: 'send_photo',
+        caption: (args.caption as string) || '',
+        files: [filename],
+      }),
+    });
+
+    log(`send_photo: ${id} → ${routing.resolvedName} (${filename})`);
+    return ok(`Photo sent to ${routing.resolvedName} (id: ${id}, filename: ${filename})`);
+  },
+};
+
 export const editMessage: McpToolDefinition = {
   tool: {
     name: 'edit_message',
@@ -260,4 +313,4 @@ export const addReaction: McpToolDefinition = {
   },
 };
 
-registerTools([sendMessage, sendFile, editMessage, addReaction]);
+registerTools([sendMessage, sendFile, sendPhoto, editMessage, addReaction]);
