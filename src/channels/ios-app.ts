@@ -185,19 +185,36 @@ function createIOSAdapter(): ChannelAdapter | null {
     async deliver(platformId, _tid, message) {
       const c = message.content as Record<string, unknown>;
       const text = (c.markdown ?? c.text ?? '') as string;
-      if (!text) return undefined;
+      const files = message.files ?? [];
+
+      if (!text && files.length === 0) return undefined;
 
       const id = randomUUID();
-      const pay = JSON.stringify({ type: 'message', id, text, timestamp: new Date().toISOString() });
+      const ts = new Date().toISOString();
       const set = wsClients.get(platformId);
 
+      const sendTo = (ws: WebSocket) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (text) ws.send(JSON.stringify({ type: 'message', id, text, timestamp: ts }));
+        for (const file of files) {
+          ws.send(
+            JSON.stringify({
+              type: 'image',
+              id: randomUUID(),
+              data: file.data.toString('base64'),
+              filename: file.filename,
+              timestamp: ts,
+            }),
+          );
+        }
+      };
+
       if (set && set.size > 0) {
-        set.forEach((ws) => {
-          if (ws.readyState === WebSocket.OPEN) ws.send(pay);
-        });
+        set.forEach(sendTo);
       } else {
         const apnsToken = apnsTokens.get(platformId);
-        if (apnsToken) sendApnsPush(apnsToken, text, apnsCfg).catch(() => {});
+        const preview = text || files[0]?.filename || 'Новое сообщение';
+        if (apnsToken) sendApnsPush(apnsToken, preview, apnsCfg).catch(() => {});
       }
       return id;
     },

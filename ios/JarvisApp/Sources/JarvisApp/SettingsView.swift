@@ -24,6 +24,7 @@ struct SettingsView: View {
                 LabeledContent("Токен") {
                     SecureField("Bearer token", text: $settings.bearerToken)
                         .multilineTextAlignment(.trailing)
+                        .textContentType(.none)
                 }
             }
 
@@ -43,9 +44,18 @@ struct SettingsView: View {
 
             if !isInitialSetup {
                 Section {
-                    Text(settings.platformId)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text(settings.platformId)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            UIPasteboard.general.string = settings.platformId
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .foregroundStyle(.blue)
+                        }
+                    }
                 } header: {
                     Text("Platform ID (для wiring в NanoClaw)")
                 }

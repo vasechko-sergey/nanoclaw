@@ -90,7 +90,15 @@ final class WebSocketClient: ObservableObject {
                                   let text = obj["text"] as? String,
                                   let id   = obj["id"]   as? String {
                             self.isTyping = false
-                            self.messages.append(ChatMessage(id: id, role: .assistant, text: text, timestamp: Date()))
+                            self.messages.append(.text(id, role: .assistant, text: text, timestamp: Date()))
+                        } else if t == "image",
+                                  let b64      = obj["data"]     as? String,
+                                  let id       = obj["id"]       as? String,
+                                  let filename = obj["filename"] as? String,
+                                  let imgData  = Data(base64Encoded: b64),
+                                  let image    = UIImage(data: imgData) {
+                            self.isTyping = false
+                            self.messages.append(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()))
                         }
                     }
                     self.receive(ws: ws, settings: settings)
@@ -106,6 +114,6 @@ final class WebSocketClient: ObservableObject {
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         ws.send(.data(data)) { _ in }
         isTyping = true
-        messages.append(ChatMessage(id: UUID().uuidString, role: .user, text: text, timestamp: Date()))
+        messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: Date()))
     }
 }
