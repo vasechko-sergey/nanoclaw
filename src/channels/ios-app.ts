@@ -235,10 +235,10 @@ function buildCtx(ctx: Record<string, unknown>): string {
     if (h.activeEnergy) p.push(`Active: ${h.activeEnergy} kcal`);
     if (p.length) lines.push(`🏃 ${p.join(' | ')}`);
   }
-  if (Array.isArray(ctx.custom) && ctx.custom.length) lines.push(`📝 ${(ctx.custom as string[]).join('; ')}`);
-  if (!lines.length) return '';
+  if (!lines.length && !ctx.status) return '';
   const ts = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
-  return `[iOS Context — ${ts}]\n${lines.join('\n')}\n---\n`;
+  const statusSuffix = ctx.status ? ` ${ctx.status}` : '';
+  return `[iOS Context — ${ts}${statusSuffix}]\n${lines.join('\n')}${lines.length ? '\n' : ''}---\n`;
 }
 
 registerChannelAdapter('ios-app', { factory: createIOSAdapter });
