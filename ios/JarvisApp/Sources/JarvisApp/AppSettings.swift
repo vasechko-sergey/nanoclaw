@@ -1,0 +1,19 @@
+import SwiftUI
+
+final class AppSettings: ObservableObject {
+    @AppStorage("serverURL")     var serverURL    = ""
+    @AppStorage("bearerToken")   var bearerToken  = ""
+    @AppStorage("agentName")     var agentName    = "Jarvis"
+    @AppStorage("useLocation")   var useLocation  = false
+    @AppStorage("useHealth")     var useHealth    = false
+    @AppStorage("customContext") var customContext = ""
+
+    var platformId: String {
+        if let v = UserDefaults.standard.string(forKey: "platformId") { return v }
+        let id = "ios:" + (UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString)
+        UserDefaults.standard.set(id, forKey: "platformId")
+        return id
+    }
+
+    var isConfigured: Bool { !serverURL.isEmpty && !bearerToken.isEmpty }
+}
