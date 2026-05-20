@@ -2,34 +2,37 @@ import http from 'node:http';
 import http2 from 'node:http2';
 import { createSign, randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import { readEnvFile } from '../env.js';
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup } from './adapter.js';
 
 // APNs JWT — reused for 55 min then refreshed
 let apnsJwt: { token: string; createdAt: number } | null = null;
 
-function getApnsJwt(): string | null {
-  const keyId = process.env.IOS_APNS_KEY_ID;
-  const teamId = process.env.IOS_APNS_TEAM_ID;
-  const key = process.env.IOS_APNS_KEY;
-  if (!keyId || !teamId || !key) return null;
+interface ApnsConfig {
+  keyId: string;
+  teamId: string;
+  key: string;
+  bundleId: string;
+}
 
+function getApnsJwt(cfg: ApnsConfig): string {
   const now = Math.floor(Date.now() / 1000);
   if (apnsJwt && now - apnsJwt.createdAt < 55 * 60) return apnsJwt.token;
 
-  const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: keyId })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ iss: teamId, iat: now })).toString('base64url');
+  const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: cfg.keyId })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ iss: cfg.teamId, iat: now })).toString('base64url');
   const sign = createSign('SHA256');
   sign.update(`${header}.${payload}`);
-  const sig = sign.sign(key, 'base64url');
+  const sig = sign.sign(cfg.key, 'base64url');
   apnsJwt = { token: `${header}.${payload}.${sig}`, createdAt: now };
   return apnsJwt.token;
 }
 
-async function sendApnsPush(deviceToken: string, text: string): Promise<void> {
-  const jwt = getApnsJwt();
-  const bundleId = process.env.IOS_APNS_BUNDLE_ID;
-  if (!jwt || !bundleId) return;
+async function sendApnsPush(deviceToken: string, text: string, apns: ApnsConfig | null): Promise<void> {
+  if (!apns) return;
+  const jwt = getApnsJwt(apns);
+  const bundleId = apns.bundleId;
 
   const body = JSON.stringify({ aps: { alert: { body: text }, sound: 'default' } });
 
@@ -62,9 +65,27 @@ async function sendApnsPush(deviceToken: string, text: string): Promise<void> {
 }
 
 function createIOSAdapter(): ChannelAdapter | null {
-  const token = process.env.IOS_APP_TOKEN;
+  const env = readEnvFile([
+    'IOS_APP_TOKEN',
+    'IOS_APP_PORT',
+    'IOS_APNS_KEY_ID',
+    'IOS_APNS_TEAM_ID',
+    'IOS_APNS_BUNDLE_ID',
+    'IOS_APNS_KEY',
+  ]);
+  const token = env.IOS_APP_TOKEN;
   if (!token) return null;
-  const port = parseInt(process.env.IOS_APP_PORT ?? '3001', 10);
+  const port = parseInt(env.IOS_APP_PORT ?? '3001', 10);
+
+  const apnsCfg: ApnsConfig | null =
+    env.IOS_APNS_KEY_ID && env.IOS_APNS_TEAM_ID && env.IOS_APNS_KEY && env.IOS_APNS_BUNDLE_ID
+      ? {
+          keyId: env.IOS_APNS_KEY_ID,
+          teamId: env.IOS_APNS_TEAM_ID,
+          key: env.IOS_APNS_KEY,
+          bundleId: env.IOS_APNS_BUNDLE_ID,
+        }
+      : null;
 
   const wsClients = new Map<string, Set<WebSocket>>();
   const apnsTokens = new Map<string, string>(); // platformId → APNs device token
@@ -176,7 +197,7 @@ function createIOSAdapter(): ChannelAdapter | null {
         });
       } else {
         const apnsToken = apnsTokens.get(platformId);
-        if (apnsToken) sendApnsPush(apnsToken, text).catch(() => {});
+        if (apnsToken) sendApnsPush(apnsToken, text, apnsCfg).catch(() => {});
       }
       return id;
     },
