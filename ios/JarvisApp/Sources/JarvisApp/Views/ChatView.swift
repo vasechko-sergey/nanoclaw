@@ -52,9 +52,13 @@ struct ChatView: View {
                                     if shouldShowDateSeparator(at: index) {
                                         DateSeparator(date: msg.timestamp)
                                     }
-                                    MessageBubble(message: msg) { img in
-                                        fullScreenImage = img
-                                    }
+                                    MessageBubble(
+                                        message: msg,
+                                        onImageTap: { img in fullScreenImage = img },
+                                        onFeedback: { messageId, isPositive in
+                                            coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: msg.text)
+                                        }
+                                    )
                                     .id(msg.id)
                                     .transition(
                                         .asymmetric(

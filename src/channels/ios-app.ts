@@ -25,6 +25,7 @@ interface QueuedMessage {
   text: string;
   files: Array<{ data: Buffer; filename: string }>;
   ts: string;
+  conversationId?: string;
 }
 
 // Persist APNs device tokens across server restarts.
@@ -94,7 +95,16 @@ async function sendApnsPush(deviceToken: string, text: string, apns: ApnsConfig 
 
 function deliverViaSock(ws: WebSocket, msg: QueuedMessage): void {
   if (ws.readyState !== WebSocket.OPEN) return;
-  if (msg.text) ws.send(JSON.stringify({ type: 'message', id: msg.id, text: msg.text, timestamp: msg.ts }));
+  if (msg.text)
+    ws.send(
+      JSON.stringify({
+        type: 'message',
+        id: msg.id,
+        text: msg.text,
+        conversationId: msg.conversationId,
+        timestamp: msg.ts,
+      }),
+    );
   for (const file of msg.files) {
     ws.send(
       JSON.stringify({
@@ -102,6 +112,7 @@ function deliverViaSock(ws: WebSocket, msg: QueuedMessage): void {
         id: randomUUID(),
         data: file.data.toString('base64'),
         filename: file.filename,
+        conversationId: msg.conversationId,
         timestamp: msg.ts,
       }),
     );
@@ -150,7 +161,7 @@ function createIOSAdapter(): ChannelAdapter | null {
   return {
     name: 'ios-app',
     channelType: 'ios-app',
-    supportsThreads: false,
+    supportsThreads: true,
 
     async setup(config: ChannelSetup) {
       cfg = config;
@@ -216,10 +227,31 @@ function createIOSAdapter(): ChannelAdapter | null {
           if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
             const ctx = msg.context as Record<string, unknown> | undefined;
             const fullText = ctx ? buildCtx(ctx) + msg.text : msg.text;
-            await cfg!.onInbound(pid, null, {
+            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+            await cfg!.onInbound(pid, tid, {
               id: randomUUID(),
               kind: 'chat',
               content: { text: fullText, senderId: pid },
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          if (msg.type === 'feedback' && pid) {
+            const positive = msg.value === true;
+            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+            const rated = typeof msg.messageText === 'string' ? msg.messageText.slice(0, 800) : '';
+            const quoted = rated
+              ? `\n> ${rated.replace(/\n/g, '\n> ')}`
+              : typeof msg.messageId === 'string'
+                ? ` (id ${msg.messageId})`
+                : '';
+            await cfg!.onInbound(pid, tid, {
+              id: randomUUID(),
+              kind: 'chat',
+              content: {
+                text: `[user feedback: ${positive ? '👍' : '👎'} on your previous message]${quoted}`,
+                senderId: pid,
+              },
               timestamp: new Date().toISOString(),
             });
           }
@@ -247,7 +279,7 @@ function createIOSAdapter(): ChannelAdapter | null {
       return httpServer?.listening ?? false;
     },
 
-    async deliver(platformId, _tid, message) {
+    async deliver(platformId, threadId, message) {
       const c = message.content as Record<string, unknown>;
       const text = (c.markdown ?? c.text ?? '') as string;
       const files = (message.files ?? []) as Array<{ data: Buffer; filename: string }>;
@@ -256,7 +288,7 @@ function createIOSAdapter(): ChannelAdapter | null {
 
       const id = randomUUID();
       const ts = new Date().toISOString();
-      const queued: QueuedMessage = { id, text, files, ts };
+      const queued: QueuedMessage = { id, text, files, ts, conversationId: threadId ?? undefined };
 
       const set = wsClients.get(platformId);
       if (set && set.size > 0) {

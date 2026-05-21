@@ -47,16 +47,20 @@ splashBg         = Color(red: 0.06, green: 0.06, blue: 0.06)  // фон сплэ
 Клиент → сервер:
 ```json
 { "type": "auth", "token": "<IOS_APP_TOKEN>", "platformId": "ios:<UUID>" }
-{ "type": "message", "text": "...", "context": { "location": {...}, "health": {...}, "status": "🏄" } }
+{ "type": "message", "text": "...", "conversationId": "<UUID>", "context": { "location": {...}, "health": {...}, "status": "🏄" } }
+{ "type": "new_conversation", "conversationId": "<UUID>" }
+{ "type": "feedback", "conversationId": "<UUID>", "messageId": "...", "value": true, "messageText": "<текст оцениваемого ответа>" }
 { "type": "apns_token", "token": "<hex>" }
 ```
 
 Сервер → клиент:
 ```json
-{ "type": "auth_ok" }
-{ "type": "message", "id": "...", "text": "...", "timestamp": "..." }
-{ "type": "image",   "id": "...", "data": "<base64>", "filename": "...", "timestamp": "..." }
+{ "type": "auth_ok", "commands": [{ "command": "/new", "description": "..." }] }
+{ "type": "message", "id": "...", "text": "...", "conversationId": "<UUID>", "timestamp": "..." }
+{ "type": "image",   "id": "...", "data": "<base64>", "filename": "...", "conversationId": "<UUID>", "timestamp": "..." }
 ```
+
+`conversationId` маппится на `thread_id` сессии nanoclaw — каждый диалог = отдельный контейнер агента (изоляция контекста, «новый чат = сброс»). Адаптер: `supportsThreads: true`. `feedback` доставляется агенту как входящее сообщение `[user feedback: 👍/👎 on your previous message]` + цитата `messageText` в сессию диалога — агент опирается на конкретный текст.
 
 iOS-контекст попадает к Джарвису как текстовый блок перед сообщением:
 ```

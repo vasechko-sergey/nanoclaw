@@ -68,6 +68,10 @@ final class AppCoordinator: ObservableObject {
         ws.send(text: text, context: ctx)
     }
 
+    func sendFeedback(messageId: String, value: Bool, messageText: String) {
+        ws.sendFeedback(conversationId: ws.conversationId, messageId: messageId, value: value, messageText: messageText)
+    }
+
     func handleAction(_ action: ConversationAction) {
         switch action {
         case .newChat:
@@ -120,6 +124,14 @@ final class AppCoordinator: ObservableObject {
         // Forward haptic callback when a message arrives from assistant
         ws.onAssistantMessage = { [weak self] in
             self?.onMessageReceived?()
+        }
+
+        // Persist messages that arrive for a non-active conversation
+        ws.onBackgroundMessage = { [weak self] convId, message in
+            guard let self else { return }
+            var msgs = self.store.loadMessages(for: convId)
+            msgs.append(message)
+            self.store.saveMessages(msgs, for: convId)
         }
 
         // Track connection state

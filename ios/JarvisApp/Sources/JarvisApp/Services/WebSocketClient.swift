@@ -28,6 +28,10 @@ final class WebSocketClient: ObservableObject {
     /// Callback when assistant message arrives (for haptics in UI layer).
     var onAssistantMessage: (() -> Void)?
 
+    /// Callback when a message arrives for a non-active conversation.
+    /// The coordinator persists it into that conversation's store.
+    var onBackgroundMessage: ((UUID, ChatMessage) -> Void)?
+
     func connect(settings: AppSettings) {
         self.settings = settings
         stopped = false
@@ -132,26 +136,48 @@ final class WebSocketClient: ObservableObject {
                         } else if t == "message",
                                   let text = obj["text"] as? String,
                                   let id   = obj["id"]   as? String {
-                            self.isTyping = false
-                            self.onAssistantMessage?()
-                            self.messages.append(.text(id, role: .assistant, text: text, timestamp: Date()))
-                            self.onMessagesChanged?(self.messages)
+                            let convId = (obj["conversationId"] as? String).flatMap(UUID.init(uuidString:))
+                            self.route(.text(id, role: .assistant, text: text, timestamp: Date()), convId: convId)
                         } else if t == "image",
                                   let b64      = obj["data"]     as? String,
                                   let id       = obj["id"]       as? String,
                                   let filename = obj["filename"] as? String,
                                   let imgData  = Data(base64Encoded: b64),
                                   let image    = UIImage(data: imgData) {
-                            self.isTyping = false
-                            self.onAssistantMessage?()
-                            self.messages.append(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()))
-                            self.onMessagesChanged?(self.messages)
+                            let convId = (obj["conversationId"] as? String).flatMap(UUID.init(uuidString:))
+                            self.route(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()), convId: convId)
                         }
                     }
                     self.receive(ws: ws)
                 }
             }
         }
+    }
+
+    /// Route an incoming assistant message to the active list or to a
+    /// background conversation's store, based on conversationId.
+    private func route(_ message: ChatMessage, convId: UUID?) {
+        onAssistantMessage?()
+        if convId == nil || convId == conversationId {
+            isTyping = false
+            messages.append(message)
+            onMessagesChanged?(messages)
+        } else {
+            onBackgroundMessage?(convId!, message)
+        }
+    }
+
+    func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {
+        guard let ws = task, isConnected else { return }
+        var payload: [String: Any] = [
+            "type": "feedback",
+            "messageId": messageId,
+            "value": value,
+            "messageText": messageText,
+        ]
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { _ in }
     }
 
     func send(text: String, context: [String: Any]?) {
