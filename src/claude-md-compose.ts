@@ -182,8 +182,12 @@ export function migrateGroupsToClaudeLocal(): void {
     const claudeMd = path.join(groupDir, 'CLAUDE.md');
     const claudeLocal = path.join(groupDir, 'CLAUDE.local.md');
     if (fs.existsSync(claudeMd) && !fs.existsSync(claudeLocal)) {
-      fs.renameSync(claudeMd, claudeLocal);
-      actions.push(`${entry.name}/CLAUDE.md → CLAUDE.local.md`);
+      const content = fs.readFileSync(claudeMd, 'utf8');
+      // Skip manual CLAUDE.md files — they don't start with the composed header.
+      if (content.startsWith(COMPOSED_HEADER)) {
+        fs.renameSync(claudeMd, claudeLocal);
+        actions.push(`${entry.name}/CLAUDE.md → CLAUDE.local.md`);
+      }
     }
   }
 
