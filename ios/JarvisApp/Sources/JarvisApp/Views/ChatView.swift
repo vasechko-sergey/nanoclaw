@@ -174,6 +174,25 @@ struct ChatView: View {
                 coordinator.connect()
             }
 
+            // MARK: – Stop speaking (visible while TTS is playing a long answer)
+            if coordinator.speech.isSpeaking {
+                Button(action: { coordinator.speech.stop() }) {
+                    HStack(spacing: Theme.scaled(6)) {
+                        Image(systemName: "stop.fill")
+                        Text("Остановить озвучку")
+                            .font(.system(size: Theme.fontSubhead, weight: .medium))
+                    }
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.scaled(8))
+                    .background(Theme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.inputRadius))
+                    .padding(.horizontal, Theme.scaled(8))
+                    .padding(.top, Theme.scaled(6))
+                }
+                .accessibilityLabel("Остановить озвучку")
+            }
+
             // MARK: – Input
             InputBar(text: $inputText, commands: ws.commands, isDisabled: !ws.isConnected, enterToSend: settings.enterToSend) {
                 let trimmed = inputText.trimmingCharacters(in: .whitespaces)
@@ -186,6 +205,9 @@ struct ChatView: View {
         .background(Theme.background.ignoresSafeArea())
         .sheet(isPresented: $showSettings) {
             SettingsView(isInitialSetup: false)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Theme.background)
         }
         .sheet(isPresented: $showProfile) {
             ProfileView(store: store, isConnected: ws.isConnected, onReconnect: {

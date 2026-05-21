@@ -20,7 +20,7 @@ final class SpeechSynthesizer: NSObject, ObservableObject {
             .sorted { $0.quality.rawValue > $1.quality.rawValue }
     }
 
-    func speak(_ rawText: String, voiceId: String) {
+    func speak(_ rawText: String, voiceId: String, rate: Double = 0.47, pitch: Double = 0.93) {
         let text = Self.clean(rawText)
         guard !text.isEmpty else { return }
 
@@ -36,6 +36,9 @@ final class SpeechSynthesizer: NSObject, ObservableObject {
             utterance.voice = Self.russianVoices().first
                 ?? AVSpeechSynthesisVoice(language: "ru-RU")
         }
+        utterance.rate = Float(rate)
+        utterance.pitchMultiplier = Float(pitch)
+        utterance.volume = 1.0
         synthesizer.speak(utterance)
     }
 

@@ -11,6 +11,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("enterToSend")   var enterToSend  = true
     @AppStorage("autoSpeak")     var autoSpeak    = false
     @AppStorage("voiceId")       var voiceId      = ""
+    @AppStorage("voiceRate")     var voiceRate    = 0.47
+    @AppStorage("voicePitch")    var voicePitch   = 0.93
 
     var platformId: String {
         if let v = UserDefaults.standard.string(forKey: "platformId") { return v }

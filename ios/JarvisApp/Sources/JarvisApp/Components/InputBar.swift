@@ -57,6 +57,14 @@ struct InputBar: View {
                     )
                     .onChange(of: text) {
                         if showAll && !text.hasPrefix("/") { showAll = false }
+                        // Vertical TextField inserts a newline on return; treat it as send.
+                        if enterToSend && text.contains("\n") {
+                            text = text.replacingOccurrences(of: "\n", with: "")
+                            if !isDisabled && !isEmpty {
+                                Theme.hapticSend()
+                                onSend()
+                            }
+                        }
                     }
                     .onSubmit {
                         if enterToSend && !isDisabled {
@@ -68,6 +76,7 @@ struct InputBar: View {
                     .accessibilityLabel("Поле ввода сообщения")
 
                 if speech.isRecording {
+                    // Stop dictation — keeps text, then button becomes Send
                     Button(action: { speech.stop() }) {
                         Image(systemName: "stop.circle.fill")
                             .font(.system(size: Theme.scaled(32)))
@@ -92,7 +101,7 @@ struct InputBar: View {
                         Theme.hapticSend()
                         onSend()
                     }) {
-                        Image(systemName: "arrow.up.circle")
+                        Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: Theme.scaled(32)))
                             .foregroundStyle(Theme.accent)
                             .opacity(isEmpty ? 0.2 : 1.0)
@@ -109,7 +118,6 @@ struct InputBar: View {
             .allowsHitTesting(!isDisabled)
         }
         .animation(.easeInOut(duration: 0.15), value: filteredCommands.isEmpty)
-        .animation(.easeInOut(duration: 0.15), value: speech.isRecording)
         .onAppear {
             speech.onTranscript = { transcript in text = transcript }
         }

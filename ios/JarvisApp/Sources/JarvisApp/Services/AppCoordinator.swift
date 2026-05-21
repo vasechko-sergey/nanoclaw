@@ -135,6 +135,10 @@ final class AppCoordinator: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        speech.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
 
         // Set initial conversation
         ws.conversationId = store.activeConversationId
@@ -154,7 +158,7 @@ final class AppCoordinator: ObservableObject {
         // Auto-speak assistant text in the active conversation when enabled
         ws.onSpeakableText = { [weak self] text in
             guard let self, self.settings.autoSpeak else { return }
-            self.speech.speak(text, voiceId: self.settings.voiceId)
+            self.speech.speak(text, voiceId: self.settings.voiceId, rate: self.settings.voiceRate, pitch: self.settings.voicePitch)
         }
 
         // Persist messages that arrive for a non-active conversation

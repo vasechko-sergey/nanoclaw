@@ -80,7 +80,10 @@ final class SpeechManager: ObservableObject {
             guard let self else { return }
             if let result {
                 let text = result.bestTranscription.formattedString
-                DispatchQueue.main.async { self.onTranscript?(text) }
+                // Ignore empty strings — a cancelled task can emit one and wipe the field.
+                if !text.isEmpty {
+                    DispatchQueue.main.async { self.onTranscript?(text) }
+                }
             }
             if error != nil || (result?.isFinal ?? false) {
                 DispatchQueue.main.async { self.stop() }
