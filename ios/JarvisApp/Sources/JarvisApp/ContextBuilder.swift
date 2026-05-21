@@ -24,11 +24,12 @@ struct ContextBuilder {
             if !h.isEmpty { ctx["health"] = h }
         }
 
-        let notes = settings.customContext
-            .components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        if !notes.isEmpty { ctx["custom"] = notes }
+        let emoji = settings.statusEmoji.trimmingCharacters(in: .whitespaces)
+        if !emoji.isEmpty { ctx["status"] = emoji }
+
+        // Device-side timestamp and timezone so the server renders the correct local time.
+        ctx["timestamp"] = ISO8601DateFormatter().string(from: Date())
+        ctx["timezone"] = TimeZone.current.identifier
 
         return ctx.isEmpty ? nil : ctx
     }

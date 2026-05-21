@@ -1,5 +1,7 @@
+import fs from 'node:fs';
 import http from 'node:http';
 import http2 from 'node:http2';
+import path from 'node:path';
 import { createSign, randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { readEnvFile } from '../env.js';
@@ -14,6 +16,32 @@ interface ApnsConfig {
   teamId: string;
   key: string;
   bundleId: string;
+  sandbox: boolean;
+}
+
+interface QueuedMessage {
+  id: string;
+  text: string;
+  files: Array<{ data: Buffer; filename: string }>;
+  ts: string;
+}
+
+// Persist APNs device tokens across server restarts.
+const TOKENS_FILE = path.join(process.cwd(), 'data', 'ios-apns-tokens.json');
+
+function loadPersistedTokens(): Map<string, string> {
+  try {
+    const raw = fs.readFileSync(TOKENS_FILE, 'utf8');
+    return new Map(Object.entries(JSON.parse(raw)));
+  } catch {
+    return new Map();
+  }
+}
+
+function savePersistedTokens(tokens: Map<string, string>): void {
+  const tmp = `${TOKENS_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(tokens)));
+  fs.renameSync(tmp, TOKENS_FILE);
 }
 
 function getApnsJwt(cfg: ApnsConfig): string {
@@ -32,20 +60,19 @@ function getApnsJwt(cfg: ApnsConfig): string {
 async function sendApnsPush(deviceToken: string, text: string, apns: ApnsConfig | null): Promise<void> {
   if (!apns) return;
   const jwt = getApnsJwt(apns);
-  const bundleId = apns.bundleId;
-
+  const host = apns.sandbox ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
   const body = JSON.stringify({ aps: { alert: { body: text }, sound: 'default' } });
 
   await new Promise<void>((resolve, reject) => {
-    const client = http2.connect('https://api.push.apple.com');
+    const client = http2.connect(`https://${host}`);
     client.on('error', reject);
     const req = client.request({
       ':method': 'POST',
       ':path': `/3/device/${deviceToken}`,
       ':scheme': 'https',
-      ':authority': 'api.push.apple.com',
+      ':authority': host,
       authorization: `bearer ${jwt}`,
-      'apns-topic': bundleId,
+      'apns-topic': apns.bundleId,
       'apns-push-type': 'alert',
       'content-type': 'application/json',
       'content-length': Buffer.byteLength(body),
@@ -64,6 +91,22 @@ async function sendApnsPush(deviceToken: string, text: string, apns: ApnsConfig 
   });
 }
 
+function deliverViaSock(ws: WebSocket, msg: QueuedMessage): void {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  if (msg.text) ws.send(JSON.stringify({ type: 'message', id: msg.id, text: msg.text, timestamp: msg.ts }));
+  for (const file of msg.files) {
+    ws.send(
+      JSON.stringify({
+        type: 'image',
+        id: randomUUID(),
+        data: file.data.toString('base64'),
+        filename: file.filename,
+        timestamp: msg.ts,
+      }),
+    );
+  }
+}
+
 function createIOSAdapter(): ChannelAdapter | null {
   const env = readEnvFile([
     'IOS_APP_TOKEN',
@@ -72,6 +115,7 @@ function createIOSAdapter(): ChannelAdapter | null {
     'IOS_APNS_TEAM_ID',
     'IOS_APNS_BUNDLE_ID',
     'IOS_APNS_KEY',
+    'IOS_APNS_ENV',
   ]);
   const token = env.IOS_APP_TOKEN;
   if (!token) return null;
@@ -84,11 +128,13 @@ function createIOSAdapter(): ChannelAdapter | null {
           teamId: env.IOS_APNS_TEAM_ID,
           key: env.IOS_APNS_KEY,
           bundleId: env.IOS_APNS_BUNDLE_ID,
+          sandbox: env.IOS_APNS_ENV === 'sandbox',
         }
       : null;
 
   const wsClients = new Map<string, Set<WebSocket>>();
-  const apnsTokens = new Map<string, string>(); // platformId → APNs device token
+  const apnsTokens = loadPersistedTokens();
+  const pendingMessages = new Map<string, QueuedMessage[]>();
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
   let wss: WebSocketServer | null = null;
@@ -138,15 +184,28 @@ function createIOSAdapter(): ChannelAdapter | null {
               pid = msg.platformId;
               if (!wsClients.has(pid)) wsClients.set(pid, new Set());
               wsClients.get(pid)!.add(ws);
-              if (typeof msg.apnsToken === 'string' && msg.apnsToken) apnsTokens.set(pid, msg.apnsToken);
+              if (typeof msg.apnsToken === 'string' && msg.apnsToken) {
+                apnsTokens.set(pid, msg.apnsToken);
+                savePersistedTokens(apnsTokens);
+              }
               ws.send(JSON.stringify({ type: 'auth_ok' }));
+
+              // Flush messages queued while app was closed
+              const pending = pendingMessages.get(pid);
+              if (pending?.length) {
+                for (const p of pending) deliverViaSock(ws, p);
+                pendingMessages.delete(pid);
+              }
             } else {
               ws.close(4001);
             }
             return;
           }
 
-          if (msg.type === 'apns_token' && typeof msg.token === 'string' && pid) apnsTokens.set(pid, msg.token);
+          if (msg.type === 'apns_token' && typeof msg.token === 'string' && pid) {
+            apnsTokens.set(pid, msg.token);
+            savePersistedTokens(apnsTokens);
+          }
 
           if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
             const ctx = msg.context as Record<string, unknown> | undefined;
@@ -185,36 +244,27 @@ function createIOSAdapter(): ChannelAdapter | null {
     async deliver(platformId, _tid, message) {
       const c = message.content as Record<string, unknown>;
       const text = (c.markdown ?? c.text ?? '') as string;
-      const files = message.files ?? [];
+      const files = (message.files ?? []) as Array<{ data: Buffer; filename: string }>;
 
       if (!text && files.length === 0) return undefined;
 
       const id = randomUUID();
       const ts = new Date().toISOString();
+      const queued: QueuedMessage = { id, text, files, ts };
+
       const set = wsClients.get(platformId);
-
-      const sendTo = (ws: WebSocket) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        if (text) ws.send(JSON.stringify({ type: 'message', id, text, timestamp: ts }));
-        for (const file of files) {
-          ws.send(
-            JSON.stringify({
-              type: 'image',
-              id: randomUUID(),
-              data: file.data.toString('base64'),
-              filename: file.filename,
-              timestamp: ts,
-            }),
-          );
-        }
-      };
-
       if (set && set.size > 0) {
-        set.forEach(sendTo);
+        set.forEach((ws) => deliverViaSock(ws, queued));
       } else {
+        // App offline — queue for re-delivery on reconnect
+        pendingMessages.set(platformId, [...(pendingMessages.get(platformId) ?? []), queued]);
+
+        // APNs wakeup notification if configured
         const apnsToken = apnsTokens.get(platformId);
-        const preview = text || files[0]?.filename || 'Новое сообщение';
-        if (apnsToken) sendApnsPush(apnsToken, preview, apnsCfg).catch(() => {});
+        if (apnsToken) {
+          const preview = text ? text.slice(0, 80) : (files[0]?.filename ?? 'Новое сообщение');
+          sendApnsPush(apnsToken, preview, apnsCfg).catch(() => {});
+        }
       }
       return id;
     },
@@ -236,7 +286,13 @@ function buildCtx(ctx: Record<string, unknown>): string {
     if (p.length) lines.push(`🏃 ${p.join(' | ')}`);
   }
   if (!lines.length && !ctx.status) return '';
-  const ts = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+
+  // Use device-provided timestamp and timezone if available; fall back to server time in Moscow tz.
+  const tz = (ctx.timezone as string | undefined) ?? 'Europe/Moscow';
+  const ts = ctx.timestamp
+    ? new Date(ctx.timestamp as string).toLocaleString('ru-RU', { timeZone: tz })
+    : new Date().toLocaleString('ru-RU', { timeZone: tz });
+
   const statusSuffix = ctx.status ? ` ${ctx.status}` : '';
   return `[iOS Context — ${ts}${statusSuffix}]\n${lines.join('\n')}${lines.length ? '\n' : ''}---\n`;
 }
