@@ -5,6 +5,7 @@
  */
 import { createTelegramAdapter } from '@chat-adapter/telegram';
 
+import { BOT_COMMANDS } from '../commands.js';
 import { readEnvFile } from '../env.js';
 import { log } from '../log.js';
 import { createMessagingGroup, getMessagingGroupByPlatform, updateMessagingGroup } from '../db/messaging-groups.js';
@@ -328,12 +329,7 @@ registerChannelAdapter('telegram', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({
-                commands: [
-                  { command: 'new', description: 'Начать новый разговор' },
-                  { command: 'surf', description: 'Прогноз серфинга' },
-                  { command: 'people', description: 'Список людей в памяти' },
-                  { command: 'find', description: 'Найти человека: /find Имя' },
-                ],
+                commands: BOT_COMMANDS,
               }),
             });
           } catch (err) {

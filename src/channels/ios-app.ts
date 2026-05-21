@@ -4,6 +4,7 @@ import http2 from 'node:http2';
 import path from 'node:path';
 import { createSign, randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import { BOT_COMMANDS } from '../commands.js';
 import { readEnvFile } from '../env.js';
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup } from './adapter.js';
@@ -188,7 +189,12 @@ function createIOSAdapter(): ChannelAdapter | null {
                 apnsTokens.set(pid, msg.apnsToken);
                 savePersistedTokens(apnsTokens);
               }
-              ws.send(JSON.stringify({ type: 'auth_ok' }));
+              ws.send(
+                JSON.stringify({
+                  type: 'auth_ok',
+                  commands: BOT_COMMANDS.map((c) => ({ command: '/' + c.command, description: c.description })),
+                }),
+              );
 
               // Flush messages queued while app was closed
               const pending = pendingMessages.get(pid);

@@ -1,11 +1,17 @@
 import Foundation
 import UIKit
 
+struct BotCommand: Equatable {
+    let command: String
+    let description: String
+}
+
 @MainActor
 final class WebSocketClient: ObservableObject {
-    @Published var messages: [ChatMessage] = []
+    @Published var messages: [ChatMessage] = MessageCache.load()
     @Published var isConnected = false
     @Published var isTyping    = false
+    @Published var commands: [BotCommand] = []
 
     private var task: URLSessionWebSocketTask?
     private var settings: AppSettings?
@@ -57,10 +63,10 @@ final class WebSocketClient: ObservableObject {
             "platformId": settings.platformId,
         ] as [String: Any])
         ws.send(.data(auth)) { _ in }
-        receive(ws: ws, settings: settings)
+        receive(ws: ws)
     }
 
-    private func receive(ws: URLSessionWebSocketTask, settings: AppSettings) {
+    private func receive(ws: URLSessionWebSocketTask) {
         ws.receive { [weak self] result in
             guard let self else { return }
             Task { @MainActor in
@@ -68,7 +74,7 @@ final class WebSocketClient: ObservableObject {
                 case .failure:
                     self.isConnected = false
                     self.isTyping    = false
-                    guard !self.stopped else { return }
+                    guard !self.stopped, let settings = self.settings else { return }
                     try? await Task.sleep(nanoseconds: UInt64(self.reconnectDelay * 1_000_000_000))
                     self.reconnectDelay = min(self.reconnectDelay * 2, 30)
                     self.doConnect(settings: settings)
@@ -79,18 +85,25 @@ final class WebSocketClient: ObservableObject {
                     switch msg {
                     case .data(let d):   data = d
                     case .string(let s): data = Data(s.utf8)
-                    @unknown default:    self.receive(ws: ws, settings: settings); return
+                    @unknown default:    self.receive(ws: ws); return
                     }
                     if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         let t = obj["type"] as? String
                         if t == "auth_ok" {
                             self.isConnected = true
                             if let tok = self.pendingApnsToken { self.sendApnsToken(tok) }
+                            if let cmds = obj["commands"] as? [[String: String]] {
+                                self.commands = cmds.compactMap { d in
+                                    guard let cmd = d["command"], let desc = d["description"] else { return nil }
+                                    return BotCommand(command: cmd, description: desc)
+                                }
+                            }
                         } else if t == "message",
                                   let text = obj["text"] as? String,
                                   let id   = obj["id"]   as? String {
                             self.isTyping = false
                             self.messages.append(.text(id, role: .assistant, text: text, timestamp: Date()))
+                            MessageCache.save(self.messages)
                         } else if t == "image",
                                   let b64      = obj["data"]     as? String,
                                   let id       = obj["id"]       as? String,
@@ -99,9 +112,10 @@ final class WebSocketClient: ObservableObject {
                                   let image    = UIImage(data: imgData) {
                             self.isTyping = false
                             self.messages.append(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()))
+                            MessageCache.save(self.messages)
                         }
                     }
-                    self.receive(ws: ws, settings: settings)
+                    self.receive(ws: ws)
                 }
             }
         }
@@ -115,5 +129,6 @@ final class WebSocketClient: ObservableObject {
         ws.send(.data(data)) { _ in }
         isTyping = true
         messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: Date()))
+        MessageCache.save(messages)
     }
 }

@@ -6,7 +6,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("agentName")     var agentName    = "Jarvis"
     @AppStorage("useLocation")   var useLocation  = false
     @AppStorage("useHealth")     var useHealth    = false
-    @AppStorage("customContext") var customContext = ""
+    @AppStorage("statusEmoji")   var statusEmoji  = ""
 
     var platformId: String {
         if let v = UserDefaults.standard.string(forKey: "platformId") { return v }
