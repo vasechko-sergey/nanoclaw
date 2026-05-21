@@ -8,7 +8,7 @@ struct BotCommand: Equatable {
 
 @MainActor
 final class WebSocketClient: ObservableObject {
-    @Published var messages: [ChatMessage] = MessageCache.load()
+    @Published var messages: [ChatMessage] = []
     @Published var isConnected = false
     @Published var isTyping    = false
     @Published var commands: [BotCommand] = []
@@ -18,6 +18,15 @@ final class WebSocketClient: ObservableObject {
     private var reconnectDelay: TimeInterval = 1
     private var stopped           = false
     private var pendingApnsToken: String?
+
+    /// Current conversation, set by coordinator.
+    var conversationId: UUID?
+
+    /// Callback to persist messages through ConversationStore.
+    var onMessagesChanged: (([ChatMessage]) -> Void)?
+
+    /// Callback when assistant message arrives (for haptics in UI layer).
+    var onAssistantMessage: (() -> Void)?
 
     func connect(settings: AppSettings) {
         self.settings = settings
@@ -39,9 +48,31 @@ final class WebSocketClient: ObservableObject {
         if isConnected { sendApnsToken(hex) }
     }
 
+    // MARK: – Conversations
+
+    func sendNewConversation(id: UUID) {
+        guard let ws = task, isConnected else { return }
+        let payload: [String: Any] = [
+            "type": "new_conversation",
+            "conversationId": id.uuidString
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { _ in }
+    }
+
+    func loadMessages(from store: ConversationStore) {
+        guard let cid = conversationId else {
+            messages = []
+            return
+        }
+        messages = store.loadMessages(for: cid)
+    }
+
+    // MARK: – Private
+
     private func sendApnsToken(_ hex: String) {
         guard let ws = task, isConnected else { return }
-        let pay = try! JSONSerialization.data(withJSONObject: ["type": "apns_token", "token": hex])
+        guard let pay = try? JSONSerialization.data(withJSONObject: ["type": "apns_token", "token": hex]) else { return }
         ws.send(.data(pay)) { _ in }
     }
 
@@ -57,11 +88,11 @@ final class WebSocketClient: ObservableObject {
         self.task = ws
         ws.resume()
 
-        let auth = try! JSONSerialization.data(withJSONObject: [
+        guard let auth = try? JSONSerialization.data(withJSONObject: [
             "type": "auth",
             "token": settings.bearerToken,
             "platformId": settings.platformId,
-        ] as [String: Any])
+        ] as [String: Any]) else { return }
         ws.send(.data(auth)) { _ in }
         receive(ws: ws)
     }
@@ -102,8 +133,9 @@ final class WebSocketClient: ObservableObject {
                                   let text = obj["text"] as? String,
                                   let id   = obj["id"]   as? String {
                             self.isTyping = false
+                            self.onAssistantMessage?()
                             self.messages.append(.text(id, role: .assistant, text: text, timestamp: Date()))
-                            MessageCache.save(self.messages)
+                            self.onMessagesChanged?(self.messages)
                         } else if t == "image",
                                   let b64      = obj["data"]     as? String,
                                   let id       = obj["id"]       as? String,
@@ -111,8 +143,9 @@ final class WebSocketClient: ObservableObject {
                                   let imgData  = Data(base64Encoded: b64),
                                   let image    = UIImage(data: imgData) {
                             self.isTyping = false
+                            self.onAssistantMessage?()
                             self.messages.append(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()))
-                            MessageCache.save(self.messages)
+                            self.onMessagesChanged?(self.messages)
                         }
                     }
                     self.receive(ws: ws)
@@ -125,10 +158,11 @@ final class WebSocketClient: ObservableObject {
         guard let ws = task, isConnected else { return }
         var payload: [String: Any] = ["type": "message", "text": text]
         if let ctx = context { payload["context"] = ctx }
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         ws.send(.data(data)) { _ in }
         isTyping = true
         messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: Date()))
-        MessageCache.save(messages)
+        onMessagesChanged?(messages)
     }
 }

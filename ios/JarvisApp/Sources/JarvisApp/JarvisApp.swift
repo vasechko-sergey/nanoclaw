@@ -24,11 +24,19 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 struct JarvisApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var settings = AppSettings()
+    @StateObject private var coordinator: AppCoordinator
+
+    init() {
+        let s = AppSettings()
+        _settings = StateObject(wrappedValue: s)
+        _coordinator = StateObject(wrappedValue: AppCoordinator(settings: s))
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(coordinator: coordinator)
                 .environmentObject(settings)
+                .environmentObject(coordinator)
         }
     }
 }

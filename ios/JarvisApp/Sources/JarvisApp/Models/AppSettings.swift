@@ -7,6 +7,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("useLocation")   var useLocation  = false
     @AppStorage("useHealth")     var useHealth    = false
     @AppStorage("statusEmoji")   var statusEmoji  = ""
+    @AppStorage("enterToSend")   var enterToSend  = true
 
     var platformId: String {
         if let v = UserDefaults.standard.string(forKey: "platformId") { return v }
