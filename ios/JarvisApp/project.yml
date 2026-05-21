@@ -1,0 +1,41 @@
+name: JarvisApp
+options:
+  bundleIdPrefix: com.vasechko
+  deploymentTarget:
+    iOS: "25.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 24Z6S27D7U
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+targets:
+  JarvisApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/JarvisApp
+      - path: Assets.xcassets
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"
+        NSHealthShareUsageDescription: "Данные активности и сна передаются агенту как контекст"
+        NSHealthUpdateUsageDescription: "Данные активности передаются агенту как контекст"
+    entitlements:
+      path: JarvisApp.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis
+        PRODUCT_NAME: Jarvis
+        INFOPLIST_KEY_CFBundleDisplayName: Jarvis
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 24Z6S27D7U
+        SWIFT_VERSION: "5.9"
+        ENABLE_USER_SCRIPT_SANDBOXING: YES

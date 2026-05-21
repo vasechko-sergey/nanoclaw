@@ -18,9 +18,12 @@ struct ContextBuilder {
 
         if settings.useHealth {
             var h: [String: Any] = [:]
-            if let s  = health.steps        { h["steps"]        = s  }
-            if let hr = health.heartRate     { h["heartRate"]    = hr }
-            if let ae = health.activeEnergy  { h["activeEnergy"] = ae }
+            if let s   = health.steps            { h["steps"]            = s   }
+            if let hr  = health.heartRate         { h["heartRate"]        = hr  }
+            if let ae  = health.activeEnergy      { h["activeEnergy"]     = ae  }
+            if let sh  = health.sleepHours        { h["sleepHours"]       = sh  }
+            if let rhr = health.restingHeartRate  { h["restingHeartRate"] = rhr }
+            if let ex  = health.exerciseMinutes   { h["exerciseMinutes"]  = ex  }
             if !h.isEmpty { ctx["health"] = h }
         }
 

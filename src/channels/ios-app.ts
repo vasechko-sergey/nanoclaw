@@ -283,15 +283,19 @@ function buildCtx(ctx: Record<string, unknown>): string {
     if (h.steps) p.push(`Steps: ${h.steps}`);
     if (h.heartRate) p.push(`HR: ${h.heartRate} bpm`);
     if (h.activeEnergy) p.push(`Active: ${h.activeEnergy} kcal`);
+    if (h.sleepHours) p.push(`Sleep: ${h.sleepHours}h`);
+    if (h.restingHeartRate) p.push(`RHR: ${h.restingHeartRate} bpm`);
+    if (h.exerciseMinutes) p.push(`Exercise: ${h.exerciseMinutes} min`);
     if (p.length) lines.push(`🏃 ${p.join(' | ')}`);
   }
   if (!lines.length && !ctx.status) return '';
 
   // Use device-provided timestamp and timezone if available; fall back to server time in Moscow tz.
   const tz = (ctx.timezone as string | undefined) ?? 'Europe/Moscow';
+  const tsOpts: Intl.DateTimeFormatOptions = { timeZone: tz, timeZoneName: 'longOffset' };
   const ts = ctx.timestamp
-    ? new Date(ctx.timestamp as string).toLocaleString('ru-RU', { timeZone: tz })
-    : new Date().toLocaleString('ru-RU', { timeZone: tz });
+    ? new Date(ctx.timestamp as string).toLocaleString('ru-RU', tsOpts)
+    : new Date().toLocaleString('ru-RU', tsOpts);
 
   const statusSuffix = ctx.status ? ` ${ctx.status}` : '';
   return `[iOS Context — ${ts}${statusSuffix}]\n${lines.join('\n')}${lines.length ? '\n' : ''}---\n`;
