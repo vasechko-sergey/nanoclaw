@@ -23,7 +23,7 @@ interface ApnsConfig {
 interface QueuedMessage {
   id: string;
   text: string;
-  files: Array<{ data: Buffer; filename: string }>;
+  files: Array<{ data: Buffer; filename: string; mimeType?: string; size?: number }>;
   ts: string;
   conversationId?: string;
 }
@@ -93,6 +93,11 @@ async function sendApnsPush(deviceToken: string, text: string, apns: ApnsConfig 
   });
 }
 
+function isImageFile(filename: string, mimeType?: string): boolean {
+  if (mimeType?.startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|heic|svg|bmp|tiff?)$/i.test(filename);
+}
+
 function deliverViaSock(ws: WebSocket, msg: QueuedMessage): void {
   if (ws.readyState !== WebSocket.OPEN) return;
   if (msg.text)
@@ -106,16 +111,33 @@ function deliverViaSock(ws: WebSocket, msg: QueuedMessage): void {
       }),
     );
   for (const file of msg.files) {
-    ws.send(
-      JSON.stringify({
-        type: 'image',
-        id: randomUUID(),
-        data: file.data.toString('base64'),
-        filename: file.filename,
-        conversationId: msg.conversationId,
-        timestamp: msg.ts,
-      }),
-    );
+    if (isImageFile(file.filename, file.mimeType)) {
+      // Legacy image type — backwards compatible
+      ws.send(
+        JSON.stringify({
+          type: 'image',
+          id: randomUUID(),
+          data: file.data.toString('base64'),
+          filename: file.filename,
+          conversationId: msg.conversationId,
+          timestamp: msg.ts,
+        }),
+      );
+    } else {
+      // New file type — non-image attachments
+      ws.send(
+        JSON.stringify({
+          type: 'file',
+          id: randomUUID(),
+          name: file.filename,
+          size: file.size ?? file.data.length,
+          mimeType: file.mimeType ?? 'application/octet-stream',
+          data: file.data.toString('base64'),
+          conversationId: msg.conversationId,
+          timestamp: msg.ts,
+        }),
+      );
+    }
   }
 }
 
@@ -150,6 +172,30 @@ function createIOSAdapter(): ChannelAdapter | null {
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
   let wss: WebSocketServer | null = null;
+
+  function deliverTextAndFiles(
+    platformId: string,
+    threadId: string | null,
+    text: string,
+    files: Array<{ data: Buffer; filename: string; mimeType?: string; size?: number }>,
+  ): string {
+    const id = randomUUID();
+    const ts = new Date().toISOString();
+    const queued: QueuedMessage = { id, text, files, ts, conversationId: threadId ?? undefined };
+
+    const set = wsClients.get(platformId);
+    if (set && set.size > 0) {
+      set.forEach((ws) => deliverViaSock(ws, queued));
+    } else {
+      pendingMessages.set(platformId, [...(pendingMessages.get(platformId) ?? []), queued]);
+      const apnsToken = apnsTokens.get(platformId);
+      if (apnsToken) {
+        const preview = text ? text.slice(0, 80) : (files[0]?.filename ?? 'Новое сообщение');
+        sendApnsPush(apnsToken, preview, apnsCfg).catch(() => {});
+      }
+    }
+    return id;
+  }
 
   function removeClient(pid: string, ws: WebSocket) {
     const s = wsClients.get(pid);
@@ -255,6 +301,54 @@ function createIOSAdapter(): ChannelAdapter | null {
               timestamp: new Date().toISOString(),
             });
           }
+
+          // Health update — technical, silent unless anomaly detected by agent
+          if (msg.type === 'health_update' && pid) {
+            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+            const healthData = msg.data as Record<string, unknown> | undefined;
+            const lines: string[] = [];
+            if (healthData) {
+              if (healthData.steps) lines.push(`Steps: ${healthData.steps}`);
+              if (healthData.heartRate) lines.push(`HR: ${healthData.heartRate} bpm`);
+              if (healthData.activeEnergy) lines.push(`Active: ${healthData.activeEnergy} kcal`);
+              if (healthData.sleepHours) lines.push(`Sleep: ${healthData.sleepHours}h`);
+              if (healthData.restingHeartRate) lines.push(`RHR: ${healthData.restingHeartRate} bpm`);
+              if (healthData.exerciseMinutes) lines.push(`Exercise: ${healthData.exerciseMinutes} min`);
+            }
+            if (lines.length) {
+              await cfg!.onInbound(pid, tid, {
+                id: randomUUID(),
+                kind: 'chat',
+                content: {
+                  text: `[health update — technical, do not respond unless anomaly detected]\n🏃 ${lines.join(' | ')}`,
+                  senderId: pid,
+                },
+                timestamp: new Date().toISOString(),
+              });
+            }
+          }
+
+          // Action response — user tapped a button on an action message
+          if (msg.type === 'action_response' && pid) {
+            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+            const buttonLabel = typeof msg.buttonLabel === 'string' ? msg.buttonLabel : '';
+            const buttonId = typeof msg.buttonId === 'string' ? msg.buttonId : '';
+            await cfg!.onInbound(pid, tid, {
+              id: randomUUID(),
+              kind: 'chat',
+              content: {
+                text: `[user selected: "${buttonLabel}" (id: ${buttonId})]`,
+                senderId: pid,
+              },
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          // New conversation — acknowledge (currently logged, not routed)
+          if (msg.type === 'new_conversation' && pid) {
+            // Acknowledge — the agent doesn't need to know about conversation switches
+            // but we could use this for session tracking in the future.
+          }
         });
 
         ws.on('close', () => {
@@ -282,29 +376,49 @@ function createIOSAdapter(): ChannelAdapter | null {
     async deliver(platformId, threadId, message) {
       const c = message.content as Record<string, unknown>;
       const text = (c.markdown ?? c.text ?? '') as string;
-      const files = (message.files ?? []) as Array<{ data: Buffer; filename: string }>;
+      const files = (message.files ?? []) as Array<{
+        data: Buffer;
+        filename: string;
+        mimeType?: string;
+        size?: number;
+      }>;
+      const contentType = c.type as string | undefined;
+
+      // Handle structured message types from agent
+      if (contentType === 'ask_question' && c.questionId) {
+        // Send as action message with buttons
+        const title = (c.title ?? '') as string;
+        const options = (c.options ?? []) as Array<Record<string, unknown>>;
+        const buttons = options.map((opt, i) => ({
+          id: (opt.id as string) ?? `opt_${i}`,
+          label: (opt.label ?? opt.text ?? '') as string,
+          style: (opt.style as string) ?? 'primary',
+        }));
+
+        const payload = JSON.stringify({
+          type: 'action',
+          id: (c.questionId as string) ?? randomUUID(),
+          text: title,
+          buttons,
+          conversationId: threadId ?? undefined,
+          timestamp: new Date().toISOString(),
+        });
+
+        const set = wsClients.get(platformId);
+        if (set && set.size > 0) {
+          set.forEach((ws) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+          });
+        }
+        // Also deliver text version if present for offline/push
+        if (text) {
+          return deliverTextAndFiles(platformId, threadId, text, files);
+        }
+        return c.questionId as string;
+      }
 
       if (!text && files.length === 0) return undefined;
-
-      const id = randomUUID();
-      const ts = new Date().toISOString();
-      const queued: QueuedMessage = { id, text, files, ts, conversationId: threadId ?? undefined };
-
-      const set = wsClients.get(platformId);
-      if (set && set.size > 0) {
-        set.forEach((ws) => deliverViaSock(ws, queued));
-      } else {
-        // App offline — queue for re-delivery on reconnect
-        pendingMessages.set(platformId, [...(pendingMessages.get(platformId) ?? []), queued]);
-
-        // APNs wakeup notification if configured
-        const apnsToken = apnsTokens.get(platformId);
-        if (apnsToken) {
-          const preview = text ? text.slice(0, 80) : (files[0]?.filename ?? 'Новое сообщение');
-          sendApnsPush(apnsToken, preview, apnsCfg).catch(() => {});
-        }
-      }
-      return id;
+      return deliverTextAndFiles(platformId, threadId, text, files);
     },
   };
 }

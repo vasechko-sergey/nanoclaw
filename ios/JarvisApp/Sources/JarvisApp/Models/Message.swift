@@ -1,23 +1,80 @@
 import Foundation
 import UIKit
 
+// MARK: – Supporting types
+
+struct FileInfo: Equatable {
+    let name: String
+    let size: Int64        // bytes
+    let mimeType: String
+    let url: String?       // download URL
+    let thumbnail: UIImage?
+}
+
+struct ActionButton: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let style: Style
+
+    enum Style: String { case primary, danger, secondary }
+
+    static func == (lhs: ActionButton, rhs: ActionButton) -> Bool {
+        lhs.id == rhs.id && lhs.label == rhs.label && lhs.style == rhs.style
+    }
+}
+
+struct ActionInfo: Equatable {
+    let text: String
+    let buttons: [ActionButton]
+    var answered: Bool = false      // true after user taps a button
+    var selectedId: String? = nil   // which button was tapped
+}
+
+struct StatusInfo: Equatable {
+    let text: String
+    let level: Level
+
+    enum Level: String { case info, warning, error }
+}
+
+// MARK: – ChatMessage
+
 struct ChatMessage: Identifiable {
     let id: String
     let role: Role
     let content: Content
     let timestamp: Date
 
-    enum Role { case user, assistant }
+    enum Role { case user, assistant, system }
 
     enum Content {
         case text(String)
         case image(UIImage, filename: String)
+        case file(FileInfo)
+        case action(ActionInfo)
+        case status(StatusInfo)
     }
 
+    // Convenience accessors
+
     var text: String {
-        if case .text(let t) = content { return t }
-        return ""
+        switch content {
+        case .text(let t): return t
+        case .action(let a): return a.text
+        case .status(let s): return s.text
+        default: return ""
+        }
     }
+
+    var isVisible: Bool {
+        // Status messages are visible; system role is used for non-visible technical messages
+        switch content {
+        case .status: return true
+        default: return role != .system
+        }
+    }
+
+    // MARK: – Factory methods
 
     static func text(_ id: String, role: Role, text: String, timestamp: Date) -> ChatMessage {
         ChatMessage(id: id, role: role, content: .text(text), timestamp: timestamp)
@@ -25,5 +82,17 @@ struct ChatMessage: Identifiable {
 
     static func image(_ id: String, role: Role, image: UIImage, filename: String, timestamp: Date) -> ChatMessage {
         ChatMessage(id: id, role: role, content: .image(image, filename: filename), timestamp: timestamp)
+    }
+
+    static func file(_ id: String, role: Role, info: FileInfo, timestamp: Date) -> ChatMessage {
+        ChatMessage(id: id, role: role, content: .file(info), timestamp: timestamp)
+    }
+
+    static func action(_ id: String, text: String, buttons: [ActionButton], timestamp: Date) -> ChatMessage {
+        ChatMessage(id: id, role: .assistant, content: .action(ActionInfo(text: text, buttons: buttons)), timestamp: timestamp)
+    }
+
+    static func status(_ id: String, text: String, level: StatusInfo.Level, timestamp: Date) -> ChatMessage {
+        ChatMessage(id: id, role: .system, content: .status(StatusInfo(text: text, level: level)), timestamp: timestamp)
     }
 }

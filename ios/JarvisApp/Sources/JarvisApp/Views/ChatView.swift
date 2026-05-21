@@ -31,13 +31,18 @@ struct ChatView: View {
     private var ws: WebSocketClient { coordinator.ws }
     private var store: ConversationStore { coordinator.store }
 
+    /// Only messages that should render in the chat (excludes invisible technical messages).
+    private var visibleMessages: [ChatMessage] {
+        ws.messages.filter { $0.isVisible }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // MARK: – Custom header
             header
 
             // MARK: – Content
-            if ws.messages.isEmpty && !ws.isTyping {
+            if visibleMessages.isEmpty && !ws.isTyping {
                 EmptyStateView { suggestion in
                     coordinator.sendMessage(suggestion)
                 }
@@ -47,9 +52,9 @@ struct ChatView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             VStack(alignment: .leading, spacing: Theme.scaled(8)) {
-                                ForEach(Array(ws.messages.enumerated()), id: \.element.id) { index, msg in
+                                ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, msg in
                                     // Date separator
-                                    if shouldShowDateSeparator(at: index) {
+                                    if shouldShowDateSeparator(at: index, in: visibleMessages) {
                                         DateSeparator(date: msg.timestamp)
                                     }
                                     MessageBubble(
@@ -57,6 +62,9 @@ struct ChatView: View {
                                         onImageTap: { img in fullScreenImage = img },
                                         onFeedback: { messageId, isPositive in
                                             coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: msg.text)
+                                        },
+                                        onActionTap: { messageId, buttonId, buttonLabel in
+                                            coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
                                         }
                                     )
                                     .id(msg.id)
@@ -96,7 +104,7 @@ struct ChatView: View {
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     if scrolledAway {
                                         isScrolledUp = true
-                                        lastSeenCount = ws.messages.count
+                                        lastSeenCount = visibleMessages.count
                                     } else {
                                         isScrolledUp = false
                                         unreadCount = 0
@@ -108,25 +116,25 @@ struct ChatView: View {
                         .scrollDismissesKeyboard(.interactively)
                         .scrollContentBackground(.hidden)
                         .onAppear {
-                            lastSeenCount = ws.messages.count
+                            lastSeenCount = visibleMessages.count
                             // Capture scroll action for FAB outside ScrollViewReader
                             scrollToBottomAction = {
-                                if let last = ws.messages.last {
+                                if let last = visibleMessages.last {
                                     withAnimation(.spring(duration: 0.35, bounce: 0.1)) {
                                         proxy.scrollTo(last.id, anchor: .bottom)
                                     }
                                 }
                             }
-                            if let last = ws.messages.last {
+                            if let last = visibleMessages.last {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                         .onChange(of: ws.messages.count) {
                             if isScrolledUp {
-                                let newMessages = ws.messages.count - lastSeenCount
+                                let newMessages = visibleMessages.count - lastSeenCount
                                 unreadCount = max(newMessages, 0)
                             } else {
-                                if let last = ws.messages.last {
+                                if let last = visibleMessages.last {
                                     withAnimation(.spring(duration: 0.35, bounce: 0.1)) {
                                         proxy.scrollTo(last.id, anchor: .bottom)
                                     }
@@ -175,7 +183,7 @@ struct ChatView: View {
                 inputText = ""
             }
         }
-        .animation(.spring(duration: 0.4, bounce: 0.15), value: ws.messages.isEmpty)
+        .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)
         .background(Theme.background.ignoresSafeArea())
         .sheet(isPresented: $showSettings) {
             SettingsView(isInitialSetup: false)
@@ -321,10 +329,10 @@ struct ChatView: View {
 
     // MARK: – Date separators
 
-    private func shouldShowDateSeparator(at index: Int) -> Bool {
-        guard index > 0 else { return ws.messages.count > 1 }
-        let current = ws.messages[index].timestamp
-        let previous = ws.messages[index - 1].timestamp
+    private func shouldShowDateSeparator(at index: Int, in msgs: [ChatMessage]) -> Bool {
+        guard index > 0 else { return msgs.count > 1 }
+        let current = msgs[index].timestamp
+        let previous = msgs[index - 1].timestamp
         return !Calendar.current.isDate(current, inSameDayAs: previous)
     }
 }

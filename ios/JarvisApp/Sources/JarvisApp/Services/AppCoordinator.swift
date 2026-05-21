@@ -72,6 +72,14 @@ final class AppCoordinator: ObservableObject {
         ws.sendFeedback(conversationId: ws.conversationId, messageId: messageId, value: value, messageText: messageText)
     }
 
+    func sendHealthUpdate(_ data: [String: Any]) {
+        ws.sendHealthUpdate(data)
+    }
+
+    func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
+        ws.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
+    }
+
     func handleAction(_ action: ConversationAction) {
         switch action {
         case .newChat:

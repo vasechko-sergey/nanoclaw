@@ -47,7 +47,7 @@ struct ArchivedChatView: View {
             // Messages (dimmed)
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.scaled(8)) {
-                    ForEach(messages) { msg in
+                    ForEach(messages.filter(\.isVisible)) { msg in
                         MessageBubble(message: msg)
                             .opacity(0.7)
                     }

@@ -29,8 +29,10 @@ final class WebSocketClient: ObservableObject {
     var onAssistantMessage: (() -> Void)?
 
     /// Callback when a message arrives for a non-active conversation.
-    /// The coordinator persists it into that conversation's store.
     var onBackgroundMessage: ((UUID, ChatMessage) -> Void)?
+
+    /// Callback when user taps an action button — coordinator handles sending.
+    var onActionResponse: ((String, String, String) -> Void)?  // (messageId, buttonId, buttonLabel)
 
     func connect(settings: AppSettings) {
         self.settings = settings
@@ -70,6 +72,67 @@ final class WebSocketClient: ObservableObject {
             return
         }
         messages = store.loadMessages(for: cid)
+    }
+
+    // MARK: – Send methods
+
+    func send(text: String, context: [String: Any]?) {
+        guard let ws = task, isConnected else { return }
+        var payload: [String: Any] = ["type": "message", "text": text]
+        if let ctx = context { payload["context"] = ctx }
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { _ in }
+        isTyping = true
+        messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: Date()))
+        onMessagesChanged?(messages)
+    }
+
+    func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {
+        guard let ws = task, isConnected else { return }
+        var payload: [String: Any] = [
+            "type": "feedback",
+            "messageId": messageId,
+            "value": value,
+            "messageText": messageText,
+        ]
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { _ in }
+    }
+
+    func sendHealthUpdate(_ healthData: [String: Any]) {
+        guard let ws = task, isConnected else { return }
+        var payload: [String: Any] = [
+            "type": "health_update",
+            "data": healthData,
+        ]
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { _ in }
+    }
+
+    func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
+        guard let ws = task, isConnected else { return }
+        var payload: [String: Any] = [
+            "type": "action_response",
+            "messageId": messageId,
+            "buttonId": buttonId,
+            "buttonLabel": buttonLabel,
+        ]
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { _ in }
+
+        // Mark action as answered locally
+        if let idx = messages.firstIndex(where: { $0.id == messageId }),
+           case .action(var info) = messages[idx].content {
+            info.answered = true
+            info.selectedId = buttonId
+            messages[idx] = ChatMessage(id: messageId, role: messages[idx].role,
+                                        content: .action(info), timestamp: messages[idx].timestamp)
+            onMessagesChanged?(messages)
+        }
     }
 
     // MARK: – Private
@@ -123,30 +186,7 @@ final class WebSocketClient: ObservableObject {
                     @unknown default:    self.receive(ws: ws); return
                     }
                     if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        let t = obj["type"] as? String
-                        if t == "auth_ok" {
-                            self.isConnected = true
-                            if let tok = self.pendingApnsToken { self.sendApnsToken(tok) }
-                            if let cmds = obj["commands"] as? [[String: String]] {
-                                self.commands = cmds.compactMap { d in
-                                    guard let cmd = d["command"], let desc = d["description"] else { return nil }
-                                    return BotCommand(command: cmd, description: desc)
-                                }
-                            }
-                        } else if t == "message",
-                                  let text = obj["text"] as? String,
-                                  let id   = obj["id"]   as? String {
-                            let convId = (obj["conversationId"] as? String).flatMap(UUID.init(uuidString:))
-                            self.route(.text(id, role: .assistant, text: text, timestamp: Date()), convId: convId)
-                        } else if t == "image",
-                                  let b64      = obj["data"]     as? String,
-                                  let id       = obj["id"]       as? String,
-                                  let filename = obj["filename"] as? String,
-                                  let imgData  = Data(base64Encoded: b64),
-                                  let image    = UIImage(data: imgData) {
-                            let convId = (obj["conversationId"] as? String).flatMap(UUID.init(uuidString:))
-                            self.route(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()), convId: convId)
-                        }
+                        self.handleIncoming(obj)
                     }
                     self.receive(ws: ws)
                 }
@@ -154,8 +194,93 @@ final class WebSocketClient: ObservableObject {
         }
     }
 
-    /// Route an incoming assistant message to the active list or to a
-    /// background conversation's store, based on conversationId.
+    private func handleIncoming(_ obj: [String: Any]) {
+        let t = obj["type"] as? String
+
+        // --- Auth ---
+        if t == "auth_ok" {
+            isConnected = true
+            if let tok = pendingApnsToken { sendApnsToken(tok) }
+            if let cmds = obj["commands"] as? [[String: String]] {
+                commands = cmds.compactMap { d in
+                    guard let cmd = d["command"], let desc = d["description"] else { return nil }
+                    return BotCommand(command: cmd, description: desc)
+                }
+            }
+            return
+        }
+
+        // --- Typing ---
+        if t == "typing_start" {
+            isTyping = true
+            return
+        }
+        if t == "typing_stop" {
+            isTyping = false
+            return
+        }
+
+        // --- Feedback ack (no UI action needed) ---
+        if t == "feedback_ack" {
+            return
+        }
+
+        let convId = (obj["conversationId"] as? String).flatMap(UUID.init(uuidString:))
+
+        // --- Text message ---
+        if t == "message",
+           let text = obj["text"] as? String,
+           let id   = obj["id"]   as? String {
+            route(.text(id, role: .assistant, text: text, timestamp: Date()), convId: convId)
+        }
+
+        // --- Image ---
+        else if t == "image",
+                let b64      = obj["data"]     as? String,
+                let id       = obj["id"]       as? String,
+                let filename = obj["filename"] as? String,
+                let imgData  = Data(base64Encoded: b64),
+                let image    = UIImage(data: imgData) {
+            route(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()), convId: convId)
+        }
+
+        // --- File ---
+        else if t == "file",
+                let id   = obj["id"]   as? String,
+                let name = obj["name"] as? String {
+            let info = FileInfo(
+                name: name,
+                size: obj["size"] as? Int64 ?? 0,
+                mimeType: obj["mimeType"] as? String ?? "application/octet-stream",
+                url: obj["url"] as? String,
+                thumbnail: nil
+            )
+            route(.file(id, role: .assistant, info: info, timestamp: Date()), convId: convId)
+        }
+
+        // --- Action (question with buttons) ---
+        else if t == "action",
+                let id   = obj["id"]   as? String,
+                let text = obj["text"] as? String,
+                let btns = obj["buttons"] as? [[String: Any]] {
+            let buttons = btns.compactMap { b -> ActionButton? in
+                guard let bid = b["id"] as? String, let label = b["label"] as? String else { return nil }
+                let style = ActionButton.Style(rawValue: b["style"] as? String ?? "primary") ?? .primary
+                return ActionButton(id: bid, label: label, style: style)
+            }
+            route(.action(id, text: text, buttons: buttons, timestamp: Date()), convId: convId)
+        }
+
+        // --- Status ---
+        else if t == "status",
+                let text = obj["text"] as? String {
+            let id = obj["id"] as? String ?? UUID().uuidString
+            let level = StatusInfo.Level(rawValue: obj["level"] as? String ?? "info") ?? .info
+            route(.status(id, text: text, level: level, timestamp: Date()), convId: convId)
+        }
+    }
+
+    /// Route an incoming message to the active list or to a background conversation's store.
     private func route(_ message: ChatMessage, convId: UUID?) {
         onAssistantMessage?()
         if convId == nil || convId == conversationId {
@@ -165,30 +290,5 @@ final class WebSocketClient: ObservableObject {
         } else {
             onBackgroundMessage?(convId!, message)
         }
-    }
-
-    func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {
-        guard let ws = task, isConnected else { return }
-        var payload: [String: Any] = [
-            "type": "feedback",
-            "messageId": messageId,
-            "value": value,
-            "messageText": messageText,
-        ]
-        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { _ in }
-    }
-
-    func send(text: String, context: [String: Any]?) {
-        guard let ws = task, isConnected else { return }
-        var payload: [String: Any] = ["type": "message", "text": text]
-        if let ctx = context { payload["context"] = ctx }
-        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { _ in }
-        isTyping = true
-        messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: Date()))
-        onMessagesChanged?(messages)
     }
 }
