@@ -122,15 +122,25 @@ export function composeGroupClaudeMd(group: AgentGroup): void {
   }
 
   // Composed entry — imports only.
-  const imports = ['@./.claude-shared.md'];
-  for (const name of [...desired.keys()].sort()) {
-    imports.push(`@./.claude-fragments/${name}`);
-  }
-  const body = [COMPOSED_HEADER, ...imports, ''].join('\n');
-  writeAtomic(path.join(groupDir, 'CLAUDE.md'), body);
+  // If the operator has written a manual CLAUDE.md (no COMPOSED_HEADER), preserve it.
+  // Fragments are still created so the operator can @-import them selectively.
+  const claudeMdPath = path.join(groupDir, 'CLAUDE.md');
+  const existingClaudeMd = fs.existsSync(claudeMdPath) ? fs.readFileSync(claudeMdPath, 'utf8') : '';
+  const isManual = existingClaudeMd.length > 0 && !existingClaudeMd.startsWith(COMPOSED_HEADER);
 
+  if (!isManual) {
+    const imports = ['@./.claude-shared.md'];
+    for (const name of [...desired.keys()].sort()) {
+      imports.push(`@./.claude-fragments/${name}`);
+    }
+    const body = [COMPOSED_HEADER, ...imports, ''].join('\n');
+    writeAtomic(claudeMdPath, body);
+  }
+
+  // Don't auto-create CLAUDE.local.md for manual groups — it would be auto-loaded
+  // by the SDK alongside CLAUDE.md, adding noise to the context.
   const localFile = path.join(groupDir, 'CLAUDE.local.md');
-  if (!fs.existsSync(localFile)) {
+  if (!isManual && !fs.existsSync(localFile)) {
     fs.writeFileSync(localFile, '');
   }
 }
