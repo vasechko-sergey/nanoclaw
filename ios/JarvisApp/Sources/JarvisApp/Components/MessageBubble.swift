@@ -327,27 +327,26 @@ struct StatusBanner: View {
     let info: StatusInfo
 
     var body: some View {
-        HStack(spacing: Theme.scaled(8)) {
-            line
-            HStack(spacing: Theme.scaled(5)) {
-                Image(systemName: icon)
-                    .font(.system(size: Theme.scaled(11)))
-                Text(info.text)
-                    .font(.system(size: Theme.fontSmall, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-            }
-            .foregroundStyle(color.opacity(0.6))
-            line
+        HStack(alignment: .top, spacing: Theme.scaled(6)) {
+            Image(systemName: icon)
+                .font(.system(size: Theme.scaled(11)))
+            Text(info.text)
+                .font(.system(size: Theme.fontSmall, weight: .medium))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .foregroundStyle(color.opacity(0.85))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.scaled(12))
+        .padding(.vertical, Theme.scaled(7))
+        .background(color.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
+                .stroke(color.opacity(0.18), lineWidth: 0.5)
+        )
         .padding(.horizontal, Theme.hPadding)
         .padding(.vertical, Theme.scaled(4))
-    }
-
-    private var line: some View {
-        Rectangle()
-            .frame(height: 0.5)
-            .foregroundStyle(color.opacity(0.15))
     }
 
     private var icon: String {
