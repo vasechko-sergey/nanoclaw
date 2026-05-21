@@ -57,7 +57,7 @@ struct ConversationListView: View {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: Theme.fontBody))
-                        .foregroundStyle(Theme.accent.opacity(0.5))
+                        .foregroundStyle(Theme.accentMedium)
                         .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                 }
 
@@ -74,7 +74,7 @@ struct ConversationListView: View {
                 } label: {
                     Image(systemName: "plus.circle")
                         .font(.system(size: Theme.scaled(22)))
-                        .foregroundStyle(Theme.accent.opacity(0.6))
+                        .foregroundStyle(Theme.accent)
                         .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                 }
             }
@@ -85,7 +85,7 @@ struct ConversationListView: View {
             HStack(spacing: Theme.scaled(8)) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: Theme.fontSubhead))
-                    .foregroundStyle(Theme.accent.opacity(0.3))
+                    .foregroundStyle(Theme.accentMedium)
                 TextField("Поиск по диалогам...", text: $searchText)
                     .font(.system(size: Theme.fontSubhead))
                     .foregroundStyle(Theme.textPrimary)
@@ -114,15 +114,15 @@ struct ConversationListView: View {
                                 .fill(Theme.accent.opacity(0.08))
                                 .frame(width: Theme.scaled(32), height: Theme.scaled(32))
                             Circle()
-                                .stroke(Theme.accent.opacity(0.5), lineWidth: 0.5)
+                                .stroke(Theme.accentMedium, lineWidth: 0.5)
                                 .frame(width: Theme.scaled(32), height: Theme.scaled(32))
                             Image(systemName: "plus")
                                 .font(.system(size: Theme.fontChip))
-                                .foregroundStyle(Theme.accent.opacity(0.7))
+                                .foregroundStyle(Theme.accent)
                         }
                         Text("Новый чат")
                             .font(.system(size: Theme.fontSubhead, weight: .medium))
-                            .foregroundStyle(Theme.accent.opacity(0.8))
+                            .foregroundStyle(Theme.accent)
                         Spacer()
                     }
                     .padding(.vertical, Theme.messagePadV)
@@ -150,7 +150,7 @@ struct ConversationListView: View {
                 if filtered.isEmpty && !searchText.isEmpty {
                     Text("Ничего не найдено")
                         .font(.system(size: Theme.fontSubhead))
-                        .foregroundStyle(Theme.textDim)
+                        .foregroundStyle(Theme.textTertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 40)
                         .listRowBackground(Color.clear)
@@ -196,7 +196,7 @@ struct ConversationListView: View {
         Text(title.uppercased())
             .font(.system(size: Theme.fontSmall, weight: .medium))
             .tracking(1)
-            .foregroundStyle(Theme.accent.opacity(0.3))
+            .foregroundStyle(Theme.accentMedium)
             .padding(.horizontal, Theme.hPadding)
             .padding(.top, Theme.scaled(14))
             .padding(.bottom, Theme.scaled(6))
@@ -215,7 +215,7 @@ struct ConversationListView: View {
             HStack(alignment: .top, spacing: Theme.scaled(10)) {
                 // Active indicator
                 Circle()
-                    .fill(isActive ? Theme.accent.opacity(0.5) : Theme.accent.opacity(0.15))
+                    .fill(isActive ? Theme.accentMedium : Theme.accentSubtle.opacity(0.3))
                     .frame(width: Theme.scaled(6), height: Theme.scaled(6))
                     .padding(.top, Theme.scaled(7))
 
@@ -224,7 +224,7 @@ struct ConversationListView: View {
                         if conv.isPinned {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: Theme.scaled(9)))
-                                .foregroundStyle(Theme.accent.opacity(0.4))
+                                .foregroundStyle(Theme.accentMedium)
                         }
                         Text(conv.title)
                             .font(.system(size: Theme.fontSubhead, weight: isActive ? .medium : .regular))
@@ -235,13 +235,13 @@ struct ConversationListView: View {
                     if !conv.preview.isEmpty {
                         Text(conv.preview)
                             .font(.system(size: Theme.fontCaption))
-                            .foregroundStyle(Theme.textPrimary.opacity(0.3))
+                            .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
                     }
 
                     Text(formattedDate(conv.lastMessageAt) + " · \(conv.messageCount) сообщ.")
                         .font(.system(size: Theme.fontSmall))
-                        .foregroundStyle(Theme.accent.opacity(0.35))
+                        .foregroundStyle(Theme.accentMedium)
                 }
 
                 Spacer()

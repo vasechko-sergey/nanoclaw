@@ -1,10 +1,12 @@
 import Foundation
+import UIKit
 
 struct ContextBuilder {
     static func build(
         settings: AppSettings,
         location: LocationManager,
-        health: HealthManager
+        health: HealthManager,
+        calendar: CalendarManager
     ) -> [String: Any]? {
         var ctx: [String: Any] = [:]
 
@@ -29,6 +31,23 @@ struct ContextBuilder {
 
         let emoji = settings.statusEmoji.trimmingCharacters(in: .whitespaces)
         if !emoji.isEmpty { ctx["status"] = emoji }
+
+        // Device state — дешёвый сигнал для context-aware подсказок.
+        var device: [String: Any] = [:]
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let level = UIDevice.current.batteryLevel
+        if level >= 0 { device["battery"] = Int((level * 100).rounded()) }
+        if ProcessInfo.processInfo.isLowPowerModeEnabled { device["lowPower"] = true }
+        let net = ConnectivityMonitor.shared.status
+        if !net.isEmpty { device["network"] = net }
+        if !device.isEmpty { ctx["device"] = device }
+
+        if settings.useCalendar, let ev = calendar.nextEvent {
+            ctx["nextEvent"] = [
+                "title": ev.title,
+                "start": ISO8601DateFormatter().string(from: ev.start),
+            ]
+        }
 
         // Device-side timestamp and timezone so the server renders the correct local time.
         ctx["timestamp"] = ISO8601DateFormatter().string(from: Date())

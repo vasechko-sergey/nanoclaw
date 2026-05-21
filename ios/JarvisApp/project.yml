@@ -23,11 +23,17 @@ targets:
       properties:
         UILaunchScreen: {}
         UIRequiresFullScreen: true
+        UIBackgroundModes:
+          - remote-notification
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"
         NSHealthShareUsageDescription: "Данные активности и сна передаются агенту как контекст"
         NSHealthUpdateUsageDescription: "Данные активности передаются агенту как контекст"
+        NSMicrophoneUsageDescription: "Микрофон нужен для голосового ввода сообщений Jarvis"
+        NSSpeechRecognitionUsageDescription: "Распознавание речи превращает ваш голос в текст сообщения"
+        NSCalendarsUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
+        NSCalendarsFullAccessUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
     entitlements:
       path: JarvisApp.entitlements
       properties:

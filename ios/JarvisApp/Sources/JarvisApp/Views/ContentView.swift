@@ -107,7 +107,7 @@ struct SplashView: View {
                 withAnimation(.easeInOut(duration: 0.4)) {
                     phase = .ready
                     orbBrightness = 1.0
-                    titleOpacity = 0.7
+                    titleOpacity = 1.0
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     onReady()
@@ -130,19 +130,19 @@ struct SplashView: View {
         switch phase {
         case .loading:
             Text("инициализация...")
-                .foregroundStyle(Theme.accent.opacity(0.25))
+                .foregroundStyle(Theme.accentMedium)
         case .connecting:
             Text("подключение...")
-                .foregroundStyle(Theme.accent.opacity(0.35))
+                .foregroundStyle(Theme.accentMedium)
         case .ready:
             Text("системы активны")
-                .foregroundStyle(Theme.online.opacity(0.6))
+                .foregroundStyle(Theme.online.opacity(0.8))
         case .waitingSetup:
             Text("необходима настройка")
-                .foregroundStyle(Theme.accent.opacity(0.3))
+                .foregroundStyle(Theme.accentMedium)
         case .failed:
             Text("ошибка подключения")
-                .foregroundStyle(Theme.offline.opacity(0.7))
+                .foregroundStyle(Theme.offline)
         }
     }
 
@@ -174,7 +174,7 @@ struct SplashView: View {
                 } label: {
                     Text("Продолжить оффлайн")
                         .font(.system(size: Theme.fontSmall))
-                        .foregroundStyle(Theme.accent.opacity(0.5))
+                        .foregroundStyle(Theme.accentMedium)
                 }
                 .frame(minHeight: Theme.minTapSize)
             }
@@ -188,7 +188,7 @@ struct SplashView: View {
             VStack(alignment: .leading, spacing: Theme.scaled(4)) {
                 Text("Сервер")
                     .font(.system(size: Theme.fontCaption))
-                    .foregroundStyle(Theme.accent.opacity(0.4))
+                    .foregroundStyle(Theme.accentMedium)
                 TextField("100.x.x.x:3001", text: $settings.serverURL)
                     .font(.system(size: Theme.fontInput))
                     .foregroundStyle(Theme.textPrimary)
@@ -209,7 +209,7 @@ struct SplashView: View {
             VStack(alignment: .leading, spacing: Theme.scaled(4)) {
                 Text("Токен")
                     .font(.system(size: Theme.fontCaption))
-                    .foregroundStyle(Theme.accent.opacity(0.4))
+                    .foregroundStyle(Theme.accentMedium)
                 SecureField("Bearer token", text: $settings.bearerToken)
                     .font(.system(size: Theme.fontInput))
                     .foregroundStyle(Theme.textPrimary)
@@ -237,7 +237,7 @@ struct SplashView: View {
             } label: {
                 Text("Подключиться")
                     .font(.system(size: Theme.fontSubhead, weight: .medium))
-                    .foregroundStyle(settings.isConfigured ? Theme.background : Theme.accent.opacity(0.3))
+                    .foregroundStyle(settings.isConfigured ? Theme.background : Theme.accentMedium)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.scaled(14))
                     .background(settings.isConfigured ? Theme.accent : Theme.accent.opacity(0.1))
@@ -257,7 +257,7 @@ struct SplashView: View {
 
     private func startAnimation() {
         withAnimation(.easeOut(duration: 0.6)) {
-            titleOpacity = 0.5
+            titleOpacity = 0.7
             statusOpacity = 1
         }
 

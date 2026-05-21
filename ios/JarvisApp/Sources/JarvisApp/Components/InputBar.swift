@@ -8,6 +8,11 @@ struct InputBar: View {
     let onSend: () -> Void
 
     @State private var showAll = false
+    @StateObject private var speech = SpeechManager()
+
+    private var isEmpty: Bool {
+        text.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     private var filteredCommands: [BotCommand] {
         if showAll { return commands }
@@ -32,7 +37,7 @@ struct InputBar: View {
                 } label: {
                     Text("/")
                         .font(.system(size: Theme.scaled(22), weight: .medium, design: .monospaced))
-                        .foregroundStyle(showAll ? Theme.accent : Theme.accent.opacity(0.3))
+                        .foregroundStyle(showAll ? Theme.accent : Theme.accentMedium)
                         .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                 }
                 .accessibilityLabel("Команды")
@@ -62,18 +67,40 @@ struct InputBar: View {
                     .submitLabel(enterToSend ? .send : .return)
                     .accessibilityLabel("Поле ввода сообщения")
 
-                Button(action: {
-                    Theme.hapticSend()
-                    onSend()
-                }) {
-                    Image(systemName: "arrow.up.circle")
-                        .font(.system(size: Theme.scaled(32)))
-                        .foregroundStyle(Theme.accent)
-                        .opacity(text.trimmingCharacters(in: .whitespaces).isEmpty ? 0.2 : 1.0)
+                if speech.isRecording {
+                    Button(action: { speech.stop() }) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: Theme.scaled(32)))
+                            .foregroundStyle(.red)
+                    }
+                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    .accessibilityLabel("Остановить запись")
+                } else if isEmpty && speech.isAvailable {
+                    Button(action: {
+                        Theme.hapticSend()
+                        speech.toggle()
+                    }) {
+                        Image(systemName: "mic.circle")
+                            .font(.system(size: Theme.scaled(32)))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    .disabled(isDisabled)
+                    .accessibilityLabel("Голосовой ввод")
+                } else {
+                    Button(action: {
+                        Theme.hapticSend()
+                        onSend()
+                    }) {
+                        Image(systemName: "arrow.up.circle")
+                            .font(.system(size: Theme.scaled(32)))
+                            .foregroundStyle(Theme.accent)
+                            .opacity(isEmpty ? 0.2 : 1.0)
+                    }
+                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    .disabled(isEmpty || isDisabled)
+                    .accessibilityLabel("Отправить")
                 }
-                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || isDisabled)
-                .accessibilityLabel("Отправить")
             }
             .padding(.horizontal, Theme.scaled(8))
             .padding(.vertical, Theme.scaled(8))
@@ -82,6 +109,10 @@ struct InputBar: View {
             .allowsHitTesting(!isDisabled)
         }
         .animation(.easeInOut(duration: 0.15), value: filteredCommands.isEmpty)
+        .animation(.easeInOut(duration: 0.15), value: speech.isRecording)
+        .onAppear {
+            speech.onTranscript = { transcript in text = transcript }
+        }
     }
 }
 

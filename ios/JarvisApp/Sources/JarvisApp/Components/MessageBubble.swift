@@ -138,7 +138,7 @@ struct MessageBubble: View {
             if !isUser && feedback != .none {
                 Image(systemName: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
                     .font(.system(size: Theme.scaled(9)))
-                    .foregroundStyle(feedback == .positive ? Theme.accent.opacity(0.5) : Theme.offline.opacity(0.5))
+                    .foregroundStyle(feedback == .positive ? Theme.accentMedium : Theme.offline.opacity(0.5))
             }
         }
     }
@@ -174,7 +174,7 @@ struct FileBubble: View {
             HStack(spacing: Theme.scaled(10)) {
                 Image(systemName: iconForMime(info.mimeType))
                     .font(.system(size: Theme.scaled(24)))
-                    .foregroundStyle(Theme.accent.opacity(0.6))
+                    .foregroundStyle(Theme.accent)
                     .frame(width: Theme.scaled(36))
 
                 VStack(alignment: .leading, spacing: Theme.scaled(2)) {
@@ -184,7 +184,7 @@ struct FileBubble: View {
                         .lineLimit(1)
                     Text(formattedSize(info.size))
                         .font(.system(size: Theme.fontSmall))
-                        .foregroundStyle(Theme.textDim)
+                        .foregroundStyle(Theme.textTertiary)
                 }
 
                 Spacer()

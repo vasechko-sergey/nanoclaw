@@ -59,11 +59,18 @@ function getApnsJwt(cfg: ApnsConfig): string {
   return apnsJwt.token;
 }
 
-async function sendApnsPush(deviceToken: string, text: string, apns: ApnsConfig | null): Promise<void> {
+async function sendApnsPush(
+  deviceToken: string,
+  text: string,
+  apns: ApnsConfig | null,
+  conversationId?: string,
+): Promise<void> {
   if (!apns) return;
   const jwt = getApnsJwt(apns);
   const host = apns.sandbox ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
-  const body = JSON.stringify({ aps: { alert: { body: text }, sound: 'default' } });
+  const payload: Record<string, unknown> = { aps: { alert: { body: text }, sound: 'default' } };
+  if (conversationId) payload.conversationId = conversationId;
+  const body = JSON.stringify(payload);
 
   await new Promise<void>((resolve, reject) => {
     const client = http2.connect(`https://${host}`);
@@ -191,7 +198,7 @@ function createIOSAdapter(): ChannelAdapter | null {
       const apnsToken = apnsTokens.get(platformId);
       if (apnsToken) {
         const preview = text ? text.slice(0, 80) : (files[0]?.filename ?? 'Новое сообщение');
-        sendApnsPush(apnsToken, preview, apnsCfg).catch(() => {});
+        sendApnsPush(apnsToken, preview, apnsCfg, queued.conversationId).catch(() => {});
       }
     }
     return id;
@@ -459,6 +466,27 @@ function buildCtx(ctx: Record<string, unknown>): string {
     if (h.restingHeartRate) p.push(`RHR: ${h.restingHeartRate} bpm`);
     if (h.exerciseMinutes) p.push(`Exercise: ${h.exerciseMinutes} min`);
     if (p.length) lines.push(`🏃 ${p.join(' | ')}`);
+  }
+  if (ctx.device) {
+    const d = ctx.device as Record<string, unknown>;
+    const p: string[] = [];
+    if (d.battery !== undefined) p.push(`Battery: ${d.battery}%`);
+    if (d.lowPower) p.push('Low Power');
+    if (d.network) p.push(`Net: ${d.network}`);
+    if (p.length) lines.push(`📱 ${p.join(' | ')}`);
+  }
+  if (ctx.nextEvent) {
+    const e = ctx.nextEvent as Record<string, unknown>;
+    if (e.title && e.start) {
+      const when = new Date(e.start as string).toLocaleString('ru-RU', {
+        timeZone: (ctx.timezone as string | undefined) ?? 'Europe/Moscow',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: 'numeric',
+        month: 'short',
+      });
+      lines.push(`📅 ${e.title} — ${when}`);
+    }
   }
   if (!lines.length && !ctx.status) return '';
 

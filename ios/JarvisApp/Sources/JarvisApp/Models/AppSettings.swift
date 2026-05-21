@@ -6,8 +6,11 @@ final class AppSettings: ObservableObject {
     @AppStorage("agentName")     var agentName    = "Jarvis"
     @AppStorage("useLocation")   var useLocation  = false
     @AppStorage("useHealth")     var useHealth    = false
+    @AppStorage("useCalendar")   var useCalendar  = false
     @AppStorage("statusEmoji")   var statusEmoji  = ""
     @AppStorage("enterToSend")   var enterToSend  = true
+    @AppStorage("autoSpeak")     var autoSpeak    = false
+    @AppStorage("voiceId")       var voiceId      = ""
 
     var platformId: String {
         if let v = UserDefaults.standard.string(forKey: "platformId") { return v }

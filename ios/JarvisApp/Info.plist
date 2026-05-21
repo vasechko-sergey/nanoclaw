@@ -23,12 +23,24 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Ближайшее событие календаря передаётся агенту как контекст</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Ближайшее событие календаря передаётся агенту как контекст</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Данные активности и сна передаются агенту как контекст</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Данные активности передаются агенту как контекст</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Геолокация передаётся агенту как контекст</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Микрофон нужен для голосового ввода сообщений Jarvis</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Распознавание речи превращает ваш голос в текст сообщения</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiresFullScreen</key>

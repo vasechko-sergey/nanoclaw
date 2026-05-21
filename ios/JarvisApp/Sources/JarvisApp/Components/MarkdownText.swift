@@ -38,7 +38,7 @@ struct MarkdownText: View {
                             HStack(alignment: .top, spacing: Theme.scaled(6)) {
                                 Text("•")
                                     .font(.system(size: fontSize))
-                                    .foregroundStyle(Theme.accent.opacity(0.6))
+                                    .foregroundStyle(Theme.accent)
                                     .frame(minWidth: Theme.scaled(10))
                                 inlineMarkdown(item)
                             }
@@ -50,7 +50,7 @@ struct MarkdownText: View {
                             HStack(alignment: .top, spacing: Theme.scaled(6)) {
                                 Text("\(i + 1).")
                                     .font(.system(size: fontSize))
-                                    .foregroundStyle(Theme.accent.opacity(0.6))
+                                    .foregroundStyle(Theme.accent)
                                     .frame(minWidth: Theme.scaled(18), alignment: .trailing)
                                 inlineMarkdown(item)
                             }
@@ -60,7 +60,7 @@ struct MarkdownText: View {
                     HStack(alignment: .top, spacing: Theme.scaled(10)) {
                         Rectangle()
                             .frame(width: 2)
-                            .foregroundStyle(Theme.accent.opacity(0.4))
+                            .foregroundStyle(Theme.accentMedium)
                             .cornerRadius(1)
                         inlineMarkdown(content)
                             .foregroundStyle(Theme.textPrimary.opacity(0.7))
@@ -315,7 +315,7 @@ private struct CodeBlockView: View {
                 if let language, !language.isEmpty {
                     Text(language)
                         .font(.system(size: Theme.fontSmall, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Theme.accent.opacity(0.5))
+                        .foregroundStyle(Theme.accentMedium)
                 }
                 Spacer()
                 Button {
@@ -332,7 +332,7 @@ private struct CodeBlockView: View {
                         Text(copied ? "Скопировано" : "Копировать")
                             .font(.system(size: Theme.scaled(11)))
                     }
-                    .foregroundStyle(copied ? Theme.online : Theme.accent.opacity(0.6))
+                    .foregroundStyle(copied ? Theme.online : Theme.accent)
                     .padding(.horizontal, Theme.scaled(8))
                     .padding(.vertical, Theme.scaled(4))
                     .background(Theme.accent.opacity(0.08))

@@ -16,7 +16,7 @@ struct EmojiPickerView: View {
         VStack(spacing: Theme.scaled(8)) {
             Text("Статус")
                 .font(.system(size: Theme.fontCaption, weight: .medium))
-                .foregroundStyle(Theme.accent.opacity(0.4))
+                .foregroundStyle(Theme.accentMedium)
                 .padding(.top, Theme.scaled(4))
 
             LazyVGrid(columns: columns, spacing: Theme.scaled(4)) {
@@ -49,7 +49,7 @@ struct EmojiPickerView: View {
                 } label: {
                     Text("Убрать статус")
                         .font(.system(size: Theme.fontCaption))
-                        .foregroundStyle(Theme.accent.opacity(0.4))
+                        .foregroundStyle(Theme.accentMedium)
                 }
                 .frame(minHeight: Theme.minTapSize)
             }

@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 struct SettingsView: View {
@@ -20,7 +21,7 @@ struct SettingsView: View {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: Theme.fontBody))
-                            .foregroundStyle(Theme.accent.opacity(0.5))
+                            .foregroundStyle(Theme.accentMedium)
                             .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                     }
                     Spacer()
@@ -48,7 +49,7 @@ struct SettingsView: View {
                                 .foregroundStyle(Theme.textPrimary.opacity(0.8))
                             Text("Укажи параметры подключения")
                                 .font(.system(size: Theme.fontCaption))
-                                .foregroundStyle(Theme.accent.opacity(0.4))
+                                .foregroundStyle(Theme.accentMedium)
                         }
                         .padding(.top, Theme.scaled(24))
                         .padding(.bottom, Theme.scaled(4))
@@ -92,6 +93,39 @@ struct SettingsView: View {
                         settingsToggle(icon: "location", label: "Геолокация", isOn: $settings.useLocation)
                         settingsDivider()
                         settingsToggle(icon: "heart", label: "Здоровье", isOn: $settings.useHealth)
+                        settingsDivider()
+                        settingsToggle(icon: "calendar", label: "Календарь", isOn: $settings.useCalendar)
+                    }
+
+                    // Voice section
+                    if !isInitialSetup {
+                        settingsSection(title: "Голос") {
+                            settingsToggle(icon: "speaker.wave.2", label: "Озвучивать ответы", isOn: $settings.autoSpeak)
+                            let voices = SpeechSynthesizer.russianVoices()
+                            if !voices.isEmpty {
+                                settingsDivider()
+                                settingsField(icon: "waveform", label: "Голос") {
+                                    Menu {
+                                        ForEach(voices, id: \.identifier) { v in
+                                            Button {
+                                                settings.voiceId = v.identifier
+                                            } label: {
+                                                if settings.voiceId == v.identifier {
+                                                    Label(voiceLabel(v), systemImage: "checkmark")
+                                                } else {
+                                                    Text(voiceLabel(v))
+                                                }
+                                            }
+                                        }
+                                    } label: {
+                                        Text(currentVoiceName(voices))
+                                            .font(.system(size: Theme.fontSubhead))
+                                            .foregroundStyle(Theme.accent)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Input section
@@ -111,7 +145,7 @@ struct SettingsView: View {
                                         .foregroundStyle(Theme.textSecondary)
                                     Text(settings.platformId)
                                         .font(.system(size: Theme.fontSmall, design: .monospaced))
-                                        .foregroundStyle(Theme.accent.opacity(0.4))
+                                        .foregroundStyle(Theme.accentMedium)
                                         .lineLimit(1)
                                 }
                                 Spacer()
@@ -120,7 +154,7 @@ struct SettingsView: View {
                                 } label: {
                                     Image(systemName: "doc.on.doc")
                                         .font(.system(size: Theme.fontCaption))
-                                        .foregroundStyle(Theme.accent.opacity(0.5))
+                                        .foregroundStyle(Theme.accentMedium)
                                         .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                                 }
                             }
@@ -138,12 +172,12 @@ struct SettingsView: View {
                                         .foregroundStyle(Theme.textPrimary.opacity(0.7))
                                     Text("Версия \(appVersion) (\(buildNumber))")
                                         .font(.system(size: Theme.fontSmall))
-                                        .foregroundStyle(Theme.accent.opacity(0.3))
+                                        .foregroundStyle(Theme.accentMedium)
                                 }
                                 Spacer()
                                 Image(systemName: "info.circle")
                                     .font(.system(size: Theme.fontCaption))
-                                    .foregroundStyle(Theme.accent.opacity(0.3))
+                                    .foregroundStyle(Theme.accentMedium)
                             }
                             .padding(.horizontal, Theme.hPadding)
                             .padding(.vertical, Theme.scaled(12))
@@ -167,7 +201,7 @@ struct SettingsView: View {
             Text(title.uppercased())
                 .font(.system(size: Theme.fontSmall, weight: .medium))
                 .tracking(1)
-                .foregroundStyle(Theme.accent.opacity(0.3))
+                .foregroundStyle(Theme.accentMedium)
                 .padding(.bottom, Theme.scaled(8))
                 .padding(.leading, Theme.scaled(4))
 
@@ -187,7 +221,7 @@ struct SettingsView: View {
         HStack(spacing: Theme.scaled(10)) {
             Image(systemName: icon)
                 .font(.system(size: Theme.fontCaption))
-                .foregroundStyle(Theme.accent.opacity(0.4))
+                .foregroundStyle(Theme.accentMedium)
                 .frame(width: Theme.scaled(20))
             Text(label)
                 .font(.system(size: Theme.fontSubhead))
@@ -203,7 +237,7 @@ struct SettingsView: View {
         HStack(spacing: Theme.scaled(10)) {
             Image(systemName: icon)
                 .font(.system(size: Theme.fontCaption))
-                .foregroundStyle(Theme.accent.opacity(0.4))
+                .foregroundStyle(Theme.accentMedium)
                 .frame(width: Theme.scaled(20))
             Text(label)
                 .font(.system(size: Theme.fontSubhead))
@@ -215,6 +249,23 @@ struct SettingsView: View {
         }
         .padding(.horizontal, Theme.hPadding)
         .frame(minHeight: Theme.minTapSize)
+    }
+
+    private func voiceLabel(_ v: AVSpeechSynthesisVoice) -> String {
+        let quality: String
+        switch v.quality {
+        case .premium:  quality = "Premium"
+        case .enhanced: quality = "Enhanced"
+        default:        quality = "Compact"
+        }
+        return "\(v.name) · \(quality)"
+    }
+
+    private func currentVoiceName(_ voices: [AVSpeechSynthesisVoice]) -> String {
+        if let v = voices.first(where: { $0.identifier == settings.voiceId }) {
+            return voiceLabel(v)
+        }
+        return voices.first.map(voiceLabel) ?? "По умолчанию"
     }
 
     private func settingsDivider() -> some View {

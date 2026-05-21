@@ -14,7 +14,7 @@ struct ArchivedChatView: View {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: Theme.fontBody))
-                        .foregroundStyle(Theme.accent.opacity(0.5))
+                        .foregroundStyle(Theme.accentMedium)
                         .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                 }
 
@@ -27,7 +27,7 @@ struct ArchivedChatView: View {
                         .lineLimit(1)
                     Text(formattedDate(conversation.createdAt))
                         .font(.system(size: Theme.fontSmall))
-                        .foregroundStyle(Theme.accent.opacity(0.25))
+                        .foregroundStyle(Theme.accentMedium)
                 }
 
                 Spacer()
@@ -66,7 +66,7 @@ struct ArchivedChatView: View {
                     Text("Архивный диалог")
                         .font(.system(size: Theme.fontCaption))
                 }
-                .foregroundStyle(Theme.accent.opacity(0.3))
+                .foregroundStyle(Theme.accentMedium)
 
                 Button {
                     onNewChatAboutTopic()
@@ -77,14 +77,14 @@ struct ArchivedChatView: View {
                         Text("Новый чат на эту тему")
                             .font(.system(size: Theme.fontSubhead))
                     }
-                    .foregroundStyle(Theme.accent.opacity(0.6))
+                    .foregroundStyle(Theme.accent)
                     .padding(.horizontal, Theme.hPadding)
                     .padding(.vertical, Theme.scaled(12))
                     .background(Theme.accent.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.chipRadius))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.chipRadius)
-                            .stroke(Theme.accent.opacity(0.15), lineWidth: 0.5)
+                            .stroke(Theme.accentSubtle.opacity(0.3), lineWidth: 0.5)
                     )
                 }
                 .frame(minHeight: Theme.minTapSize)

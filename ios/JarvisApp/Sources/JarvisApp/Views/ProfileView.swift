@@ -7,6 +7,7 @@ struct ProfileView: View {
     var onReconnect: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @State private var showEmojiPicker = false
 
     private var totalMessages: Int {
         store.conversations.reduce(0) { $0 + $1.messageCount }
@@ -29,7 +30,7 @@ struct ProfileView: View {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: Theme.fontBody))
-                        .foregroundStyle(Theme.accent.opacity(0.5))
+                        .foregroundStyle(Theme.accentMedium)
                         .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                 }
                 Spacer()
@@ -89,14 +90,24 @@ struct ProfileView: View {
                             .frame(minHeight: Theme.minTapSize)
                         }
 
-                        // Emoji status
-                        if !settings.statusEmoji.isEmpty {
-                            Text(settings.statusEmoji)
+                        // Emoji status (tap to change)
+                        Button { showEmojiPicker.toggle() } label: {
+                            Text(settings.statusEmoji.isEmpty ? "🙂" : settings.statusEmoji)
                                 .font(.system(size: Theme.scaled(28)))
+                                .opacity(settings.statusEmoji.isEmpty ? 0.35 : 1)
                                 .padding(Theme.scaled(8))
                                 .background(Theme.accent.opacity(0.06))
                                 .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(Theme.accentSubtle.opacity(0.3), lineWidth: 0.5)
+                                )
                         }
+                        .popover(isPresented: $showEmojiPicker) {
+                            EmojiPickerView(selected: $settings.statusEmoji)
+                                .presentationCompactAdaptation(.popover)
+                        }
+                        .accessibilityLabel("Статус-эмодзи")
                     }
                     .padding(.top, Theme.scaled(20))
 
@@ -125,7 +136,7 @@ struct ProfileView: View {
                         Text("ПОДКЛЮЧЕНИЕ")
                             .font(.system(size: Theme.fontSmall, weight: .medium))
                             .tracking(1)
-                            .foregroundStyle(Theme.accent.opacity(0.3))
+                            .foregroundStyle(Theme.accentMedium)
                             .padding(.bottom, Theme.scaled(8))
                             .padding(.leading, Theme.scaled(4))
 
@@ -161,7 +172,7 @@ struct ProfileView: View {
         VStack(spacing: Theme.scaled(6)) {
             Image(systemName: icon)
                 .font(.system(size: Theme.fontCaption))
-                .foregroundStyle(Theme.accent.opacity(0.4))
+                .foregroundStyle(Theme.accentMedium)
 
             Text(value)
                 .font(.system(size: Theme.fontBody, weight: .semibold, design: .rounded))
@@ -171,7 +182,7 @@ struct ProfileView: View {
 
             Text(label)
                 .font(.system(size: Theme.fontSmall))
-                .foregroundStyle(Theme.accent.opacity(0.3))
+                .foregroundStyle(Theme.accentMedium)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.scaled(14))
@@ -187,7 +198,7 @@ struct ProfileView: View {
         HStack(spacing: Theme.scaled(10)) {
             Image(systemName: icon)
                 .font(.system(size: Theme.fontCaption))
-                .foregroundStyle(Theme.accent.opacity(0.4))
+                .foregroundStyle(Theme.accentMedium)
                 .frame(width: Theme.scaled(20))
             Text(label)
                 .font(.system(size: Theme.fontSubhead))
@@ -195,7 +206,7 @@ struct ProfileView: View {
             Spacer()
             Text(value)
                 .font(.system(size: Theme.fontCaption, design: .monospaced))
-                .foregroundStyle(Theme.accent.opacity(0.4))
+                .foregroundStyle(Theme.accentMedium)
                 .lineLimit(1)
         }
         .padding(.horizontal, Theme.hPadding)

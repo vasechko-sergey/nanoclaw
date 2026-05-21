@@ -44,10 +44,13 @@ struct ConnectionBanner: View {
     }
 
     private func banner(icon: String, text: String, color: Color, showButton: Bool) -> some View {
-        HStack(spacing: Theme.scaled(8)) {
+        HStack(spacing: Theme.scaled(6)) {
+            // Match InputBar: same horizontal padding (scaled(8)) + icon in 44pt frame
             Image(systemName: icon)
                 .font(.system(size: Theme.scaled(14)))
                 .foregroundStyle(color)
+                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+
             Text(text)
                 .font(.system(size: Theme.fontSmall, weight: .medium))
                 .foregroundStyle(Theme.textPrimary.opacity(0.8))
@@ -68,8 +71,7 @@ struct ConnectionBanner: View {
                 .frame(minHeight: Theme.minTapSize)
             }
         }
-        .padding(.horizontal, Theme.hPadding)
-        .padding(.vertical, Theme.scaled(6))
+        .padding(.horizontal, Theme.scaled(8))
         .background(Theme.surface)
         .overlay(alignment: .bottom) {
             Rectangle()

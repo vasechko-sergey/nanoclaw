@@ -16,8 +16,13 @@ enum Theme {
     static let surface       = Color(red: 0.067, green: 0.098, blue: 0.133) // #111922
     static let surfaceBorder = Color.white.opacity(0.08)
 
-    // MARK: – Accent
-    static let accent = Color(red: 0.33, green: 0.74, blue: 0.77)           // #54BEC4
+    // MARK: – Accent palette (WCAG AA verified)
+    /// Primary interactive — buttons, links, active states. 8.7:1 on bg.
+    static let accent       = Color(red: 0.33, green: 0.74, blue: 0.77)     // #54BEC4
+    /// Icons, timestamps, section headers, secondary interactive. 5.3:1 on bg, 4.8:1 on surface.
+    static let accentMedium = Color(red: 0.258, green: 0.569, blue: 0.598)  // #429199
+    /// Decorative only — large text labels, borders. 3.8:1 on bg (large text OK).
+    static let accentSubtle = Color(red: 0.214, green: 0.466, blue: 0.494)  // #37777E
 
     // MARK: – Bubbles
     static let assistantBubble       = Color(red: 0.067, green: 0.098, blue: 0.133)
@@ -27,13 +32,15 @@ enum Theme {
 
     // MARK: – Status
     static let online  = Color(red: 0.29, green: 0.87, blue: 0.50)  // #4ADE80
-    static let offline = Color.red.opacity(0.7)
+    static let offline = Color(red: 0.95, green: 0.26, blue: 0.21)  // #F24236, 5.0:1 on bg
 
-    // MARK: – Text
-    static let textPrimary   = Color.white
-    static let textSecondary = Color.white.opacity(0.7)
-    static let textDim       = Color.white.opacity(0.35)
-    static let timestamp     = Color(red: 0.33, green: 0.74, blue: 0.77).opacity(0.45)
+    // MARK: – Text (WCAG AA verified)
+    static let textPrimary   = Color.white                                    // 19.3:1 on bg
+    static let textSecondary = Color.white.opacity(0.7)                       //  9.2:1 on bg
+    /// Replaces old textDim. Previews, captions, muted content. 6.2:1 on bg, 5.7:1 on surface.
+    static let textTertiary  = Color(red: 0.568, green: 0.575, blue: 0.586)  // #919397
+    /// Timestamps — accent-tinted, guaranteed 5.3:1. Alias for accentMedium.
+    static let timestamp     = accentMedium
 
     // MARK: – Font sizes (adaptive)
     static var fontBody:      CGFloat { max(scaled(16), 15) }     // message text

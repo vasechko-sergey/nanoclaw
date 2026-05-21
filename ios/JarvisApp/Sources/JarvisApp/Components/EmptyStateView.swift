@@ -15,7 +15,7 @@ struct EmptyStateView: View {
 
             Text("Чем могу помочь?")
                 .font(.system(size: Theme.fontSubhead, weight: .regular))
-                .foregroundStyle(Theme.accent.opacity(0.35))
+                .foregroundStyle(Theme.accentMedium)
                 .padding(.top, Theme.scaled(20))
 
             // Suggestion chips — wrap on small screens via ViewThatFits
@@ -54,12 +54,12 @@ struct EmptyStateView: View {
         } label: {
             Text(text)
                 .font(.system(size: Theme.fontChip))
-                .foregroundStyle(Theme.accent.opacity(0.5))
+                .foregroundStyle(Theme.accentMedium)
                 .padding(.horizontal, Theme.scaled(16))
                 .padding(.vertical, Theme.scaled(10))
                 .background(
                     RoundedRectangle(cornerRadius: Theme.chipRadius)
-                        .stroke(Theme.accent.opacity(0.15), lineWidth: 0.5)
+                        .stroke(Theme.accentSubtle.opacity(0.3), lineWidth: 0.5)
                 )
         }
         .frame(minHeight: Theme.minTapSize)

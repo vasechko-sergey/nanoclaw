@@ -13,7 +13,7 @@ struct FullScreenImageView: View {
             Button { dismiss() } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: Theme.scaled(32)))
-                    .foregroundStyle(Theme.accent.opacity(0.7))
+                    .foregroundStyle(Theme.accent)
                     .shadow(color: .black.opacity(0.5), radius: 4)
                     .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                     .padding(Theme.hPadding)

@@ -1,8 +1,20 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
-class AppDelegate: NSObject, UIApplicationDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     static weak var wsClient: WebSocketClient?
+    /// Set by AppCoordinator — opens the conversation a proactive push refers to.
+    static var onOpenConversation: ((String) -> Void)?
+
+    func application(
+        _ app: UIApplication,
+        didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        return true
+    }
 
     func application(
         _ app: UIApplication,
@@ -17,6 +29,27 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         print("APNs registration failed: \(error)")
+    }
+
+    // Show proactive pushes even while the app is foregrounded.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    // Tap on a proactive push → deep-link into the referenced conversation.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        if let cid = response.notification.request.content.userInfo["conversationId"] as? String {
+            AppDelegate.onOpenConversation?(cid)
+        }
+        completionHandler()
     }
 }
 

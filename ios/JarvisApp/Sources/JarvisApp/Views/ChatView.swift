@@ -19,7 +19,6 @@ struct ChatView: View {
 
     @State private var inputText       = ""
     @State private var showSettings    = false
-    @State private var showEmojiPicker = false
     @State private var showConversations = false
     @State private var showProfile     = false
     @State private var fullScreenImage: UIImage? = nil
@@ -252,9 +251,9 @@ struct ChatView: View {
                     Text("J A R V I S")
                         .font(.system(size: Theme.fontTitle, weight: .light))
                         .tracking(Theme.titleTracking)
-                        .foregroundStyle(Theme.accent.opacity(0.5))
+                        .foregroundStyle(Theme.accentMedium)
                     RoundedRectangle(cornerRadius: 0.5)
-                        .fill(Theme.accent.opacity(0.12))
+                        .fill(Theme.accentSubtle.opacity(0.2))
                         .frame(width: Theme.minTapSize, height: 1)
                 }
                 .frame(minHeight: Theme.minTapSize)
@@ -263,27 +262,13 @@ struct ChatView: View {
 
             Spacer()
 
-            HStack(spacing: 2) {
-                Button { showEmojiPicker.toggle() } label: {
-                    Text(settings.statusEmoji.isEmpty ? "🙂" : settings.statusEmoji)
-                        .font(.system(size: Theme.scaled(22)))
-                        .opacity(settings.statusEmoji.isEmpty ? 0.3 : 1)
-                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                }
-                .popover(isPresented: $showEmojiPicker) {
-                    EmojiPickerView(selected: $settings.statusEmoji)
-                        .presentationCompactAdaptation(.popover)
-                }
-                .accessibilityLabel("Статус-эмодзи")
-
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: Theme.scaled(18)))
-                        .foregroundStyle(Theme.accent.opacity(0.35))
-                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                }
-                .accessibilityLabel("Настройки")
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: Theme.scaled(18)))
+                    .foregroundStyle(Theme.accentMedium)
+                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             }
+            .accessibilityLabel("Настройки")
         }
         .padding(.horizontal, Theme.scaled(8))
         .frame(minHeight: Theme.headerHeight)
@@ -298,33 +283,36 @@ struct ChatView: View {
     // MARK: – Scroll-to-bottom FAB
 
     private var scrollToBottomFAB: some View {
-        HStack(spacing: Theme.scaled(4)) {
-            Image(systemName: "chevron.down")
-                .font(.system(size: Theme.scaled(12), weight: .semibold))
+        ZStack {
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: Theme.scaled(32)))
+                .foregroundStyle(Theme.accent)
+                .background(
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: Theme.scaled(30), height: Theme.scaled(30))
+                )
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+
             if unreadCount > 0 {
                 Text("\(unreadCount)")
-                    .font(.system(size: Theme.scaled(11), weight: .bold))
+                    .font(.system(size: Theme.scaled(10), weight: .bold))
+                    .foregroundStyle(Theme.background)
+                    .padding(.horizontal, Theme.scaled(5))
+                    .padding(.vertical, Theme.scaled(1))
+                    .background(Theme.accent)
+                    .clipShape(Capsule())
+                    .offset(x: Theme.scaled(12), y: -Theme.scaled(12))
             }
         }
-        .foregroundStyle(Theme.accent)
-        .padding(.horizontal, Theme.scaled(10))
-        .padding(.vertical, Theme.scaled(6))
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Theme.accent.opacity(0.2), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
-        // Invisible expanded tap area (44pt min)
-        .padding(Theme.scaled(8))
-        .contentShape(Capsule())
+        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+        .contentShape(Circle())
         .onTapGesture {
             scrollToBottomAction?()
             unreadCount = 0
         }
-        .padding(.trailing, Theme.scaled(4))
-        .padding(.bottom, Theme.scaled(4))
+        .padding(.trailing, Theme.scaled(8))
+        .padding(.bottom, Theme.scaled(8))
         .accessibilityLabel(unreadCount > 0 ? "Вниз, \(unreadCount) новых" : "Прокрутить вниз")
     }
 
@@ -348,7 +336,7 @@ private struct DateSeparator: View {
             Spacer()
             Text(formatted)
                 .font(.system(size: Theme.fontSmall, weight: .medium))
-                .foregroundStyle(Theme.accent.opacity(0.5))
+                .foregroundStyle(Theme.accentMedium)
                 .padding(.horizontal, Theme.scaled(12))
                 .padding(.vertical, Theme.scaled(4))
                 .background(Theme.accent.opacity(0.06))

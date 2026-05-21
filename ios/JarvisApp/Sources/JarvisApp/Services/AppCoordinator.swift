@@ -11,6 +11,8 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var store: ConversationStore
     @Published private(set) var location: LocationManager
     @Published private(set) var health: HealthManager
+    @Published private(set) var calendar: CalendarManager
+    @Published private(set) var speech: SpeechSynthesizer
 
     // MARK: – Connection state
     @Published var connectionPhase: ConnectionPhase = .idle
@@ -36,8 +38,14 @@ final class AppCoordinator: ObservableObject {
         self.store = ConversationStore()
         self.location = LocationManager()
         self.health = HealthManager()
+        self.calendar = CalendarManager()
+        self.speech = SpeechSynthesizer()
 
         wireUp()
+
+        AppDelegate.onOpenConversation = { [weak self] id in
+            self?.openConversation(id: id)
+        }
     }
 
     /// Replace settings reference (needed because ContentView gets @EnvironmentObject after init).
@@ -54,6 +62,7 @@ final class AppCoordinator: ObservableObject {
         ws.connect(settings: settings)
         if settings.useLocation { location.requestAndUpdate() }
         if settings.useHealth   { health.requestAndFetch()    }
+        if settings.useCalendar { calendar.requestAndFetch()  }
     }
 
     func disconnect() {
@@ -64,7 +73,7 @@ final class AppCoordinator: ObservableObject {
     // MARK: – Chat actions
 
     func sendMessage(_ text: String) {
-        let ctx = ContextBuilder.build(settings: settings, location: location, health: health)
+        let ctx = ContextBuilder.build(settings: settings, location: location, health: health, calendar: calendar)
         ws.send(text: text, context: ctx)
     }
 
@@ -105,6 +114,14 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// Open a conversation by id (used by proactive-push deep-link).
+    func openConversation(id: String) {
+        guard let uuid = UUID(uuidString: id) else { return }
+        store.activeConversationId = uuid
+        ws.conversationId = uuid
+        ws.loadMessages(from: store)
+    }
+
     // MARK: – Wiring
 
     private func wireUp() {
@@ -132,6 +149,12 @@ final class AppCoordinator: ObservableObject {
         // Forward haptic callback when a message arrives from assistant
         ws.onAssistantMessage = { [weak self] in
             self?.onMessageReceived?()
+        }
+
+        // Auto-speak assistant text in the active conversation when enabled
+        ws.onSpeakableText = { [weak self] text in
+            guard let self, self.settings.autoSpeak else { return }
+            self.speech.speak(text, voiceId: self.settings.voiceId)
         }
 
         // Persist messages that arrive for a non-active conversation

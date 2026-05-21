@@ -31,6 +31,9 @@ final class WebSocketClient: ObservableObject {
     /// Callback when a message arrives for a non-active conversation.
     var onBackgroundMessage: ((UUID, ChatMessage) -> Void)?
 
+    /// Callback with assistant text shown in the active conversation (for TTS auto-speak).
+    var onSpeakableText: ((String) -> Void)?
+
     /// Callback when user taps an action button — coordinator handles sending.
     var onActionResponse: ((String, String, String) -> Void)?  // (messageId, buttonId, buttonLabel)
 
@@ -288,6 +291,9 @@ final class WebSocketClient: ObservableObject {
             isTyping = false
             messages.append(message)
             onMessagesChanged?(messages)
+            if message.role == .assistant, case .text(let t) = message.content {
+                onSpeakableText?(t)
+            }
         } else {
             onBackgroundMessage?(convId!, message)
         }
