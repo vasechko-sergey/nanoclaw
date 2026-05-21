@@ -276,7 +276,8 @@ final class WebSocketClient: ObservableObject {
                 let text = obj["text"] as? String {
             let id = obj["id"] as? String ?? UUID().uuidString
             let level = StatusInfo.Level(rawValue: obj["level"] as? String ?? "info") ?? .info
-            route(.status(id, text: text, level: level, timestamp: Date()), convId: convId)
+            let kind = obj["kind"] as? String
+            route(.status(id, text: text, level: level, kind: kind, timestamp: Date()), convId: convId)
         }
     }
 

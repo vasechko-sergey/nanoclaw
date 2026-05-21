@@ -417,6 +417,26 @@ function createIOSAdapter(): ChannelAdapter | null {
         return c.questionId as string;
       }
 
+      // Status banner (renders as ──── icon text ──── divider on iOS)
+      if (contentType === 'status') {
+        const payload = JSON.stringify({
+          type: 'status',
+          id: randomUUID(),
+          text: (c.text ?? '') as string,
+          level: (c.level ?? 'info') as string,
+          kind: (c.kind ?? 'system') as string,
+          conversationId: threadId ?? undefined,
+          timestamp: new Date().toISOString(),
+        });
+        const set = wsClients.get(platformId);
+        if (set && set.size > 0) {
+          set.forEach((ws) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+          });
+        }
+        return randomUUID();
+      }
+
       if (!text && files.length === 0) return undefined;
       return deliverTextAndFiles(platformId, threadId, text, files);
     },

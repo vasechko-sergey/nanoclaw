@@ -84,6 +84,7 @@ export type ProviderEvent =
   | { type: 'result'; text: string | null }
   | { type: 'error'; message: string; retryable: boolean; classification?: string }
   | { type: 'progress'; message: string }
+  | { type: 'status_msg'; text: string; level: 'info' | 'warning' | 'error'; kind?: string }
   /**
    * Liveness signal. Providers MUST yield this on every underlying SDK
    * event (tool call, thinking, partial message, anything) so the

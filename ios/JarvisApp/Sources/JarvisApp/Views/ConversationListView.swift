@@ -102,51 +102,63 @@ struct ConversationListView: View {
             .padding(.horizontal, Theme.hPadding)
             .padding(.bottom, Theme.scaled(12))
 
-            // List
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    // New chat button (prominent)
-                    Button {
-                        onAction(.newChat)
-                    } label: {
-                        HStack(spacing: Theme.scaled(10)) {
-                            ZStack {
-                                Circle()
-                                    .stroke(Theme.accent.opacity(0.3), lineWidth: 0.5)
-                                    .frame(width: Theme.scaled(32), height: Theme.scaled(32))
-                                Image(systemName: "plus")
-                                    .font(.system(size: Theme.fontChip))
-                                    .foregroundStyle(Theme.accent.opacity(0.6))
-                            }
-                            Text("Новый чат")
-                                .font(.system(size: Theme.fontSubhead, weight: .medium))
+            // List (List required for swipeActions to work)
+            List {
+                // New chat button
+                Button {
+                    onAction(.newChat)
+                } label: {
+                    HStack(spacing: Theme.scaled(10)) {
+                        ZStack {
+                            Circle()
+                                .fill(Theme.accent.opacity(0.08))
+                                .frame(width: Theme.scaled(32), height: Theme.scaled(32))
+                            Circle()
+                                .stroke(Theme.accent.opacity(0.5), lineWidth: 0.5)
+                                .frame(width: Theme.scaled(32), height: Theme.scaled(32))
+                            Image(systemName: "plus")
+                                .font(.system(size: Theme.fontChip))
                                 .foregroundStyle(Theme.accent.opacity(0.7))
-                            Spacer()
                         }
-                        .padding(.horizontal, Theme.hPadding)
-                        .padding(.vertical, Theme.messagePadV)
+                        Text("Новый чат")
+                            .font(.system(size: Theme.fontSubhead, weight: .medium))
+                            .foregroundStyle(Theme.accent.opacity(0.8))
+                        Spacer()
                     }
+                    .padding(.vertical, Theme.messagePadV)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: Theme.hPadding, bottom: 0, trailing: Theme.hPadding))
 
-                    Divider().background(Theme.accent.opacity(0.06)).padding(.horizontal, Theme.hPadding)
-
-                    // Grouped conversations
-                    ForEach(grouped, id: \.0) { group, conversations in
-                        sectionHeader(group)
-
+                // Grouped conversations
+                ForEach(grouped, id: \.0) { group, conversations in
+                    Section {
                         ForEach(conversations) { conv in
                             conversationRow(conv)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                         }
+                    } header: {
+                        sectionHeader(group)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     }
+                    .listSectionSeparator(.hidden)
+                }
 
-                    if filtered.isEmpty && !searchText.isEmpty {
-                        Text("Ничего не найдено")
-                            .font(.system(size: Theme.fontSubhead))
-                            .foregroundStyle(Theme.textDim)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
-                    }
+                if filtered.isEmpty && !searchText.isEmpty {
+                    Text("Ничего не найдено")
+                        .font(.system(size: Theme.fontSubhead))
+                        .foregroundStyle(Theme.textDim)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
         .background(Theme.background)
         .preferredColorScheme(.dark)
@@ -229,7 +241,7 @@ struct ConversationListView: View {
 
                     Text(formattedDate(conv.lastMessageAt) + " · \(conv.messageCount) сообщ.")
                         .font(.system(size: Theme.fontSmall))
-                        .foregroundStyle(Theme.accent.opacity(0.2))
+                        .foregroundStyle(Theme.accent.opacity(0.35))
                 }
 
                 Spacer()

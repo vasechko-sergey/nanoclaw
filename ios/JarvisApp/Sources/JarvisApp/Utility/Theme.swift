@@ -14,14 +14,14 @@ enum Theme {
     // MARK: – Backgrounds
     static let background    = Color(red: 0.04, green: 0.055, blue: 0.08)   // #0A0E14
     static let surface       = Color(red: 0.067, green: 0.098, blue: 0.133) // #111922
-    static let surfaceBorder = Color.white.opacity(0.06)
+    static let surfaceBorder = Color.white.opacity(0.08)
 
     // MARK: – Accent
     static let accent = Color(red: 0.33, green: 0.74, blue: 0.77)           // #54BEC4
 
     // MARK: – Bubbles
     static let assistantBubble       = Color(red: 0.067, green: 0.098, blue: 0.133)
-    static let assistantBubbleBorder = Color.white.opacity(0.06)
+    static let assistantBubbleBorder = Color.white.opacity(0.08)
     static let userBubble            = Color(red: 0.05, green: 0.22, blue: 0.38).opacity(0.5)
     static let userBubbleBorder      = Color(red: 0.33, green: 0.74, blue: 0.77).opacity(0.08)
 
@@ -32,8 +32,8 @@ enum Theme {
     // MARK: – Text
     static let textPrimary   = Color.white
     static let textSecondary = Color.white.opacity(0.7)
-    static let textDim       = Color.white.opacity(0.25)
-    static let timestamp     = Color(red: 0.33, green: 0.74, blue: 0.77).opacity(0.35)
+    static let textDim       = Color.white.opacity(0.35)
+    static let timestamp     = Color(red: 0.33, green: 0.74, blue: 0.77).opacity(0.45)
 
     // MARK: – Font sizes (adaptive)
     static var fontBody:      CGFloat { max(scaled(16), 15) }     // message text

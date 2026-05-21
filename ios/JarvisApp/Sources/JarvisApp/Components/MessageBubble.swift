@@ -60,6 +60,27 @@ struct MessageBubble: View {
                     ShareLink(item: text) {
                         Label("Поделиться", systemImage: "square.and.arrow.up")
                     }
+                    if !isUser {
+                        Divider()
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                feedback = feedback == .positive ? .none : .positive
+                            }
+                            if feedback == .positive { onFeedback?(message.id, true) }
+                        } label: {
+                            Label(feedback == .positive ? "Убрать оценку" : "Полезно",
+                                  systemImage: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsup")
+                        }
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                feedback = feedback == .negative ? .none : .negative
+                            }
+                            if feedback == .negative { onFeedback?(message.id, false) }
+                        } label: {
+                            Label(feedback == .negative ? "Убрать оценку" : "Не полезно",
+                                  systemImage: feedback == .negative ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                        }
+                    }
                 }
 
                 timestampRow
@@ -105,46 +126,19 @@ struct MessageBubble: View {
         .accessibilityLabel(accessibilityDescription)
     }
 
-    // MARK: – Timestamp + feedback row
+    // MARK: – Timestamp row
 
     private var timestampRow: some View {
-        HStack(spacing: Theme.scaled(8)) {
+        HStack(spacing: Theme.scaled(6)) {
             Text(message.timestamp, style: .time)
                 .font(.system(size: Theme.fontSmall))
                 .foregroundStyle(Theme.timestamp)
                 .accessibilityHidden(true)
 
-            if !isUser {
-                Spacer().frame(width: Theme.scaled(4))
-                feedbackButtons
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var feedbackButtons: some View {
-        HStack(spacing: Theme.scaled(2)) {
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    feedback = feedback == .positive ? .none : .positive
-                }
-                if feedback == .positive { onFeedback?(message.id, true) }
-            } label: {
-                Image(systemName: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsup")
-                    .font(.system(size: Theme.scaled(11)))
-                    .foregroundStyle(feedback == .positive ? Theme.accent : Theme.accent.opacity(0.2))
-                    .frame(width: Theme.scaled(28), height: Theme.scaled(28))
-            }
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    feedback = feedback == .negative ? .none : .negative
-                }
-                if feedback == .negative { onFeedback?(message.id, false) }
-            } label: {
-                Image(systemName: feedback == .negative ? "hand.thumbsdown.fill" : "hand.thumbsdown")
-                    .font(.system(size: Theme.scaled(11)))
-                    .foregroundStyle(feedback == .negative ? Theme.offline : Theme.accent.opacity(0.2))
-                    .frame(width: Theme.scaled(28), height: Theme.scaled(28))
+            if !isUser && feedback != .none {
+                Image(systemName: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
+                    .font(.system(size: Theme.scaled(9)))
+                    .foregroundStyle(feedback == .positive ? Theme.accent.opacity(0.5) : Theme.offline.opacity(0.5))
             }
         }
     }
@@ -321,39 +315,51 @@ struct ActionBubble: View {
     }
 }
 
-// MARK: – Status Banner
+// MARK: – Status Banner  ──── icon text ────
 
 struct StatusBanner: View {
     let info: StatusInfo
 
     var body: some View {
-        HStack {
-            Spacer()
-            HStack(spacing: Theme.scaled(6)) {
-                Image(systemName: iconForLevel)
-                    .font(.system(size: Theme.scaled(12)))
+        HStack(spacing: Theme.scaled(8)) {
+            line
+            HStack(spacing: Theme.scaled(5)) {
+                Image(systemName: icon)
+                    .font(.system(size: Theme.scaled(11)))
                 Text(info.text)
                     .font(.system(size: Theme.fontSmall, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
             }
-            .foregroundStyle(colorForLevel.opacity(0.7))
-            .padding(.horizontal, Theme.scaled(12))
-            .padding(.vertical, Theme.scaled(5))
-            .background(colorForLevel.opacity(0.08))
-            .clipShape(Capsule())
-            Spacer()
+            .foregroundStyle(color.opacity(0.6))
+            line
         }
-        .padding(.vertical, Theme.scaled(2))
+        .padding(.horizontal, Theme.hPadding)
+        .padding(.vertical, Theme.scaled(4))
     }
 
-    private var iconForLevel: String {
-        switch info.level {
-        case .info:    return "info.circle"
-        case .warning: return "exclamationmark.triangle"
-        case .error:   return "xmark.circle"
+    private var line: some View {
+        Rectangle()
+            .frame(height: 0.5)
+            .foregroundStyle(color.opacity(0.15))
+    }
+
+    private var icon: String {
+        switch info.kind {
+        case "cost":   return "dollarsign.circle"
+        case "health": return "heart.fill"
+        case "alert":  return "exclamationmark.triangle.fill"
+        case "system": return "gear"
+        default:
+            switch info.level {
+            case .warning: return "exclamationmark.triangle"
+            case .error:   return "xmark.circle"
+            case .info:    return "info.circle"
+            }
         }
     }
 
-    private var colorForLevel: Color {
+    private var color: Color {
         switch info.level {
         case .info:    return Theme.accent
         case .warning: return .orange

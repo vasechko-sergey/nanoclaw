@@ -33,6 +33,7 @@ struct ActionInfo: Equatable {
 struct StatusInfo: Equatable {
     let text: String
     let level: Level
+    var kind: String? = nil   // "system" | "cost" | "health" | "alert" — nil → icon from level
 
     enum Level: String { case info, warning, error }
 }
@@ -92,7 +93,7 @@ struct ChatMessage: Identifiable {
         ChatMessage(id: id, role: .assistant, content: .action(ActionInfo(text: text, buttons: buttons)), timestamp: timestamp)
     }
 
-    static func status(_ id: String, text: String, level: StatusInfo.Level, timestamp: Date) -> ChatMessage {
-        ChatMessage(id: id, role: .system, content: .status(StatusInfo(text: text, level: level)), timestamp: timestamp)
+    static func status(_ id: String, text: String, level: StatusInfo.Level, kind: String? = nil, timestamp: Date) -> ChatMessage {
+        ChatMessage(id: id, role: .system, content: .status(StatusInfo(text: text, level: level, kind: kind)), timestamp: timestamp)
     }
 }

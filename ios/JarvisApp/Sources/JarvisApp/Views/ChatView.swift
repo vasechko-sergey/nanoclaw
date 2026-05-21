@@ -239,6 +239,7 @@ struct ChatView: View {
                     Circle()
                         .fill(ws.isConnected ? Theme.online : Theme.offline)
                         .frame(width: Theme.scaled(8), height: Theme.scaled(8))
+                        .shadow(color: (ws.isConnected ? Theme.online : Theme.offline).opacity(0.8), radius: 4)
                 }
                 .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             }
