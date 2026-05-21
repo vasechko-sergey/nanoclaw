@@ -26,6 +26,8 @@ final class AppCoordinator: ObservableObject {
 
     private var settings: AppSettings
     private var cancellables = Set<AnyCancellable>()
+    /// Whether the last sent message was dictated — gates auto-speak of the reply.
+    private var lastSendWasVoice = false
 
     // MARK: – Haptic callback (keeps Service layer UI-free)
     var onMessageReceived: (() -> Void)?
@@ -72,9 +74,15 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: – Chat actions
 
-    func sendMessage(_ text: String) {
+    func sendMessage(_ text: String, viaVoice: Bool = false) {
+        lastSendWasVoice = viaVoice
         let ctx = ContextBuilder.build(settings: settings, location: location, health: health, calendar: calendar)
         ws.send(text: text, context: ctx)
+    }
+
+    /// Speak arbitrary text on demand (manual "Проговорить" from a bubble).
+    func speak(_ text: String) {
+        speech.speak(text, voiceId: settings.voiceId, rate: settings.voiceRate, pitch: settings.voicePitch)
     }
 
     func sendFeedback(messageId: String, value: Bool, messageText: String) {
@@ -155,9 +163,9 @@ final class AppCoordinator: ObservableObject {
             self?.onMessageReceived?()
         }
 
-        // Auto-speak assistant text in the active conversation when enabled
+        // Auto-speak assistant text only when the triggering message was dictated
         ws.onSpeakableText = { [weak self] text in
-            guard let self, self.settings.autoSpeak else { return }
+            guard let self, self.settings.autoSpeak, self.lastSendWasVoice else { return }
             self.speech.speak(text, voiceId: self.settings.voiceId, rate: self.settings.voiceRate, pitch: self.settings.voicePitch)
         }
 

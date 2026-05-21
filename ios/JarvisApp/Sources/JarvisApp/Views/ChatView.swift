@@ -18,6 +18,7 @@ struct ChatView: View {
     @ObservedObject var coordinator: AppCoordinator
 
     @State private var inputText       = ""
+    @State private var inputViaVoice   = false
     @State private var showSettings    = false
     @State private var showConversations = false
     @State private var showProfile     = false
@@ -64,7 +65,8 @@ struct ChatView: View {
                                         },
                                         onActionTap: { messageId, buttonId, buttonLabel in
                                             coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
-                                        }
+                                        },
+                                        onSpeak: { text in coordinator.speak(text) }
                                     )
                                     .id(msg.id)
                                     .transition(
@@ -194,11 +196,12 @@ struct ChatView: View {
             }
 
             // MARK: – Input
-            InputBar(text: $inputText, commands: ws.commands, isDisabled: !ws.isConnected, enterToSend: settings.enterToSend) {
+            InputBar(text: $inputText, inputViaVoice: $inputViaVoice, commands: ws.commands, isDisabled: !ws.isConnected, enterToSend: settings.enterToSend) {
                 let trimmed = inputText.trimmingCharacters(in: .whitespaces)
                 guard !trimmed.isEmpty else { return }
-                coordinator.sendMessage(trimmed)
+                coordinator.sendMessage(trimmed, viaVoice: inputViaVoice)
                 inputText = ""
+                inputViaVoice = false
             }
         }
         .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)

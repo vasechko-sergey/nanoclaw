@@ -101,7 +101,7 @@ struct SettingsView: View {
                     // Voice section
                     if !isInitialSetup {
                         settingsSection(title: "Голос") {
-                            settingsToggle(icon: "speaker.wave.2", label: "Озвучивать ответы", isOn: $settings.autoSpeak)
+                            settingsToggle(icon: "speaker.wave.2", label: "Озвучивать ответы на голос", isOn: $settings.autoSpeak)
                             let voices = SpeechSynthesizer.russianVoices()
                             if voices.isEmpty {
                                 settingsDivider()

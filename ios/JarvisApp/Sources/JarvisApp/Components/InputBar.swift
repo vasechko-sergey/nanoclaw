@@ -2,6 +2,7 @@ import SwiftUI
 
 struct InputBar: View {
     @Binding var text: String
+    @Binding var inputViaVoice: Bool
     let commands: [BotCommand]
     var isDisabled: Bool = false
     var enterToSend: Bool = true
@@ -119,7 +120,10 @@ struct InputBar: View {
         }
         .animation(.easeInOut(duration: 0.15), value: filteredCommands.isEmpty)
         .onAppear {
-            speech.onTranscript = { transcript in text = transcript }
+            speech.onTranscript = { transcript in
+                text = transcript
+                inputViaVoice = true
+            }
         }
     }
 }

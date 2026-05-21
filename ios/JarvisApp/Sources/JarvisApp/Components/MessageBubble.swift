@@ -6,6 +6,7 @@ struct MessageBubble: View {
     var onImageTap: ((UIImage) -> Void)? = nil
     var onFeedback: ((String, Bool) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil  // (messageId, buttonId, buttonLabel)
+    var onSpeak: ((String) -> Void)? = nil
 
     @State private var feedback: FeedbackState = .none
 
@@ -62,6 +63,11 @@ struct MessageBubble: View {
                     }
                     if !isUser {
                         Divider()
+                        Button {
+                            onSpeak?(text)
+                        } label: {
+                            Label("Проговорить", systemImage: "speaker.wave.2")
+                        }
                         Button {
                             withAnimation(.easeOut(duration: 0.15)) {
                                 feedback = feedback == .positive ? .none : .positive
