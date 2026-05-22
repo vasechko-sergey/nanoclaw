@@ -38,11 +38,13 @@ interface QueuedMessage {
 // Persist APNs device tokens across server restarts.
 const TOKENS_FILE = path.join(process.cwd(), 'data', 'ios-apns-tokens.json');
 
-// Health time-series store for the autonomous analyzer (Greg). Host writes raw.jsonl
-// (one daily row per line); the analyzer reads it read-only. requests/ holds the
-// analyzer's fetch_health asks, serviced by the watcher in setup() — no agent/LLM
-// in the data-acquisition path. See plan "Заход 2".
-const HEALTH_DIR = path.join(process.cwd(), 'data', 'health');
+// Health time-series store for the autonomous analyzer (Greg). Lives INSIDE Greg's
+// group folder so it is auto-mounted into his container at /workspace/agent/health
+// (no additional_mounts / allowlist needed — mirrors how jarvis uses its folder).
+// Host writes raw.jsonl (one daily row per line); Greg reads it. requests/ holds
+// Greg's fetch_health asks, serviced by the watcher in setup() — no agent/LLM in
+// the data-acquisition path. See plan "Заход 2".
+const HEALTH_DIR = path.join(process.cwd(), 'groups', 'health-analyzer', 'health');
 const HEALTH_RAW = path.join(HEALTH_DIR, 'raw.jsonl');
 const HEALTH_REQ_DIR = path.join(HEALTH_DIR, 'requests');
 
