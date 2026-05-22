@@ -87,6 +87,14 @@ CLAUDE.md §5: health эфемерны, в профиль не писать. Raw
 
 **Идентификаторы:** Jarvis `ag-1778740750341-ru9i6e`, Greg **`greg`** (пересоздан: OneCLI требует identifier с буквы, UUID с цифры отвергался — баг `ncl groups create`, чип на починку). Данные Грега: `groups/health-analyzer/health/{raw.jsonl, requests/}`.
 
+## Заход 3 — фоновый health-sync (без открытого app)
+
+- [x] **15. Сервер** — `sendApnsSilentPush` (content-available), watcher-фоллбэк на push при отсутствии WS, `POST /ios/health/upload` (Bearer-auth) + общий `ingestHealthHistory`. Задеплоено; эндпоинт проверен (401 без auth, 200 с auth).
+- [x] **16. iOS Background Delivery (A)** — `HealthSync.swift`: `enableBackgroundDelivery` + `HKObserverQuery` по 7 типам → `HealthUpload` при новых данных. Собрано.
+- [x] **17. iOS silent-push fetch (B)** — `HealthUpload.swift`; `AppDelegate` content-available → `HealthHistory.fetch` → upload; `project.yml` background modes + healthkit background-delivery entitlement. Собрано.
+
+**Проверка на девайсе (Сергей):** поставить новый build → свернуть app (не убивать) → положить запрос в `requests/` на VDS → silent push разбудит → `raw.jsonl` обновится без открытия app. Background delivery — при новых health-данных. **Force-quit глушит оба** (iOS-правило).
+
 **Грабли активации (на будущее):** (1) `ncl groups create` не создаёт `container_configs` → `ensureContainerConfig` вручную. (2) OneCLI identifier должен начинаться с буквы. (3) После пере-вайринга destinations нужно перепроецировать в `inbound.db` живого агента (`writeDestinations`) — `docker restart` не перепроецирует. (4) headless-агент будится только сообщением от другого агента.
 
 ---
