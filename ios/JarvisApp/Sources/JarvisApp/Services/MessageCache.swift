@@ -59,8 +59,12 @@ enum MessageCache {
             case "image":
                 guard let file = cm.imageFile, let fname = cm.filename else { return nil }
                 let url = dir.appendingPathComponent(file)
-                guard let d = try? Data(contentsOf: url), let img = UIImage(data: d) else { return nil }
-                return .image(cm.id, role: role, image: img, filename: fname, timestamp: cm.timestamp)
+                if let d = try? Data(contentsOf: url), let img = UIImage(data: d) {
+                    return .image(cm.id, role: role, image: img, filename: fname, timestamp: cm.timestamp)
+                }
+                // Image file missing/corrupt — keep the message as a placeholder
+                // instead of silently dropping it from history.
+                return .text(cm.id, role: role, text: "🖼 \(fname) (изображение недоступно)", timestamp: cm.timestamp)
 
             case "file":
                 guard let name = cm.fileName else { return nil }
@@ -118,7 +122,8 @@ enum MessageCache {
             case .image(let img, let fname):
                 let file = msg.id + ".jpg"
                 if let d = img.jpegData(compressionQuality: 0.85) {
-                    try? d.write(to: dir.appendingPathComponent(file))
+                    do { try d.write(to: dir.appendingPathComponent(file), options: .atomic) }
+                    catch { print("MessageCache: image write failed for \(file): \(error)") }
                 }
                 return CachedMessage(id: msg.id, role: role, kind: "image",
                                      text: nil, imageFile: file, filename: fname, timestamp: msg.timestamp,
@@ -153,7 +158,10 @@ enum MessageCache {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         if let data = try? encoder.encode(cached) {
-            try? data.write(to: indexURL)
+            // Atomic write (temp + rename) so a crash mid-write can't corrupt the
+            // whole history index and lose every message.
+            do { try data.write(to: indexURL, options: .atomic) }
+            catch { print("MessageCache: index write failed: \(error)") }
         }
 
         pruneOrphanImages(in: dir, keeping: Set(recent.compactMap { msg -> String? in

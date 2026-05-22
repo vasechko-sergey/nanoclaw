@@ -76,8 +76,11 @@ final class AppCoordinator: ObservableObject {
 
     func sendMessage(_ text: String, viaVoice: Bool = false) {
         lastSendWasVoice = viaVoice
-        let ctx = ContextBuilder.build(settings: settings, location: location, health: health, calendar: calendar)
-        ws.send(text: text, context: ctx)
+        // Pull-model: don't push heavy context per message. Only the timezone
+        // (always) and the user's status emoji (cheap) ride along; the agent
+        // pulls richer context on demand via request_context.
+        let emoji = settings.statusEmoji.trimmingCharacters(in: .whitespaces)
+        ws.send(text: text, timezone: TimeZone.current.identifier, status: emoji.isEmpty ? nil : emoji)
     }
 
     /// Speak arbitrary text on demand (manual "Проговорить" from a bubble).
@@ -87,10 +90,6 @@ final class AppCoordinator: ObservableObject {
 
     func sendFeedback(messageId: String, value: Bool, messageText: String) {
         ws.sendFeedback(conversationId: ws.conversationId, messageId: messageId, value: value, messageText: messageText)
-    }
-
-    func sendHealthUpdate(_ data: [String: Any]) {
-        ws.sendHealthUpdate(data)
     }
 
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
@@ -163,6 +162,22 @@ final class AppCoordinator: ObservableObject {
             self?.onMessageReceived?()
         }
 
+        // Agent pulls device context — gather requested fields on demand.
+        ws.onContextRequest = { [weak self] fields in
+            guard let self else { return [:] }
+            // Kick a refresh so the next pull is fresher; respond with current snapshot.
+            if settings.useLocation { self.location.requestAndUpdate() }
+            if settings.useHealth   { self.health.requestAndFetch()    }
+            if settings.useCalendar { self.calendar.requestAndFetch()  }
+            return ContextBuilder.build(
+                fields: fields,
+                settings: self.settings,
+                location: self.location,
+                health: self.health,
+                calendar: self.calendar
+            )
+        }
+
         // Auto-speak assistant text only when the triggering message was dictated
         ws.onSpeakableText = { [weak self] text in
             guard let self, self.settings.autoSpeak, self.lastSendWasVoice else { return }
@@ -173,6 +188,7 @@ final class AppCoordinator: ObservableObject {
         ws.onBackgroundMessage = { [weak self] convId, message in
             guard let self else { return }
             var msgs = self.store.loadMessages(for: convId)
+            guard !msgs.contains(where: { $0.id == message.id }) else { return }
             msgs.append(message)
             self.store.saveMessages(msgs, for: convId)
         }

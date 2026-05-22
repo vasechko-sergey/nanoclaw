@@ -38,6 +38,17 @@ function destinationList(): string {
   return all.map((d) => d.name).join(', ');
 }
 
+// Guard against an agent copying an enormous file into the outbox (OOM / disk).
+const MAX_SEND_FILE_BYTES = 100 * 1024 * 1024;
+
+function checkFileSize(resolvedPath: string): string | null {
+  const { size } = fs.statSync(resolvedPath);
+  if (size > MAX_SEND_FILE_BYTES) {
+    return `File too large: ${(size / 1024 / 1024).toFixed(1)}MB (limit ${MAX_SEND_FILE_BYTES / 1024 / 1024}MB)`;
+  }
+  return null;
+}
+
 /**
  * Resolve a destination name to routing fields.
  *
@@ -155,6 +166,8 @@ export const sendFile: McpToolDefinition = {
 
     const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve('/workspace/agent', filePath);
     if (!fs.existsSync(resolvedPath)) return err(`File not found: ${filePath}`);
+    const tooBig = checkFileSize(resolvedPath);
+    if (tooBig) return err(tooBig);
 
     const id = generateId();
     const filename = (args.filename as string) || path.basename(resolvedPath);
@@ -204,6 +217,8 @@ export const sendPhoto: McpToolDefinition = {
 
     const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve('/workspace/agent', filePath);
     if (!fs.existsSync(resolvedPath)) return err(`File not found: ${filePath}`);
+    const tooBig = checkFileSize(resolvedPath);
+    if (tooBig) return err(tooBig);
 
     const id = generateId();
     const filename = (args.filename as string) || path.basename(resolvedPath);
@@ -313,4 +328,59 @@ export const addReaction: McpToolDefinition = {
   },
 };
 
-registerTools([sendMessage, sendFile, sendPhoto, editMessage, addReaction]);
+export const requestContext: McpToolDefinition = {
+  tool: {
+    name: 'request_context',
+    description:
+      'Request live device context (location, health, device, calendar) from the user\'s iOS app. ' +
+      'This is asynchronous: the context does NOT come back as this tool\'s result. ' +
+      'It arrives as a follow-up technical message in a NEW turn — finish the current turn WITHOUT a final ' +
+      'answer to the user, then respond once the context message arrives. ' +
+      'If the device is offline you will instead receive a "context unavailable" follow-up. ' +
+      'Only works for the iOS app channel.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        fields: {
+          type: 'array',
+          description: 'Which context fields to fetch. Defaults to all if omitted.',
+          items: { type: 'string', enum: ['location', 'health', 'device', 'calendar'] },
+        },
+      },
+      required: [],
+    },
+  },
+  async handler(args) {
+    const routing = resolveRouting(undefined);
+    if ('error' in routing) return err(routing.error);
+    if (routing.channel_type !== 'ios-app') {
+      return err('request_context is only supported for the iOS app channel.');
+    }
+
+    const rawFields = Array.isArray(args.fields) ? (args.fields as string[]) : [];
+    const allowed = ['location', 'health', 'device', 'calendar'];
+    const fields = rawFields.filter((f) => allowed.includes(f));
+    const requestId = generateId();
+
+    writeMessageOut({
+      id: requestId,
+      kind: 'chat',
+      platform_id: routing.platform_id,
+      channel_type: routing.channel_type,
+      thread_id: routing.thread_id,
+      content: JSON.stringify({
+        type: 'context_request',
+        requestId,
+        fields: fields.length ? fields : allowed,
+      }),
+    });
+
+    log(`request_context: ${requestId} → ${(fields.length ? fields : allowed).join(',')}`);
+    return ok(
+      `Context requested (${(fields.length ? fields : allowed).join(', ')}). ` +
+        'It will arrive as a follow-up message — do not answer the user yet; wait for it.',
+    );
+  },
+};
+
+registerTools([sendMessage, sendFile, sendPhoto, editMessage, addReaction, requestContext]);

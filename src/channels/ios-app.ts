@@ -9,6 +9,10 @@ import { readEnvFile } from '../env.js';
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup } from './adapter.js';
 
+function log(msg: string): void {
+  console.log(`[ios-app] ${msg}`);
+}
+
 // APNs JWT — reused for 55 min then refreshed
 let apnsJwt: { token: string; createdAt: number } | null = null;
 
@@ -64,15 +68,15 @@ async function sendApnsPush(
   text: string,
   apns: ApnsConfig | null,
   conversationId?: string,
-): Promise<void> {
-  if (!apns) return;
+): Promise<{ status: number; body: string }> {
+  if (!apns) return { status: 0, body: '' };
   const jwt = getApnsJwt(apns);
   const host = apns.sandbox ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
   const payload: Record<string, unknown> = { aps: { alert: { body: text }, sound: 'default' } };
   if (conversationId) payload.conversationId = conversationId;
   const body = JSON.stringify(payload);
 
-  await new Promise<void>((resolve, reject) => {
+  return await new Promise<{ status: number; body: string }>((resolve, reject) => {
     const client = http2.connect(`https://${host}`);
     client.on('error', reject);
     const req = client.request({
@@ -87,14 +91,18 @@ async function sendApnsPush(
       'content-length': Buffer.byteLength(body),
     });
     req.setEncoding('utf8');
+    req.on('error', reject); // without this a request-level error hangs the promise
     let status = 0;
+    let resp = '';
     req.on('response', (h) => {
       status = h[':status'] as number;
     });
-    req.on('data', () => {});
+    req.on('data', (chunk) => {
+      resp += chunk;
+    });
     req.on('end', () => {
       client.close();
-      status === 200 ? resolve() : reject(new Error(`APNs ${status}`));
+      resolve({ status, body: resp });
     });
     req.end(body);
   });
@@ -176,6 +184,17 @@ function createIOSAdapter(): ChannelAdapter | null {
   const wsClients = new Map<string, Set<WebSocket>>();
   const apnsTokens = loadPersistedTokens();
   const pendingMessages = new Map<string, QueuedMessage[]>();
+  // Last-known IANA timezone per device — used to format dates in pulled context.
+  const lastTimezone = new Map<string, string>();
+  // Bounded record of delivered message ids per device, so re-flushing the
+  // offline queue on reconnect can't deliver the same message twice.
+  const deliveredIds = new Map<string, Set<string>>();
+  function recordDelivered(pid: string, id: string): void {
+    let s = deliveredIds.get(pid);
+    if (!s) deliveredIds.set(pid, (s = new Set()));
+    if (s.size > 500) s.clear();
+    s.add(id);
+  }
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
   let wss: WebSocketServer | null = null;
@@ -193,12 +212,24 @@ function createIOSAdapter(): ChannelAdapter | null {
     const set = wsClients.get(platformId);
     if (set && set.size > 0) {
       set.forEach((ws) => deliverViaSock(ws, queued));
+      recordDelivered(platformId, id);
     } else {
       pendingMessages.set(platformId, [...(pendingMessages.get(platformId) ?? []), queued]);
       const apnsToken = apnsTokens.get(platformId);
       if (apnsToken) {
         const preview = text ? text.slice(0, 80) : (files[0]?.filename ?? 'Новое сообщение');
-        sendApnsPush(apnsToken, preview, apnsCfg, queued.conversationId).catch(() => {});
+        sendApnsPush(apnsToken, preview, apnsCfg, queued.conversationId)
+          .then(({ status, body }) => {
+            if (status === 200 || status === 0) return;
+            log(`APNs ${status} for ${platformId}: ${body}`);
+            // 410 = unregistered, 400 = bad device token → drop it so we stop retrying.
+            if (status === 410 || status === 400) {
+              apnsTokens.delete(platformId);
+              savePersistedTokens(apnsTokens);
+              log(`Dropped dead APNs token for ${platformId}`);
+            }
+          })
+          .catch((e) => log(`APNs send error for ${platformId}: ${e instanceof Error ? e.message : String(e)}`));
       }
     }
     return id;
@@ -230,8 +261,19 @@ function createIOSAdapter(): ChannelAdapter | null {
       wss.on('connection', (ws) => {
         let pid: string | null = null;
         let authed = false;
+        let isAlive = true;
+        ws.on('pong', () => {
+          isAlive = true;
+        });
         const ping = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) ws.ping();
+          if (ws.readyState !== WebSocket.OPEN) return;
+          if (!isAlive) {
+            log(`No pong from ${pid ?? 'unauthed'} — terminating dead socket`);
+            ws.terminate();
+            return;
+          }
+          isAlive = false;
+          ws.ping();
         }, 30_000);
 
         ws.on('message', async (data) => {
@@ -239,6 +281,7 @@ function createIOSAdapter(): ChannelAdapter | null {
           try {
             msg = JSON.parse(data.toString());
           } catch {
+            log('Malformed JSON from client — closing');
             ws.close(1003);
             return;
           }
@@ -260,13 +303,21 @@ function createIOSAdapter(): ChannelAdapter | null {
                 }),
               );
 
-              // Flush messages queued while app was closed
+              // Flush messages queued while app was closed. Clear the queue first
+              // so a concurrent delivery can't double-send, and skip any id already
+              // delivered to this device.
               const pending = pendingMessages.get(pid);
               if (pending?.length) {
-                for (const p of pending) deliverViaSock(ws, p);
                 pendingMessages.delete(pid);
+                const seen = deliveredIds.get(pid);
+                for (const p of pending) {
+                  if (seen?.has(p.id)) continue;
+                  deliverViaSock(ws, p);
+                  recordDelivered(pid, p.id);
+                }
               }
             } else {
+              log('Auth failed (bad token or missing platformId) — closing');
               ws.close(4001);
             }
             return;
@@ -278,13 +329,16 @@ function createIOSAdapter(): ChannelAdapter | null {
           }
 
           if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
-            const ctx = msg.context as Record<string, unknown> | undefined;
-            const fullText = ctx ? buildCtx(ctx) + msg.text : msg.text;
+            // Context is now pull-based (request_context tool) — the app no longer
+            // pushes heavy context per message. Only the timezone rides along (cheap)
+            // and is cached for formatting dates in pulled context.
+            if (typeof msg.timezone === 'string' && msg.timezone) lastTimezone.set(pid, msg.timezone);
+            const status = typeof msg.status === 'string' && msg.status ? `[status: ${msg.status}]\n` : '';
             const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
             await cfg!.onInbound(pid, tid, {
               id: randomUUID(),
               kind: 'chat',
-              content: { text: fullText, senderId: pid },
+              content: { text: status + msg.text, senderId: pid },
               timestamp: new Date().toISOString(),
             });
           }
@@ -309,46 +363,53 @@ function createIOSAdapter(): ChannelAdapter | null {
             });
           }
 
-          // Health update — technical, silent unless anomaly detected by agent
-          if (msg.type === 'health_update' && pid) {
+          // Context response — reply to a request_context pull. Technical, hidden
+          // from the user; feeds the requested context back to the agent as a
+          // follow-up message that wakes a new turn.
+          if (msg.type === 'context_response' && pid) {
             const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
-            const healthData = msg.data as Record<string, unknown> | undefined;
-            const lines: string[] = [];
-            if (healthData) {
-              if (healthData.steps) lines.push(`Steps: ${healthData.steps}`);
-              if (healthData.heartRate) lines.push(`HR: ${healthData.heartRate} bpm`);
-              if (healthData.activeEnergy) lines.push(`Active: ${healthData.activeEnergy} kcal`);
-              if (healthData.sleepHours) lines.push(`Sleep: ${healthData.sleepHours}h`);
-              if (healthData.restingHeartRate) lines.push(`RHR: ${healthData.restingHeartRate} bpm`);
-              if (healthData.exerciseMinutes) lines.push(`Exercise: ${healthData.exerciseMinutes} min`);
+            const ctx = (msg.context as Record<string, unknown> | undefined) ?? {};
+            if (typeof ctx.timezone !== 'string' && lastTimezone.has(pid)) ctx.timezone = lastTimezone.get(pid);
+            let block: string;
+            try {
+              block = buildCtx(ctx);
+            } catch (e) {
+              log(`buildCtx failed for ${pid}: ${e instanceof Error ? e.message : String(e)}`);
+              block = '';
             }
-            if (lines.length) {
+            await cfg!.onInbound(pid, tid, {
+              id: randomUUID(),
+              kind: 'chat',
+              content: {
+                text: block || '[iOS context — requested data unavailable]',
+                senderId: pid,
+              },
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          // Action response — user tapped a button on an action message.
+          // For ask_question/approval cards the questionId (the action message id)
+          // is present → resolve the pending_questions/approval row structurally via
+          // onAction. Only fall back to a free-text inbound when there's no questionId.
+          if (msg.type === 'action_response' && pid) {
+            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+            const buttonLabel = typeof msg.buttonLabel === 'string' ? msg.buttonLabel : '';
+            const buttonId = typeof msg.buttonId === 'string' ? msg.buttonId : '';
+            const questionId = typeof msg.messageId === 'string' ? msg.messageId : '';
+            if (questionId && buttonId) {
+              cfg!.onAction(questionId, buttonId, pid);
+            } else {
               await cfg!.onInbound(pid, tid, {
                 id: randomUUID(),
                 kind: 'chat',
                 content: {
-                  text: `[health update — technical, do not respond unless anomaly detected]\n🏃 ${lines.join(' | ')}`,
+                  text: `[user selected: "${buttonLabel}" (id: ${buttonId})]`,
                   senderId: pid,
                 },
                 timestamp: new Date().toISOString(),
               });
             }
-          }
-
-          // Action response — user tapped a button on an action message
-          if (msg.type === 'action_response' && pid) {
-            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
-            const buttonLabel = typeof msg.buttonLabel === 'string' ? msg.buttonLabel : '';
-            const buttonId = typeof msg.buttonId === 'string' ? msg.buttonId : '';
-            await cfg!.onInbound(pid, tid, {
-              id: randomUUID(),
-              kind: 'chat',
-              content: {
-                text: `[user selected: "${buttonLabel}" (id: ${buttonId})]`,
-                senderId: pid,
-              },
-              timestamp: new Date().toISOString(),
-            });
           }
 
           // New conversation — acknowledge (currently logged, not routed)
@@ -362,7 +423,8 @@ function createIOSAdapter(): ChannelAdapter | null {
           clearInterval(ping);
           if (pid) removeClient(pid, ws);
         });
-        ws.on('error', () => {
+        ws.on('error', (e) => {
+          log(`WebSocket error (${pid ?? 'unauthed'}): ${e instanceof Error ? e.message : String(e)}`);
           clearInterval(ping);
           if (pid) removeClient(pid, ws);
         });
@@ -390,6 +452,33 @@ function createIOSAdapter(): ChannelAdapter | null {
         size?: number;
       }>;
       const contentType = c.type as string | undefined;
+
+      // Context pull request — forward to a live socket so the app can reply
+      // with a context_response. Hidden from the user. If the device is offline,
+      // tell the agent so it doesn't wait forever for a follow-up.
+      if (contentType === 'context_request') {
+        const requestId = (c.requestId as string) ?? randomUUID();
+        const payload = JSON.stringify({
+          type: 'context_request',
+          requestId,
+          fields: (c.fields as string[]) ?? [],
+        });
+        const set = wsClients.get(platformId);
+        const live = set ? [...set].filter((ws) => ws.readyState === WebSocket.OPEN) : [];
+        if (live.length > 0) {
+          live.forEach((ws) => ws.send(payload));
+          log(`context_request ${requestId} → ${platformId} (${live.length} socket)`);
+        } else {
+          log(`context_request ${requestId} → ${platformId} offline`);
+          await cfg!.onInbound(platformId, threadId, {
+            id: randomUUID(),
+            kind: 'chat',
+            content: { text: '[iOS context unavailable — device offline]', senderId: platformId },
+            timestamp: new Date().toISOString(),
+          });
+        }
+        return requestId;
+      }
 
       // Handle structured message types from agent
       if (contentType === 'ask_question' && c.questionId) {

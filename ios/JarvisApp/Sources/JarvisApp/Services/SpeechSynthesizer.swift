@@ -7,10 +7,26 @@ final class SpeechSynthesizer: NSObject, ObservableObject {
     @Published var isSpeaking = false
 
     private let synthesizer = AVSpeechSynthesizer()
+    private var categoryConfigured = false
 
     override init() {
         super.init()
         synthesizer.delegate = self
+        // Stop speaking if the system interrupts audio (call, alarm, Siri).
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleInterruption(_ note: Notification) {
+        guard let info = note.userInfo,
+              let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw),
+              type == .began else { return }
+        stop()
     }
 
     /// Голоса для русского, отсортированы: Enhanced/Premium качество выше дефолтного.
@@ -50,8 +66,18 @@ final class SpeechSynthesizer: NSObject, ObservableObject {
 
     private func configureSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
+        // Set the category once — it's a relatively heavy call; no need to repeat
+        // it on every utterance.
+        if !categoryConfigured {
+            try? session.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
+            categoryConfigured = true
+        }
         try? session.setActive(true, options: [])
+    }
+
+    /// Release the audio session so we stop ducking other apps once we're done.
+    private func deactivateSession() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
     /// Убирает markdown-разметку, чтобы голос не зачитывал символы.
@@ -71,8 +97,10 @@ extension SpeechSynthesizer: AVSpeechSynthesizerDelegate {
     }
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         DispatchQueue.main.async { self.isSpeaking = false }
+        deactivateSession()
     }
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         DispatchQueue.main.async { self.isSpeaking = false }
+        deactivateSession()
     }
 }

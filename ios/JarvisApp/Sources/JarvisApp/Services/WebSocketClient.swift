@@ -37,6 +37,10 @@ final class WebSocketClient: ObservableObject {
     /// Callback when user taps an action button — coordinator handles sending.
     var onActionResponse: ((String, String, String) -> Void)?  // (messageId, buttonId, buttonLabel)
 
+    /// Callback when the agent pulls device context. Returns the gathered context
+    /// dict for the requested fields. Set by the coordinator (owns the managers).
+    var onContextRequest: (([String]) -> [String: Any])?
+
     func connect(settings: AppSettings) {
         self.settings = settings
         stopped = false
@@ -66,7 +70,7 @@ final class WebSocketClient: ObservableObject {
             "conversationId": id.uuidString
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { _ in }
+        ws.send(.data(data)) { if let e = $0 { print("WS send failed: \(e)") } }
     }
 
     func loadMessages(from store: ConversationStore) {
@@ -79,13 +83,13 @@ final class WebSocketClient: ObservableObject {
 
     // MARK: – Send methods
 
-    func send(text: String, context: [String: Any]?) {
+    func send(text: String, timezone: String, status: String?) {
         guard let ws = task, isConnected else { return }
-        var payload: [String: Any] = ["type": "message", "text": text]
-        if let ctx = context { payload["context"] = ctx }
+        var payload: [String: Any] = ["type": "message", "text": text, "timezone": timezone]
+        if let st = status, !st.isEmpty { payload["status"] = st }
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { _ in }
+        ws.send(.data(data)) { if let e = $0 { print("WS send(message) failed: \(e)") } }
         isTyping = true
         messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: Date()))
         onMessagesChanged?(messages)
@@ -101,18 +105,20 @@ final class WebSocketClient: ObservableObject {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { _ in }
+        ws.send(.data(data)) { if let e = $0 { print("WS send failed: \(e)") } }
     }
 
-    func sendHealthUpdate(_ healthData: [String: Any]) {
+    /// Reply to an agent context pull. Technical, not rendered.
+    func sendContextResponse(requestId: String, context: [String: Any]) {
         guard let ws = task, isConnected else { return }
         var payload: [String: Any] = [
-            "type": "health_update",
-            "data": healthData,
+            "type": "context_response",
+            "requestId": requestId,
+            "context": context,
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { _ in }
+        ws.send(.data(data)) { if let e = $0 { print("WS send(context_response) failed: \(e)") } }
     }
 
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
@@ -125,7 +131,7 @@ final class WebSocketClient: ObservableObject {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { _ in }
+        ws.send(.data(data)) { if let e = $0 { print("WS send failed: \(e)") } }
 
         // Mark action as answered locally
         if let idx = messages.firstIndex(where: { $0.id == messageId }),
@@ -143,7 +149,7 @@ final class WebSocketClient: ObservableObject {
     private func sendApnsToken(_ hex: String) {
         guard let ws = task, isConnected else { return }
         guard let pay = try? JSONSerialization.data(withJSONObject: ["type": "apns_token", "token": hex]) else { return }
-        ws.send(.data(pay)) { _ in }
+        ws.send(.data(pay)) { if let e = $0 { print("WS send(apns_token) failed: \(e)") } }
     }
 
     private func doConnect(settings: AppSettings) {
@@ -163,7 +169,7 @@ final class WebSocketClient: ObservableObject {
             "token": settings.bearerToken,
             "platformId": settings.platformId,
         ] as [String: Any]) else { return }
-        ws.send(.data(auth)) { _ in }
+        ws.send(.data(auth)) { if let e = $0 { print("WS send(auth) failed: \(e)") } }
         receive(ws: ws)
     }
 
@@ -228,6 +234,15 @@ final class WebSocketClient: ObservableObject {
             return
         }
 
+        // --- Context request (agent pull) — gather and reply, not rendered ---
+        if t == "context_request" {
+            let fields = obj["fields"] as? [String] ?? []
+            let requestId = obj["requestId"] as? String ?? ""
+            let ctx = onContextRequest?(fields) ?? [:]
+            sendContextResponse(requestId: requestId, context: ctx)
+            return
+        }
+
         let convId = (obj["conversationId"] as? String).flatMap(UUID.init(uuidString:))
 
         // --- Text message ---
@@ -289,6 +304,9 @@ final class WebSocketClient: ObservableObject {
         onAssistantMessage?()
         if convId == nil || convId == conversationId {
             isTyping = false
+            // Dedup: the host re-flushes queued messages on reconnect, so the same
+            // id can arrive twice. Skip if already present in the active list.
+            if messages.contains(where: { $0.id == message.id }) { return }
             messages.append(message)
             onMessagesChanged?(messages)
             if message.role == .assistant, case .text(let t) = message.content {
