@@ -83,15 +83,27 @@ final class WebSocketClient: ObservableObject {
 
     // MARK: – Send methods
 
-    func send(text: String, timezone: String, status: String?) {
+    func send(text: String, timezone: String, status: String?, attachments: [DraftAttachment] = []) {
         guard let ws = task, isConnected else { return }
         var payload: [String: Any] = ["type": "message", "text": text, "timezone": timezone]
         if let st = status, !st.isEmpty { payload["status"] = st }
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        if !attachments.isEmpty { payload["attachments"] = attachments.map { $0.payload } }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         ws.send(.data(data)) { if let e = $0 { print("WS send(message) failed: \(e)") } }
         isTyping = true
-        messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: Date()))
+        let ts = Date()
+        if !text.isEmpty {
+            messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: ts))
+        }
+        for att in attachments {
+            if let img = att.image {
+                messages.append(.image(UUID().uuidString, role: .user, image: img, filename: att.name, timestamp: ts))
+            } else {
+                let info = FileInfo(name: att.name, size: Int64(att.size), mimeType: att.mimeType, url: nil, thumbnail: nil)
+                messages.append(.file(UUID().uuidString, role: .user, info: info, timestamp: ts))
+            }
+        }
         onMessagesChanged?(messages)
     }
 

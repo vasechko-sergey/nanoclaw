@@ -87,7 +87,22 @@ struct MessageBubble: View {
                                   systemImage: feedback == .negative ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                         }
                     }
+                } preview: {
+                    Group {
+                        if isUser {
+                            Text(text).font(.system(size: Theme.fontBody))
+                        } else {
+                            MarkdownText(text, fontSize: Theme.fontBody)
+                        }
+                    }
+                    .padding(.horizontal, Theme.messagePadH)
+                    .padding(.vertical, Theme.messagePadV)
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(maxWidth: Theme.scaled(300), alignment: .leading)
+                    .background(isUser ? Theme.userBubble : Theme.assistantBubble)
+                    .background(Theme.background)
                 }
+                .tint(Theme.accent)
 
                 timestampRow
             }
@@ -123,6 +138,7 @@ struct MessageBubble: View {
                             Label("Сохранить в фото", systemImage: "square.and.arrow.down")
                         }
                     }
+                    .tint(Theme.accent)
 
                 timestampRow
             }

@@ -19,6 +19,7 @@ struct ChatView: View {
 
     @State private var inputText       = ""
     @State private var inputViaVoice   = false
+    @State private var drafts: [DraftAttachment] = []
     @State private var showSettings    = false
     @State private var showConversations = false
     @State private var showProfile     = false
@@ -34,6 +35,16 @@ struct ChatView: View {
     /// Only messages that should render in the chat (excludes invisible technical messages).
     private var visibleMessages: [ChatMessage] {
         ws.messages.filter { $0.isVisible }
+    }
+
+    /// Send the current draft (text + attachments) and reset input state.
+    private func sendCurrent() {
+        let trimmed = inputText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty || !drafts.isEmpty else { return }
+        coordinator.sendMessage(trimmed, viaVoice: inputViaVoice, attachments: drafts)
+        inputText = ""
+        inputViaVoice = false
+        drafts = []
     }
 
     var body: some View {
@@ -196,12 +207,17 @@ struct ChatView: View {
             }
 
             // MARK: – Input
-            InputBar(text: $inputText, inputViaVoice: $inputViaVoice, commands: ws.commands, isDisabled: !ws.isConnected, enterToSend: settings.enterToSend) {
-                let trimmed = inputText.trimmingCharacters(in: .whitespaces)
-                guard !trimmed.isEmpty else { return }
-                coordinator.sendMessage(trimmed, viaVoice: inputViaVoice)
-                inputText = ""
-                inputViaVoice = false
+            Group {
+                if settings.inputMode == "orb" {
+                    OrbInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
+                                commands: ws.commands, isDisabled: !ws.isConnected,
+                                enterToSend: settings.enterToSend, orbPrimary: settings.orbPrimary,
+                                onSend: sendCurrent)
+                } else {
+                    InputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
+                             commands: ws.commands, isDisabled: !ws.isConnected,
+                             enterToSend: settings.enterToSend, onSend: sendCurrent)
+                }
             }
         }
         .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)

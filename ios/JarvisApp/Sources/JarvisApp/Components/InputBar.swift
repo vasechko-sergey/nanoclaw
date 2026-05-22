@@ -3,6 +3,7 @@ import SwiftUI
 struct InputBar: View {
     @Binding var text: String
     @Binding var inputViaVoice: Bool
+    @Binding var drafts: [DraftAttachment]
     let commands: [BotCommand]
     var isDisabled: Bool = false
     var enterToSend: Bool = true
@@ -14,6 +15,8 @@ struct InputBar: View {
     private var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespaces).isEmpty
     }
+
+    private var canSend: Bool { !isEmpty || !drafts.isEmpty }
 
     private var filteredCommands: [BotCommand] {
         if showAll { return commands }
@@ -31,7 +34,13 @@ struct InputBar: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            HStack(spacing: Theme.scaled(6)) {
+            if !drafts.isEmpty {
+                AttachmentChips(drafts: $drafts)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            HStack(spacing: Theme.scaled(4)) {
+                AttachmentMenuButton(drafts: $drafts, isDisabled: isDisabled)
+
                 Button {
                     showAll.toggle()
                     if showAll && !text.hasPrefix("/") { text = "" }
@@ -61,14 +70,14 @@ struct InputBar: View {
                         // Vertical TextField inserts a newline on return; treat it as send.
                         if enterToSend && text.contains("\n") {
                             text = text.replacingOccurrences(of: "\n", with: "")
-                            if !isDisabled && !isEmpty {
+                            if !isDisabled && canSend {
                                 Theme.hapticSend()
                                 onSend()
                             }
                         }
                     }
                     .onSubmit {
-                        if enterToSend && !isDisabled {
+                        if enterToSend && !isDisabled && canSend {
                             Theme.hapticSend()
                             onSend()
                         }
@@ -85,7 +94,7 @@ struct InputBar: View {
                     }
                     .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                     .accessibilityLabel("Остановить запись")
-                } else if isEmpty && speech.isAvailable {
+                } else if isEmpty && drafts.isEmpty && speech.isAvailable {
                     Button(action: {
                         Theme.hapticSend()
                         speech.toggle()
@@ -105,10 +114,10 @@ struct InputBar: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: Theme.scaled(32)))
                             .foregroundStyle(Theme.accent)
-                            .opacity(isEmpty ? 0.2 : 1.0)
+                            .opacity(canSend ? 1.0 : 0.2)
                     }
                     .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                    .disabled(isEmpty || isDisabled)
+                    .disabled(!canSend || isDisabled)
                     .accessibilityLabel("Отправить")
                 }
             }
@@ -119,6 +128,7 @@ struct InputBar: View {
             .allowsHitTesting(!isDisabled)
         }
         .animation(.easeInOut(duration: 0.15), value: filteredCommands.isEmpty)
+        .animation(.easeInOut(duration: 0.15), value: drafts.isEmpty)
         .onAppear {
             speech.onTranscript = { transcript in
                 text = transcript
@@ -128,7 +138,7 @@ struct InputBar: View {
     }
 }
 
-private struct CommandList: View {
+struct CommandList: View {
     let commands: [BotCommand]
     let onSelect: (String) -> Void
 

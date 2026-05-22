@@ -32,6 +32,7 @@ targets:
         NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"
         NSHealthShareUsageDescription: "Данные активности и сна передаются агенту как контекст"
         NSHealthUpdateUsageDescription: "Данные активности передаются агенту как контекст"
+        NSCameraUsageDescription: "Камера нужна, чтобы прикреплять снимки к сообщениям Jarvis"
         NSMicrophoneUsageDescription: "Микрофон нужен для голосового ввода сообщений Jarvis"
         NSSpeechRecognitionUsageDescription: "Распознавание речи превращает ваш голос в текст сообщения"
         NSCalendarsUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"

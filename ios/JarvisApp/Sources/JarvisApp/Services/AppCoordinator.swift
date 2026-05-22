@@ -76,13 +76,13 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: – Chat actions
 
-    func sendMessage(_ text: String, viaVoice: Bool = false) {
+    func sendMessage(_ text: String, viaVoice: Bool = false, attachments: [DraftAttachment] = []) {
         lastSendWasVoice = viaVoice
         // Pull-model: don't push heavy context per message. Only the timezone
         // (always) and the user's status emoji (cheap) ride along; the agent
         // pulls richer context on demand via request_context.
         let emoji = settings.statusEmoji.trimmingCharacters(in: .whitespaces)
-        ws.send(text: text, timezone: TimeZone.current.identifier, status: emoji.isEmpty ? nil : emoji)
+        ws.send(text: text, timezone: TimeZone.current.identifier, status: emoji.isEmpty ? nil : emoji, attachments: attachments)
     }
 
     /// Speak arbitrary text on demand (manual "Проговорить" from a bubble).

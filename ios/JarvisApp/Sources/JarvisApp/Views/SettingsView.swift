@@ -127,6 +127,26 @@ struct SettingsView: View {
                     if !isInitialSetup {
                         settingsSection(title: "Ввод") {
                             settingsToggle(icon: "return", label: "Отправка по Enter", isOn: $settings.enterToSend)
+                            settingsDivider()
+                            settingsField(icon: "square.grid.2x2", label: "Режим") {
+                                Picker("", selection: $settings.inputMode) {
+                                    Text("Классика").tag("classic")
+                                    Text("Орб").tag("orb")
+                                }
+                                .pickerStyle(.menu)
+                                .tint(Theme.accent)
+                            }
+                            if settings.inputMode == "orb" {
+                                settingsDivider()
+                                settingsField(icon: "hand.tap", label: "Тап по орбу") {
+                                    Picker("", selection: $settings.orbPrimary) {
+                                        Text("Голос").tag("voice")
+                                        Text("Текст").tag("text")
+                                    }
+                                    .pickerStyle(.menu)
+                                    .tint(Theme.accent)
+                                }
+                            }
                         }
                     }
 

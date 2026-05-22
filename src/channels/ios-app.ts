@@ -466,10 +466,20 @@ function createIOSAdapter(): ChannelAdapter | null {
             if (typeof msg.timezone === 'string' && msg.timezone) lastTimezone.set(pid, msg.timezone);
             const status = typeof msg.status === 'string' && msg.status ? `[status: ${msg.status}]\n` : '';
             const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+            // Inbound attachments (base64) — the host's extractAttachmentFiles saves
+            // each to the session inbox and the agent provider turns images/PDFs into
+            // native content blocks. Keep only well-formed { name, mimeType, data, size }.
+            const content: Record<string, unknown> = { text: status + msg.text, senderId: pid };
+            if (Array.isArray(msg.attachments)) {
+              const atts = (msg.attachments as Array<Record<string, unknown>>).filter(
+                (a) => a && typeof a.data === 'string',
+              );
+              if (atts.length > 0) content.attachments = atts;
+            }
             await cfg!.onInbound(pid, tid, {
               id: randomUUID(),
               kind: 'chat',
-              content: { text: status + msg.text, senderId: pid },
+              content,
               timestamp: new Date().toISOString(),
             });
           }

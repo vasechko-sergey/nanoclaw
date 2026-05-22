@@ -27,6 +27,8 @@
 	<string>Ближайшее событие календаря передаётся агенту как контекст</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Ближайшее событие календаря передаётся агенту как контекст</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Камера нужна, чтобы прикреплять снимки к сообщениям Jarvis</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Данные активности и сна передаются агенту как контекст</string>
 	<key>NSHealthUpdateUsageDescription</key>

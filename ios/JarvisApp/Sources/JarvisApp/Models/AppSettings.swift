@@ -9,6 +9,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("useCalendar")   var useCalendar  = false
     @AppStorage("statusEmoji")   var statusEmoji  = ""
     @AppStorage("enterToSend")   var enterToSend  = true
+    @AppStorage("inputMode")     var inputMode    = "classic"   // "classic" | "orb"
+    @AppStorage("orbPrimary")    var orbPrimary   = "voice"     // "voice" | "text" — tap-on-orb action
     @AppStorage("autoSpeak")     var autoSpeak    = false
     @AppStorage("voiceId")       var voiceId      = ""
     @AppStorage("voiceRate")     var voiceRate    = 0.47
