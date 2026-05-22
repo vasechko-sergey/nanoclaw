@@ -52,8 +52,30 @@ function appendHealthRows(rows: Array<Record<string, unknown>>): void {
   if (!rows.length) return;
   try {
     fs.mkdirSync(HEALTH_DIR, { recursive: true });
-    const lines = rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
-    fs.appendFileSync(HEALTH_RAW, lines);
+    // Upsert by date: one row per day (incoming wins), so re-fetches don't grow
+    // the file with duplicates. Single writer (this adapter) → read-modify-write safe.
+    const byDate = new Map<string, Record<string, unknown>>();
+    try {
+      for (const line of fs.readFileSync(HEALTH_RAW, 'utf8').split('\n')) {
+        const s = line.trim();
+        if (!s) continue;
+        const r = JSON.parse(s) as Record<string, unknown>;
+        if (typeof r.date === 'string') byDate.set(r.date, r);
+      }
+    } catch {
+      // no existing file yet
+    }
+    for (const r of rows) {
+      if (typeof r.date === 'string') byDate.set(r.date, r);
+    }
+    const out =
+      [...byDate.keys()]
+        .sort()
+        .map((d) => JSON.stringify(byDate.get(d)))
+        .join('\n') + '\n';
+    const tmp = `${HEALTH_RAW}.tmp`;
+    fs.writeFileSync(tmp, out);
+    fs.renameSync(tmp, HEALTH_RAW);
   } catch {
     // best-effort; analyzer tolerates gaps
   }
