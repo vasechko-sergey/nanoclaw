@@ -41,6 +41,9 @@ final class WebSocketClient: ObservableObject {
     /// dict for the requested fields. Set by the coordinator (owns the managers).
     var onContextRequest: (([String]) -> [String: Any])?
 
+    /// Agent asks for historical health over [from,to] (yyyy-MM-dd); reply with daily rows.
+    var onFetchHealth: ((_ from: String, _ to: String, _ reply: @escaping ([[String: Any]]) -> Void) -> Void)?
+
     func connect(settings: AppSettings) {
         self.settings = settings
         stopped = false
@@ -106,6 +109,18 @@ final class WebSocketClient: ObservableObject {
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         ws.send(.data(data)) { if let e = $0 { print("WS send failed: \(e)") } }
+    }
+
+    /// Reply to a fetch_health request with daily aggregate rows. Technical, not rendered.
+    func sendHealthHistory(requestId: String, days: [[String: Any]]) {
+        guard let ws = task, isConnected else { return }
+        let payload: [String: Any] = [
+            "type": "health_history",
+            "requestId": requestId,
+            "days": days,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { if let e = $0 { print("WS send(health_history) failed: \(e)") } }
     }
 
     /// Reply to an agent context pull. Technical, not rendered.
@@ -249,6 +264,17 @@ final class WebSocketClient: ObservableObject {
             let requestId = obj["requestId"] as? String ?? ""
             let ctx = onContextRequest?(fields) ?? [:]
             sendContextResponse(requestId: requestId, context: ctx)
+            return
+        }
+
+        // --- Health history request (agent pull) — fetch daily aggregates, reply ---
+        if t == "fetch_health" {
+            let requestId = obj["requestId"] as? String ?? ""
+            let from = obj["from"] as? String ?? ""
+            let to = obj["to"] as? String ?? ""
+            onFetchHealth?(from, to) { [weak self] days in
+                self?.sendHealthHistory(requestId: requestId, days: days)
+            }
             return
         }
 

@@ -178,6 +178,11 @@ final class AppCoordinator: ObservableObject {
             )
         }
 
+        // Agent (health analyzer) pulls historical health over an interval.
+        ws.onFetchHealth = { from, to, reply in
+            HealthHistory.fetch(from: from, to: to, completion: reply)
+        }
+
         // Auto-speak assistant text only when the triggering message was dictated
         ws.onSpeakableText = { [weak self] text in
             guard let self, self.settings.autoSpeak, self.lastSendWasVoice else { return }

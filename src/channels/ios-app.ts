@@ -38,6 +38,25 @@ interface QueuedMessage {
 // Persist APNs device tokens across server restarts.
 const TOKENS_FILE = path.join(process.cwd(), 'data', 'ios-apns-tokens.json');
 
+// Health time-series store for the autonomous analyzer (Greg). Host writes raw.jsonl
+// (one daily row per line); the analyzer reads it read-only. requests/ holds the
+// analyzer's fetch_health asks, serviced by the watcher in setup() — no agent/LLM
+// in the data-acquisition path. See plan "Заход 2".
+const HEALTH_DIR = path.join(process.cwd(), 'data', 'health');
+const HEALTH_RAW = path.join(HEALTH_DIR, 'raw.jsonl');
+const HEALTH_REQ_DIR = path.join(HEALTH_DIR, 'requests');
+
+function appendHealthRows(rows: Array<Record<string, unknown>>): void {
+  if (!rows.length) return;
+  try {
+    fs.mkdirSync(HEALTH_DIR, { recursive: true });
+    const lines = rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+    fs.appendFileSync(HEALTH_RAW, lines);
+  } catch {
+    // best-effort; analyzer tolerates gaps
+  }
+}
+
 function loadPersistedTokens(): Map<string, string> {
   try {
     const raw = fs.readFileSync(TOKENS_FILE, 'utf8');
@@ -207,6 +226,48 @@ function createIOSAdapter(): ChannelAdapter | null {
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
   let wss: WebSocketServer | null = null;
+  let healthWatcher: ReturnType<typeof setInterval> | null = null;
+
+  // Service the analyzer's fetch_health asks: send a control to connected clients.
+  // Retries every cycle until the device answers (deletes the request) — survives
+  // app offline (plan P2). lastSentAt throttles resends while waiting.
+  const healthReqSentAt = new Map<string, number>();
+  function serviceHealthRequests(): void {
+    let files: string[];
+    try {
+      files = fs.readdirSync(HEALTH_REQ_DIR).filter((f) => f.endsWith('.json'));
+    } catch {
+      return; // dir not created yet
+    }
+    for (const f of files) {
+      const reqId = f.replace(/\.json$/, '');
+      if (Date.now() - (healthReqSentAt.get(reqId) ?? 0) < 60_000) continue;
+      let req: { from?: string; to?: string; metrics?: string[]; platformId?: string };
+      try {
+        req = JSON.parse(fs.readFileSync(path.join(HEALTH_REQ_DIR, f), 'utf8'));
+      } catch {
+        continue;
+      }
+      const targets = req.platformId ? [req.platformId] : [...wsClients.keys()];
+      let sent = false;
+      const payload = JSON.stringify({
+        type: 'fetch_health',
+        requestId: reqId,
+        from: req.from,
+        to: req.to,
+        metrics: req.metrics,
+      });
+      for (const tpid of targets) {
+        wsClients.get(tpid)?.forEach((w) => {
+          if (w.readyState === WebSocket.OPEN) {
+            w.send(payload);
+            sent = true;
+          }
+        });
+      }
+      if (sent) healthReqSentAt.set(reqId, Date.now());
+    }
+  }
 
   function deliverTextAndFiles(
     platformId: string,
@@ -409,6 +470,23 @@ function createIOSAdapter(): ChannelAdapter | null {
             });
           }
 
+          // Health history — reply to a fetch_health pull. Technical: append daily
+          // rows to the raw store and clear the serviced request. Not routed to any agent.
+          if (msg.type === 'health_history') {
+            const days = Array.isArray(msg.days) ? (msg.days as Array<Record<string, unknown>>) : [];
+            appendHealthRows(days);
+            const reqId = typeof msg.requestId === 'string' ? msg.requestId : '';
+            if (reqId) {
+              try {
+                fs.unlinkSync(path.join(HEALTH_REQ_DIR, `${reqId}.json`));
+              } catch {
+                // already gone
+              }
+            }
+            log(`health_history: +${days.length} day(s)${reqId ? ` (req ${reqId})` : ''}`);
+            return;
+          }
+
           // Action response — user tapped a button on an action message.
           // For ask_question/approval cards the questionId (the action message id)
           // is present → resolve the pending_questions/approval row structurally via
@@ -452,9 +530,18 @@ function createIOSAdapter(): ChannelAdapter | null {
       });
 
       await new Promise<void>((ok, fail) => httpServer!.listen(port, '0.0.0.0', ok).on('error', fail));
+
+      // Health-request watcher: service the analyzer's fetch_health asks.
+      try {
+        fs.mkdirSync(HEALTH_REQ_DIR, { recursive: true });
+      } catch {
+        // best-effort
+      }
+      healthWatcher = setInterval(serviceHealthRequests, 10_000);
     },
 
     async teardown() {
+      if (healthWatcher) clearInterval(healthWatcher);
       wss?.close();
       await new Promise<void>((r) => httpServer?.close(() => r()));
     },
