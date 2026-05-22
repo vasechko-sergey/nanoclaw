@@ -25,6 +25,8 @@ targets:
         UIRequiresFullScreen: true
         UIBackgroundModes:
           - remote-notification
+          - fetch
+          - processing
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"
@@ -38,6 +40,7 @@ targets:
       path: JarvisApp.entitlements
       properties:
         com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.background-delivery: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis

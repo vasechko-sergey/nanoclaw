@@ -48,6 +48,19 @@ const HEALTH_DIR = path.join(process.cwd(), 'groups', 'health-analyzer', 'health
 const HEALTH_RAW = path.join(HEALTH_DIR, 'raw.jsonl');
 const HEALTH_REQ_DIR = path.join(HEALTH_DIR, 'requests');
 
+// Shared health-history ingestion — used by both the WS path (foreground) and the
+// HTTP upload path (background). Appends/upserts rows and clears the serviced request.
+function ingestHealthHistory(days: Array<Record<string, unknown>>, requestId?: string): void {
+  appendHealthRows(days);
+  if (requestId) {
+    try {
+      fs.unlinkSync(path.join(HEALTH_REQ_DIR, `${requestId}.json`));
+    } catch {
+      // already gone
+    }
+  }
+}
+
 function appendHealthRows(rows: Array<Record<string, unknown>>): void {
   if (!rows.length) return;
   try {
@@ -144,6 +157,56 @@ async function sendApnsPush(
     });
     req.setEncoding('utf8');
     req.once('error', fail); // without this a request-level error hangs the promise
+    let status = 0;
+    let resp = '';
+    req.on('response', (h) => {
+      status = h[':status'] as number;
+    });
+    req.on('data', (chunk) => {
+      resp += chunk;
+    });
+    req.on('end', () => {
+      client.close();
+      resolve({ status, body: resp });
+    });
+    req.end(body);
+  });
+}
+
+// Silent (content-available) push — wakes the app in the background to run a task
+// (e.g. fetch_health) and upload over HTTP. No alert/sound. Used when no WS socket
+// is connected. iOS throttles these; force-quit suppresses them entirely.
+async function sendApnsSilentPush(
+  deviceToken: string,
+  data: Record<string, unknown>,
+  apns: ApnsConfig | null,
+): Promise<{ status: number; body: string }> {
+  if (!apns) return { status: 0, body: '' };
+  const jwt = getApnsJwt(apns);
+  const host = apns.sandbox ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
+  const body = JSON.stringify({ aps: { 'content-available': 1 }, ...data });
+
+  return await new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const client = http2.connect(`https://${host}`);
+    const fail = (e: unknown) => {
+      client.close();
+      reject(e instanceof Error ? e : new Error(String(e)));
+    };
+    client.once('error', fail);
+    const req = client.request({
+      ':method': 'POST',
+      ':path': `/3/device/${deviceToken}`,
+      ':scheme': 'https',
+      ':authority': host,
+      authorization: `bearer ${jwt}`,
+      'apns-topic': apns.bundleId,
+      'apns-push-type': 'background',
+      'apns-priority': '5',
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(body),
+    });
+    req.setEncoding('utf8');
+    req.once('error', fail);
     let status = 0;
     let resp = '';
     req.on('response', (h) => {
@@ -272,7 +335,7 @@ function createIOSAdapter(): ChannelAdapter | null {
       } catch {
         continue;
       }
-      const targets = req.platformId ? [req.platformId] : [...wsClients.keys()];
+      const wsTargets = req.platformId ? [req.platformId] : [...wsClients.keys()];
       let sent = false;
       const payload = JSON.stringify({
         type: 'fetch_health',
@@ -281,13 +344,28 @@ function createIOSAdapter(): ChannelAdapter | null {
         to: req.to,
         metrics: req.metrics,
       });
-      for (const tpid of targets) {
+      for (const tpid of wsTargets) {
         wsClients.get(tpid)?.forEach((w) => {
           if (w.readyState === WebSocket.OPEN) {
             w.send(payload);
             sent = true;
           }
         });
+      }
+      // No live WS socket → wake the app via silent push; it fetches and uploads
+      // over HTTP (background). Plan "Заход 3" B.
+      if (!sent) {
+        const pushTargets = req.platformId ? [req.platformId] : [...apnsTokens.keys()];
+        for (const tpid of pushTargets) {
+          const token = apnsTokens.get(tpid);
+          if (!token) continue;
+          sendApnsSilentPush(token, { fetch: { requestId: reqId, from: req.from, to: req.to } }, apnsCfg)
+            .then(({ status }) => {
+              if (status && status !== 200) log(`silent push ${status} for ${tpid} (req ${reqId})`);
+            })
+            .catch((e) => log(`silent push error for ${tpid}: ${e instanceof Error ? e.message : String(e)}`));
+          sent = true;
+        }
       }
       if (sent) healthReqSentAt.set(reqId, Date.now());
     }
@@ -357,9 +435,38 @@ function createIOSAdapter(): ChannelAdapter | null {
       cfg = config;
 
       httpServer = http.createServer((req, res) => {
-        if (req.method === 'GET' && req.url === '/ios/health')
+        if (req.method === 'GET' && req.url === '/ios/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
-        else res.writeHead(404).end();
+          return;
+        }
+        // Background health upload — the app, woken by silent push or HealthKit
+        // background delivery, POSTs daily aggregates here (WS may be offline).
+        if (req.method === 'POST' && req.url === '/ios/health/upload') {
+          const auth = req.headers.authorization ?? '';
+          if (auth !== `Bearer ${token}`) {
+            res.writeHead(401).end();
+            return;
+          }
+          let raw = '';
+          req.setEncoding('utf8');
+          req.on('data', (c) => {
+            raw += c;
+            if (raw.length > 2_000_000) req.destroy(); // guard against oversized uploads
+          });
+          req.on('end', () => {
+            try {
+              const obj = JSON.parse(raw) as { requestId?: string; days?: Array<Record<string, unknown>> };
+              const days = Array.isArray(obj.days) ? obj.days : [];
+              ingestHealthHistory(days, typeof obj.requestId === 'string' ? obj.requestId : undefined);
+              log(`health_history (http): +${days.length} day(s)${obj.requestId ? ` (req ${obj.requestId})` : ''}`);
+              res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
+            } catch {
+              res.writeHead(400).end();
+            }
+          });
+          return;
+        }
+        res.writeHead(404).end();
       });
 
       wss = new WebSocketServer({ server: httpServer });
@@ -498,16 +605,9 @@ function createIOSAdapter(): ChannelAdapter | null {
           // rows to the raw store and clear the serviced request. Not routed to any agent.
           if (msg.type === 'health_history') {
             const days = Array.isArray(msg.days) ? (msg.days as Array<Record<string, unknown>>) : [];
-            appendHealthRows(days);
-            const reqId = typeof msg.requestId === 'string' ? msg.requestId : '';
-            if (reqId) {
-              try {
-                fs.unlinkSync(path.join(HEALTH_REQ_DIR, `${reqId}.json`));
-              } catch {
-                // already gone
-              }
-            }
-            log(`health_history: +${days.length} day(s)${reqId ? ` (req ${reqId})` : ''}`);
+            const reqId = typeof msg.requestId === 'string' ? msg.requestId : undefined;
+            ingestHealthHistory(days, reqId);
+            log(`health_history (ws): +${days.length} day(s)${reqId ? ` (req ${reqId})` : ''}`);
             return;
           }
 
