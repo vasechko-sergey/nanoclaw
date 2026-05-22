@@ -89,11 +89,12 @@ CLAUDE.md §5: health эфемерны, в профиль не писать. Raw
 
 ## Заход 3 — фоновый health-sync (без открытого app)
 
-- [x] **15. Сервер** — `sendApnsSilentPush` (content-available), watcher-фоллбэк на push при отсутствии WS, `POST /ios/health/upload` (Bearer-auth) + общий `ingestHealthHistory`. Задеплоено; эндпоинт проверен (401 без auth, 200 с auth).
-- [x] **16. iOS Background Delivery (A)** — `HealthSync.swift`: `enableBackgroundDelivery` + `HKObserverQuery` по 7 типам → `HealthUpload` при новых данных. Собрано.
-- [x] **17. iOS silent-push fetch (B)** — `HealthUpload.swift`; `AppDelegate` content-available → `HealthHistory.fetch` → upload; `project.yml` background modes + healthkit background-delivery entitlement. Собрано.
+**Финальная схема — HTTP-poll (APNs НЕ нужен, у Сергея нет Apple Developer):** WS только чат; фоновые серверные запросы app тянет по HTTP.
+- [x] **15. Сервер** — `GET /ios/health/requests` (очередь, Bearer-auth) + `POST /ios/health/upload` (ingest+удаление запроса) + `ingestHealthHistory`. Убраны silent-push watcher, `sendApnsSilentPush`, WS `fetch_health`/`health_history`. Проверено: 401 без auth, `{requests:[]}` с auth.
+- [x] **16. iOS Background Delivery (A)** — `HealthSync.swift`: `enableBackgroundDelivery` + `HKObserverQuery` (7 типов) → `pushRecent` (HTTP upload) **+** `HealthRequests.drain`. Работает (`+N day` uploads).
+- [x] **17. iOS HTTP-drain (B)** — `HealthRequests.drain` поллит очередь → `HealthHistory.fetch` → `HealthUpload`. Вызов: foreground-connect + каждый фон-wake. **Проверено вживую:** `bg2 +14 day(s)` дренулось, очередь пуста. `aps-environment` убран.
 
-**Проверка на девайсе (Сергей):** поставить новый build → свернуть app (не убивать) → положить запрос в `requests/` на VDS → silent push разбудит → `raw.jsonl` обновится без открытия app. Background delivery — при новых health-данных. **Force-quit глушит оба** (iOS-правило).
+**Подтверждено end-to-end (девайс):** A — фон-аплоады без присутствия; B — запрос в очереди → дрейн на foreground (мгновенно) / фон-wake (~hourly). APNs не требуется. Force-quit глушит фон (iOS-правило) — на foreground всё равно дренит.
 
 **Грабли активации (на будущее):** (1) `ncl groups create` не создаёт `container_configs` → `ensureContainerConfig` вручную. (2) OneCLI identifier должен начинаться с буквы. (3) После пере-вайринга destinations нужно перепроецировать в `inbound.db` живого агента (`writeDestinations`) — `docker restart` не перепроецирует. (4) headless-агент будится только сообщением от другого агента.
 
