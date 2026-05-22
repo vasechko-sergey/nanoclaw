@@ -77,6 +77,16 @@ CLAUDE.md §5: health эфемерны, в профиль не писать. Raw
 
 Голос (1–2) — крупная ставка. 3–4 параллельно. 5–7 — далее.
 
+## Заход 2 — автономный health-агент «Грег» (построено, развёрнуто)
+
+- [x] **10. iOS fetch_health** — `HealthHistory.swift` daily-бакеты на устройстве; WS `fetch_health`/`health_history`. Собрано.
+- [x] **11. Host store+watcher** — `ios-app.ts`: `health_history`→`raw.jsonl`, watcher обслуживает `requests/`. Развёрнуто. **Mounts не нужны** — данные в папке группы Грега (авто-mount, как у Джарвиса).
+- [x] **12. Грег + analyzer** — `groups/health-analyzer/{CLAUDE.md, scripts/analyze.js (Bun — python нет в образе), memories/state.md}`. analyze.js протестирован в реальном образе (RHR→critical). agent_group `7f502486-b4e7-47f8-9a3a-4f21ebdba88e`.
+- [x] **13. a2a + гейт** — destinations jarvis↔health-analyzer связаны. Джарвис §9: findings по a2a → фильтр тихие часы/лимит → critical Сергею; recheck loop-guard; 👎→suppress. Handoff через a2a (findings редки), не shared-folder.
+- [ ] **14. Активация (нужен 1 пинок)** — headless Грег просыпается только когда Джарвис ему напишет (chicken-egg: расписания ещё нет). Сергей шлёт Джарвису одно сообщение → Джарвис пингует Грега → Грег заводит recurring-расписание + запрашивает 14 дней истории. Телефон онлайн нужен для реальной выгрузки.
+
+**Идентификаторы:** Jarvis `ag-1778740750341-ru9i6e`, Greg `7f502486-b4e7-47f8-9a3a-4f21ebdba88e`. Данные Грега: `groups/health-analyzer/health/{raw.jsonl, requests/}`.
+
 ---
 
 ## Verification
