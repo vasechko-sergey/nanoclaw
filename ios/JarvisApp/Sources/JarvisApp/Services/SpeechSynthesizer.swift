@@ -21,6 +21,10 @@ final class SpeechSynthesizer: NSObject, ObservableObject {
         )
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     @objc private func handleInterruption(_ note: Notification) {
         guard let info = note.userInfo,
               let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,

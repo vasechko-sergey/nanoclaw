@@ -13,6 +13,9 @@ function log(msg: string): void {
   console.log(`[ios-app] ${msg}`);
 }
 
+// Max messages buffered for an offline device before dropping the oldest.
+const MAX_PENDING_PER_DEVICE = 200;
+
 // APNs JWT — reused for 55 min then refreshed
 let apnsJwt: { token: string; createdAt: number } | null = null;
 
@@ -78,7 +81,13 @@ async function sendApnsPush(
 
   return await new Promise<{ status: number; body: string }>((resolve, reject) => {
     const client = http2.connect(`https://${host}`);
-    client.on('error', reject);
+    // Always close the session, on success or any error path, so we never leak
+    // an http2 connection on network failures.
+    const fail = (e: unknown) => {
+      client.close();
+      reject(e instanceof Error ? e : new Error(String(e)));
+    };
+    client.once('error', fail);
     const req = client.request({
       ':method': 'POST',
       ':path': `/3/device/${deviceToken}`,
@@ -91,7 +100,7 @@ async function sendApnsPush(
       'content-length': Buffer.byteLength(body),
     });
     req.setEncoding('utf8');
-    req.on('error', reject); // without this a request-level error hangs the promise
+    req.once('error', fail); // without this a request-level error hangs the promise
     let status = 0;
     let resp = '';
     req.on('response', (h) => {
@@ -214,7 +223,15 @@ function createIOSAdapter(): ChannelAdapter | null {
       set.forEach((ws) => deliverViaSock(ws, queued));
       recordDelivered(platformId, id);
     } else {
-      pendingMessages.set(platformId, [...(pendingMessages.get(platformId) ?? []), queued]);
+      // Cap the offline queue so a long-offline device can't grow it unbounded
+      // (base64 file payloads especially). Drop the oldest on overflow.
+      const queue = [...(pendingMessages.get(platformId) ?? []), queued];
+      if (queue.length > MAX_PENDING_PER_DEVICE) {
+        const dropped = queue.length - MAX_PENDING_PER_DEVICE;
+        queue.splice(0, dropped);
+        log(`pendingMessages overflow for ${platformId} — dropped ${dropped} oldest`);
+      }
+      pendingMessages.set(platformId, queue);
       const apnsToken = apnsTokens.get(platformId);
       if (apnsToken) {
         const preview = text ? text.slice(0, 80) : (files[0]?.filename ?? 'Новое сообщение');
@@ -239,7 +256,11 @@ function createIOSAdapter(): ChannelAdapter | null {
     const s = wsClients.get(pid);
     if (!s) return;
     s.delete(ws);
-    if (s.size === 0) wsClients.delete(pid);
+    if (s.size === 0) {
+      wsClients.delete(pid);
+      lastTimezone.delete(pid);
+      // deliveredIds kept on purpose — needed to dedup re-flush on reconnect.
+    }
   }
 
   return {

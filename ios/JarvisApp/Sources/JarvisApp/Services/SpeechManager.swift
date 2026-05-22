@@ -16,6 +16,9 @@ final class SpeechManager: ObservableObject {
     private let audioEngine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    /// Guards against a second start() while authorization is still in flight —
+    /// two beginRecording() calls would installTap twice on the same bus and crash.
+    private var starting = false
 
     init() {
         isAvailable = recognizer?.isAvailable ?? false
@@ -26,17 +29,21 @@ final class SpeechManager: ObservableObject {
     }
 
     func start() {
+        guard !isRecording, !starting else { return }
+        starting = true
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 guard let self else { return }
                 guard status == .authorized else {
                     self.permissionDenied = true
+                    self.starting = false
                     return
                 }
                 AVAudioApplication.requestRecordPermission { granted in
                     DispatchQueue.main.async {
                         guard granted else {
                             self.permissionDenied = true
+                            self.starting = false
                             return
                         }
                         self.beginRecording()
@@ -47,6 +54,7 @@ final class SpeechManager: ObservableObject {
     }
 
     private func beginRecording() {
+        starting = false
         guard let recognizer, recognizer.isAvailable else { return }
 
         let session = AVAudioSession.sharedInstance()
@@ -92,6 +100,7 @@ final class SpeechManager: ObservableObject {
     }
 
     func stop() {
+        starting = false
         audioEngine.inputNode.removeTap(onBus: 0)
         if audioEngine.isRunning { audioEngine.stop() }
         request?.endAudio()

@@ -160,6 +160,9 @@ final class WebSocketClient: ObservableObject {
         else if !s.hasPrefix("ws")      { s = "ws://"  + s }
         guard let url = URL(string: s) else { return }
 
+        // Cancel any prior task so we never run two concurrent receive loops.
+        task?.cancel(with: .normalClosure, reason: nil)
+
         let ws = URLSession.shared.webSocketTask(with: url)
         self.task = ws
         ws.resume()
@@ -179,11 +182,15 @@ final class WebSocketClient: ObservableObject {
             Task { @MainActor in
                 switch result {
                 case .failure:
+                    // Ignore failures from a socket we've already replaced.
+                    guard self.task === ws else { return }
                     self.isConnected = false
                     self.isTyping    = false
                     guard !self.stopped, let settings = self.settings else { return }
                     try? await Task.sleep(nanoseconds: UInt64(self.reconnectDelay * 1_000_000_000))
                     self.reconnectDelay = min(self.reconnectDelay * 2, 30)
+                    // Re-check: disconnect() may have fired during the sleep.
+                    guard !self.stopped else { return }
                     self.doConnect(settings: settings)
 
                 case .success(let msg):
@@ -197,6 +204,8 @@ final class WebSocketClient: ObservableObject {
                     if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         self.handleIncoming(obj)
                     }
+                    // Don't keep reading a socket we've replaced or shut down.
+                    guard !self.stopped, self.task === ws else { return }
                     self.receive(ws: ws)
                 }
             }
