@@ -83,9 +83,11 @@ CLAUDE.md §5: health эфемерны, в профиль не писать. Raw
 - [x] **11. Host store+watcher** — `ios-app.ts`: `health_history`→`raw.jsonl`, watcher обслуживает `requests/`. Развёрнуто. **Mounts не нужны** — данные в папке группы Грега (авто-mount, как у Джарвиса).
 - [x] **12. Грег + analyzer** — `groups/health-analyzer/{CLAUDE.md, scripts/analyze.js (Bun — python нет в образе), memories/state.md}`. analyze.js протестирован в реальном образе (RHR→critical). agent_group `7f502486-b4e7-47f8-9a3a-4f21ebdba88e`.
 - [x] **13. a2a + гейт** — destinations jarvis↔health-analyzer связаны. Джарвис §9: findings по a2a → фильтр тихие часы/лимит → critical Сергею; recheck loop-guard; 👎→suppress. Handoff через a2a (findings редки), не shared-folder.
-- [ ] **14. Активация (нужен 1 пинок)** — headless Грег просыпается только когда Джарвис ему напишет (chicken-egg: расписания ещё нет). Сергей шлёт Джарвису одно сообщение → Джарвис пингует Грега → Грег заводит recurring-расписание + запрашивает 14 дней истории. Телефон онлайн нужен для реальной выгрузки.
+- [x] **14. Активация — РАБОТАЕТ end-to-end.** Джарвис пингнул Грега → Грег завёл recurring `schedule_task` (ежедневно 09:00 UTC) + записал `init_14d.json` → host watcher → `fetch_health` → app (онлайн) → `health_history` +15 дней → `raw.jsonl` (15 строк реальных данных) → Грег отчитался Джарвису. Все 5 звеньев живые.
 
-**Идентификаторы:** Jarvis `ag-1778740750341-ru9i6e`, Greg `7f502486-b4e7-47f8-9a3a-4f21ebdba88e`. Данные Грега: `groups/health-analyzer/health/{raw.jsonl, requests/}`.
+**Идентификаторы:** Jarvis `ag-1778740750341-ru9i6e`, Greg **`greg`** (пересоздан: OneCLI требует identifier с буквы, UUID с цифры отвергался — баг `ncl groups create`, чип на починку). Данные Грега: `groups/health-analyzer/health/{raw.jsonl, requests/}`.
+
+**Грабли активации (на будущее):** (1) `ncl groups create` не создаёт `container_configs` → `ensureContainerConfig` вручную. (2) OneCLI identifier должен начинаться с буквы. (3) После пере-вайринга destinations нужно перепроецировать в `inbound.db` живого агента (`writeDestinations`) — `docker restart` не перепроецирует. (4) headless-агент будится только сообщением от другого агента.
 
 ---
 
