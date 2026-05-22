@@ -352,20 +352,20 @@ function createIOSAdapter(): ChannelAdapter | null {
           }
         });
       }
-      // No live WS socket → wake the app via silent push; it fetches and uploads
-      // over HTTP (background). Plan "Заход 3" B.
-      if (!sent) {
-        const pushTargets = req.platformId ? [req.platformId] : [...apnsTokens.keys()];
-        for (const tpid of pushTargets) {
-          const token = apnsTokens.get(tpid);
-          if (!token) continue;
-          sendApnsSilentPush(token, { fetch: { requestId: reqId, from: req.from, to: req.to } }, apnsCfg)
-            .then(({ status }) => {
-              if (status && status !== 200) log(`silent push ${status} for ${tpid} (req ${reqId})`);
-            })
-            .catch((e) => log(`silent push error for ${tpid}: ${e instanceof Error ? e.message : String(e)}`));
-          sent = true;
-        }
+      // Always also wake the app via silent push. A backgrounded app may keep a WS
+      // socket that looks "open" server-side but can't service the receive loop, so
+      // the WS path alone is unreliable in background. Silent push fires foreground
+      // and background; the HTTP upload is idempotent (upsert by date). Plan "Заход 3" B.
+      const pushTargets = req.platformId ? [req.platformId] : [...apnsTokens.keys()];
+      for (const tpid of pushTargets) {
+        const apnsToken = apnsTokens.get(tpid);
+        if (!apnsToken) continue;
+        sendApnsSilentPush(apnsToken, { fetch: { requestId: reqId, from: req.from, to: req.to } }, apnsCfg)
+          .then(({ status }) => {
+            if (status && status !== 200) log(`silent push ${status} for ${tpid} (req ${reqId})`);
+          })
+          .catch((e) => log(`silent push error for ${tpid}: ${e instanceof Error ? e.message : String(e)}`));
+        sent = true;
       }
       if (sent) healthReqSentAt.set(reqId, Date.now());
     }
