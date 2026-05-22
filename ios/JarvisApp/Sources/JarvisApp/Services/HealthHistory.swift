@@ -68,6 +68,19 @@ enum HealthHistory {
             }
         }
 
+        // HRV (SDNN) daily average — ms. Key recovery signal.
+        group.enter()
+        collection(.heartRateVariabilitySDNN, start: start, end: end, options: .discreteAverage) { stats in
+            let ms = HKUnit.secondUnit(with: .milli)
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    byDay[k, default: ["date": k]]["hrv"] = Int(q.doubleValue(for: ms).rounded())
+                }
+            }
+            group.leave()
+        }
+
         // Sleep: sum asleep durations, bucketed by wake day (the day the sleep block ends).
         group.enter()
         sleepByDay(start: start, end: end, bucket: bucketKey) { sleep in

@@ -20,6 +20,7 @@ final class HealthManager: ObservableObject {
             HKCategoryType(.sleepAnalysis),
             HKQuantityType(.restingHeartRate),
             HKQuantityType(.appleExerciseTime),
+            HKQuantityType(.heartRateVariabilitySDNN),
         ]
         store.requestAuthorization(toShare: nil, read: types) { [weak self] ok, _ in
             guard ok else { return }
