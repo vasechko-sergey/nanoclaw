@@ -24,7 +24,11 @@ enum HealthSync {
         started = true
         for t in sampleTypes {
             let q = HKObserverQuery(sampleType: t, predicate: nil) { _, completion, _ in
-                pushRecent { completion() }
+                // On a background wake: drain any pending server fetch requests AND
+                // push recent days. Both over HTTP (no APNs).
+                HealthRequests.drain {
+                    pushRecent { completion() }
+                }
             }
             store.execute(q)
             store.enableBackgroundDelivery(for: t, frequency: .hourly) { _, _ in }

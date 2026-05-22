@@ -1,0 +1,243 @@
+{
+  "": {
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/primary.swiftdeps"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Components/ConnectionBanner.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectionBanner.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectionBanner.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectionBanner~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectionBanner.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectionBanner.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Components/EmojiPickerView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmojiPickerView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmojiPickerView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmojiPickerView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmojiPickerView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmojiPickerView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Components/EmptyStateView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmptyStateView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmptyStateView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmptyStateView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmptyStateView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/EmptyStateView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Components/InputBar.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/InputBar.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/InputBar.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/InputBar~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/InputBar.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/InputBar.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Components/MarkdownText.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MarkdownText.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MarkdownText.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MarkdownText~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MarkdownText.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MarkdownText.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Components/MessageBubble.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageBubble.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageBubble.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageBubble~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageBubble.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageBubble.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Components/OrbView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/OrbView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/OrbView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/OrbView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/OrbView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/OrbView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/JarvisApp.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/JarvisApp.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/JarvisApp.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/JarvisApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/JarvisApp.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/JarvisApp.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Models/AppSettings.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppSettings.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppSettings.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppSettings~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppSettings.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppSettings.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Models/Conversation.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Conversation.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Conversation.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Conversation~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Conversation.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Conversation.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Models/ConversationAction.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationAction.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationAction.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationAction~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationAction.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationAction.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Models/Message.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Message.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Message.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Message~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Message.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Message.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/AppCoordinator.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppCoordinator.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppCoordinator.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppCoordinator~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppCoordinator.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/AppCoordinator.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/CalendarManager.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/CalendarManager.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/CalendarManager.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/CalendarManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/CalendarManager.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/CalendarManager.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/ConnectivityMonitor.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectivityMonitor.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectivityMonitor.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectivityMonitor~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectivityMonitor.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConnectivityMonitor.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/ConversationStore.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationStore.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationStore.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationStore.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationStore.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthHistory.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthHistory.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthHistory~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthHistory.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthHistory.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/HealthManager.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthManager.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthManager.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthManager.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthManager.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/HealthSync.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthSync.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthSync.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthSync~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthSync.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthSync.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/HealthUpload.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthUpload.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthUpload.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthUpload~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthUpload.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/HealthUpload.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/LocationManager.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/LocationManager.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/LocationManager.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/LocationManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/LocationManager.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/LocationManager.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/MessageCache.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageCache.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageCache.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageCache~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageCache.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/MessageCache.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/SpeechManager.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechManager.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechManager.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechManager.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechManager.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/SpeechSynthesizer.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechSynthesizer.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechSynthesizer.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechSynthesizer~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechSynthesizer.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SpeechSynthesizer.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Services/WebSocketClient.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/WebSocketClient.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/WebSocketClient.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/WebSocketClient~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/WebSocketClient.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/WebSocketClient.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Utility/ContextBuilder.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContextBuilder.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContextBuilder.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContextBuilder~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContextBuilder.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContextBuilder.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Utility/Theme.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Theme.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Theme.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Theme~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Theme.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/Theme.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Views/ArchivedChatView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ArchivedChatView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ArchivedChatView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ArchivedChatView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ArchivedChatView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ArchivedChatView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Views/ChatView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ChatView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ChatView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ChatView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ChatView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ChatView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Views/ContentView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContentView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContentView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ContentView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Views/ConversationListView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationListView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationListView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationListView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationListView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ConversationListView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Views/FullScreenImageView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/FullScreenImageView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/FullScreenImageView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/FullScreenImageView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/FullScreenImageView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/FullScreenImageView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Views/ProfileView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ProfileView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ProfileView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ProfileView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ProfileView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/ProfileView.dia"
+  },
+  "/Users/serg/git/nanoclaw/ios/JarvisApp/Sources/JarvisApp/Views/SettingsView.swift": {
+    "dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SettingsView.d",
+    "object": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SettingsView.swift.o",
+    "swiftmodule": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SettingsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SettingsView.swiftdeps",
+    "diagnostics": "/Users/serg/git/nanoclaw/ios/JarvisApp/.build/index-build/arm64-apple-macosx/debug/JarvisApp.build/SettingsView.dia"
+  }
+}

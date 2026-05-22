@@ -65,6 +65,8 @@ final class AppCoordinator: ObservableObject {
         if settings.useLocation { location.requestAndUpdate() }
         if settings.useHealth   { health.requestAndFetch()    }
         if settings.useCalendar { calendar.requestAndFetch()  }
+        // Drain any pending server-side health fetch requests over HTTP (no APNs).
+        if settings.useHealth { HealthRequests.drain() }
     }
 
     func disconnect() {
@@ -176,11 +178,6 @@ final class AppCoordinator: ObservableObject {
                 health: self.health,
                 calendar: self.calendar
             )
-        }
-
-        // Agent (health analyzer) pulls historical health over an interval.
-        ws.onFetchHealth = { from, to, reply in
-            HealthHistory.fetch(from: from, to: to, completion: reply)
         }
 
         // Auto-speak assistant text only when the triggering message was dictated

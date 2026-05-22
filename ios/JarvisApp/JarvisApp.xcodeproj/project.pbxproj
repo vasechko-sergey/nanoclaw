@@ -35,6 +35,7 @@
 		98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */; };
 		A5C9F8B68FF24E055F491270 /* ArchivedChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3ED59A835A5FB6D560D4BD /* ArchivedChatView.swift */; };
 		A5E58DE1118E27B90F5A338A /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = E006B07422AC4979C7FB7D76 /* MessageBubble.swift */; };
+		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
 		B53C92F62A47B0340DA0F933 /* ConnectivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6A33B378AA0CC36F2DE37A /* ConnectivityMonitor.swift */; };
 		B7F597A6F3ABDE38490D9F4E /* ConversationAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229634FFA1E272144B82BEEB /* ConversationAction.swift */; };
 		BF081A3591467809EC839078 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF10B991F6600D17760B644 /* SettingsView.swift */; };
@@ -62,6 +63,7 @@
 		48A9578A316F0AB1F8247B95 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		4FB3889146F12123FB99824E /* WebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClient.swift; sourceTree = "<group>"; };
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthRequests.swift; sourceTree = "<group>"; };
 		79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		83BBF8E04395E33F04CDE186 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
 		83D3D7941261E832088202BF /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
@@ -163,6 +165,7 @@
 				015ED509F6C0355826F4C47E /* ConversationStore.swift */,
 				3DC04EA76CC0F89FF14E7849 /* HealthHistory.swift */,
 				FE1A573133241875D7269CED /* HealthManager.swift */,
+				6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */,
 				F5A055AF8989128A047D605C /* HealthSync.swift */,
 				F0C84294434D6D5A3845BD5D /* HealthUpload.swift */,
 				BD51F238E46BCB805C742CEE /* LocationManager.swift */,
@@ -272,6 +275,7 @@
 				3EB9B81E598895106D47F1DB /* FullScreenImageView.swift in Sources */,
 				4C81E915D4CA0441EEA698DF /* HealthHistory.swift in Sources */,
 				91941E7469BF57E69F4C9DE2 /* HealthManager.swift in Sources */,
+				A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */,
 				3F712956E032728A955B67F8 /* HealthSync.swift in Sources */,
 				D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */,
 				496C7C87D93A74983F21EF54 /* InputBar.swift in Sources */,

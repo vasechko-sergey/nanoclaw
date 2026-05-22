@@ -173,56 +173,6 @@ async function sendApnsPush(
   });
 }
 
-// Silent (content-available) push — wakes the app in the background to run a task
-// (e.g. fetch_health) and upload over HTTP. No alert/sound. Used when no WS socket
-// is connected. iOS throttles these; force-quit suppresses them entirely.
-async function sendApnsSilentPush(
-  deviceToken: string,
-  data: Record<string, unknown>,
-  apns: ApnsConfig | null,
-): Promise<{ status: number; body: string }> {
-  if (!apns) return { status: 0, body: '' };
-  const jwt = getApnsJwt(apns);
-  const host = apns.sandbox ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
-  const body = JSON.stringify({ aps: { 'content-available': 1 }, ...data });
-
-  return await new Promise<{ status: number; body: string }>((resolve, reject) => {
-    const client = http2.connect(`https://${host}`);
-    const fail = (e: unknown) => {
-      client.close();
-      reject(e instanceof Error ? e : new Error(String(e)));
-    };
-    client.once('error', fail);
-    const req = client.request({
-      ':method': 'POST',
-      ':path': `/3/device/${deviceToken}`,
-      ':scheme': 'https',
-      ':authority': host,
-      authorization: `bearer ${jwt}`,
-      'apns-topic': apns.bundleId,
-      'apns-push-type': 'background',
-      'apns-priority': '5',
-      'content-type': 'application/json',
-      'content-length': Buffer.byteLength(body),
-    });
-    req.setEncoding('utf8');
-    req.once('error', fail);
-    let status = 0;
-    let resp = '';
-    req.on('response', (h) => {
-      status = h[':status'] as number;
-    });
-    req.on('data', (chunk) => {
-      resp += chunk;
-    });
-    req.on('end', () => {
-      client.close();
-      resolve({ status, body: resp });
-    });
-    req.end(body);
-  });
-}
-
 function isImageFile(filename: string, mimeType?: string): boolean {
   if (mimeType?.startsWith('image/')) return true;
   return /\.(png|jpe?g|gif|webp|heic|svg|bmp|tiff?)$/i.test(filename);
@@ -313,63 +263,8 @@ function createIOSAdapter(): ChannelAdapter | null {
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
   let wss: WebSocketServer | null = null;
-  let healthWatcher: ReturnType<typeof setInterval> | null = null;
-
-  // Service the analyzer's fetch_health asks: send a control to connected clients.
-  // Retries every cycle until the device answers (deletes the request) — survives
-  // app offline (plan P2). lastSentAt throttles resends while waiting.
-  const healthReqSentAt = new Map<string, number>();
-  function serviceHealthRequests(): void {
-    let files: string[];
-    try {
-      files = fs.readdirSync(HEALTH_REQ_DIR).filter((f) => f.endsWith('.json'));
-    } catch {
-      return; // dir not created yet
-    }
-    for (const f of files) {
-      const reqId = f.replace(/\.json$/, '');
-      if (Date.now() - (healthReqSentAt.get(reqId) ?? 0) < 60_000) continue;
-      let req: { from?: string; to?: string; metrics?: string[]; platformId?: string };
-      try {
-        req = JSON.parse(fs.readFileSync(path.join(HEALTH_REQ_DIR, f), 'utf8'));
-      } catch {
-        continue;
-      }
-      const wsTargets = req.platformId ? [req.platformId] : [...wsClients.keys()];
-      let sent = false;
-      const payload = JSON.stringify({
-        type: 'fetch_health',
-        requestId: reqId,
-        from: req.from,
-        to: req.to,
-        metrics: req.metrics,
-      });
-      for (const tpid of wsTargets) {
-        wsClients.get(tpid)?.forEach((w) => {
-          if (w.readyState === WebSocket.OPEN) {
-            w.send(payload);
-            sent = true;
-          }
-        });
-      }
-      // Always also wake the app via silent push. A backgrounded app may keep a WS
-      // socket that looks "open" server-side but can't service the receive loop, so
-      // the WS path alone is unreliable in background. Silent push fires foreground
-      // and background; the HTTP upload is idempotent (upsert by date). Plan "Заход 3" B.
-      const pushTargets = req.platformId ? [req.platformId] : [...apnsTokens.keys()];
-      for (const tpid of pushTargets) {
-        const apnsToken = apnsTokens.get(tpid);
-        if (!apnsToken) continue;
-        sendApnsSilentPush(apnsToken, { fetch: { requestId: reqId, from: req.from, to: req.to } }, apnsCfg)
-          .then(({ status }) => {
-            if (status && status !== 200) log(`silent push ${status} for ${tpid} (req ${reqId})`);
-          })
-          .catch((e) => log(`silent push error for ${tpid}: ${e instanceof Error ? e.message : String(e)}`));
-        sent = true;
-      }
-      if (sent) healthReqSentAt.set(reqId, Date.now());
-    }
-  }
+  // Health fetch requests are drained by the app over HTTP (GET /ios/health/requests
+  // → POST /ios/health/upload). No server-side push/watcher needed — the app polls.
 
   function deliverTextAndFiles(
     platformId: string,
@@ -439,8 +334,31 @@ function createIOSAdapter(): ChannelAdapter | null {
           res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
           return;
         }
-        // Background health upload — the app, woken by silent push or HealthKit
-        // background delivery, POSTs daily aggregates here (WS may be offline).
+        // Pending fetch requests — the app polls this (on foreground + on HealthKit
+        // background-delivery wake) and services each over HTTP. No APNs needed:
+        // the app pulls, the server never has to wake it. Plan "Заход 3" (HTTP-poll).
+        if (req.method === 'GET' && req.url === '/ios/health/requests') {
+          if ((req.headers.authorization ?? '') !== `Bearer ${token}`) {
+            res.writeHead(401).end();
+            return;
+          }
+          let pending: Array<Record<string, unknown>> = [];
+          try {
+            pending = fs
+              .readdirSync(HEALTH_REQ_DIR)
+              .filter((f) => f.endsWith('.json'))
+              .map((f) => {
+                const r = JSON.parse(fs.readFileSync(path.join(HEALTH_REQ_DIR, f), 'utf8'));
+                return { requestId: f.replace(/\.json$/, ''), from: r.from, to: r.to };
+              });
+          } catch {
+            pending = [];
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ requests: pending }));
+          return;
+        }
+        // Background health upload — the app (foreground or woken by HealthKit
+        // background delivery) POSTs daily aggregates here. WS stays chat-only.
         if (req.method === 'POST' && req.url === '/ios/health/upload') {
           const auth = req.headers.authorization ?? '';
           if (auth !== `Bearer ${token}`) {
@@ -601,15 +519,7 @@ function createIOSAdapter(): ChannelAdapter | null {
             });
           }
 
-          // Health history — reply to a fetch_health pull. Technical: append daily
-          // rows to the raw store and clear the serviced request. Not routed to any agent.
-          if (msg.type === 'health_history') {
-            const days = Array.isArray(msg.days) ? (msg.days as Array<Record<string, unknown>>) : [];
-            const reqId = typeof msg.requestId === 'string' ? msg.requestId : undefined;
-            ingestHealthHistory(days, reqId);
-            log(`health_history (ws): +${days.length} day(s)${reqId ? ` (req ${reqId})` : ''}`);
-            return;
-          }
+          // (Health history now arrives over HTTP POST /ios/health/upload — WS is chat-only.)
 
           // Action response — user tapped a button on an action message.
           // For ask_question/approval cards the questionId (the action message id)
@@ -655,17 +565,15 @@ function createIOSAdapter(): ChannelAdapter | null {
 
       await new Promise<void>((ok, fail) => httpServer!.listen(port, '0.0.0.0', ok).on('error', fail));
 
-      // Health-request watcher: service the analyzer's fetch_health asks.
+      // Ensure the request queue dir exists; the app drains it via HTTP poll.
       try {
         fs.mkdirSync(HEALTH_REQ_DIR, { recursive: true });
       } catch {
         // best-effort
       }
-      healthWatcher = setInterval(serviceHealthRequests, 10_000);
     },
 
     async teardown() {
-      if (healthWatcher) clearInterval(healthWatcher);
       wss?.close();
       await new Promise<void>((r) => httpServer?.close(() => r()));
     },

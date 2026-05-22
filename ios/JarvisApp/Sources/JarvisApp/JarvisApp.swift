@@ -18,26 +18,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
-    // Silent push (content-available) → fetch the requested window in the background
-    // and upload over HTTP. Plan "Заход 3" B.
-    func application(
-        _ app: UIApplication,
-        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
-    ) {
-        guard let fetch = userInfo["fetch"] as? [String: Any],
-              let from = fetch["from"] as? String,
-              let to = fetch["to"] as? String else {
-            completionHandler(.noData)
-            return
-        }
-        let requestId = fetch["requestId"] as? String
-        HealthHistory.fetch(from: from, to: to) { days in
-            HealthUpload.upload(requestId: requestId, days: days) {
-                completionHandler(days.isEmpty ? .noData : .newData)
-            }
-        }
-    }
 
     func application(
         _ app: UIApplication,
