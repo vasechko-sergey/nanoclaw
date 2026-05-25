@@ -41,3 +41,4 @@ groups/*
 agents-sdk-docs
 
 ios/JarvisApp/.build/
+*.xcuserstate
