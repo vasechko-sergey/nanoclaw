@@ -6,40 +6,43 @@ struct BotCommand: Equatable {
     let description: String
 }
 
-@MainActor
-final class WebSocketClient: ObservableObject {
-    @Published var messages: [ChatMessage] = []
-    @Published var isConnected = false
-    @Published var isTyping    = false
-    @Published var commands: [BotCommand] = []
+@Observable @MainActor
+final class WebSocketClient {
+    var messages: [ChatMessage] = []
+    var isConnected = false { didSet { if isConnected != oldValue { onConnectionChanged?(isConnected) } } }
+    var isTyping    = false
+    var commands: [BotCommand] = []
 
-    private var task: URLSessionWebSocketTask?
-    private var settings: AppSettings?
-    private var reconnectDelay: TimeInterval = 1
-    private var stopped           = false
-    private var pendingApnsToken: String?
+    @ObservationIgnored private var task: URLSessionWebSocketTask?
+    @ObservationIgnored private var settings: AppSettings?
+    @ObservationIgnored private var reconnectDelay: TimeInterval = 1
+    @ObservationIgnored private var stopped           = false
+    @ObservationIgnored private var pendingApnsToken: String?
 
     /// Current conversation, set by coordinator.
     var conversationId: UUID?
 
     /// Callback to persist messages through ConversationStore.
-    var onMessagesChanged: (([ChatMessage]) -> Void)?
+    @ObservationIgnored var onMessagesChanged: (([ChatMessage]) -> Void)?
 
     /// Callback when assistant message arrives (for haptics in UI layer).
-    var onAssistantMessage: (() -> Void)?
+    @ObservationIgnored var onAssistantMessage: (() -> Void)?
 
     /// Callback when a message arrives for a non-active conversation.
-    var onBackgroundMessage: ((UUID, ChatMessage) -> Void)?
+    @ObservationIgnored var onBackgroundMessage: ((UUID, ChatMessage) -> Void)?
 
     /// Callback with assistant text shown in the active conversation (for TTS auto-speak).
-    var onSpeakableText: ((String) -> Void)?
+    @ObservationIgnored var onSpeakableText: ((String) -> Void)?
 
     /// Callback when user taps an action button — coordinator handles sending.
-    var onActionResponse: ((String, String, String) -> Void)?  // (messageId, buttonId, buttonLabel)
+    @ObservationIgnored var onActionResponse: ((String, String, String) -> Void)?  // (messageId, buttonId, buttonLabel)
 
     /// Callback when the agent pulls device context. Returns the gathered context
     /// dict for the requested fields. Set by the coordinator (owns the managers).
-    var onContextRequest: (([String]) -> [String: Any])?
+    @ObservationIgnored var onContextRequest: (([String]) -> [String: Any])?
+
+    /// Callback when connection state changes (for coordinator to track connection phase).
+    @ObservationIgnored var onConnectionChanged: ((Bool) -> Void)?
 
     func connect(settings: AppSettings) {
         self.settings = settings
@@ -89,12 +92,20 @@ final class WebSocketClient: ObservableObject {
         if let st = status, !st.isEmpty { payload["status"] = st }
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         if !attachments.isEmpty { payload["attachments"] = attachments.map { $0.payload } }
+        let clientMsgId = UUID().uuidString
+        payload["clientMessageId"] = clientMsgId
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { print("WS send(message) failed: \(e)") } }
         isTyping = true
         let ts = Date()
         if !text.isEmpty {
-            messages.append(.text(UUID().uuidString, role: .user, text: text, timestamp: ts))
+            var msg = ChatMessage.text(clientMsgId, role: .user, text: text, timestamp: ts)
+            msg.deliveryStatus = .sending
+            messages.append(msg)
+        }
+        ws.send(.data(data)) { [weak self] error in
+            Task { @MainActor [weak self] in
+                self?.updateDeliveryStatus(clientMsgId, error == nil ? .sent : .failed)
+            }
         }
         for att in attachments {
             if let img = att.image {
@@ -157,6 +168,12 @@ final class WebSocketClient: ObservableObject {
     }
 
     // MARK: – Private
+
+    private func updateDeliveryStatus(_ id: String, _ status: DeliveryStatus) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[idx].deliveryStatus = status
+        onMessagesChanged?(messages)
+    }
 
     private func sendApnsToken(_ hex: String) {
         guard let ws = task, isConnected else { return }
@@ -252,6 +269,13 @@ final class WebSocketClient: ObservableObject {
 
         // --- Feedback ack (no UI action needed) ---
         if t == "feedback_ack" {
+            return
+        }
+
+        // --- Message ack (server confirmed receipt of user message) ---
+        if t == "message_ack",
+           let clientMsgId = obj["clientMessageId"] as? String {
+            updateDeliveryStatus(clientMsgId, .delivered)
             return
         }
 
