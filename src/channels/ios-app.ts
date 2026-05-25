@@ -117,14 +117,16 @@ function savePersistedTokens(tokens: Map<string, string>): void {
     const data = fs.readFileSync(READ_RECEIPTS_FILE, 'utf8');
     const arr = JSON.parse(data) as unknown[];
     if (Array.isArray(arr)) {
-      readReceiptStore.hydrate(arr.map((r) => JSON.stringify(r)));
+      readReceiptStore.hydrateObjects(arr);
     }
   } catch {}
 })();
 
 function persistReadReceipts(): void {
   try {
-    fs.writeFileSync(READ_RECEIPTS_FILE, JSON.stringify(readReceiptStore.all()), 'utf8');
+    const tmp = `${READ_RECEIPTS_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(readReceiptStore.all()), 'utf8');
+    fs.renameSync(tmp, READ_RECEIPTS_FILE);
   } catch (e) {
     log(`persistReadReceipts failed: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -481,11 +483,13 @@ function createIOSAdapter(): ChannelAdapter | null {
           }
 
           if (msg.type === 'message_delivered' && pid && typeof msg.messageId === 'string') {
+            log(`read receipt: delivered ${msg.messageId} from ${pid}`);
             readReceiptStore.record(pid, msg.messageId, 'delivered');
             persistReadReceipts();
           }
 
           if (msg.type === 'message_read' && pid && typeof msg.messageId === 'string') {
+            log(`read receipt: read ${msg.messageId} from ${pid}`);
             readReceiptStore.record(pid, msg.messageId, 'read');
             persistReadReceipts();
           }

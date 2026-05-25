@@ -58,6 +58,17 @@ export class ReadReceiptStore {
     }
   }
 
+  hydrateObjects(entries: unknown[]): void {
+    for (const entry of entries) {
+      if (entry && typeof entry === 'object') {
+        const r = entry as ReadReceipt;
+        if (r.messageId && r.pid) {
+          this.entries.set(this.key(r.pid, r.messageId), r);
+        }
+      }
+    }
+  }
+
   serialize(receipt: ReadReceipt): string {
     return JSON.stringify(receipt);
   }
