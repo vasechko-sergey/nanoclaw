@@ -554,6 +554,7 @@ function createIOSAdapter(): ChannelAdapter | null {
             if (pendingReceipts.length > 0) {
               ctx.readReceipts = pendingReceipts;
               readReceiptStore.markInjected(pendingReceipts);
+              persistReadReceipts();
             }
             let block: string;
             try {

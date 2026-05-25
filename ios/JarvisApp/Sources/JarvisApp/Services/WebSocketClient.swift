@@ -78,6 +78,7 @@ final class WebSocketClient {
     }
 
     func loadMessages(from store: ConversationStore) {
+        sentReadIds.removeAll()
         guard let cid = conversationId else {
             messages = []
             return
