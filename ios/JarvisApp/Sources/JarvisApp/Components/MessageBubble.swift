@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Photos
 
 struct MessageBubble: View {
     let message: ChatMessage
@@ -49,7 +50,18 @@ struct MessageBubble: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.bubbleRadius))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.bubbleRadius)
-                        .stroke(isUser ? Theme.userBubbleBorder : Theme.assistantBubbleBorder, lineWidth: 0.5)
+                        .stroke(
+                            isUser
+                                ? AnyShapeStyle(Theme.userBubbleBorder)
+                                : AnyShapeStyle(
+                                    LinearGradient(
+                                        colors: [Theme.accent.opacity(0.12), Theme.accent.opacity(0.03)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                ),
+                            lineWidth: 0.5
+                        )
                 )
                 .contextMenu {
                     Button {
@@ -132,7 +144,13 @@ struct MessageBubble: View {
                             Label("Копировать", systemImage: "doc.on.doc")
                         }
                         Button {
-                            UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
+                            Task {
+                                let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                                guard status == .authorized || status == .limited else { return }
+                                try? await PHPhotoLibrary.shared().performChanges {
+                                    PHAssetChangeRequest.creationRequestForAsset(from: img)
+                                }
+                            }
                             Theme.hapticSend()
                         } label: {
                             Label("Сохранить в фото", systemImage: "square.and.arrow.down")
@@ -157,6 +175,8 @@ struct MessageBubble: View {
                 .foregroundStyle(Theme.timestamp)
                 .accessibilityHidden(true)
 
+            deliveryStatusIcon
+
             if !isUser && feedback != .none {
                 Image(systemName: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
                     .font(.system(size: Theme.scaled(9)))
@@ -165,8 +185,35 @@ struct MessageBubble: View {
         }
     }
 
+    @ViewBuilder
+    private var deliveryStatusIcon: some View {
+        if message.role == .user {
+            switch message.deliveryStatus {
+            case .sending:
+                Image(systemName: "clock")
+                    .font(.system(size: Theme.scaled(10), weight: .light))
+                    .foregroundStyle(Theme.accent.opacity(0.5))
+            case .sent:
+                Image(systemName: "checkmark")
+                    .font(.system(size: Theme.scaled(10), weight: .semibold))
+                    .foregroundStyle(Theme.accent.opacity(0.7))
+            case .delivered:
+                HStack(spacing: Theme.scaled(-3)) {
+                    Image(systemName: "checkmark")
+                    Image(systemName: "checkmark")
+                }
+                .font(.system(size: Theme.scaled(10), weight: .semibold))
+                .foregroundStyle(Theme.accent.opacity(0.7))
+            case .failed:
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: Theme.scaled(11)))
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
     private var accessibilityDescription: String {
-        let role = isUser ? "Вы" : "Jarvis"
+        let role = isUser ? "Пользователь" : "Jarvis"
         let time = message.timestamp.formatted(date: .omitted, time: .shortened)
         switch message.content {
         case .text(let text):
@@ -176,7 +223,7 @@ struct MessageBubble: View {
         case .file(let info):
             return "\(role): файл \(info.name). \(time)"
         case .action(let info):
-            return "Jarvis спрашивает: \(info.text). \(time)"
+            return "Jarvis запрашивает: \(info.text). \(time)"
         case .status(let info):
             return "Система: \(info.text). \(time)"
         }
@@ -434,57 +481,12 @@ struct FlowLayout: Layout {
 // MARK: – Typing Indicator
 
 struct TypingIndicator: View {
-    @State private var rotation: Double = 0
-    @State private var pulse: CGFloat = 1
-
     var body: some View {
         HStack {
-            ZStack {
-                Circle()
-                    .fill(Theme.accent.opacity(0.07))
-                    .frame(width: Theme.scaled(32), height: Theme.scaled(32))
-                    .scaleEffect(pulse)
-
-                Circle()
-                    .trim(from: 0.05, to: 0.88)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [Theme.accent.opacity(0), Theme.accent]),
-                            center: .center
-                        ),
-                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
-                    )
-                    .frame(width: Theme.scaled(26), height: Theme.scaled(26))
-                    .rotationEffect(.degrees(rotation))
-
-                Circle()
-                    .trim(from: 0.1, to: 0.65)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [Theme.accent.opacity(0), Theme.accent.opacity(0.55)]),
-                            center: .center
-                        ),
-                        style: StrokeStyle(lineWidth: 1, lineCap: .round)
-                    )
-                    .frame(width: Theme.scaled(18), height: Theme.scaled(18))
-                    .rotationEffect(.degrees(-rotation * 2))
-
-                Circle()
-                    .fill(Theme.accent.opacity(0.9))
-                    .frame(width: Theme.scaled(4), height: Theme.scaled(4))
-                    .scaleEffect(pulse)
-            }
-            .padding(8)
+            MiniOrbView(size: Theme.scaled(28), mood: .processing)
+                .padding(8)
             Spacer()
         }
-        .accessibilityLabel("Jarvis печатает")
-        .onAppear {
-            withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                rotation = 360
-            }
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
-                pulse = 1.35
-            }
-        }
+        .accessibilityLabel("Jarvis обрабатывает запрос")
     }
 }
