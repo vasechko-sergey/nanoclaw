@@ -24,6 +24,8 @@ private struct CachedMessage: Codable {
     // Status-specific
     let statusLevel: String?
     let statusKind: String?
+
+    let deliveryStatus: String?   // "sending"|"sent"|"delivered"|"failed"|nil
 }
 
 private struct CachedButton: Codable {
@@ -51,20 +53,33 @@ enum MessageCache {
             default:          role = .assistant
             }
 
+            let restoredStatus: DeliveryStatus = {
+                switch cm.deliveryStatus {
+                case "sent": return .sent
+                case "failed": return .failed
+                default: return .delivered  // sending/nil → delivered (past session = done)
+                }
+            }()
+
             switch cm.kind {
             case "text":
                 guard let t = cm.text else { return nil }
-                return .text(cm.id, role: role, text: t, timestamp: cm.timestamp)
+                var msg = ChatMessage.text(cm.id, role: role, text: t, timestamp: cm.timestamp)
+                msg.deliveryStatus = restoredStatus
+                return msg
 
             case "image":
                 guard let file = cm.imageFile, let fname = cm.filename else { return nil }
                 let url = dir.appendingPathComponent(file)
                 if let d = try? Data(contentsOf: url), let img = UIImage(data: d) {
-                    return .image(cm.id, role: role, image: img, filename: fname, timestamp: cm.timestamp)
+                    var msg = ChatMessage.image(cm.id, role: role, image: img, filename: fname, timestamp: cm.timestamp)
+                    msg.deliveryStatus = restoredStatus
+                    return msg
                 }
                 // Image file missing/corrupt — keep the message as a placeholder
-                // instead of silently dropping it from history.
-                return .text(cm.id, role: role, text: "🖼 \(fname) (изображение недоступно)", timestamp: cm.timestamp)
+                var msg = ChatMessage.text(cm.id, role: role, text: "🖼 \(fname) (изображение недоступно)", timestamp: cm.timestamp)
+                msg.deliveryStatus = restoredStatus
+                return msg
 
             case "file":
                 guard let name = cm.fileName else { return nil }
@@ -75,7 +90,9 @@ enum MessageCache {
                     url: cm.fileUrl,
                     thumbnail: nil
                 )
-                return .file(cm.id, role: role, info: info, timestamp: cm.timestamp)
+                var msg = ChatMessage.file(cm.id, role: role, info: info, timestamp: cm.timestamp)
+                msg.deliveryStatus = restoredStatus
+                return msg
 
             case "action":
                 guard let text = cm.text else { return nil }
@@ -85,12 +102,16 @@ enum MessageCache {
                 var actionInfo = ActionInfo(text: text, buttons: buttons)
                 actionInfo.answered = cm.actionAnswered ?? false
                 actionInfo.selectedId = cm.actionSelectedId
-                return ChatMessage(id: cm.id, role: role, content: .action(actionInfo), timestamp: cm.timestamp)
+                var msg = ChatMessage(id: cm.id, role: role, content: .action(actionInfo), timestamp: cm.timestamp)
+                msg.deliveryStatus = restoredStatus
+                return msg
 
             case "status":
                 guard let text = cm.text else { return nil }
                 let level = StatusInfo.Level(rawValue: cm.statusLevel ?? "info") ?? .info
-                return .status(cm.id, text: text, level: level, kind: cm.statusKind, timestamp: cm.timestamp)
+                var msg = ChatMessage.status(cm.id, text: text, level: level, kind: cm.statusKind, timestamp: cm.timestamp)
+                msg.deliveryStatus = restoredStatus
+                return msg
 
             default:
                 return nil
@@ -117,7 +138,8 @@ enum MessageCache {
                                      text: t, imageFile: nil, filename: nil, timestamp: msg.timestamp,
                                      fileName: nil, fileSize: nil, fileMimeType: nil, fileUrl: nil,
                                      buttons: nil, actionAnswered: nil, actionSelectedId: nil,
-                                     statusLevel: nil, statusKind: nil)
+                                     statusLevel: nil, statusKind: nil,
+                                     deliveryStatus: msg.deliveryStatus.rawValue)
 
             case .image(let img, let fname):
                 let file = msg.id + ".jpg"
@@ -129,14 +151,16 @@ enum MessageCache {
                                      text: nil, imageFile: file, filename: fname, timestamp: msg.timestamp,
                                      fileName: nil, fileSize: nil, fileMimeType: nil, fileUrl: nil,
                                      buttons: nil, actionAnswered: nil, actionSelectedId: nil,
-                                     statusLevel: nil, statusKind: nil)
+                                     statusLevel: nil, statusKind: nil,
+                                     deliveryStatus: msg.deliveryStatus.rawValue)
 
             case .file(let info):
                 return CachedMessage(id: msg.id, role: role, kind: "file",
                                      text: nil, imageFile: nil, filename: nil, timestamp: msg.timestamp,
                                      fileName: info.name, fileSize: info.size, fileMimeType: info.mimeType, fileUrl: info.url,
                                      buttons: nil, actionAnswered: nil, actionSelectedId: nil,
-                                     statusLevel: nil, statusKind: nil)
+                                     statusLevel: nil, statusKind: nil,
+                                     deliveryStatus: msg.deliveryStatus.rawValue)
 
             case .action(let info):
                 let buttons = info.buttons.map { CachedButton(id: $0.id, label: $0.label, style: $0.style.rawValue) }
@@ -144,14 +168,16 @@ enum MessageCache {
                                      text: info.text, imageFile: nil, filename: nil, timestamp: msg.timestamp,
                                      fileName: nil, fileSize: nil, fileMimeType: nil, fileUrl: nil,
                                      buttons: buttons, actionAnswered: info.answered, actionSelectedId: info.selectedId,
-                                     statusLevel: nil, statusKind: nil)
+                                     statusLevel: nil, statusKind: nil,
+                                     deliveryStatus: msg.deliveryStatus.rawValue)
 
             case .status(let info):
                 return CachedMessage(id: msg.id, role: role, kind: "status",
                                      text: info.text, imageFile: nil, filename: nil, timestamp: msg.timestamp,
                                      fileName: nil, fileSize: nil, fileMimeType: nil, fileUrl: nil,
                                      buttons: nil, actionAnswered: nil, actionSelectedId: nil,
-                                     statusLevel: info.level.rawValue, statusKind: info.kind)
+                                     statusLevel: info.level.rawValue, statusKind: info.kind,
+                                     deliveryStatus: msg.deliveryStatus.rawValue)
             }
         }
 
