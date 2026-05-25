@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Siri-style input: a central tappable orb with a row of satellite action orbs.
-/// Tap the orb runs the user's primary action (voice or keyboard). Satellites
-/// expose keyboard, camera, photo, document and commands — all visible at rest
-/// so nothing is hidden behind a gesture. Reuses `OrbView` for the orb visual.
+/// Orb-centric input: a central tappable orb with orbital satellite actions.
+/// Tap = primary action (voice or send). Long press = reveal satellites in a circle.
+/// Reuses `OrbView` for the orb visual.
 struct OrbInputBar: View {
     @Binding var text: String
     @Binding var inputViaVoice: Bool
@@ -11,15 +10,19 @@ struct OrbInputBar: View {
     let commands: [BotCommand]
     var isDisabled: Bool = false
     var enterToSend: Bool = true
+    var showKeyboardShortcut: Bool = true
     /// "voice" → tap orb starts dictation; "text" → tap orb opens the keyboard.
     var orbPrimary: String = "voice"
+    /// When set to true from outside (e.g. home screen tap), auto-start voice recording.
+    @Binding var autoStartVoice: Bool
     let onSend: () -> Void
 
-    @StateObject private var speech = SpeechManager()
+    @State private var speech = SpeechManager()
     @State private var showKeyboard = false
+    @State private var showSatellites = false
     @State private var showCommands = false
-    @State private var listenPulse: CGFloat = 1
     @FocusState private var textFocused: Bool
+    @Namespace private var orbTransition
 
     // Picker triggers driven by satellite taps.
     @State private var showPhotos = false
@@ -34,6 +37,22 @@ struct OrbInputBar: View {
         guard text.hasPrefix("/") else { return [] }
         let q = text.lowercased()
         return q == "/" ? commands : commands.filter { $0.command.lowercased().hasPrefix(q) }
+    }
+
+    // Satellite definitions
+    private var satellites: [(icon: String, label: String, action: () -> Void)] {
+        var items: [(String, String, () -> Void)] = [
+            ("keyboard", "Текст", { openKeyboard() }),
+        ]
+        if cameraAvailable {
+            items.append(("camera", "Камера", { showCamera = true }))
+        }
+        items.append(contentsOf: [
+            ("photo", "Фото", { showPhotos = true }),
+            ("doc", "Файл", { showDoc = true }),
+            ("slash.circle", "Команды", { showCommands.toggle() }),
+        ])
+        return items
     }
 
     var body: some View {
@@ -62,7 +81,7 @@ struct OrbInputBar: View {
         .background(Theme.background)
         .opacity(isDisabled ? 0.4 : 1.0)
         .allowsHitTesting(!isDisabled)
-        .animation(.easeInOut(duration: 0.2), value: showKeyboard)
+        .animation(.easeInOut(duration: 0.25), value: showKeyboard)
         .animation(.easeInOut(duration: 0.15), value: filteredCommands.isEmpty)
         .animation(.easeInOut(duration: 0.15), value: drafts.isEmpty)
         .attachmentPickers(drafts: $drafts, showPhotos: $showPhotos, showCamera: $showCamera, showDoc: $showDoc)
@@ -73,69 +92,115 @@ struct OrbInputBar: View {
             }
         }
         .onChange(of: speech.isRecording) {
-            // When dictation ends with text, drop into compose so the user can edit + send.
             if !speech.isRecording && !isEmpty { openKeyboard() }
+        }
+        .onChange(of: autoStartVoice) {
+            if autoStartVoice {
+                autoStartVoice = false
+                // Small delay to let the view settle after transition
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    if speech.isAvailable && !speech.isRecording {
+                        speech.toggle()
+                    }
+                }
+            }
         }
     }
 
     // MARK: – Orb cluster (resting state)
 
     private var orbCluster: some View {
-        VStack(spacing: Theme.scaled(10)) {
-            HStack(spacing: Theme.scaled(14)) {
-                SatelliteOrb(icon: "keyboard", label: "Текст") { openKeyboard() }
-                if cameraAvailable {
-                    SatelliteOrb(icon: "camera", label: "Камера") { showCamera = true }
+        ZStack {
+            // Orbital satellites (shown on long press)
+            ForEach(Array(satellites.enumerated()), id: \.offset) { index, sat in
+                let count = satellites.count
+                let angle = -.pi / 2 + (2 * .pi / Double(count)) * Double(index)
+                let radius = Theme.scaled(70)
+                let x = cos(angle) * radius
+                let y = sin(angle) * radius
+
+                SatelliteOrb(icon: sat.icon, label: sat.label, active: sat.icon == "slash.circle" && showCommands) {
+                    sat.action()
+                    withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                        showSatellites = false
+                    }
                 }
-                SatelliteOrb(icon: "photo", label: "Фото") { showPhotos = true }
-                SatelliteOrb(icon: "doc", label: "Документ") { showDoc = true }
-                SatelliteOrb(icon: "slash.circle", label: "Команды", active: showCommands) {
-                    showCommands.toggle()
-                }
+                .offset(x: showSatellites ? x : 0, y: showSatellites ? y : 0)
+                .scaleEffect(showSatellites ? 1.0 : 0.3)
+                .opacity(showSatellites ? 1.0 : 0)
+                .animation(
+                    .spring(duration: 0.4, bounce: 0.25).delay(Double(index) * 0.06),
+                    value: showSatellites
+                )
             }
 
+            // Central orb
             centralOrb
+
+            // Optional keyboard shortcut button (left of orb)
+            if showKeyboardShortcut && !showSatellites && !speech.isRecording {
+                Button { openKeyboard() } label: {
+                    Image(systemName: "keyboard")
+                        .font(.system(size: Theme.scaled(14)))
+                        .foregroundStyle(Theme.accentMedium)
+                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                }
+                .offset(x: -Theme.scaled(62))
+                .transition(.opacity)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, Theme.scaled(6))
-        .padding(.bottom, Theme.scaled(4))
+        .frame(height: Theme.scaled(160))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Dismiss satellites if tapped outside
+            if showSatellites {
+                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                    showSatellites = false
+                }
+            }
+        }
+    }
+
+    /// Current mood derived from state.
+    private var currentOrbMood: OrbMood {
+        if speech.isRecording { return .listening }
+        if showSatellites { return .heroic }
+        return .ready
     }
 
     @ViewBuilder
     private var centralOrb: some View {
-        Button(action: tapOrb) {
-            ZStack {
-                if canSend && !speech.isRecording {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: Theme.scaled(64)))
-                        .foregroundStyle(Theme.accent)
-                } else {
-                    OrbView(size: Theme.scaled(84), brightness: speech.isRecording ? 1.0 : 0.7)
-                    if speech.isRecording {
-                        Circle()
-                            .stroke(Theme.accent.opacity(0.5), lineWidth: 2)
-                            .frame(width: Theme.scaled(84), height: Theme.scaled(84))
-                            .scaleEffect(listenPulse)
-                            .opacity(2 - listenPulse)
-                    }
-                    Image(systemName: orbPrimary == "voice" ? "mic.fill" : "keyboard")
-                        .font(.system(size: Theme.scaled(18)))
-                        .foregroundStyle(Theme.accent.opacity(0.9))
-                        .opacity(speech.isRecording ? 0 : 0.85)
-                }
+        ZStack {
+            if canSend && !speech.isRecording {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: Theme.scaled(64)))
+                    .foregroundStyle(Theme.accent)
+                    .matchedGeometryEffect(id: "orbInput", in: orbTransition)
+            } else {
+                MiniOrbView(size: Theme.scaled(84), mood: currentOrbMood)
+                    .matchedGeometryEffect(id: "orbInput", in: orbTransition)
+                Image(systemName: orbPrimary == "voice" ? "mic.fill" : "keyboard")
+                    .font(.system(size: Theme.scaled(18)))
+                    .foregroundStyle(Theme.accent.opacity(0.9))
+                    .opacity(speech.isRecording ? 0 : 0.85)
             }
-            .frame(width: Theme.scaled(92), height: Theme.scaled(92))
-            .contentShape(Circle())
+        }
+        .frame(width: Theme.scaled(92), height: Theme.scaled(92))
+        .contentShape(Circle())
+        .scaleEffect(showSatellites ? 1.05 : 1.0)
+        .animation(.spring(duration: 0.3), value: showSatellites)
+        .onTapGesture {
+            tapOrb()
+        }
+        .onLongPressGesture(minimumDuration: 0.3) {
+            Theme.hapticMedium()
+            withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
+                showSatellites.toggle()
+            }
         }
         .accessibilityLabel(orbLabel)
-        .onChange(of: speech.isRecording) {
-            if speech.isRecording {
-                listenPulse = 1
-                withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false)) {
-                    listenPulse = 1.6
-                }
-            }
-        }
     }
 
     private var orbLabel: String {
@@ -145,6 +210,12 @@ struct OrbInputBar: View {
     }
 
     private func tapOrb() {
+        if showSatellites {
+            withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                showSatellites = false
+            }
+            return
+        }
         Theme.hapticSend()
         if speech.isRecording { speech.stop(); return }
         if canSend { onSend(); collapse(); return }
@@ -164,6 +235,7 @@ struct OrbInputBar: View {
                     .font(.system(size: Theme.scaled(26)))
                     .foregroundStyle(Theme.accentMedium)
                     .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    .matchedGeometryEffect(id: "orbInput", in: orbTransition)
             }
             .accessibilityLabel("Свернуть клавиатуру")
 
@@ -215,8 +287,12 @@ struct OrbInputBar: View {
 
     private func openKeyboard() {
         showCommands = false
+        showSatellites = false
         showKeyboard = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { textFocused = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            textFocused = true
+        }
     }
 
     private func collapse() {
@@ -240,9 +316,10 @@ private struct SatelliteOrb: View {
                         .fill(Theme.surface)
                         .frame(width: Theme.scaled(40), height: Theme.scaled(40))
                         .overlay(
-                            Circle().stroke(active ? Theme.accent : Theme.surfaceBorder,
+                            Circle().stroke(active ? Theme.accent : Theme.accent.opacity(0.2),
                                             lineWidth: active ? 1 : 0.5)
                         )
+                        .shadow(color: Theme.accent.opacity(0.15), radius: 6)
                     Image(systemName: icon)
                         .font(.system(size: Theme.scaled(17)))
                         .foregroundStyle(active ? Theme.accent : Theme.accentMedium)

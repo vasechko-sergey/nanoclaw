@@ -1,10 +1,10 @@
 import Foundation
 import UIKit
 
-@MainActor
-final class ConversationStore: ObservableObject {
-    @Published var conversations: [Conversation] = []
-    @Published var activeConversationId: UUID?
+@Observable @MainActor
+final class ConversationStore {
+    var conversations: [Conversation] = []
+    var activeConversationId: UUID?
 
     private static let rootDir: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

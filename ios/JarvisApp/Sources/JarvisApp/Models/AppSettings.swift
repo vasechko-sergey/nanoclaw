@@ -1,20 +1,21 @@
 import SwiftUI
 
-final class AppSettings: ObservableObject {
-    @AppStorage("serverURL")     var serverURL    = ""
-    @AppStorage("bearerToken")   var bearerToken  = ""
-    @AppStorage("agentName")     var agentName    = "Jarvis"
-    @AppStorage("useLocation")   var useLocation  = false
-    @AppStorage("useHealth")     var useHealth    = false
-    @AppStorage("useCalendar")   var useCalendar  = false
-    @AppStorage("statusEmoji")   var statusEmoji  = ""
-    @AppStorage("enterToSend")   var enterToSend  = true
-    @AppStorage("inputMode")     var inputMode    = "classic"   // "classic" | "orb"
-    @AppStorage("orbPrimary")    var orbPrimary   = "voice"     // "voice" | "text" — tap-on-orb action
-    @AppStorage("autoSpeak")     var autoSpeak    = false
-    @AppStorage("voiceId")       var voiceId      = ""
-    @AppStorage("voiceRate")     var voiceRate    = 0.47
-    @AppStorage("voicePitch")    var voicePitch   = 0.93
+@Observable
+final class AppSettings {
+    // @AppStorage properties need @ObservationIgnored because @AppStorage
+    // handles its own SwiftUI observation; @Observable auto-tracking would conflict.
+    @ObservationIgnored @AppStorage("serverURL")     var serverURL    = ""
+    @ObservationIgnored @AppStorage("bearerToken")   var bearerToken  = ""
+    @ObservationIgnored @AppStorage("agentName")     var agentName    = "Jarvis"
+    @ObservationIgnored @AppStorage("useLocation")   var useLocation  = false
+    @ObservationIgnored @AppStorage("useHealth")     var useHealth    = false
+    @ObservationIgnored @AppStorage("useCalendar")   var useCalendar  = false
+    @ObservationIgnored @AppStorage("statusEmoji")   var statusEmoji  = ""
+    @ObservationIgnored @AppStorage("enterToSend")   var enterToSend  = true
+    @ObservationIgnored @AppStorage("autoSpeak")     var autoSpeak    = false
+    @ObservationIgnored @AppStorage("voiceId")       var voiceId      = ""
+    @ObservationIgnored @AppStorage("voiceRate")     var voiceRate    = 0.47
+    @ObservationIgnored @AppStorage("voicePitch")    var voicePitch   = 0.93
 
     var platformId: String {
         if let v = UserDefaults.standard.string(forKey: "platformId") { return v }

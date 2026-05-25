@@ -6,7 +6,7 @@ struct ContextBuilder {
     /// разделы нужны: "location" | "health" | "device" | "calendar".
     /// Пустой набор трактуется как «все». Настройки приватности (useLocation и т.д.)
     /// всё равно соблюдаются. Всегда добавляются timestamp и timezone.
-    static func build(
+    @MainActor static func build(
         fields: [String],
         settings: AppSettings,
         location: LocationManager,

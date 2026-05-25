@@ -3,9 +3,11 @@ import SwiftUI
 
 struct SettingsView: View {
     let isInitialSetup: Bool
-    @EnvironmentObject var settings: AppSettings
+    var store: ConversationStore? = nil
+    var onConversationAction: ((ConversationAction) -> Void)? = nil
+    @Environment(AppSettings.self) var settings
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var previewSynth = SpeechSynthesizer()
+    @State private var previewSynth = SpeechSynthesizer()
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -15,6 +17,8 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        @Bindable var settings = settings
+        return NavigationStack {
         VStack(spacing: 0) {
             // Header
             if !isInitialSetup {
@@ -44,11 +48,11 @@ struct SettingsView: View {
                     if isInitialSetup {
                         // Setup header
                         VStack(spacing: Theme.scaled(8)) {
-                            OrbView(size: Theme.scaled(80), brightness: 0.6)
+                            MiniOrbView(size: Theme.scaled(80), mood: .calm)
                             Text("Настройка")
                                 .font(.system(size: Theme.scaled(20), weight: .medium))
                                 .foregroundStyle(Theme.textPrimary.opacity(0.8))
-                            Text("Укажи параметры подключения")
+                            Text("Укажите параметры подключения")
                                 .font(.system(size: Theme.fontCaption))
                                 .foregroundStyle(Theme.accentMedium)
                         }
@@ -98,6 +102,30 @@ struct SettingsView: View {
                         settingsToggle(icon: "calendar", label: "Календарь", isOn: $settings.useCalendar)
                     }
 
+                    // Conversation history section
+                    if !isInitialSetup, let store {
+                        settingsSection(title: "История") {
+                            NavigationLink {
+                                ConversationListView(store: store) { action in
+                                    dismiss()
+                                    onConversationAction?(action)
+                                }
+                            } label: {
+                                settingsField(icon: "bubble.left.and.bubble.right", label: "Диалоги") {
+                                    HStack(spacing: Theme.scaled(4)) {
+                                        Text("\(store.conversations.count)")
+                                            .font(.system(size: Theme.fontCaption))
+                                            .foregroundStyle(Theme.accentMedium)
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: Theme.scaled(11)))
+                                            .foregroundStyle(Theme.accentMedium)
+                                    }
+                                }
+                            }
+                            .tint(Theme.textPrimary)
+                        }
+                    }
+
                     // Voice section
                     if !isInitialSetup {
                         settingsSection(title: "Голос") {
@@ -105,7 +133,7 @@ struct SettingsView: View {
                             let voices = SpeechSynthesizer.russianVoices()
                             if voices.isEmpty {
                                 settingsDivider()
-                                Text("Русские голоса не найдены. Добавьте в Настройках iOS → Универсальный доступ → Контент с озвучиванием → Голоса.")
+                                Text("Голосовые модули не обнаружены. Установите в Настройках iOS → Универсальный доступ → Устный контент → Голоса.")
                                     .font(.system(size: Theme.fontSmall))
                                     .foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, Theme.hPadding)
@@ -127,26 +155,6 @@ struct SettingsView: View {
                     if !isInitialSetup {
                         settingsSection(title: "Ввод") {
                             settingsToggle(icon: "return", label: "Отправка по Enter", isOn: $settings.enterToSend)
-                            settingsDivider()
-                            settingsField(icon: "square.grid.2x2", label: "Режим") {
-                                Picker("", selection: $settings.inputMode) {
-                                    Text("Классика").tag("classic")
-                                    Text("Орб").tag("orb")
-                                }
-                                .pickerStyle(.menu)
-                                .tint(Theme.accent)
-                            }
-                            if settings.inputMode == "orb" {
-                                settingsDivider()
-                                settingsField(icon: "hand.tap", label: "Тап по орбу") {
-                                    Picker("", selection: $settings.orbPrimary) {
-                                        Text("Голос").tag("voice")
-                                        Text("Текст").tag("text")
-                                    }
-                                    .pickerStyle(.menu)
-                                    .tint(Theme.accent)
-                                }
-                            }
                         }
                     }
 
@@ -206,7 +214,8 @@ struct SettingsView: View {
         }
         .background(Theme.background.ignoresSafeArea())
         .preferredColorScheme(.dark)
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        } // NavigationStack
     }
 
     // MARK: – Components

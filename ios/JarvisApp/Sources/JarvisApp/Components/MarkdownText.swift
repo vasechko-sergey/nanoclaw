@@ -58,10 +58,9 @@ struct MarkdownText: View {
                     }
                 case .blockquote(let content):
                     HStack(alignment: .top, spacing: Theme.scaled(10)) {
-                        Rectangle()
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Theme.accentMedium)
                             .frame(width: 2)
-                            .foregroundStyle(Theme.accentMedium)
-                            .cornerRadius(1)
                         inlineMarkdown(content)
                             .foregroundStyle(Theme.textPrimary.opacity(0.7))
                     }
@@ -322,7 +321,8 @@ private struct CodeBlockView: View {
                     UIPasteboard.general.string = code
                     Theme.hapticSend()
                     copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(1500))
                         copied = false
                     }
                 } label: {

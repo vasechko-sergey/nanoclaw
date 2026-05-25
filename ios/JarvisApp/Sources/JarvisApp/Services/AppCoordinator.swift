@@ -1,21 +1,20 @@
 import Foundation
-import Combine
 
 /// Central coordinator that owns all services and wires them together.
 /// Views observe this instead of owning services directly.
-@MainActor
-final class AppCoordinator: ObservableObject {
+@Observable @MainActor
+final class AppCoordinator {
 
     // MARK: – Services (owned)
-    @Published private(set) var ws: WebSocketClient
-    @Published private(set) var store: ConversationStore
-    @Published private(set) var location: LocationManager
-    @Published private(set) var health: HealthManager
-    @Published private(set) var calendar: CalendarManager
-    @Published private(set) var speech: SpeechSynthesizer
+    private(set) var ws: WebSocketClient
+    private(set) var store: ConversationStore
+    private(set) var location: LocationManager
+    private(set) var health: HealthManager
+    private(set) var calendar: CalendarManager
+    private(set) var speech: SpeechSynthesizer
 
     // MARK: – Connection state
-    @Published var connectionPhase: ConnectionPhase = .idle
+    var connectionPhase: ConnectionPhase = .idle
 
     enum ConnectionPhase: Equatable {
         case idle
@@ -24,13 +23,12 @@ final class AppCoordinator: ObservableObject {
         case failed
     }
 
-    private var settings: AppSettings
-    private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored private var settings: AppSettings
     /// Whether the last sent message was dictated — gates auto-speak of the reply.
-    private var lastSendWasVoice = false
+    @ObservationIgnored private var lastSendWasVoice = false
 
     // MARK: – Haptic callback (keeps Service layer UI-free)
-    var onMessageReceived: (() -> Void)?
+    @ObservationIgnored var onMessageReceived: (() -> Void)?
 
     // MARK: – Init
 
@@ -50,7 +48,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    /// Replace settings reference (needed because ContentView gets @EnvironmentObject after init).
+    /// Replace settings reference (needed because ContentView gets @Environment after init).
     func updateSettings(_ s: AppSettings) {
         self.settings = s
     }
@@ -112,8 +110,9 @@ final class AppCoordinator: ObservableObject {
             ws.sendNewConversation(id: conv.id)
             ws.messages = []
             // Small delay so the new conversation is established
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.sendMessage("/context Ранее мы обсуждали: \(context)")
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(300))
+                self?.sendMessage("/context Контекст предыдущего диалога: \(context)")
             }
 
         case .open(let conversation):
@@ -134,20 +133,8 @@ final class AppCoordinator: ObservableObject {
     // MARK: – Wiring
 
     private func wireUp() {
-        // Forward nested objectWillChange so SwiftUI sees updates
-        // to ws.messages, ws.isTyping, store.conversations, etc.
-        ws.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-        store.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-        speech.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
+        // With @Observable, nested objects are tracked automatically —
+        // no manual objectWillChange forwarding needed.
 
         // Set initial conversation
         ws.conversationId = store.activeConversationId
@@ -195,17 +182,14 @@ final class AppCoordinator: ObservableObject {
             self.store.saveMessages(msgs, for: convId)
         }
 
-        // Track connection state
-        ws.$isConnected
-            .receive(on: RunLoop.main)
-            .sink { [weak self] connected in
-                guard let self else { return }
-                if connected {
-                    self.connectionPhase = .connected
-                } else if self.connectionPhase == .connecting || self.connectionPhase == .connected {
-                    self.connectionPhase = .failed
-                }
+        // Track connection state via callback (replaces Combine $isConnected sink)
+        ws.onConnectionChanged = { [weak self] connected in
+            guard let self else { return }
+            if connected {
+                self.connectionPhase = .connected
+            } else if self.connectionPhase == .connecting || self.connectionPhase == .connected {
+                self.connectionPhase = .failed
             }
-            .store(in: &cancellables)
+        }
     }
 }

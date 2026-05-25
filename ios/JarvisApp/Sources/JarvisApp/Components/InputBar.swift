@@ -10,7 +10,7 @@ struct InputBar: View {
     let onSend: () -> Void
 
     @State private var showAll = false
-    @StateObject private var speech = SpeechManager()
+    @State private var speech = SpeechManager()
 
     private var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespaces).isEmpty

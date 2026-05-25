@@ -2,7 +2,7 @@ name: JarvisApp
 options:
   bundleIdPrefix: com.vasechko
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
 
 settings:
   base:

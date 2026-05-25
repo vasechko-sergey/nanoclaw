@@ -1,13 +1,13 @@
 import HealthKit
 
-final class HealthManager: ObservableObject {
-    private let store = HKHealthStore()
-    @Published var steps: Int?
-    @Published var heartRate: Int?
-    @Published var activeEnergy: Int?
-    @Published var sleepHours: Double?
-    @Published var restingHeartRate: Int?
-    @Published var exerciseMinutes: Int?
+@Observable final class HealthManager {
+    @ObservationIgnored private let store = HKHealthStore()
+    var steps: Int?
+    var heartRate: Int?
+    var activeEnergy: Int?
+    var sleepHours: Double?
+    var restingHeartRate: Int?
+    var exerciseMinutes: Int?
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 

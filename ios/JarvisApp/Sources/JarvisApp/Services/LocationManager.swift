@@ -1,12 +1,12 @@
 import CoreLocation
 
-final class LocationManager: NSObject, CLLocationManagerDelegate, ObservableObject {
+@Observable @MainActor final class LocationManager: NSObject, CLLocationManagerDelegate {
     // Do not wake GPS more often than once every 15 minutes
     private static let freshThreshold: TimeInterval = 15 * 60
 
-    private let mgr = CLLocationManager()
-    @Published var lastLocation: CLLocation?
-    @Published var cityName: String?
+    @ObservationIgnored private let mgr = CLLocationManager()
+    var lastLocation: CLLocation?
+    var cityName: String?
 
     override init() {
         super.init()
@@ -21,13 +21,14 @@ final class LocationManager: NSObject, CLLocationManagerDelegate, ObservableObje
         mgr.requestLocation()
     }
 
-    func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
+    nonisolated func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
         guard let loc = locs.last else { return }
-        lastLocation = loc
-        CLGeocoder().reverseGeocodeLocation(loc) { [weak self] p, _ in
-            DispatchQueue.main.async { self?.cityName = p?.first?.locality }
+        Task { @MainActor in
+            lastLocation = loc
+            let placemarks = try? await CLGeocoder().reverseGeocodeLocation(loc)
+            cityName = placemarks?.first?.locality
         }
     }
 
-    func locationManager(_ m: CLLocationManager, didFailWithError e: Error) {}
+    nonisolated func locationManager(_ m: CLLocationManager, didFailWithError e: Error) {}
 }

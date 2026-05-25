@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct ProfileView: View {
-    @EnvironmentObject var settings: AppSettings
-    @ObservedObject var store: ConversationStore
+    @Environment(AppSettings.self) var settings
+    var store: ConversationStore
     let isConnected: Bool
     var onReconnect: (() -> Void)? = nil
 
@@ -24,7 +24,8 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        @Bindable var settings = settings
+        return VStack(spacing: 0) {
             // Header
             HStack {
                 Button { dismiss() } label: {
@@ -50,7 +51,7 @@ struct ProfileView: View {
                 VStack(spacing: Theme.scaled(28)) {
                     // Orb + name + status
                     VStack(spacing: Theme.scaled(16)) {
-                        OrbView(size: Theme.scaled(100), brightness: isConnected ? 1.0 : 0.3)
+                        OrbView(size: Theme.scaled(100), mood: isConnected ? .calm : .error)
 
                         VStack(spacing: Theme.scaled(4)) {
                             Text(settings.agentName.isEmpty ? "Jarvis" : settings.agentName)
@@ -61,7 +62,7 @@ struct ProfileView: View {
                                 Circle()
                                     .fill(isConnected ? Theme.online : Theme.offline)
                                     .frame(width: Theme.scaled(7), height: Theme.scaled(7))
-                                Text(isConnected ? "Онлайн" : "Офлайн")
+                                Text(isConnected ? "На связи" : "Не в сети")
                                     .font(.system(size: Theme.fontCaption))
                                     .foregroundStyle(isConnected
                                         ? Theme.online.opacity(0.8)
@@ -78,7 +79,7 @@ struct ProfileView: View {
                                 HStack(spacing: Theme.scaled(6)) {
                                     Image(systemName: isConnected ? "arrow.triangle.2.circlepath" : "bolt.horizontal")
                                         .font(.system(size: Theme.scaled(13)))
-                                    Text(isConnected ? "Переподключиться" : "Подключиться")
+                                    Text(isConnected ? "Переподключить" : "Подключить")
                                         .font(.system(size: Theme.fontSmall, weight: .medium))
                                 }
                                 .foregroundStyle(Theme.accent)
@@ -179,6 +180,7 @@ struct ProfileView: View {
                 .foregroundStyle(Theme.textPrimary.opacity(0.8))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .contentTransition(.numericText())
 
             Text(label)
                 .font(.system(size: Theme.fontSmall))
@@ -190,7 +192,14 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cardRadius)
-                .stroke(Theme.surfaceBorder, lineWidth: 0.5)
+                .stroke(
+                    LinearGradient(
+                        colors: [Theme.accent.opacity(0.12), Theme.surfaceBorder],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.5
+                )
         )
     }
 

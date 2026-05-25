@@ -3,11 +3,11 @@ import Foundation
 
 /// Озвучка ответов агента (TTS) встроенным голосом iOS. Бесплатно, офлайн.
 /// Голос выбирается в настройках; по умолчанию — лучший доступный русский.
-final class SpeechSynthesizer: NSObject, ObservableObject {
-    @Published var isSpeaking = false
+@Observable final class SpeechSynthesizer: NSObject {
+    var isSpeaking = false
 
-    private let synthesizer = AVSpeechSynthesizer()
-    private var categoryConfigured = false
+    @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
+    @ObservationIgnored private var categoryConfigured = false
 
     override init() {
         super.init()

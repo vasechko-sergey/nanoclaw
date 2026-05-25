@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ConversationListView: View {
-    @ObservedObject var store: ConversationStore
+    var store: ConversationStore
     var onAction: (ConversationAction) -> Void
 
     @State private var searchText = ""
@@ -86,7 +86,7 @@ struct ConversationListView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: Theme.fontSubhead))
                     .foregroundStyle(Theme.accentMedium)
-                TextField("Поиск по диалогам...", text: $searchText)
+                TextField("Поиск в архиве...", text: $searchText)
                     .font(.system(size: Theme.fontSubhead))
                     .foregroundStyle(Theme.textPrimary)
                     .tint(Theme.accent)

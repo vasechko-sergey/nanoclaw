@@ -12,7 +12,7 @@ struct ConnectionBanner: View {
             if !isConnected {
                 banner(
                     icon: "wifi.slash",
-                    text: "Нет подключения",
+                    text: "Соединение потеряно",
                     color: Theme.offline,
                     showButton: true
                 )
@@ -20,7 +20,7 @@ struct ConnectionBanner: View {
             } else if showRestored {
                 banner(
                     icon: "wifi",
-                    text: "Подключено",
+                    text: "Соединение восстановлено",
                     color: Theme.online,
                     showButton: false
                 )
@@ -29,14 +29,15 @@ struct ConnectionBanner: View {
         }
         .animation(.spring(duration: 0.35, bounce: 0.15), value: isConnected)
         .animation(.spring(duration: 0.35, bounce: 0.15), value: showRestored)
-        .onChange(of: isConnected) { _, connected in
-            if !connected {
+        .onChange(of: isConnected) {
+            if !isConnected {
                 wasDisconnected = true
                 showRestored = false
             } else if wasDisconnected {
                 showRestored = true
                 wasDisconnected = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
                     withAnimation { showRestored = false }
                 }
             }
@@ -60,7 +61,7 @@ struct ConnectionBanner: View {
                     Theme.hapticSend()
                     onReconnect()
                 } label: {
-                    Text("Повторить")
+                    Text("Переподключить")
                         .font(.system(size: Theme.fontSmall, weight: .semibold))
                         .foregroundStyle(Theme.accent)
                         .padding(.horizontal, Theme.scaled(12))

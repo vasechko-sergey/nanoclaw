@@ -5,7 +5,16 @@ enum Theme {
 
     // MARK: – Adaptive scale
     // Base: 390pt (iPhone 13/14/15 Pro). Clamped so extremes stay sane.
-    private static var screenWidth: CGFloat { UIScreen.main.bounds.width }
+    private static var screenWidth: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })?
+            .screen.bounds.width
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }.first?
+                .screen.bounds.width
+            ?? 390
+    }
     /// 0.96 on 12 mini (375), 1.0 on 13 Pro (390), 1.01 on 16 Pro (393), 1.10 on Pro Max (430)
     static var scale: CGFloat { min(max(screenWidth / 390, 0.92), 1.15) }
     /// Rounds a base value by current scale
@@ -72,5 +81,7 @@ enum Theme {
     // MARK: – Haptics
     static func hapticSend()    { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     static func hapticReceive() { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+    static func hapticMedium()  { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+    static func hapticSuccess() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func hapticError()   { UINotificationFeedbackGenerator().notificationOccurred(.error) }
 }

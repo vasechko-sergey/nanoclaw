@@ -1,21 +1,55 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var settings: AppSettings
-    @ObservedObject var coordinator: AppCoordinator
+    @Environment(AppSettings.self) var settings
+    var coordinator: AppCoordinator
 
     @State private var appPhase: AppPhase = .splash
     @State private var showSetupOnSplash = false
+    @State private var showSettings = false
+    @State private var pendingMessage: String? = nil
+    @State private var autoStartVoice = false
 
     enum AppPhase {
-        case splash, chat
+        case splash, home, chat
     }
 
     var body: some View {
         ZStack {
-            // Main content always underneath
-            ChatView(coordinator: coordinator)
+            // Chat — always mounted, opacity-driven
+            ChatView(coordinator: coordinator, onGoHome: goHome, autoStartVoice: $autoStartVoice)
                 .opacity(appPhase == .chat ? 1 : 0)
+                .allowsHitTesting(appPhase == .chat)
+
+            // Home — orb hub
+            if appPhase == .home {
+                OrbHomeView(
+                    coordinator: coordinator,
+                    onStartChat: { message in
+                        if let msg = message {
+                            coordinator.sendMessage(msg)
+                        }
+                        autoStartVoice = false
+                        withAnimation(.easeOut(duration: 0.4)) {
+                            appPhase = .chat
+                        }
+                    },
+                    onStartVoiceChat: {
+                        autoStartVoice = true
+                        withAnimation(.easeOut(duration: 0.4)) {
+                            appPhase = .chat
+                        }
+                    },
+                    onContinueChat: {
+                        withAnimation(.easeOut(duration: 0.4)) {
+                            appPhase = .chat
+                        }
+                    },
+                    onShowSettings: { showSettings = true }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                .zIndex(0.5)
+            }
 
             // Splash overlay
             if appPhase == .splash {
@@ -25,7 +59,7 @@ struct ContentView: View {
                     showSetup: $showSetupOnSplash,
                     onReady: {
                         withAnimation(.easeOut(duration: 0.6)) {
-                            appPhase = .chat
+                            appPhase = .home
                         }
                     }
                 )
@@ -33,8 +67,19 @@ struct ContentView: View {
                 .zIndex(1)
             }
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(isInitialSetup: false, store: coordinator.store) { action in
+                showSettings = false
+                coordinator.handleAction(action)
+                withAnimation(.easeOut(duration: 0.4)) {
+                    appPhase = .chat
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Theme.background)
+        }
         .onAppear {
-            // If configured, start connecting immediately during splash
             if settings.isConfigured {
                 coordinator.connect()
             } else {
@@ -42,21 +87,27 @@ struct ContentView: View {
             }
         }
     }
+
+    private func goHome() {
+        withAnimation(.easeOut(duration: 0.35)) {
+            appPhase = .home
+        }
+    }
 }
 
 // MARK: – Splash
 
 struct SplashView: View {
-    @ObservedObject var coordinator: AppCoordinator
-    @ObservedObject var settings: AppSettings
+    var coordinator: AppCoordinator
+    @Bindable var settings: AppSettings
     @Binding var showSetup: Bool
     var onReady: () -> Void
 
     @State private var phase: SplashPhase = .loading
     @State private var titleOpacity: Double = 0
     @State private var statusOpacity: Double = 0
-    @State private var orbBrightness: Double = 0.5
-    @State private var timeoutTask: DispatchWorkItem?
+    @State private var orbMood: OrbMood = .calm
+    @State private var timeoutTask: Task<Void, Never>?
 
     private enum SplashPhase {
         case loading, connecting, ready, waitingSetup, failed
@@ -69,7 +120,7 @@ struct SplashView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                OrbView(size: Theme.scaled(140), brightness: orbBrightness)
+                OrbView(size: Theme.scaled(140), mood: orbMood)
 
                 VStack(spacing: Theme.scaled(12)) {
                     Text("J A R V I S")
@@ -100,23 +151,24 @@ struct SplashView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear { startAnimation() }
-        .onChange(of: coordinator.connectionPhase) { _, newPhase in
-            switch newPhase {
+        .onChange(of: coordinator.connectionPhase) {
+            switch coordinator.connectionPhase {
             case .connected:
                 timeoutTask?.cancel()
                 withAnimation(.easeInOut(duration: 0.4)) {
                     phase = .ready
-                    orbBrightness = 1.0
+                    orbMood = .heroic
                     titleOpacity = 1.0
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(800))
                     onReady()
                 }
             case .failed:
                 timeoutTask?.cancel()
                 withAnimation(.easeInOut(duration: 0.3)) {
                     phase = .failed
-                    orbBrightness = 0.3
+                    orbMood = .error
                 }
                 Theme.hapticError()
             default:
@@ -129,19 +181,19 @@ struct SplashView: View {
     private var statusText: some View {
         switch phase {
         case .loading:
-            Text("инициализация...")
+            Text("инициализация систем...")
                 .foregroundStyle(Theme.accentMedium)
         case .connecting:
-            Text("подключение...")
+            Text("устанавливаю связь...")
                 .foregroundStyle(Theme.accentMedium)
         case .ready:
-            Text("системы активны")
+            Text("к вашим услугам")
                 .foregroundStyle(Theme.online.opacity(0.8))
         case .waitingSetup:
-            Text("необходима настройка")
+            Text("ожидаю параметры подключения")
                 .foregroundStyle(Theme.accentMedium)
         case .failed:
-            Text("ошибка подключения")
+            Text("не удалось установить связь")
                 .foregroundStyle(Theme.offline)
         }
     }
@@ -154,12 +206,12 @@ struct SplashView: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         phase = .connecting
-                        orbBrightness = 0.5
+                        orbMood = .processing
                     }
                     coordinator.connect()
                     startTimeout()
                 } label: {
-                    Text("Повторить")
+                    Text("Повторить попытку")
                         .font(.system(size: Theme.fontSubhead, weight: .medium))
                         .foregroundStyle(Theme.background)
                         .padding(.horizontal, Theme.scaled(32))
@@ -172,7 +224,7 @@ struct SplashView: View {
                 Button {
                     onReady()
                 } label: {
-                    Text("Продолжить оффлайн")
+                    Text("Продолжить автономно")
                         .font(.system(size: Theme.fontSmall))
                         .foregroundStyle(Theme.accentMedium)
                 }
@@ -262,13 +314,15 @@ struct SplashView: View {
         }
 
         if showSetup {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(800))
                 withAnimation(.easeInOut(duration: 0.3)) {
                     phase = .waitingSetup
                 }
             }
         } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
                 withAnimation(.easeInOut(duration: 0.3)) {
                     phase = .connecting
                 }
@@ -279,15 +333,14 @@ struct SplashView: View {
 
     private func startTimeout() {
         timeoutTask?.cancel()
-        let task = DispatchWorkItem {
-            guard phase == .connecting else { return }
+        timeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, phase == .connecting else { return }
             withAnimation(.easeInOut(duration: 0.3)) {
                 phase = .failed
-                orbBrightness = 0.3
+                orbMood = .error
             }
             Theme.hapticError()
         }
-        timeoutTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0, execute: task)
     }
 }
