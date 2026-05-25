@@ -113,7 +113,7 @@ OrbHomeView передаёт `location.cityName` при построении sug
 
 **Файл:** `groups/health-analyzer/CLAUDE.md` (добавить секцию)
 
-Greg уже работает 16 дней. Нужно добавить задачу: каждое воскресенье 20:00 UTC Greg пишет агрегат за неделю в `handoff/health-weekly.md` (или напрямую в Jarvis через a2a с приложенным markdown).
+Greg уже работает 16 дней. Нужно добавить задачу: каждое воскресенье 20:00 UTC Greg отправляет Jarvis a2a-сообщение с агрегатом за неделю. Jarvis получает → пишет в `memories/self/health.md`. Greg не пишет напрямую в память Jarvis — только через a2a, Jarvis сам решает что сохранить.
 
 Формат агрегата (согласно шаблону в `jarvis/memories/self/health.md`):
 ```markdown
@@ -124,8 +124,6 @@ Greg уже работает 16 дней. Нужно добавить задач
 - Активность: 236 мин/неделя
 - Сдвиги: HRV упал 22 мая (45→16), восстановился 23-го (52)
 ```
-
-Jarvis получает a2a-сообщение от Greg → обновляет `memories/self/health.md`.
 
 ---
 
@@ -308,6 +306,137 @@ Jarvis уже умеет писать в `memories/people/`. Нужно толь
 
 ---
 
+## Блок 5 — Доставка сообщений (delivery status + read receipts)
+
+Двунаправленное отслеживание: пользователь видит статус исходящих, агент видит когда прочитано.
+
+### 5.1 Модель данных (iOS)
+
+**Файл:** `Models/Message.swift`
+
+```swift
+enum DeliveryStatus: String, Codable {
+    case sending    // WS.send() вызван, callback ещё нет
+    case sent       // WS callback без ошибки
+    case delivered  // сервер прислал message_ack
+    case failed     // WS callback вернул ошибку
+}
+```
+
+`ChatMessage` получает `var deliveryStatus: DeliveryStatus`. Для входящих агентских сообщений — сразу `.delivered`. Для исходящих — начинают с `.sending`.
+
+### 5.2 WebSocketClient (iOS)
+
+**Файл:** `Services/WebSocketClient.swift`
+
+`send()` переделывается:
+1. Генерим `clientMessageId = UUID().uuidString` до отправки
+2. Включаем в WS payload: `"clientMessageId": clientMessageId`
+3. Добавляем бабл с `.sending` статусом
+4. В WS callback (`@MainActor`): переводим в `.sent` или `.failed`
+5. Новый кейс в `handleIncoming`: `message_ack { clientMessageId }` → находим по id → `.delivered`
+
+Новые методы отправки:
+- `sendMessageDelivered(messageId:conversationId:)` — вызывается в `route()` только для активного диалога (не для background messages)
+- `sendMessageRead(messageId:conversationId:)` — вызывается из UI через callback когда бабл появляется на экране; дедупликация на iOS: отправляется один раз per messageId (Set уже-отправленных id)
+
+Новые WS сообщения iOS → сервер:
+```json
+{ "type": "message_delivered", "messageId": "...", "conversationId": "..." }
+{ "type": "message_read",      "messageId": "...", "conversationId": "..." }
+```
+
+### 5.3 MessageCache (iOS)
+
+**Файл:** `Services/MessageCache.swift`
+
+`CachedMessage` добавляет `deliveryStatus: String?`. При загрузке:
+- user role → `.delivered` (отправлено в прошлой сессии)
+- assistant role → `.delivered` (получено в прошлой сессии)
+
+### 5.4 UI — checkmarks (iOS)
+
+**Файл:** `Components/MessageBubble.swift`
+
+Для `role == .user` — статус-иконка bottom-right рядом с timestamp:
+
+```swift
+switch message.deliveryStatus {
+case .sending:   Image(systemName: "clock")
+case .sent:      Image(systemName: "checkmark")
+case .delivered: HStack(spacing: -4) {
+                     Image(systemName: "checkmark")
+                     Image(systemName: "checkmark")
+                 }
+case .failed:    Image(systemName: "exclamationmark.circle.fill")
+}
+```
+
+Цвет: `.sent` / `.delivered` — `Theme.accent.opacity(0.7)`. `.failed` — `.red`. Retry UI для `.failed` — Phase 2 (сейчас только иконка). Для `role == .assistant` — без изменений.
+
+**Файл:** `Views/ChatView.swift`
+
+Для агентских баблов: `.onAppear` → вызов `sendMessageRead` через callback.
+
+### 5.5 Серверные изменения
+
+**Файл:** `src/channels/ios-app.ts`
+
+**Хранилище:**
+```typescript
+// In-memory: messageId → { deliveredAt, readAt?, injected }
+const readReceipts = new Map<string, ReadReceipt>();
+const READ_RECEIPTS_FILE = path.join(process.cwd(), 'data', 'ios-read-receipts.jsonl');
+```
+
+При старте — загружаем из файла. При каждой записи — append в файл.
+
+**Обработка входящих:**
+```typescript
+// message_delivered → store deliveredAt
+// message_read      → store readAt
+// Оба → append to read_receipts.jsonl
+```
+
+**Ack на исходящие пользователя** — после `await cfg!.onInbound(...)`:
+```typescript
+if (typeof msg.clientMessageId === 'string') {
+  ws.send(JSON.stringify({ type: 'message_ack', clientMessageId: msg.clientMessageId }));
+}
+```
+
+**Context injection** — в блоке `context_response`, перед `buildCtx(ctx)`:
+```typescript
+// Все read receipts с момента последнего inject для этого pid, максимум 20
+const pending = getPendingReadReceipts(pid);
+if (pending.length > 0) {
+  ctx.readReceipts = pending;
+  markInjected(pending);  // помечаем injected = true, не дублируем
+}
+```
+
+Формат в контексте агента:
+```
+[read receipts]
+msg abc12345 delivered 14:32, read 14:33
+msg def45678 delivered 14:35
+```
+
+**`buildCtx`** — добавить секцию `readReceipts` в текстовый блок.
+
+### Порядок реализации блока 5
+
+```
+1. Message.swift — DeliveryStatus enum
+2. WebSocketClient — clientMessageId + ack + delivered/read отправка
+3. MessageCache — persist deliveryStatus
+4. MessageBubble — checkmarks UI
+5. ChatView — onAppear read receipt trigger
+6. ios-app.ts — ack + read receipt storage + context injection
+```
+
+---
+
 ## Порядок реализации
 
 ```
@@ -322,6 +451,7 @@ Jarvis уже умеет писать в `memories/people/`. Нужно толь
 
 Параллельно:
   - Визуальная польша (любой порядок)  [iOS]
+  - Delivery status + read receipts    [iOS + VDS server]
 
 После:
   - Система задач tasks.md             [VDS agent + iOS voice]
