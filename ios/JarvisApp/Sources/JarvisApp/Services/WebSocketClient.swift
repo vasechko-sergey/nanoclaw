@@ -18,6 +18,7 @@ final class WebSocketClient {
     @ObservationIgnored private var reconnectDelay: TimeInterval = 1
     @ObservationIgnored private var stopped           = false
     @ObservationIgnored private var pendingApnsToken: String?
+    @ObservationIgnored private var sentReadIds: Set<String> = []
 
     /// Current conversation, set by coordinator.
     var conversationId: UUID?
@@ -142,6 +143,26 @@ final class WebSocketClient {
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         ws.send(.data(data)) { if let e = $0 { print("WS send(context_response) failed: \(e)") } }
+    }
+
+    func sendMessageDelivered(_ messageId: String, conversationId: UUID?) {
+        guard let ws = task, isConnected else { return }
+        var payload: [String: Any] = ["type": "message_delivered", "messageId": messageId]
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { if let e = $0 { print("WS send(message_delivered) failed: \(e)") } }
+    }
+
+    func sendMessageRead(_ messageId: String, conversationId: UUID?) {
+        guard sentReadIds.insert(messageId).inserted else { return }
+        guard let ws = task, isConnected else {
+            sentReadIds.remove(messageId)
+            return
+        }
+        var payload: [String: Any] = ["type": "message_read", "messageId": messageId]
+        if let cid = conversationId { payload["conversationId"] = cid.uuidString }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ws.send(.data(data)) { if let e = $0 { print("WS send(message_read) failed: \(e)") } }
     }
 
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
@@ -352,6 +373,9 @@ final class WebSocketClient {
             // Dedup: the host re-flushes queued messages on reconnect, so the same
             // id can arrive twice. Skip if already present in the active list.
             if messages.contains(where: { $0.id == message.id }) { return }
+            if message.role == .assistant {
+                sendMessageDelivered(message.id, conversationId: conversationId)
+            }
             messages.append(message)
             onMessagesChanged?(messages)
             if message.role == .assistant, case .text(let t) = message.content {
