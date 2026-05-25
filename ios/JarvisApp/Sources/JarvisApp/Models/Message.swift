@@ -38,6 +38,13 @@ struct StatusInfo: Equatable {
     enum Level: String { case info, warning, error }
 }
 
+enum DeliveryStatus: String, Codable {
+    case sending    // WS.send() called, no callback yet
+    case sent       // WS send callback returned no error
+    case delivered  // server sent message_ack
+    case failed     // WS send callback returned error
+}
+
 // MARK: – ChatMessage
 
 struct ChatMessage: Identifiable {
@@ -45,6 +52,7 @@ struct ChatMessage: Identifiable {
     let role: Role
     let content: Content
     let timestamp: Date
+    var deliveryStatus: DeliveryStatus = .delivered
 
     enum Role { case user, assistant, system }
 
