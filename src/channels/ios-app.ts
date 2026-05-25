@@ -8,6 +8,7 @@ import { BOT_COMMANDS } from '../commands.js';
 import { readEnvFile } from '../env.js';
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup } from './adapter.js';
+import { ReadReceiptStore } from './ios-read-receipts.js';
 
 function log(msg: string): void {
   console.log(`[ios-app] ${msg}`);
@@ -37,6 +38,8 @@ interface QueuedMessage {
 
 // Persist APNs device tokens across server restarts.
 const TOKENS_FILE = path.join(process.cwd(), 'data', 'ios-apns-tokens.json');
+const READ_RECEIPTS_FILE = path.join(process.cwd(), 'data', 'ios-read-receipts.json');
+const readReceiptStore = new ReadReceiptStore();
 
 // Health time-series store for the autonomous analyzer (Greg). Lives INSIDE Greg's
 // group folder so it is auto-mounted into his container at /workspace/agent/health
@@ -107,6 +110,24 @@ function savePersistedTokens(tokens: Map<string, string>): void {
   const tmp = `${TOKENS_FILE}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(tokens)));
   fs.renameSync(tmp, TOKENS_FILE);
+}
+
+(function loadReadReceipts() {
+  try {
+    const data = fs.readFileSync(READ_RECEIPTS_FILE, 'utf8');
+    const arr = JSON.parse(data) as unknown[];
+    if (Array.isArray(arr)) {
+      readReceiptStore.hydrate(arr.map((r) => JSON.stringify(r)));
+    }
+  } catch {}
+})();
+
+function persistReadReceipts(): void {
+  try {
+    fs.writeFileSync(READ_RECEIPTS_FILE, JSON.stringify(readReceiptStore.all()), 'utf8');
+  } catch (e) {
+    log(`persistReadReceipts failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 function getApnsJwt(cfg: ApnsConfig): string {
@@ -459,6 +480,16 @@ function createIOSAdapter(): ChannelAdapter | null {
             savePersistedTokens(apnsTokens);
           }
 
+          if (msg.type === 'message_delivered' && pid && typeof msg.messageId === 'string') {
+            readReceiptStore.record(pid, msg.messageId, 'delivered');
+            persistReadReceipts();
+          }
+
+          if (msg.type === 'message_read' && pid && typeof msg.messageId === 'string') {
+            readReceiptStore.record(pid, msg.messageId, 'read');
+            persistReadReceipts();
+          }
+
           if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
             // Context is now pull-based (request_context tool) — the app no longer
             // pushes heavy context per message. Only the timezone rides along (cheap)
@@ -482,6 +513,10 @@ function createIOSAdapter(): ChannelAdapter | null {
               content,
               timestamp: new Date().toISOString(),
             });
+            // Ack the client so it can transition from .sent → .delivered
+            if (typeof msg.clientMessageId === 'string' && msg.clientMessageId) {
+              ws.send(JSON.stringify({ type: 'message_ack', clientMessageId: msg.clientMessageId }));
+            }
           }
 
           if (msg.type === 'feedback' && pid) {
