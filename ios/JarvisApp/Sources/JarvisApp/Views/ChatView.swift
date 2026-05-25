@@ -14,20 +14,22 @@ private struct ScrollOffsetKey: PreferenceKey {
 }
 
 struct ChatView: View {
-    @EnvironmentObject var settings: AppSettings
-    @ObservedObject var coordinator: AppCoordinator
+    @Environment(AppSettings.self) var settings
+    var coordinator: AppCoordinator
+    var onGoHome: (() -> Void)? = nil
+    @Binding var autoStartVoice: Bool
 
     @State private var inputText       = ""
     @State private var inputViaVoice   = false
     @State private var drafts: [DraftAttachment] = []
     @State private var showSettings    = false
-    @State private var showConversations = false
     @State private var showProfile     = false
     @State private var fullScreenImage: UIImage? = nil
     @State private var isScrolledUp = false
     @State private var unreadCount  = 0
     @State private var lastSeenCount = 0
     @State private var scrollToBottomAction: (() -> Void)?
+    @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
 
     private var ws: WebSocketClient { coordinator.ws }
     private var store: ConversationStore { coordinator.store }
@@ -53,13 +55,27 @@ struct ChatView: View {
             header
 
             // MARK: – Content
-            if visibleMessages.isEmpty && !ws.isTyping {
-                EmptyStateView { suggestion in
-                    coordinator.sendMessage(suggestion)
-                }
+            if visibleMessages.isEmpty && !ws.isTyping && !emptyInputActive {
+                EmptyStateView(
+                    onSuggestion: { suggestion in
+                        coordinator.sendMessage(suggestion)
+                    },
+                    onStartVoice: {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            emptyInputActive = true
+                        }
+                        autoStartVoice = true
+                    },
+                    onStartText: {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            emptyInputActive = true
+                        }
+                    }
+                )
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 ZStack(alignment: .bottomTrailing) {
+                    GeometryReader { chatGeo in
                     ScrollViewReader { proxy in
                         ScrollView {
                             VStack(alignment: .leading, spacing: Theme.scaled(8)) {
@@ -80,6 +96,11 @@ struct ChatView: View {
                                         onSpeak: { text in coordinator.speak(text) }
                                     )
                                     .id(msg.id)
+                                    .onAppear {
+                                        if msg.role == .assistant {
+                                            ws.sendMessageRead(msg.id, conversationId: ws.conversationId)
+                                        }
+                                    }
                                     .transition(
                                         .asymmetric(
                                             insertion: .opacity
@@ -111,7 +132,7 @@ struct ChatView: View {
                         .coordinateSpace(name: "chatScroll")
                         .onPreferenceChange(ScrollOffsetKey.self) { maxY in
                             let threshold: CGFloat = 80
-                            let scrolledAway = maxY > UIScreen.main.bounds.height + threshold
+                            let scrolledAway = maxY > chatGeo.size.height + threshold
                             if scrolledAway != isScrolledUp {
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     if scrolledAway {
@@ -161,7 +182,8 @@ struct ChatView: View {
                             }
                         }
                         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(50))
                                 if ws.isTyping {
                                     withAnimation { proxy.scrollTo("typing", anchor: .bottom) }
                                 } else if let last = ws.messages.last {
@@ -170,6 +192,7 @@ struct ChatView: View {
                             }
                         }
                     }
+                    } // GeometryReader
 
                     // Scroll-to-bottom FAB — outside ScrollViewReader, not blocked by scroll gestures
                     if isScrolledUp {
@@ -192,7 +215,7 @@ struct ChatView: View {
                 Button(action: { coordinator.speech.stop() }) {
                     HStack(spacing: Theme.scaled(6)) {
                         Image(systemName: "stop.fill")
-                        Text("Остановить озвучку")
+                        Text("Остановить")
                             .font(.system(size: Theme.fontSubhead, weight: .medium))
                     }
                     .foregroundStyle(Theme.accent)
@@ -203,51 +226,56 @@ struct ChatView: View {
                     .padding(.horizontal, Theme.scaled(8))
                     .padding(.top, Theme.scaled(6))
                 }
-                .accessibilityLabel("Остановить озвучку")
+                .accessibilityLabel("Остановить")
             }
 
-            // MARK: – Input
-            Group {
-                if settings.inputMode == "orb" {
-                    OrbInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
+            // MARK: – Input (hidden in empty state until user initiates)
+            if !visibleMessages.isEmpty || ws.isTyping || emptyInputActive {
+                UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
                                 commands: ws.commands, isDisabled: !ws.isConnected,
-                                enterToSend: settings.enterToSend, orbPrimary: settings.orbPrimary,
+                                enterToSend: settings.enterToSend,
+                                autoStartVoice: $autoStartVoice,
                                 onSend: sendCurrent)
-                } else {
-                    InputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
-                             commands: ws.commands, isDisabled: !ws.isConnected,
-                             enterToSend: settings.enterToSend, onSend: sendCurrent)
-                }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)
-        .background(Theme.background.ignoresSafeArea())
+        .background {
+            GeometryReader { geo in
+                ZStack {
+                    Theme.background
+                    // Subtle radial glow at top for depth
+                    RadialGradient(
+                        colors: [Theme.accent.opacity(0.03), Color.clear],
+                        center: .top,
+                        startRadius: 0,
+                        endRadius: geo.size.height * 0.6
+                    )
+                }
+            }
+            .ignoresSafeArea()
+        }
         .sheet(isPresented: $showSettings) {
-            SettingsView(isInitialSetup: false)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(Theme.background)
-        }
-        .sheet(isPresented: $showProfile) {
-            ProfileView(store: store, isConnected: ws.isConnected, onReconnect: {
-                    coordinator.disconnect()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        coordinator.connect()
-                    }
-                })
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(Theme.background)
-        }
-        .sheet(isPresented: $showConversations) {
-            ConversationListView(store: store) { action in
-                showConversations = false
+            SettingsView(isInitialSetup: false, store: store) { action in
+                showSettings = false
                 coordinator.handleAction(action)
                 inputText = ""
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .presentationBackground(Theme.background)
+        }
+        .sheet(isPresented: $showProfile) {
+            ProfileView(store: store, isConnected: ws.isConnected, onReconnect: {
+                    coordinator.disconnect()
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(300))
+                        coordinator.connect()
+                    }
+                })
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Theme.background)
         }
         .fullScreenCover(item: Binding(
             get: { fullScreenImage.map { IdentifiableImage(image: $0) } },
@@ -259,6 +287,12 @@ struct ChatView: View {
             // Wire haptics in UI layer
             coordinator.onMessageReceived = {
                 Theme.hapticReceive()
+            }
+        }
+        .onChange(of: autoStartVoice) {
+            // When entering chat with voice trigger from home, activate input bar
+            if autoStartVoice && visibleMessages.isEmpty {
+                emptyInputActive = true
             }
         }
         .onDisappear {
@@ -287,7 +321,11 @@ struct ChatView: View {
 
             Spacer()
 
-            Button { showConversations = true } label: {
+            Button {
+                if let onGoHome {
+                    onGoHome()
+                }
+            } label: {
                 VStack(spacing: 3) {
                     Text("J A R V I S")
                         .font(.system(size: Theme.fontTitle, weight: .light))
@@ -299,7 +337,8 @@ struct ChatView: View {
                 }
                 .frame(minHeight: Theme.minTapSize)
             }
-            .accessibilityLabel("Диалоги")
+            .disabled(onGoHome == nil)
+            .accessibilityLabel("Домой")
 
             Spacer()
 
@@ -344,6 +383,7 @@ struct ChatView: View {
                     .background(Theme.accent)
                     .clipShape(Capsule())
                     .offset(x: Theme.scaled(12), y: -Theme.scaled(12))
+                    .contentTransition(.numericText())
             }
         }
         .frame(width: Theme.minTapSize, height: Theme.minTapSize)
