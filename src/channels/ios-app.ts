@@ -550,6 +550,11 @@ function createIOSAdapter(): ChannelAdapter | null {
             const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
             const ctx = (msg.context as Record<string, unknown> | undefined) ?? {};
             if (typeof ctx.timezone !== 'string' && lastTimezone.has(pid)) ctx.timezone = lastTimezone.get(pid);
+            const pendingReceipts = readReceiptStore.getPending(pid);
+            if (pendingReceipts.length > 0) {
+              ctx.readReceipts = pendingReceipts;
+              readReceiptStore.markInjected(pendingReceipts);
+            }
             let block: string;
             try {
               block = buildCtx(ctx);
@@ -764,6 +769,18 @@ function buildCtx(ctx: Record<string, unknown>): string {
         month: 'short',
       });
       lines.push(`📅 ${e.title} — ${when}`);
+    }
+  }
+  if (Array.isArray(ctx.readReceipts) && ctx.readReceipts.length > 0) {
+    const tz = (ctx.timezone as string | undefined) ?? 'Europe/Moscow';
+    const fmtTime = (iso: string) =>
+      new Date(iso).toLocaleTimeString('ru-RU', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+    lines.push('[read receipts]');
+    for (const r of ctx.readReceipts as Array<{ messageId: string; deliveredAt: string; readAt?: string }>) {
+      const short = r.messageId.slice(0, 8);
+      const d = `delivered ${fmtTime(r.deliveredAt)}`;
+      const rd = r.readAt ? `, read ${fmtTime(r.readAt)}` : '';
+      lines.push(`msg ${short} ${d}${rd}`);
     }
   }
   if (!lines.length && !ctx.status) return '';
