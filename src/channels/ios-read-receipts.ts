@@ -10,7 +10,7 @@ export class ReadReceiptStore {
   private entries = new Map<string, ReadReceipt>();
 
   private key(pid: string, messageId: string): string {
-    return `${pid}:${messageId}`;
+    return `${pid}\0${messageId}`;
   }
 
   record(pid: string, messageId: string, type: 'delivered' | 'read'): void {
@@ -33,7 +33,7 @@ export class ReadReceiptStore {
   getPending(pid: string): ReadReceipt[] {
     const result: ReadReceipt[] = [];
     for (const r of this.entries.values()) {
-      if (r.pid === pid && !r.injected) result.push(r);
+      if (r.pid === pid && !r.injected) result.push({ ...r });
     }
     return result.slice(0, 20);
   }
