@@ -24,5 +24,7 @@ final class AppSettings {
         return id
     }
 
-    var isConfigured: Bool { !serverURL.isEmpty && !bearerToken.isEmpty }
+    var isConfigured: Bool {
+        JarvisApp.isUITesting || (!serverURL.isEmpty && !bearerToken.isEmpty)
+    }
 }

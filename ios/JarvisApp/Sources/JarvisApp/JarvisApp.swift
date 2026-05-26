@@ -62,6 +62,10 @@ struct JarvisApp: App {
     @State private var settings: AppSettings
     @State private var coordinator: AppCoordinator
 
+    static var isUITesting: Bool {
+        ProcessInfo.processInfo.arguments.contains("--uitesting")
+    }
+
     init() {
         let s = AppSettings()
         _settings = State(initialValue: s)
