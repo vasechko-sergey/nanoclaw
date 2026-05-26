@@ -24,7 +24,7 @@ async function createTestServer() {
     store,
     cfg: {
       onInbound: async (pid, _tid, msg) => {
-        inbound.push({ pid, content: (msg as Record<string, unknown>).content as Record<string, unknown> });
+        inbound.push({ pid, content: msg.content as Record<string, unknown> });
       },
       onAction: () => {},
     },
@@ -39,8 +39,8 @@ async function createTestServer() {
   const port = (server.address() as AddressInfo).port;
   const close = () =>
     new Promise<void>((r) => {
-      wss.close();
-      server.close(() => r());
+      for (const c of wss.clients) c.terminate();
+      wss.close(() => server.close(() => r()));
     });
   return { port, store, inbound, close };
 }
@@ -55,8 +55,9 @@ async function connect(port: number): Promise<WebSocket> {
 }
 
 async function auth(ws: WebSocket): Promise<Record<string, unknown>> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     ws.once('message', (m) => resolve(JSON.parse(m.toString())));
+    ws.once('close', () => reject(new Error('socket closed before auth_ok')));
     ws.send(JSON.stringify({ type: 'auth', token: 'test-token', platformId: 'ios:test-1' }));
   });
 }
@@ -103,7 +104,7 @@ describe('ios-app WS protocol', () => {
     const ws = await connect(ctx.port);
     await auth(ws);
     ws.send(JSON.stringify({ type: 'message_delivered', messageId: 'msg-1' }));
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 200));
     const pending = ctx.store.getPending('ios:test-1');
     expect(pending).toHaveLength(1);
     expect(pending[0].messageId).toBe('msg-1');
@@ -116,7 +117,7 @@ describe('ios-app WS protocol', () => {
     await auth(ws);
     ws.send(JSON.stringify({ type: 'message_delivered', messageId: 'msg-2' }));
     ws.send(JSON.stringify({ type: 'message_read', messageId: 'msg-2' }));
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 200));
     const pending = ctx.store.getPending('ios:test-1');
     const entry = pending.find((p) => p.messageId === 'msg-2');
     expect(entry?.readAt).toBeTruthy();
