@@ -4,6 +4,8 @@
 **Scope:** Full-stack automated verification — iOS XCUITest + NanoClaw server vitest extensions
 **Trigger:** Manual (`pnpm test:all`) via Claude Code
 
+**Пререквизиты:** `xcodegen` установлен (`brew install xcodegen`), Xcode + iOS Simulator установлены, `ws` в devDeps (уже есть).
+
 ---
 
 ## Архитектура
@@ -181,6 +183,6 @@ echo "✓ All tests passed"
 | Риск | Вероятность | Решение |
 |------|-------------|---------|
 | xcodebuild симулятор не найден | средняя | Явно указать `OS=latest`, упасть с понятной ошибкой |
-| ios-app.ts трудно изолировать для WS тестов | средняя | Экспортировать `createIosAppHandler(store)` — инъекция зависимости |
+| ios-app.ts трудно изолировать для WS тестов | средняя | Рефакторинг: `export function createIosAppHandler(store: ReadReceiptStore, router: RouterFn)` — принимает store и router как параметры. Тест передаёт mock router (no-op). Основной `src/index.ts` передаёт реальные инстансы. |
 | XCUITest async timing flaky | средняя | `waitForExistence(timeout: 5)` на каждый элемент, mock задержка 500ms достаточна |
 | `isUITesting` попадает в prod | низкая | Флаг читается из `ProcessInfo.arguments` — в prod запуске аргумент не передаётся |

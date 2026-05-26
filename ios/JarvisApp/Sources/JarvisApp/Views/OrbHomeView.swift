@@ -106,6 +106,19 @@ struct OrbHomeView: View {
         }
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("orb-home")
+        // UI-test-only: stable tap target for navigating to text chat, placed
+        // at bottom-leading corner well outside the satellite orbit radius.
+        .overlay(alignment: .bottomLeading) {
+            if JarvisApp.isUITesting {
+                Button(action: { onStartChat(nil) }) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.01))
+                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                }
+                .accessibilityLabel("uitest-start-text-chat")
+                .padding(.bottom, Theme.scaled(4))
+            }
+        }
         .sheet(isPresented: $showProfile) {
             ProfileView(store: coordinator.store, isConnected: coordinator.ws.isConnected, onReconnect: {
                 coordinator.disconnect()
@@ -203,6 +216,7 @@ struct OrbHomeView: View {
                 .offset(x: showSatellites ? 0 : x, y: showSatellites ? 0 : y)
                 .scaleEffect(showSatellites ? 0.3 : 1.0)
                 .opacity(showSatellites ? 0 : 1.0)
+                .allowsHitTesting(!showSatellites)
                 .animation(
                     .spring(duration: 0.4, bounce: 0.25).delay(Double(index) * 0.06),
                     value: showSatellites
@@ -230,8 +244,11 @@ struct OrbHomeView: View {
                 .offset(x: showSatellites ? x : 0, y: showSatellites ? y : 0)
                 .scaleEffect(showSatellites ? 1.0 : 0.3)
                 .opacity(showSatellites ? 1.0 : 0)
+                .allowsHitTesting(showSatellites)
                 .animation(
-                    .spring(duration: 0.4, bounce: 0.25).delay(Double(index) * 0.06),
+                    // Skip animation in UITesting so satellites jump to final position
+                    // immediately — lets XCUITest tap them at the correct coordinate.
+                    JarvisApp.isUITesting ? nil : .spring(duration: 0.4, bounce: 0.25).delay(Double(index) * 0.06),
                     value: showSatellites
                 )
             }
@@ -266,6 +283,23 @@ struct OrbHomeView: View {
                     .foregroundStyle(Theme.accentMedium.opacity(0.7))
                     .opacity(showSatellites ? 0.3 : 1)
                     .animation(.easeOut(duration: 0.2), value: showSatellites)
+            }
+
+            // UI-test-only: tap target to reveal action satellites.
+            // Only present when satellites are hidden — once visible, action satellites must
+            // receive taps directly (this button sits on top in the ZStack and would intercept).
+            if JarvisApp.isUITesting && !showSatellites {
+                Button(action: {
+                    withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
+                        showSatellites = true
+                    }
+                }) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.01))
+                        .frame(width: Theme.orbSize, height: Theme.orbSize)
+                }
+                .accessibilityLabel("Toggle satellite menu")
+                .accessibilityIdentifier("orb-satellites-toggle")
             }
         }
         .frame(maxWidth: .infinity)
