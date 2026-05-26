@@ -261,8 +261,9 @@ export function createIosWsHandler(opts: {
   };
   state: IosWsHandlerState;
   persist: { receipts: () => void; tokens: () => void };
+  deliverQueued: (ws: WebSocket, msg: QueuedMessage) => void;
 }): (ws: WebSocket) => void {
-  const { token, store, cfg, state, persist } = opts;
+  const { token, store, cfg, state, persist, deliverQueued } = opts;
   const { wsClients, apnsTokens, pendingMessages, deliveredIds, lastTimezone } = state;
 
   function recordDelivered(pid: string, id: string): void {
@@ -318,15 +319,19 @@ export function createIosWsHandler(opts: {
             apnsTokens.set(pid, msg.apnsToken);
             persist.tokens();
           }
-          ws.send(JSON.stringify({ type: 'auth_ok', commands: [] }));
+          ws.send(
+            JSON.stringify({
+              type: 'auth_ok',
+              commands: BOT_COMMANDS.map((c) => ({ command: '/' + c.command, description: c.description })),
+            }),
+          );
           const pending = pendingMessages.get(pid);
           if (pending?.length) {
             pendingMessages.delete(pid);
             const seen = deliveredIds.get(pid);
             for (const p of pending) {
               if (seen?.has(p.id)) continue;
-              if (ws.readyState === WebSocket.OPEN && p.text)
-                ws.send(JSON.stringify({ type: 'message', id: p.id, text: p.text, timestamp: p.ts }));
+              deliverQueued(ws, p);
               recordDelivered(pid, p.id);
             }
           }
@@ -356,6 +361,12 @@ export function createIosWsHandler(opts: {
         const status = typeof msg.status === 'string' && msg.status ? `[status: ${msg.status}]\n` : '';
         const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
         const content: Record<string, unknown> = { text: status + msg.text, senderId: pid };
+        if (Array.isArray(msg.attachments)) {
+          const atts = (msg.attachments as Array<Record<string, unknown>>).filter(
+            (a) => a && typeof a.data === 'string',
+          );
+          if (atts.length > 0) content.attachments = atts;
+        }
         await cfg.onInbound(pid, tid, {
           id: randomUUID(),
           kind: 'chat',
@@ -389,6 +400,50 @@ export function createIosWsHandler(opts: {
           content: { text: block || '[iOS context — requested data unavailable]', senderId: pid },
           timestamp: new Date().toISOString(),
         } as Record<string, unknown>);
+      }
+
+      if (msg.type === 'feedback' && pid) {
+        const positive = msg.value === true;
+        const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+        const rated = typeof msg.messageText === 'string' ? msg.messageText.slice(0, 800) : '';
+        const quoted = rated
+          ? `\n> ${rated.replace(/\n/g, '\n> ')}`
+          : typeof msg.messageId === 'string'
+            ? ` (id ${msg.messageId})`
+            : '';
+        await cfg.onInbound(pid, tid, {
+          id: randomUUID(),
+          kind: 'chat',
+          content: {
+            text: `[user feedback: ${positive ? '👍' : '👎'} on your previous message]${quoted}`,
+            senderId: pid,
+          },
+          timestamp: new Date().toISOString(),
+        } as Record<string, unknown>);
+      }
+
+      if (msg.type === 'action_response' && pid) {
+        const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+        const buttonLabel = typeof msg.buttonLabel === 'string' ? msg.buttonLabel : '';
+        const buttonId = typeof msg.buttonId === 'string' ? msg.buttonId : '';
+        const questionId = typeof msg.messageId === 'string' ? msg.messageId : '';
+        if (questionId && buttonId) {
+          cfg.onAction(questionId, buttonId, pid);
+        } else {
+          await cfg.onInbound(pid, tid, {
+            id: randomUUID(),
+            kind: 'chat',
+            content: {
+              text: `[user selected: "${buttonLabel}" (id: ${buttonId})]`,
+              senderId: pid,
+            },
+            timestamp: new Date().toISOString(),
+          } as Record<string, unknown>);
+        }
+      }
+
+      if (msg.type === 'new_conversation' && pid) {
+        // no-op — acknowledged but not routed
       }
     });
 
@@ -578,6 +633,7 @@ function createIOSAdapter(): ChannelAdapter | null {
           },
           state: handlerState,
           persist: { receipts: persistReadReceipts, tokens: () => savePersistedTokens(apnsTokens) },
+          deliverQueued: deliverViaSock,
         }),
       );
 
