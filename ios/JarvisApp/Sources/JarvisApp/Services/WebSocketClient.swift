@@ -204,8 +204,18 @@ final class WebSocketClient {
     }
 
     private func doConnect(settings: AppSettings) {
-        guard !stopped, !settings.serverURL.isEmpty else { return }
-        var s = settings.serverURL
+        guard !stopped else { return }
+        let rawUrl: String
+        let authToken: String
+        if JarvisApp.isUITesting {
+            rawUrl = "ws://127.0.0.1:8765"
+            authToken = "uitest-token"
+        } else {
+            guard !settings.serverURL.isEmpty else { return }
+            rawUrl = settings.serverURL
+            authToken = settings.bearerToken
+        }
+        var s = rawUrl
         if      s.hasPrefix("https://") { s = "wss://" + s.dropFirst(8) }
         else if s.hasPrefix("http://")  { s = "ws://"  + s.dropFirst(7) }
         else if !s.hasPrefix("ws")      { s = "ws://"  + s }
@@ -220,7 +230,7 @@ final class WebSocketClient {
 
         guard let auth = try? JSONSerialization.data(withJSONObject: [
             "type": "auth",
-            "token": settings.bearerToken,
+            "token": authToken,
             "platformId": settings.platformId,
         ] as [String: Any]) else { return }
         ws.send(.data(auth)) { if let e = $0 { print("WS send(auth) failed: \(e)") } }
