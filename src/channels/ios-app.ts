@@ -244,6 +244,165 @@ function deliverViaSock(ws: WebSocket, msg: QueuedMessage): void {
   }
 }
 
+export interface IosWsHandlerState {
+  wsClients: Map<string, Set<WebSocket>>;
+  apnsTokens: Map<string, string>;
+  pendingMessages: Map<string, QueuedMessage[]>;
+  deliveredIds: Map<string, Set<string>>;
+  lastTimezone: Map<string, string>;
+}
+
+export function createIosWsHandler(opts: {
+  token: string;
+  store: ReadReceiptStore;
+  cfg: {
+    onInbound: (pid: string, tid: string | null, msg: Record<string, unknown>) => Promise<void>;
+    onAction: (qid: string, bid: string, pid: string) => void;
+  };
+  state: IosWsHandlerState;
+  persist: { receipts: () => void; tokens: () => void };
+}): (ws: WebSocket) => void {
+  const { token, store, cfg, state, persist } = opts;
+  const { wsClients, apnsTokens, pendingMessages, deliveredIds, lastTimezone } = state;
+
+  function recordDelivered(pid: string, id: string): void {
+    let s = deliveredIds.get(pid);
+    if (!s) deliveredIds.set(pid, (s = new Set()));
+    if (s.size > 500) s.clear();
+    s.add(id);
+  }
+
+  function removeClient(pid: string, ws: WebSocket) {
+    const s = wsClients.get(pid);
+    if (!s) return;
+    s.delete(ws);
+    if (s.size === 0) {
+      wsClients.delete(pid);
+      lastTimezone.delete(pid);
+    }
+  }
+
+  return (ws: WebSocket) => {
+    let pid: string | null = null;
+    let authed = false;
+    let isAlive = true;
+    ws.on('pong', () => {
+      isAlive = true;
+    });
+    const ping = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (!isAlive) {
+        ws.terminate();
+        return;
+      }
+      isAlive = false;
+      ws.ping();
+    }, 30_000);
+
+    ws.on('message', async (data) => {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(data.toString());
+      } catch {
+        ws.close(1003);
+        return;
+      }
+
+      if (!authed) {
+        if (msg.type === 'auth' && msg.token === token && typeof msg.platformId === 'string') {
+          authed = true;
+          pid = msg.platformId;
+          if (!wsClients.has(pid)) wsClients.set(pid, new Set());
+          wsClients.get(pid)!.add(ws);
+          if (typeof msg.apnsToken === 'string' && msg.apnsToken) {
+            apnsTokens.set(pid, msg.apnsToken);
+            persist.tokens();
+          }
+          ws.send(JSON.stringify({ type: 'auth_ok', commands: [] }));
+          const pending = pendingMessages.get(pid);
+          if (pending?.length) {
+            pendingMessages.delete(pid);
+            const seen = deliveredIds.get(pid);
+            for (const p of pending) {
+              if (seen?.has(p.id)) continue;
+              if (ws.readyState === WebSocket.OPEN && p.text)
+                ws.send(JSON.stringify({ type: 'message', id: p.id, text: p.text, timestamp: p.ts }));
+              recordDelivered(pid, p.id);
+            }
+          }
+        } else {
+          ws.close(4001);
+        }
+        return;
+      }
+
+      if (msg.type === 'apns_token' && typeof msg.token === 'string' && pid) {
+        apnsTokens.set(pid, msg.token);
+        persist.tokens();
+      }
+
+      if (msg.type === 'message_delivered' && pid && typeof msg.messageId === 'string') {
+        store.record(pid, msg.messageId, 'delivered');
+        persist.receipts();
+      }
+
+      if (msg.type === 'message_read' && pid && typeof msg.messageId === 'string') {
+        store.record(pid, msg.messageId, 'read');
+        persist.receipts();
+      }
+
+      if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
+        if (typeof msg.timezone === 'string' && msg.timezone) lastTimezone.set(pid, msg.timezone);
+        const status = typeof msg.status === 'string' && msg.status ? `[status: ${msg.status}]\n` : '';
+        const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+        const content: Record<string, unknown> = { text: status + msg.text, senderId: pid };
+        await cfg.onInbound(pid, tid, {
+          id: randomUUID(),
+          kind: 'chat',
+          content,
+          timestamp: new Date().toISOString(),
+        } as Record<string, unknown>);
+        if (typeof msg.clientMessageId === 'string' && msg.clientMessageId) {
+          ws.send(JSON.stringify({ type: 'message_ack', clientMessageId: msg.clientMessageId }));
+        }
+      }
+
+      if (msg.type === 'context_response' && pid) {
+        const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
+        const ctx = (msg.context as Record<string, unknown> | undefined) ?? {};
+        if (typeof ctx.timezone !== 'string' && lastTimezone.has(pid)) ctx.timezone = lastTimezone.get(pid);
+        const pendingReceipts = store.getPending(pid);
+        if (pendingReceipts.length > 0) {
+          ctx.readReceipts = pendingReceipts;
+          store.markInjected(pendingReceipts);
+          persist.receipts();
+        }
+        let block: string;
+        try {
+          block = buildCtx(ctx);
+        } catch {
+          block = '';
+        }
+        await cfg.onInbound(pid, tid, {
+          id: randomUUID(),
+          kind: 'chat',
+          content: { text: block || '[iOS context — requested data unavailable]', senderId: pid },
+          timestamp: new Date().toISOString(),
+        } as Record<string, unknown>);
+      }
+    });
+
+    ws.on('close', () => {
+      clearInterval(ping);
+      if (pid) removeClient(pid, ws);
+    });
+    ws.on('error', () => {
+      clearInterval(ping);
+      if (pid) removeClient(pid, ws);
+    });
+  };
+}
+
 function createIOSAdapter(): ChannelAdapter | null {
   const env = readEnvFile([
     'IOS_APP_TOKEN',
@@ -277,12 +436,6 @@ function createIOSAdapter(): ChannelAdapter | null {
   // Bounded record of delivered message ids per device, so re-flushing the
   // offline queue on reconnect can't deliver the same message twice.
   const deliveredIds = new Map<string, Set<string>>();
-  function recordDelivered(pid: string, id: string): void {
-    let s = deliveredIds.get(pid);
-    if (!s) deliveredIds.set(pid, (s = new Set()));
-    if (s.size > 500) s.clear();
-    s.add(id);
-  }
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
   let wss: WebSocketServer | null = null;
@@ -302,7 +455,11 @@ function createIOSAdapter(): ChannelAdapter | null {
     const set = wsClients.get(platformId);
     if (set && set.size > 0) {
       set.forEach((ws) => deliverViaSock(ws, queued));
-      recordDelivered(platformId, id);
+      // Record delivered inline (mirrors recordDelivered in createIosWsHandler)
+      let ds = deliveredIds.get(platformId);
+      if (!ds) deliveredIds.set(platformId, (ds = new Set()));
+      if (ds.size > 500) ds.clear();
+      ds.add(id);
     } else {
       // Cap the offline queue so a long-offline device can't grow it unbounded
       // (base64 file payloads especially). Drop the oldest on overflow.
@@ -331,17 +488,6 @@ function createIOSAdapter(): ChannelAdapter | null {
       }
     }
     return id;
-  }
-
-  function removeClient(pid: string, ws: WebSocket) {
-    const s = wsClients.get(pid);
-    if (!s) return;
-    s.delete(ws);
-    if (s.size === 0) {
-      wsClients.delete(pid);
-      lastTimezone.delete(pid);
-      // deliveredIds kept on purpose — needed to dedup re-flush on reconnect.
-    }
   }
 
   return {
@@ -412,211 +558,28 @@ function createIOSAdapter(): ChannelAdapter | null {
 
       wss = new WebSocketServer({ server: httpServer });
 
-      wss.on('connection', (ws) => {
-        let pid: string | null = null;
-        let authed = false;
-        let isAlive = true;
-        ws.on('pong', () => {
-          isAlive = true;
-        });
-        const ping = setInterval(() => {
-          if (ws.readyState !== WebSocket.OPEN) return;
-          if (!isAlive) {
-            log(`No pong from ${pid ?? 'unauthed'} — terminating dead socket`);
-            ws.terminate();
-            return;
-          }
-          isAlive = false;
-          ws.ping();
-        }, 30_000);
+      const handlerState: IosWsHandlerState = {
+        wsClients,
+        apnsTokens,
+        pendingMessages,
+        deliveredIds,
+        lastTimezone,
+      };
 
-        ws.on('message', async (data) => {
-          let msg: Record<string, unknown>;
-          try {
-            msg = JSON.parse(data.toString());
-          } catch {
-            log('Malformed JSON from client — closing');
-            ws.close(1003);
-            return;
-          }
-
-          if (!authed) {
-            if (msg.type === 'auth' && msg.token === token && typeof msg.platformId === 'string') {
-              authed = true;
-              pid = msg.platformId;
-              if (!wsClients.has(pid)) wsClients.set(pid, new Set());
-              wsClients.get(pid)!.add(ws);
-              if (typeof msg.apnsToken === 'string' && msg.apnsToken) {
-                apnsTokens.set(pid, msg.apnsToken);
-                savePersistedTokens(apnsTokens);
-              }
-              ws.send(
-                JSON.stringify({
-                  type: 'auth_ok',
-                  commands: BOT_COMMANDS.map((c) => ({ command: '/' + c.command, description: c.description })),
-                }),
-              );
-
-              // Flush messages queued while app was closed. Clear the queue first
-              // so a concurrent delivery can't double-send, and skip any id already
-              // delivered to this device.
-              const pending = pendingMessages.get(pid);
-              if (pending?.length) {
-                pendingMessages.delete(pid);
-                const seen = deliveredIds.get(pid);
-                for (const p of pending) {
-                  if (seen?.has(p.id)) continue;
-                  deliverViaSock(ws, p);
-                  recordDelivered(pid, p.id);
-                }
-              }
-            } else {
-              log('Auth failed (bad token or missing platformId) — closing');
-              ws.close(4001);
-            }
-            return;
-          }
-
-          if (msg.type === 'apns_token' && typeof msg.token === 'string' && pid) {
-            apnsTokens.set(pid, msg.token);
-            savePersistedTokens(apnsTokens);
-          }
-
-          if (msg.type === 'message_delivered' && pid && typeof msg.messageId === 'string') {
-            log(`read receipt: delivered ${msg.messageId} from ${pid}`);
-            readReceiptStore.record(pid, msg.messageId, 'delivered');
-            persistReadReceipts();
-          }
-
-          if (msg.type === 'message_read' && pid && typeof msg.messageId === 'string') {
-            log(`read receipt: read ${msg.messageId} from ${pid}`);
-            readReceiptStore.record(pid, msg.messageId, 'read');
-            persistReadReceipts();
-          }
-
-          if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
-            // Context is now pull-based (request_context tool) — the app no longer
-            // pushes heavy context per message. Only the timezone rides along (cheap)
-            // and is cached for formatting dates in pulled context.
-            if (typeof msg.timezone === 'string' && msg.timezone) lastTimezone.set(pid, msg.timezone);
-            const status = typeof msg.status === 'string' && msg.status ? `[status: ${msg.status}]\n` : '';
-            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
-            // Inbound attachments (base64) — the host's extractAttachmentFiles saves
-            // each to the session inbox and the agent provider turns images/PDFs into
-            // native content blocks. Keep only well-formed { name, mimeType, data, size }.
-            const content: Record<string, unknown> = { text: status + msg.text, senderId: pid };
-            if (Array.isArray(msg.attachments)) {
-              const atts = (msg.attachments as Array<Record<string, unknown>>).filter(
-                (a) => a && typeof a.data === 'string',
-              );
-              if (atts.length > 0) content.attachments = atts;
-            }
-            await cfg!.onInbound(pid, tid, {
-              id: randomUUID(),
-              kind: 'chat',
-              content,
-              timestamp: new Date().toISOString(),
-            });
-            // Ack the client so it can transition from .sent → .delivered
-            if (typeof msg.clientMessageId === 'string' && msg.clientMessageId) {
-              ws.send(JSON.stringify({ type: 'message_ack', clientMessageId: msg.clientMessageId }));
-            }
-          }
-
-          if (msg.type === 'feedback' && pid) {
-            const positive = msg.value === true;
-            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
-            const rated = typeof msg.messageText === 'string' ? msg.messageText.slice(0, 800) : '';
-            const quoted = rated
-              ? `\n> ${rated.replace(/\n/g, '\n> ')}`
-              : typeof msg.messageId === 'string'
-                ? ` (id ${msg.messageId})`
-                : '';
-            await cfg!.onInbound(pid, tid, {
-              id: randomUUID(),
-              kind: 'chat',
-              content: {
-                text: `[user feedback: ${positive ? '👍' : '👎'} on your previous message]${quoted}`,
-                senderId: pid,
-              },
-              timestamp: new Date().toISOString(),
-            });
-          }
-
-          // Context response — reply to a request_context pull. Technical, hidden
-          // from the user; feeds the requested context back to the agent as a
-          // follow-up message that wakes a new turn.
-          if (msg.type === 'context_response' && pid) {
-            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
-            const ctx = (msg.context as Record<string, unknown> | undefined) ?? {};
-            if (typeof ctx.timezone !== 'string' && lastTimezone.has(pid)) ctx.timezone = lastTimezone.get(pid);
-            const pendingReceipts = readReceiptStore.getPending(pid);
-            if (pendingReceipts.length > 0) {
-              ctx.readReceipts = pendingReceipts;
-              readReceiptStore.markInjected(pendingReceipts);
-              persistReadReceipts();
-            }
-            let block: string;
-            try {
-              block = buildCtx(ctx);
-            } catch (e) {
-              log(`buildCtx failed for ${pid}: ${e instanceof Error ? e.message : String(e)}`);
-              block = '';
-            }
-            await cfg!.onInbound(pid, tid, {
-              id: randomUUID(),
-              kind: 'chat',
-              content: {
-                text: block || '[iOS context — requested data unavailable]',
-                senderId: pid,
-              },
-              timestamp: new Date().toISOString(),
-            });
-          }
-
-          // (Health history now arrives over HTTP POST /ios/health/upload — WS is chat-only.)
-
-          // Action response — user tapped a button on an action message.
-          // For ask_question/approval cards the questionId (the action message id)
-          // is present → resolve the pending_questions/approval row structurally via
-          // onAction. Only fall back to a free-text inbound when there's no questionId.
-          if (msg.type === 'action_response' && pid) {
-            const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
-            const buttonLabel = typeof msg.buttonLabel === 'string' ? msg.buttonLabel : '';
-            const buttonId = typeof msg.buttonId === 'string' ? msg.buttonId : '';
-            const questionId = typeof msg.messageId === 'string' ? msg.messageId : '';
-            if (questionId && buttonId) {
-              cfg!.onAction(questionId, buttonId, pid);
-            } else {
-              await cfg!.onInbound(pid, tid, {
-                id: randomUUID(),
-                kind: 'chat',
-                content: {
-                  text: `[user selected: "${buttonLabel}" (id: ${buttonId})]`,
-                  senderId: pid,
-                },
-                timestamp: new Date().toISOString(),
-              });
-            }
-          }
-
-          // New conversation — acknowledge (currently logged, not routed)
-          if (msg.type === 'new_conversation' && pid) {
-            // Acknowledge — the agent doesn't need to know about conversation switches
-            // but we could use this for session tracking in the future.
-          }
-        });
-
-        ws.on('close', () => {
-          clearInterval(ping);
-          if (pid) removeClient(pid, ws);
-        });
-        ws.on('error', (e) => {
-          log(`WebSocket error (${pid ?? 'unauthed'}): ${e instanceof Error ? e.message : String(e)}`);
-          clearInterval(ping);
-          if (pid) removeClient(pid, ws);
-        });
-      });
+      wss.on(
+        'connection',
+        createIosWsHandler({
+          token,
+          store: readReceiptStore,
+          cfg: {
+            onInbound: async (pid, tid, msg) =>
+              cfg!.onInbound(pid, tid, msg as unknown as Parameters<ChannelSetup['onInbound']>[2]),
+            onAction: (qid, bid, pid) => cfg!.onAction(qid, bid, pid),
+          },
+          state: handlerState,
+          persist: { receipts: persistReadReceipts, tokens: () => savePersistedTokens(apnsTokens) },
+        }),
+      );
 
       await new Promise<void>((ok, fail) => httpServer!.listen(port, '0.0.0.0', ok).on('error', fail));
 
