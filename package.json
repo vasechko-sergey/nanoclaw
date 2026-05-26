@@ -25,7 +25,8 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:all": "bash scripts/test-all.sh"
   },
   "dependencies": {
     "@chat-adapter/telegram": "4.26.0",
