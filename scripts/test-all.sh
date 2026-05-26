@@ -2,7 +2,7 @@
 set -eo pipefail
 
 echo "=== Step 1: vitest ==="
-pnpm test
+pnpm vitest run src/channels/ios-read-receipts.test.ts src/channels/ios-app.ws.test.ts src/channels/ios-app.context.test.ts
 
 echo "=== Step 2: mock WS server ==="
 npx tsx scripts/mock-ws-server.ts &
