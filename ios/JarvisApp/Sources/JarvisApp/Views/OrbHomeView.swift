@@ -105,6 +105,7 @@ struct OrbHomeView: View {
             .ignoresSafeArea()
         }
         .preferredColorScheme(.dark)
+        .accessibilityIdentifier("orb-home")
         .sheet(isPresented: $showProfile) {
             ProfileView(store: coordinator.store, isConnected: coordinator.ws.isConnected, onReconnect: {
                 coordinator.disconnect()
@@ -257,6 +258,7 @@ struct OrbHomeView: View {
                         }
                     }
                     .accessibilityLabel("Начать диалог")
+                    .accessibilityIdentifier("home-orb")
 
                 Text(greeting)
                     .font(.system(size: Theme.scaled(11), weight: .light))

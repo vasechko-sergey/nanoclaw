@@ -299,6 +299,7 @@ struct ChatView: View {
             coordinator.disconnect()
         }
         .preferredColorScheme(.dark)
+        .accessibilityIdentifier("chat-view")
     }
 
     // MARK: – Header

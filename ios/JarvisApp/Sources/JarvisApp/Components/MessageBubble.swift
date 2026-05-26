@@ -122,6 +122,7 @@ struct MessageBubble: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
+        .accessibilityIdentifier(isUser ? "bubble-user-\(message.id)" : "bubble-assistant-\(message.id)")
     }
 
     // MARK: – Image bubble

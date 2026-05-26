@@ -76,6 +76,7 @@ struct EmptyStateView: View {
                     .foregroundStyle(Theme.accentMedium.opacity(0.4))
                 }
                 .frame(minHeight: Theme.minTapSize)
+                .accessibilityIdentifier("empty-start-text")
                 Spacer()
             }
 

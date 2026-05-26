@@ -266,6 +266,7 @@ struct OrbInputBar: View {
                     if enterToSend && !isDisabled && canSend { Theme.hapticSend(); onSend(); collapse() }
                 }
                 .submitLabel(enterToSend ? .send : .return)
+                .accessibilityIdentifier("message-input")
 
             Button {
                 Theme.hapticSend()
@@ -280,6 +281,7 @@ struct OrbInputBar: View {
             .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             .disabled(!canSend || isDisabled)
             .accessibilityLabel("Отправить")
+            .accessibilityIdentifier("send-btn")
         }
     }
 
