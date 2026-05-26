@@ -66,3 +66,4 @@ targets:
         SWIFT_VERSION: "5.9"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 24Z6S27D7U
+        GENERATE_INFOPLIST_FILE: YES
