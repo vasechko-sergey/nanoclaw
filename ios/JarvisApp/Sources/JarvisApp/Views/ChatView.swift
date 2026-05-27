@@ -41,6 +41,13 @@ struct ChatView: View {
         ws.messages.filter { $0.isVisible }
     }
 
+    private var orbMood: OrbMood {
+        if !ws.isConnected               { return .error }
+        if ws.isBusy                     { return .processing }
+        if coordinator.speech.isSpeaking { return .speaking }
+        return .calm
+    }
+
     /// Send the current draft (text + attachments) and reset input state.
     private func sendCurrent() {
         let trimmed = inputText.trimmingCharacters(in: .whitespaces)
@@ -354,14 +361,12 @@ struct ChatView: View {
             .accessibilityLabel("Открыть список диалогов")
 
             Button { showProfile = true } label: {
-                ZStack {
-                    Circle()
-                        .stroke(ws.isConnected ? Theme.online.opacity(0.2) : Theme.offline.opacity(0.15), lineWidth: 1.5)
-                        .frame(width: Theme.scaled(22), height: Theme.scaled(22))
+                ZStack(alignment: .bottomTrailing) {
+                    MiniOrbView(size: 22, mood: orbMood)
                     Circle()
                         .fill(ws.isConnected ? Theme.online : Theme.offline)
-                        .frame(width: Theme.scaled(8), height: Theme.scaled(8))
-                        .shadow(color: (ws.isConnected ? Theme.online : Theme.offline).opacity(0.8), radius: 4)
+                        .frame(width: 6, height: 6)
+                        .overlay(Circle().stroke(Theme.background, lineWidth: 1))
                 }
                 .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             }
