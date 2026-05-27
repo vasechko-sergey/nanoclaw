@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import SwiftUI
 
 struct BotCommand: Equatable {
     let command: String
@@ -69,6 +70,12 @@ final class WebSocketClient {
         stopped = false
         AppDelegate.wsClient = self
         UIApplication.shared.registerForRemoteNotifications()
+        ConnectivityMonitor.shared.onSatisfied = { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.isConnected, !self.stopped, let s = self.settings else { return }
+                self.doConnect(settings: s)
+            }
+        }
         doConnect(settings: settings)
     }
 
@@ -278,6 +285,22 @@ final class WebSocketClient {
         stopHeartbeat()
         guard !stopped, let settings else { return }
         doConnect(settings: settings)
+    }
+
+    @MainActor
+    func handleScenePhase(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            if !isConnected, !stopped, let settings {
+                doConnect(settings: settings)
+            } else if isConnected {
+                tickHeartbeat()
+            }
+        case .background, .inactive:
+            break
+        @unknown default:
+            break
+        }
     }
 
     private func doConnect(settings: AppSettings) {

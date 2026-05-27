@@ -61,6 +61,7 @@ struct JarvisApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var settings: AppSettings
     @State private var coordinator: AppCoordinator
+    @Environment(\.scenePhase) private var scenePhase
 
     static var isUITesting: Bool {
         ProcessInfo.processInfo.arguments.contains("--uitesting")
@@ -77,6 +78,11 @@ struct JarvisApp: App {
             ContentView(coordinator: coordinator)
                 .environment(settings)
                 .environment(coordinator)
+                .onChange(of: scenePhase) { _, new in
+                    Task { @MainActor in
+                        coordinator.ws.handleScenePhase(new)
+                    }
+                }
         }
     }
 }
