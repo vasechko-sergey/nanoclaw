@@ -114,6 +114,26 @@ struct MiniOrbView: View {
                 }
                 .frame(width: size, height: size)
             }
+
+            // Particle overlay: 3 dots rotating around the orb, only for .processing at size >= 20
+            if size >= 20 && mood == .processing {
+                TimelineView(.animation) { timeline in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
+                    let angle = t * curSpeed * 1.5
+                    let orbit = size / 2 + 4
+
+                    ZStack {
+                        ForEach(0..<3, id: \.self) { i in
+                            let phase = angle + Double(i) * (2 * .pi / 3)
+                            Circle()
+                                .fill(cyan.opacity(0.7))
+                                .frame(width: 2.5, height: 2.5)
+                                .offset(x: cos(phase) * orbit, y: sin(phase) * orbit)
+                        }
+                    }
+                    .frame(width: size + 12, height: size + 12)
+                }
+            }
         }
         .onAppear { snap() }
         .onChange(of: mood) { lerp() }
