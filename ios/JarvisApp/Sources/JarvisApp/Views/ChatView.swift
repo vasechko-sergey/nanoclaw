@@ -55,7 +55,7 @@ struct ChatView: View {
             header
 
             // MARK: – Content
-            if visibleMessages.isEmpty && !ws.isTyping && !emptyInputActive {
+            if visibleMessages.isEmpty && !ws.isBusy && !emptyInputActive {
                 EmptyStateView(
                     onSuggestion: { suggestion in
                         coordinator.sendMessage(suggestion)
@@ -84,8 +84,9 @@ struct ChatView: View {
                                     if shouldShowDateSeparator(at: index, in: visibleMessages) {
                                         DateSeparator(date: msg.timestamp)
                                     }
-                                    MessageBubble(
+                                    MessageRow(
                                         message: msg,
+                                        isLast: index == visibleMessages.count - 1,
                                         onImageTap: { img in fullScreenImage = img },
                                         onFeedback: { messageId, isPositive in
                                             coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: msg.text)
@@ -103,17 +104,15 @@ struct ChatView: View {
                                     }
                                     .transition(
                                         .asymmetric(
-                                            insertion: .opacity
-                                                .combined(with: .scale(scale: 0.95, anchor: msg.role == .user ? .bottomTrailing : .bottomLeading))
-                                                .combined(with: .offset(y: 8)),
+                                            insertion: .opacity.combined(with: .offset(y: 8)),
                                             removal: .opacity
                                         )
                                     )
                                 }
-                                if ws.isTyping {
-                                    TypingIndicator()
-                                        .id("typing")
-                                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                                if ws.isBusy {
+                                    ThinkingRow(detail: ws.thinkingDetail)
+                                        .id("thinking")
+                                        .transition(.opacity.combined(with: .offset(y: 4)))
                                 }
 
                                 // Invisible anchor at bottom for scroll tracking
@@ -174,18 +173,18 @@ struct ChatView: View {
                                 }
                             }
                         }
-                        .onChange(of: ws.isTyping) {
-                            if ws.isTyping && !isScrolledUp {
+                        .onChange(of: ws.isBusy) {
+                            if ws.isBusy && !isScrolledUp {
                                 withAnimation(.spring(duration: 0.3)) {
-                                    proxy.scrollTo("typing", anchor: .bottom)
+                                    proxy.scrollTo("thinking", anchor: .bottom)
                                 }
                             }
                         }
                         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                             Task { @MainActor in
                                 try? await Task.sleep(for: .milliseconds(50))
-                                if ws.isTyping {
-                                    withAnimation { proxy.scrollTo("typing", anchor: .bottom) }
+                                if ws.isBusy {
+                                    withAnimation { proxy.scrollTo("thinking", anchor: .bottom) }
                                 } else if let last = ws.messages.last {
                                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                                 }
@@ -230,7 +229,7 @@ struct ChatView: View {
             }
 
             // MARK: – Input (hidden in empty state until user initiates)
-            if !visibleMessages.isEmpty || ws.isTyping || emptyInputActive {
+            if !visibleMessages.isEmpty || ws.isBusy || emptyInputActive {
                 UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
                                 commands: ws.commands, isDisabled: !ws.isConnected,
                                 enterToSend: settings.enterToSend,
