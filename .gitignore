@@ -38,6 +38,9 @@ groups/*
 # Skills system (local per-installation state)
 .nanoclaw/
 
+# Superpowers brainstorm session content (visual companion mockups)
+.superpowers/
+
 agents-sdk-docs
 
 ios/JarvisApp/.build/
