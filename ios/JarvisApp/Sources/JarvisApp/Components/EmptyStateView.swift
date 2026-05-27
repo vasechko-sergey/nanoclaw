@@ -15,7 +15,7 @@ struct EmptyStateView: View {
         VStack(spacing: 24) {
             Spacer()
 
-            MiniOrbView(size: 96, mood: .calm)
+            OrbView(size: 96, mood: .calm)
 
             Text("О чём поговорим?")
                 .font(.system(size: 22, weight: .light))
@@ -31,7 +31,7 @@ struct EmptyStateView: View {
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
                                 .overlay(
-                                    Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: 0.5)
+                                    Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: Theme.lineHairline)
                                 )
                                 .clipShape(Capsule())
                         }
@@ -51,7 +51,7 @@ struct EmptyStateView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .overlay(Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: 0.5))
+                    .overlay(Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: Theme.lineHairline))
                     .clipShape(Capsule())
                 }
 
@@ -63,7 +63,7 @@ struct EmptyStateView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .overlay(Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: 0.5))
+                    .overlay(Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: Theme.lineHairline))
                     .clipShape(Capsule())
                 }
                 .accessibilityIdentifier("empty-start-text")

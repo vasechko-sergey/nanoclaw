@@ -77,10 +77,10 @@ struct UnifiedInputBar: View {
                         .submitLabel(enterToSend ? .send : .return)
                         .accessibilityIdentifier("message-input")
                 }
-                .background(Color.white.opacity(0.04))
+                .background(Theme.inputBg)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.inputBarRadius)
-                        .stroke(Theme.accent.opacity(0.15), lineWidth: 0.5)
+                        .stroke(Theme.accent.opacity(0.15), lineWidth: Theme.lineHairline)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Theme.inputBarRadius))
 
@@ -200,7 +200,7 @@ private struct VoiceButton: View {
                         .foregroundStyle(.white)
                 } else {
                     // Orb mode — mini orb as the button
-                    MiniOrbView(size: orbSize, mood: orbMood)
+                    OrbView(size: orbSize, mood: orbMood)
                 }
             }
             .frame(width: buttonSize, height: buttonSize)

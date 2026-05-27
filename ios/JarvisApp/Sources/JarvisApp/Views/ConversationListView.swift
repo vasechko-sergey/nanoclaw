@@ -96,7 +96,7 @@ struct ConversationListView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.cardRadius)
-                    .stroke(Theme.surfaceBorder, lineWidth: 0.5)
+                    .stroke(Theme.surfaceBorder, lineWidth: Theme.lineHairline)
             )
             .padding(.horizontal, Theme.hPadding)
             .padding(.bottom, Theme.scaled(12))
@@ -113,7 +113,7 @@ struct ConversationListView: View {
                                 .fill(Theme.accent.opacity(0.08))
                                 .frame(width: Theme.scaled(32), height: Theme.scaled(32))
                             Circle()
-                                .stroke(Theme.accentMedium, lineWidth: 0.5)
+                                .stroke(Theme.accentMedium, lineWidth: Theme.lineHairline)
                                 .frame(width: Theme.scaled(32), height: Theme.scaled(32))
                             Image(systemName: "plus")
                                 .font(.system(size: Theme.fontChip))
@@ -376,7 +376,7 @@ struct DrawerContent: View {
             .padding(.vertical, 7)
             .background(Theme.accent.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.15), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.15), lineWidth: Theme.lineHairline))
             .padding(.horizontal, Theme.hPadding)
             .padding(.bottom, 12)
 

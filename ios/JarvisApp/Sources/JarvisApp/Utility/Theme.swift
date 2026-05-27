@@ -85,6 +85,31 @@ enum Theme {
     }
     static let inputBarRadius: CGFloat = 22
 
+    // MARK: – Visual tokens (audit pass v2)
+
+    // Corner radii — 3-tier scale (existing cardRadius=12, chipRadius=14, inputRadius=20 retained as legacy aliases)
+    static let radiusSmall:  CGFloat = 8     // status banner, file card, chip
+    static let radiusMedium: CGFloat = 12    // sheets, action cards
+    static let radiusLarge:  CGFloat = 20    // input bar pill
+
+    // Stroke widths
+    static let lineHairline: CGFloat = 0.5   // borders on pills, rows, hairline separators
+    static let lineAccent:   CGFloat = 1.5   // status indicators, emphasized strokes
+
+    // Small-text font sizes
+    static let fontXSmall: CGFloat = 10      // mono meta row, date separator
+    static let fontTiny:   CGFloat = 11      // banner pulse, ticks
+
+    // Reusable colors
+    static let assistantText  = Color(red: 0.88, green: 0.94, blue: 0.95)  // body text on assistant rows
+    static let inputBg        = Color.white.opacity(0.04)                  // input bar fill
+    static let avatarUserDot  = Color.white.opacity(0.25)                  // bubbleless user avatar dot
+
+    // Animation durations
+    static let animFast:   Double = 0.2      // small UI transitions
+    static let animMedium: Double = 0.35     // drawer, sheet, phase change
+    static let animSlow:   Double = 0.5      // emphasis, splash hand-off
+
     // MARK: – Haptics
     static func hapticSend()    { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     static func hapticReceive() { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }

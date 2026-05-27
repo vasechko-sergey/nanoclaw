@@ -51,7 +51,7 @@ struct DeliveryChecks: View {
                         .opacity(secondCheckOpacity)
                         .onAppear {
                             secondCheckOpacity = 0
-                            withAnimation(.easeOut(duration: 0.2)) {
+                            withAnimation(.easeOut(duration: Theme.animFast)) {
                                 secondCheckOpacity = 1
                             }
                         }
@@ -63,6 +63,6 @@ struct DeliveryChecks: View {
             }
         }
         .frame(width: 14, height: 10)
-        .animation(.easeOut(duration: 0.2), value: status)
+        .animation(.easeOut(duration: Theme.animFast), value: status)
     }
 }

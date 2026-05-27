@@ -143,7 +143,7 @@ struct ChatView: View {
                             let threshold: CGFloat = 80
                             let scrolledAway = maxY > chatGeo.size.height + threshold
                             if scrolledAway != isScrolledUp {
-                                withAnimation(.easeOut(duration: 0.2)) {
+                                withAnimation(.easeOut(duration: Theme.animFast)) {
                                     if scrolledAway {
                                         isScrolledUp = true
                                         lastSeenCount = visibleMessages.count
@@ -282,7 +282,7 @@ struct ChatView: View {
             }())
         .gesture(drawerDragToClose)
         .shadow(color: .black.opacity(drawerOpen ? 0.4 : 0), radius: 12, x: 4)
-        .animation(.spring(duration: 0.35, bounce: 0.05), value: drawerOpen)
+        .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: drawerOpen)
 
         } // ZStack
         .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)
@@ -352,21 +352,9 @@ struct ChatView: View {
 
     private var header: some View {
         HStack {
-            Button {
-                withAnimation(.spring(duration: 0.35, bounce: 0.05)) { drawerOpen = true }
-            } label: {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 16, weight: .light))
-                    .foregroundStyle(Theme.accentMedium)
-                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityIdentifier("hamburger-btn")
-            .accessibilityLabel("Открыть список диалогов")
-
             Button { showProfile = true } label: {
                 ZStack(alignment: .bottomTrailing) {
-                    MiniOrbView(size: 22, mood: orbMood)
+                    OrbView(size: 28, mood: orbMood)
                     Circle()
                         .fill(ws.isConnected ? Theme.online : Theme.offline)
                         .frame(width: 6, height: 6)

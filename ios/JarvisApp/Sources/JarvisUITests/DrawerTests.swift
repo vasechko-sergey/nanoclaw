@@ -32,22 +32,6 @@ final class DrawerTests: XCTestCase {
         XCTAssertTrue(chatView.waitForExistence(timeout: 5), "chat-view not found")
     }
 
-    func testHamburgerOpensDrawer() {
-        navigateToChat()
-
-        // SwiftUI accessibilityIdentifier doesn't always propagate to Button —
-        // match by label (Russian, set via .accessibilityLabel)
-        let hamburger = app.buttons.matching(
-            NSPredicate(format: "label == 'Открыть список диалогов'")
-        ).firstMatch
-        XCTAssertTrue(hamburger.waitForExistence(timeout: 3), "hamburger not found")
-        hamburger.tap()
-
-        // Drawer surfaces "Диалоги" header text — fastest way to assert presence
-        let drawerTitle = app.staticTexts["Диалоги"]
-        XCTAssertTrue(drawerTitle.waitForExistence(timeout: 2), "drawer header 'Диалоги' didn't appear after hamburger tap")
-    }
-
     func testEdgeSwipeOpensDrawer() {
         navigateToChat()
 

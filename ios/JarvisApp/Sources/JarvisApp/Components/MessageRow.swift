@@ -49,7 +49,7 @@ struct MessageRow: View {
                             MarkdownText(text, fontSize: 14)
                         }
                     }
-                    .foregroundStyle(isUser ? .white : Color(red: 0.88, green: 0.94, blue: 0.95))
+                    .foregroundStyle(isUser ? .white : Theme.assistantText)
                     .lineSpacing(2)
                     .contextMenu {
                         contextMenuButtons(text)
@@ -83,7 +83,7 @@ struct MessageRow: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSmall))
                         .onTapGesture { onImageTap?(img) }
                         .contextMenu {
                             Button {
@@ -121,7 +121,7 @@ struct MessageRow: View {
     private var avatarDot: some View {
         Circle()
             .fill(isUser
-                  ? Color.white.opacity(0.25)
+                  ? Theme.avatarUserDot
                   : Theme.accent)
             .frame(width: Theme.avatarDotSize, height: Theme.avatarDotSize)
             .shadow(color: isUser ? .clear : Theme.accent.opacity(0.5), radius: 3)
@@ -214,7 +214,7 @@ struct FileRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
                 Circle()
-                    .fill(isUser ? Color.white.opacity(0.25) : Theme.accent)
+                    .fill(isUser ? Theme.avatarUserDot : Theme.accent)
                     .frame(width: Theme.avatarDotSize, height: Theme.avatarDotSize)
                     .padding(.top, 7)
 
@@ -245,7 +245,7 @@ struct FileRow: View {
                     }
                     .padding(10)
                     .background(Theme.accent.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSmall))
                     .frame(maxWidth: 280)
                 }
             }
@@ -309,13 +309,13 @@ struct ActionRow: View {
 
                     Text(info.text)
                         .font(.system(size: 14))
-                        .foregroundStyle(Color(red: 0.88, green: 0.94, blue: 0.95))
+                        .foregroundStyle(Theme.assistantText)
 
                     if info.answered, let sid = info.selectedId,
                        let btn = info.buttons.first(where: { $0.id == sid }) {
                         HStack(spacing: 6) {
                             CheckmarkShape()
-                                .stroke(Theme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                                .stroke(Theme.accent, style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
                                 .frame(width: 10, height: 6)
                             Text(btn.label)
                                 .font(.system(size: 13, weight: .medium))
@@ -339,7 +339,7 @@ struct ActionRow: View {
                                         .padding(.vertical, 8)
                                         .background(backgroundFor(btn.style))
                                         .clipShape(Capsule())
-                                        .overlay(Capsule().stroke(borderFor(btn.style), lineWidth: 0.5))
+                                        .overlay(Capsule().stroke(borderFor(btn.style), lineWidth: Theme.lineHairline))
                                 }
                             }
                         }
@@ -400,10 +400,10 @@ struct StatusRow: View {
         .padding(.vertical, 8)
         .frame(maxWidth: 280, alignment: .leading)
         .background(color.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSmall))
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(color.opacity(0.18), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: Theme.radiusSmall)
+                .stroke(color.opacity(0.18), lineWidth: Theme.lineHairline)
         )
         .padding(.horizontal, Theme.rowPadH)
         .padding(.vertical, 4)
@@ -441,7 +441,7 @@ struct ThinkingRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            MiniOrbView(size: 14, mood: .processing)
+            OrbView(size: 14, mood: .processing)
                 .padding(.leading, 1)
             Text(label + dots)
                 .font(.system(size: 13, design: .default).italic())

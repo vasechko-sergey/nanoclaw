@@ -35,6 +35,6 @@ struct ConnectionBanner: View {
                 .transition(.opacity.combined(with: .offset(y: -10)))
             }
         }
-        .animation(.easeOut(duration: 0.4), value: isConnected)
+        .animation(.easeOut(duration: Theme.animMedium), value: isConnected)
     }
 }
