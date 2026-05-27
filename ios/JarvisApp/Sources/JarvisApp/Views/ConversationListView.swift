@@ -5,7 +5,6 @@ struct ConversationListView: View {
     var onAction: (ConversationAction) -> Void
 
     @State private var searchText = ""
-    @State private var archivedConversation: Conversation? = nil
     @State private var conversationToDelete: Conversation? = nil
     @Environment(\.dismiss) private var dismiss
 
@@ -162,16 +161,6 @@ struct ConversationListView: View {
         }
         .background(Theme.background)
         .preferredColorScheme(.dark)
-        .fullScreenCover(item: $archivedConversation) { conv in
-            ArchivedChatView(
-                conversation: conv,
-                messages: store.loadMessages(for: conv.id)
-            ) {
-                archivedConversation = nil
-                let summary = conv.preview.isEmpty ? conv.title : conv.preview
-                onAction(.newChatWithContext(summary))
-            }
-        }
         .alert("Удалить диалог?", isPresented: Binding(
             get: { conversationToDelete != nil },
             set: { if !$0 { conversationToDelete = nil } }
@@ -206,11 +195,8 @@ struct ConversationListView: View {
         let isActive = conv.id == store.activeConversationId
 
         return Button {
-            if isActive {
-                dismiss()
-            } else {
-                archivedConversation = conv
-            }
+            onAction(.open(conv))
+            dismiss()
         } label: {
             HStack(alignment: .top, spacing: Theme.scaled(10)) {
                 // Active indicator
@@ -272,7 +258,8 @@ struct ConversationListView: View {
         .contextMenu {
             if !isActive {
                 Button {
-                    archivedConversation = conv
+                    onAction(.open(conv))
+                    dismiss()
                 } label: {
                     Label("Открыть", systemImage: "eye")
                 }
