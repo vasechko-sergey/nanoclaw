@@ -266,6 +266,9 @@ final class WebSocketClient {
     internal func forceReconnect(reason: String) {
         print("WS reconnect: \(reason)")
         task?.cancel(with: .goingAway, reason: nil)
+        // Clear all transient UI state on reconnect — fresh slate when the socket drops.
+        // If doConnect fails to establish (e.g. invalid URL), the receive() failure branch
+        // will schedule a retry via reconnectDelay backoff.
         isConnected = false
         isTyping = false
         lastUserSentAt = nil
