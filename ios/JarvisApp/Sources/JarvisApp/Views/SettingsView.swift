@@ -102,30 +102,6 @@ struct SettingsView: View {
                         settingsToggle(icon: "calendar", label: "Календарь", isOn: $settings.useCalendar)
                     }
 
-                    // Conversation history section
-                    if !isInitialSetup, let store {
-                        settingsSection(title: "История") {
-                            NavigationLink {
-                                ConversationListView(store: store) { action in
-                                    dismiss()
-                                    onConversationAction?(action)
-                                }
-                            } label: {
-                                settingsField(icon: "bubble.left.and.bubble.right", label: "Диалоги") {
-                                    HStack(spacing: Theme.scaled(4)) {
-                                        Text("\(store.conversations.count)")
-                                            .font(.system(size: Theme.fontCaption))
-                                            .foregroundStyle(Theme.accentMedium)
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: Theme.scaled(11)))
-                                            .foregroundStyle(Theme.accentMedium)
-                                    }
-                                }
-                            }
-                            .tint(Theme.textPrimary)
-                        }
-                    }
-
                     // Voice section
                     if !isInitialSetup {
                         settingsSection(title: "Голос") {
