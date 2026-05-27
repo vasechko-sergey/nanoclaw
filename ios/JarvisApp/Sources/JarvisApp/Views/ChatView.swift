@@ -506,27 +506,25 @@ private struct DateSeparator: View {
     let date: Date
 
     var body: some View {
-        HStack {
-            Spacer()
+        HStack(spacing: 8) {
+            Rectangle().fill(Theme.accent.opacity(0.1)).frame(height: 0.5)
             Text(formatted)
-                .font(.system(size: Theme.fontSmall, weight: .medium))
-                .foregroundStyle(Theme.accentMedium)
-                .padding(.horizontal, Theme.scaled(12))
-                .padding(.vertical, Theme.scaled(4))
-                .background(Theme.accent.opacity(0.06))
-                .clipShape(Capsule())
-            Spacer()
+                .font(Theme.metaFont)
+                .tracking(1)
+                .foregroundStyle(Theme.accent.opacity(0.4))
+            Rectangle().fill(Theme.accent.opacity(0.1)).frame(height: 0.5)
         }
-        .padding(.vertical, Theme.scaled(4))
+        .padding(.horizontal, Theme.rowPadH)
+        .padding(.vertical, 8)
     }
 
     private var formatted: String {
-        if Calendar.current.isDateInToday(date) { return "Сегодня" }
-        if Calendar.current.isDateInYesterday(date) { return "Вчера" }
+        if Calendar.current.isDateInToday(date) { return "СЕГОДНЯ" }
+        if Calendar.current.isDateInYesterday(date) { return "ВЧЕРА" }
         let f = DateFormatter()
         f.locale = Locale(identifier: "ru_RU")
         f.dateFormat = "d MMMM"
-        return f.string(from: date)
+        return f.string(from: date).uppercased()
     }
 }
 
