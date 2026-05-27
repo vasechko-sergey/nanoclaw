@@ -75,13 +75,14 @@ struct UnifiedInputBar: View {
                             if enterToSend && !isDisabled && canSend { Theme.hapticSend(); onSend() }
                         }
                         .submitLabel(enterToSend ? .send : .return)
+                        .accessibilityIdentifier("message-input")
                 }
-                .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.inputRadius))
+                .background(Color.white.opacity(0.04))
                 .overlay(
-                    RoundedRectangle(cornerRadius: Theme.inputRadius)
-                        .stroke(Theme.surfaceBorder, lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: Theme.inputBarRadius)
+                        .stroke(Theme.accent.opacity(0.15), lineWidth: 0.5)
                 )
+                .clipShape(RoundedRectangle(cornerRadius: Theme.inputBarRadius))
 
                 // Single right button: mic / stop / send
                 rightButton
@@ -210,6 +211,7 @@ private struct VoiceButton: View {
             isRecording ? "Остановить запись" :
             canSend ? "Отправить" : "Голосовой ввод"
         )
+        .accessibilityIdentifier("send-btn")
         .animation(.easeInOut(duration: 0.25), value: canSend)
         .animation(.easeInOut(duration: 0.25), value: isRecording)
     }
