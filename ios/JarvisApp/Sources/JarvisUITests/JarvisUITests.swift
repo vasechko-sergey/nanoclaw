@@ -47,9 +47,9 @@ final class JarvisUITests: XCTestCase {
         if textField.waitForExistence(timeout: 1) { return }
         // Empty state — tap keyboard hint to show input bar
         let startText = app.buttons.matching(
-            NSPredicate(format: "label == 'или введите запрос'")
+            NSPredicate(format: "identifier == 'empty-start-text'")
         ).firstMatch
-        XCTAssertTrue(startText.waitForExistence(timeout: 3), "'или введите запрос' button not found in empty state")
+        XCTAssertTrue(startText.waitForExistence(timeout: 3), "'empty-start-text' button not found in empty state")
         startText.tap()
     }
 

@@ -271,9 +271,15 @@ struct ChatView: View {
             }
         )
         .frame(width: Theme.drawerWidth)
-        .offset(x: drawerOpen
-                ? max(-Theme.drawerWidth, drawerDragOffset)
-                : -Theme.drawerWidth)
+        .offset(x: {
+                if drawerOpen {
+                    // open: drawerDragOffset is negative (drag left to close) or 0
+                    return max(-Theme.drawerWidth, drawerDragOffset)
+                } else {
+                    // closed: drawerDragOffset is positive (edge-swipe in progress) or 0
+                    return -Theme.drawerWidth + max(0, min(drawerDragOffset, Theme.drawerWidth))
+                }
+            }())
         .gesture(drawerDragToClose)
         .shadow(color: .black.opacity(drawerOpen ? 0.4 : 0), radius: 12, x: 4)
         .animation(.spring(duration: 0.35, bounce: 0.05), value: drawerOpen)
@@ -456,7 +462,7 @@ struct ChatView: View {
         DragGesture(minimumDistance: 10)
             .onChanged { value in
                 if value.startLocation.x < 24 && value.translation.width > 0 && !drawerOpen {
-                    drawerDragOffset = min(value.translation.width - Theme.drawerWidth, 0)
+                    drawerDragOffset = min(value.translation.width, Theme.drawerWidth)
                 }
             }
             .onEnded { value in
