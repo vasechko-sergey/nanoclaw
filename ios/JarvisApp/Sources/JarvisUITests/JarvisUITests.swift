@@ -82,7 +82,7 @@ final class JarvisUITests: XCTestCase {
         sendBtn.tap()
 
         let bubble = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH 'bubble-user-'")
+            NSPredicate(format: "identifier BEGINSWITH 'row-user-'")
         ).firstMatch
         XCTAssertTrue(bubble.waitForExistence(timeout: 5), "User message bubble not found after send")
     }
@@ -103,7 +103,7 @@ final class JarvisUITests: XCTestCase {
         sendBtn.tap()
 
         let bubble = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH 'bubble-user-'")
+            NSPredicate(format: "identifier BEGINSWITH 'row-user-'")
         ).firstMatch
         XCTAssertTrue(bubble.waitForExistence(timeout: 5))
 
@@ -127,7 +127,7 @@ final class JarvisUITests: XCTestCase {
         sendBtn.tap()
 
         let assistantBubble = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH 'bubble-assistant-'")
+            NSPredicate(format: "identifier BEGINSWITH 'row-assistant-'")
         ).firstMatch
         XCTAssertTrue(assistantBubble.waitForExistence(timeout: 5), "Assistant reply bubble not found")
     }
