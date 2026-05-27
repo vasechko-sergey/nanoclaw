@@ -283,6 +283,29 @@ struct OrbHomeView: View {
                     .foregroundStyle(Theme.accentMedium.opacity(0.7))
                     .opacity(showSatellites ? 0.3 : 1)
                     .animation(.easeOut(duration: 0.2), value: showSatellites)
+
+                if let lastConv = coordinator.store.conversations.sorted(by: { $0.lastMessageAt > $1.lastMessageAt }).first {
+                    Button {
+                        coordinator.handleAction(.open(lastConv))
+                        onContinueChat()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Продолжить: \(lastConv.title)")
+                                .font(.system(size: 13))
+                                .lineLimit(1)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(Theme.accent)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .overlay(Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: 0.5))
+                        .clipShape(Capsule())
+                    }
+                    .padding(.top, 12)
+                    .opacity(showSatellites ? 0 : 1)
+                    .animation(.easeOut(duration: 0.2), value: showSatellites)
+                }
             }
 
             // UI-test-only: tap target to reveal action satellites.
