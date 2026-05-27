@@ -12,6 +12,18 @@ final class WebSocketClient {
     var isConnected = false { didSet { if isConnected != oldValue { onConnectionChanged?(isConnected) } } }
     var isTyping    = false
     var commands: [BotCommand] = []
+    var lastUserSentAt: Date? = nil
+    var lastAssistantAt: Date? = nil
+    var thinkingDetail: String? = nil
+
+    /// Persistent "agent is busy" — derived state.
+    /// True if: server typing OR user sent < 5min ago and no later assistant reply.
+    var isBusy: Bool {
+        if isTyping { return true }
+        guard let sent = lastUserSentAt else { return false }
+        if let got = lastAssistantAt, got >= sent { return false }
+        return Date().timeIntervalSince(sent) < 300
+    }
 
     @ObservationIgnored private var task: URLSessionWebSocketTask?
     @ObservationIgnored private var settings: AppSettings?
@@ -98,6 +110,7 @@ final class WebSocketClient {
         payload["clientMessageId"] = clientMsgId
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         isTyping = true
+        lastUserSentAt = Date()
         let ts = Date()
         if !text.isEmpty {
             var msg = ChatMessage.text(clientMsgId, role: .user, text: text, timestamp: ts)
@@ -247,6 +260,9 @@ final class WebSocketClient {
                     guard self.task === ws else { return }
                     self.isConnected = false
                     self.isTyping    = false
+                    self.lastUserSentAt = nil
+                    self.lastAssistantAt = nil
+                    self.thinkingDetail = nil
                     guard !self.stopped, let settings = self.settings else { return }
                     try? await Task.sleep(nanoseconds: UInt64(self.reconnectDelay * 1_000_000_000))
                     self.reconnectDelay = min(self.reconnectDelay * 2, 30)
@@ -389,6 +405,17 @@ final class WebSocketClient {
             }
             messages.append(message)
             onMessagesChanged?(messages)
+            if message.role == .assistant {
+                lastAssistantAt = Date()
+                thinkingDetail = nil
+            }
+            if case .status(let info) = message.content, info.kind == "system" {
+                thinkingDetail = info.text
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(30))
+                    if self?.thinkingDetail == info.text { self?.thinkingDetail = nil }
+                }
+            }
             if message.role == .assistant, case .text(let t) = message.content {
                 onSpeakableText?(t)
             }
