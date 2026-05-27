@@ -67,3 +67,20 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 24Z6S27D7U
         GENERATE_INFOPLIST_FILE: YES
+
+  JarvisAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Sources/JarvisAppTests
+    dependencies:
+      - target: JarvisApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis.unittests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Jarvis.app/Jarvis"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 24Z6S27D7U
+        GENERATE_INFOPLIST_FILE: YES

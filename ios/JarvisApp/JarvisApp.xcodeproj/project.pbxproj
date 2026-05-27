@@ -62,6 +62,13 @@
 			remoteGlobalIDString = CE37E25EDF3A9F2A5BDA9298;
 			remoteInfo = JarvisApp;
 		};
+		A8D27FD14C2CAA2E6F601432 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7DB0DAB8DB97C1CD818BB48F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CE37E25EDF3A9F2A5BDA9298;
+			remoteInfo = JarvisApp;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -87,6 +94,7 @@
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthRequests.swift; sourceTree = "<group>"; };
 		6B165040849DF187E7D1113C /* OrbInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInputBar.swift; sourceTree = "<group>"; };
+		6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisUITests.swift; sourceTree = "<group>"; };
 		83BBF8E04395E33F04CDE186 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
@@ -99,6 +107,7 @@
 		A9E51F90AF529EB74BF8AF13 /* MessageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCache.swift; sourceTree = "<group>"; };
 		ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionEngine.swift; sourceTree = "<group>"; };
 		B254569C52137C9E716B3DCD /* OrbHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbHomeView.swift; sourceTree = "<group>"; };
+		B3C4FB0DCE7115FB8C5039E7 /* JarvisAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JarvisAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B6BD1E4ABB502A83CDD29883 /* MiniOrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniOrbView.swift; sourceTree = "<group>"; };
 		BD51F238E46BCB805C742CEE /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
 		D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarManager.swift; sourceTree = "<group>"; };
@@ -133,6 +142,7 @@
 			isa = PBXGroup;
 			children = (
 				6931A58F122A71990D09EF46 /* JarvisApp.app */,
+				B3C4FB0DCE7115FB8C5039E7 /* JarvisAppTests.xctest */,
 				2D4B230E77EB04B73239A542 /* JarvisUITests.xctest */,
 			);
 			name = Products;
@@ -194,6 +204,15 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		6DE5125DADE6709B05736E6D /* JarvisAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */,
+			);
+			name = JarvisAppTests;
+			path = Sources/JarvisAppTests;
+			sourceTree = "<group>";
+		};
 		8CAED7961B65328860378087 /* JarvisUITests */ = {
 			isa = PBXGroup;
 			children = (
@@ -229,6 +248,7 @@
 			children = (
 				9143ED9DD7B640862D468B63 /* Assets.xcassets */,
 				08FED5B7DD0903F841695517 /* JarvisApp */,
+				6DE5125DADE6709B05736E6D /* JarvisAppTests */,
 				8CAED7961B65328860378087 /* JarvisUITests */,
 				241DC7A9A2CF5BC2D04B1BB2 /* Products */,
 			);
@@ -273,6 +293,24 @@
 			productReference = 6931A58F122A71990D09EF46 /* JarvisApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D7529497E6C9A4267CD4764F /* JarvisAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F7FC497B524ADA3BE088E6B /* Build configuration list for PBXNativeTarget "JarvisAppTests" */;
+			buildPhases = (
+				C533AFEDAD01B9DA1BF74567 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA26A3BA88789C6A170DB39B /* PBXTargetDependency */,
+			);
+			name = JarvisAppTests;
+			packageProductDependencies = (
+			);
+			productName = JarvisAppTests;
+			productReference = B3C4FB0DCE7115FB8C5039E7 /* JarvisAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -288,6 +326,10 @@
 						TestTargetID = CE37E25EDF3A9F2A5BDA9298;
 					};
 					CE37E25EDF3A9F2A5BDA9298 = {
+						DevelopmentTeam = 24Z6S27D7U;
+						ProvisioningStyle = Automatic;
+					};
+					D7529497E6C9A4267CD4764F = {
 						DevelopmentTeam = 24Z6S27D7U;
 						ProvisioningStyle = Automatic;
 					};
@@ -308,6 +350,7 @@
 			projectRoot = "";
 			targets = (
 				CE37E25EDF3A9F2A5BDA9298 /* JarvisApp */,
+				D7529497E6C9A4267CD4764F /* JarvisAppTests */,
 				133675270B7DCB5A6F83CB87 /* JarvisUITests */,
 			);
 		};
@@ -383,6 +426,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C533AFEDAD01B9DA1BF74567 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -390,6 +440,11 @@
 			isa = PBXTargetDependency;
 			target = CE37E25EDF3A9F2A5BDA9298 /* JarvisApp */;
 			targetProxy = 79F756AC1AF2D1E3D1048A9B /* PBXContainerItemProxy */;
+		};
+		AA26A3BA88789C6A170DB39B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CE37E25EDF3A9F2A5BDA9298 /* JarvisApp */;
+			targetProxy = A8D27FD14C2CAA2E6F601432 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -502,6 +557,26 @@
 			};
 			name = Debug;
 		};
+		70DF7059D39A165EB92211CF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 24Z6S27D7U;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis.unittests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Jarvis.app/Jarvis";
+			};
+			name = Debug;
+		};
 		7E467C9F0D2D824F701729CB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -519,6 +594,26 @@
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = JarvisApp;
+			};
+			name = Release;
+		};
+		8AB5F4DB42104D611E49ECC8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 24Z6S27D7U;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis.unittests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Jarvis.app/Jarvis";
 			};
 			name = Release;
 		};
@@ -606,6 +701,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		2F7FC497B524ADA3BE088E6B /* Build configuration list for PBXNativeTarget "JarvisAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				70DF7059D39A165EB92211CF /* Debug */,
+				8AB5F4DB42104D611E49ECC8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		B4B55E25995F926AA11FA6BD /* Build configuration list for PBXProject "JarvisApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
