@@ -22,8 +22,11 @@ final class WebSocketClient {
         if isTyping { return true }
         guard let sent = lastUserSentAt else { return false }
         if let got = lastAssistantAt, got >= sent { return false }
-        return Date().timeIntervalSince(sent) < 300
+        return Date().timeIntervalSince(sent) < Self.busyTimeoutSeconds
     }
+
+    @ObservationIgnored private static let busyTimeoutSeconds: TimeInterval = 300           // 5 minutes
+    @ObservationIgnored private static let thinkingDetailClearSeconds: TimeInterval = 30    // auto-clear delay
 
     @ObservationIgnored private var task: URLSessionWebSocketTask?
     @ObservationIgnored private var settings: AppSettings?
@@ -412,7 +415,7 @@ final class WebSocketClient {
             if case .status(let info) = message.content, info.kind == "system" {
                 thinkingDetail = info.text
                 Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(30))
+                    try? await Task.sleep(for: .seconds(Self.thinkingDetailClearSeconds))
                     if self?.thinkingDetail == info.text { self?.thinkingDetail = nil }
                 }
             }
