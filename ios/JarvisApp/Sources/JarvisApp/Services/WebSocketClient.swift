@@ -31,6 +31,10 @@ final class WebSocketClient {
     @ObservationIgnored private var task: URLSessionWebSocketTask?
     @ObservationIgnored private var settings: AppSettings?
     @ObservationIgnored private var reconnectDelay: TimeInterval = 1
+    @ObservationIgnored private var heartbeatTimer: Timer?
+    @ObservationIgnored internal var lastPongAt: Date = .distantPast
+    @ObservationIgnored private let pingInterval: TimeInterval = 25
+    @ObservationIgnored private let pongTimeout: TimeInterval = 35
     @ObservationIgnored private var stopped           = false
     @ObservationIgnored private var pendingApnsToken: String?
     @ObservationIgnored private var sentReadIds: Set<String> = []
@@ -69,6 +73,7 @@ final class WebSocketClient {
     }
 
     func disconnect() {
+        stopHeartbeat()
         stopped = true
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
@@ -219,7 +224,61 @@ final class WebSocketClient {
         ws.send(.data(pay)) { if let e = $0 { print("WS send(apns_token) failed: \(e)") } }
     }
 
+    private func startHeartbeat() {
+        heartbeatTimer?.invalidate()
+        lastPongAt = Date()
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: pingInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tickHeartbeat() }
+        }
+    }
+
+    private func stopHeartbeat() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+    }
+
+    @MainActor
+    internal func tickHeartbeat() {
+        guard let ws = task, isConnected else { return }
+        if Date().timeIntervalSince(lastPongAt) > pongTimeout {
+            forceReconnect(reason: "pong timeout")
+            return
+        }
+        ws.sendPing { [weak self] error in
+            Task { @MainActor in
+                if error == nil { self?.lastPongAt = Date() }
+                else { self?.forceReconnect(reason: "ping failed") }
+            }
+        }
+    }
+
+    /// Test seam: lets tests trigger the heartbeat tick without a live URLSessionWebSocketTask.
+    /// The real `tickHeartbeat()` early-returns when `task == nil`, so this inlines just the
+    /// stale-pong check.
+    @MainActor
+    internal func tickHeartbeatForTesting() {
+        if Date().timeIntervalSince(lastPongAt) > pongTimeout {
+            forceReconnect(reason: "pong timeout (test)")
+        }
+    }
+
+    @MainActor
+    internal func forceReconnect(reason: String) {
+        print("WS reconnect: \(reason)")
+        task?.cancel(with: .goingAway, reason: nil)
+        isConnected = false
+        isTyping = false
+        lastUserSentAt = nil
+        lastAssistantAt = nil
+        thinkingDetail = nil
+        reconnectDelay = 1
+        stopHeartbeat()
+        guard !stopped, let settings else { return }
+        doConnect(settings: settings)
+    }
+
     private func doConnect(settings: AppSettings) {
+        stopHeartbeat()
         guard !stopped else { return }
         let rawUrl: String
         let authToken: String
@@ -298,6 +357,7 @@ final class WebSocketClient {
         // --- Auth ---
         if t == "auth_ok" {
             isConnected = true
+            startHeartbeat()
             if let tok = pendingApnsToken { sendApnsToken(tok) }
             if let cmds = obj["commands"] as? [[String: String]] {
                 commands = cmds.compactMap { d in

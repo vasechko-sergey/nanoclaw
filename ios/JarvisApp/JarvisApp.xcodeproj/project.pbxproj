@@ -48,6 +48,7 @@
 		B88D79F57FB96DD1EE3F983E /* MiniOrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6BD1E4ABB502A83CDD29883 /* MiniOrbView.swift */; };
 		BBB120F4935F0F45BA0CB826 /* DeliveryChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5420CA4F9BA4C813FF9E90B /* DeliveryChecks.swift */; };
 		BF081A3591467809EC839078 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF10B991F6600D17760B644 /* SettingsView.swift */; };
+		CB6576F08C01F04D5D766774 /* HeartbeatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
 		D9D85A8E3CB2F7583D9CCBB7 /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0295CB82FF20C8764842F6 /* CameraPicker.swift */; };
 		E653E1C200C705930FF7958A /* OrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */; };
@@ -100,6 +101,7 @@
 		6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthRequests.swift; sourceTree = "<group>"; };
 		6B165040849DF187E7D1113C /* OrbInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInputBar.swift; sourceTree = "<group>"; };
 		6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
+		75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartbeatTests.swift; sourceTree = "<group>"; };
 		79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisUITests.swift; sourceTree = "<group>"; };
 		83BBF8E04395E33F04CDE186 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
@@ -216,6 +218,7 @@
 			children = (
 				6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */,
 				24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */,
+				75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */,
 				60C2993F84719DC44B59A9ED /* WebSocketClientBusyTests.swift */,
 			);
 			name = JarvisAppTests;
@@ -441,6 +444,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */,
+				CB6576F08C01F04D5D766774 /* HeartbeatTests.swift in Sources */,
 				F25913DEABB1C45EC25092C1 /* WebSocketClientBusyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
