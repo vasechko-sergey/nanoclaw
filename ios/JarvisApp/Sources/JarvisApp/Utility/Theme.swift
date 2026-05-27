@@ -78,6 +78,15 @@ enum Theme {
     static var messagePadV:  CGFloat { scaled(10) }    // bubble inner padding V
     static var orbSize:      CGFloat { scaled(120) }   // empty state orb
 
+    // MARK: – Bubbleless row tokens (2026 redesign)
+    static let rowPadV: CGFloat = 12
+    static let rowPadH: CGFloat = 18
+    static let metaFont = Font.system(size: 10, design: .monospaced)
+    static let avatarDotSize: CGFloat = 8
+    static let hairlineColor = Theme.accent.opacity(0.05)
+    static var drawerWidth: CGFloat { UIScreen.main.bounds.width * 0.78 }
+    static let inputBarRadius: CGFloat = 22
+
     // MARK: – Haptics
     static func hapticSend()    { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     static func hapticReceive() { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
