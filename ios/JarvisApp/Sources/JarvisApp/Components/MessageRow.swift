@@ -17,18 +17,21 @@ struct MessageRow: View {
     private var isUser: Bool { message.role == .user }
 
     var body: some View {
-        switch message.content {
-        case .text(let text):
-            textRow(text)
-        case .image(let img, _):
-            imageRow(img)
-        case .file(let info):
-            FileRow(info: info, isUser: isUser, isLast: isLast)
-        case .action(let info):
-            ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast)
-        case .status(let info):
-            StatusRow(info: info)
+        Group {
+            switch message.content {
+            case .text(let text):
+                textRow(text)
+            case .image(let img, _):
+                imageRow(img)
+            case .file(let info):
+                FileRow(info: info, isUser: isUser, isLast: isLast)
+            case .action(let info):
+                ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast)
+            case .status(let info):
+                StatusRow(info: info)
+            }
         }
+        .id(message.id)
     }
 
     // MARK: - Text row
@@ -434,6 +437,7 @@ struct StatusRow: View {
 struct ThinkingRow: View {
     let detail: String?
     @State private var dots: String = ""
+    @State private var dotTask: Task<Void, Never>?
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -449,6 +453,7 @@ struct ThinkingRow: View {
         .accessibilityLabel("Jarvis обрабатывает запрос")
         .accessibilityIdentifier("thinking-row")
         .onAppear { startDots() }
+        .onDisappear { dotTask?.cancel(); dotTask = nil }
     }
 
     private var label: String {
@@ -456,7 +461,8 @@ struct ThinkingRow: View {
     }
 
     private func startDots() {
-        Task { @MainActor in
+        dotTask?.cancel()
+        dotTask = Task { @MainActor in
             let cycle = ["", ".", "..", "..."]
             var i = 0
             while !Task.isCancelled {
