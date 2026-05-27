@@ -77,7 +77,12 @@ enum Theme {
     static let metaFont = Font.system(size: 10, design: .monospaced)
     static let avatarDotSize: CGFloat = 8
     static let hairlineColor = Theme.accent.opacity(0.05)
-    static var drawerWidth: CGFloat { UIScreen.main.bounds.width * 0.78 }
+    static var drawerWidth: CGFloat {
+        let screen = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.screen
+        return (screen?.bounds.width ?? 393) * 0.78
+    }
     static let inputBarRadius: CGFloat = 22
 
     // MARK: – Haptics
