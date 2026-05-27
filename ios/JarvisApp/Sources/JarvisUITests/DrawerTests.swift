@@ -1,47 +1,66 @@
 import XCTest
 
 final class DrawerTests: XCTestCase {
-    func testHamburgerOpensDrawer() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-UITesting", "1"]
+
+    var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = ["--uitesting"]
         app.launch()
+    }
 
-        let textStart = app.descendants(matching: .any)
-            .matching(identifier: "empty-start-text").firstMatch
-        if textStart.waitForExistence(timeout: 5) { textStart.tap() }
+    override func tearDownWithError() throws {
+        app.terminate()
+    }
 
-        let chatView = app.descendants(matching: .any)
-            .matching(identifier: "chat-view").firstMatch
-        XCTAssertTrue(chatView.waitForExistence(timeout: 5))
+    /// Navigate from splash → home → chat. Mirrors JarvisUITests.navigateToChat.
+    private func navigateToChat() {
+        let orbHome = app.otherElements["orb-home"]
+        XCTAssertTrue(orbHome.waitForExistence(timeout: 8), "orb-home not found — splash did not complete")
 
-        let hamburger = app.buttons["hamburger-btn"]
-        XCTAssertTrue(hamburger.waitForExistence(timeout: 3), "hamburger-btn not found")
+        let startChatBtn = app.buttons.matching(
+            NSPredicate(format: "label == 'uitest-start-text-chat'")
+        ).firstMatch
+        XCTAssertTrue(startChatBtn.waitForExistence(timeout: 3), "uitest-start-text-chat button not found")
+        startChatBtn.tap()
+
+        let chatView = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == 'chat-view'")
+        ).firstMatch
+        XCTAssertTrue(chatView.waitForExistence(timeout: 5), "chat-view not found")
+    }
+
+    func testHamburgerOpensDrawer() {
+        navigateToChat()
+
+        // SwiftUI accessibilityIdentifier doesn't always propagate to Button —
+        // match by label (Russian, set via .accessibilityLabel)
+        let hamburger = app.buttons.matching(
+            NSPredicate(format: "label == 'Открыть список диалогов'")
+        ).firstMatch
+        XCTAssertTrue(hamburger.waitForExistence(timeout: 3), "hamburger not found")
         hamburger.tap()
 
-        let drawer = app.descendants(matching: .any)
-            .matching(identifier: "conv-drawer").firstMatch
-        XCTAssertTrue(drawer.waitForExistence(timeout: 2), "conv-drawer didn't appear after hamburger tap")
+        // Drawer surfaces "Диалоги" header text — fastest way to assert presence
+        let drawerTitle = app.staticTexts["Диалоги"]
+        XCTAssertTrue(drawerTitle.waitForExistence(timeout: 2), "drawer header 'Диалоги' didn't appear after hamburger tap")
     }
 
     func testEdgeSwipeOpensDrawer() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-UITesting", "1"]
-        app.launch()
+        navigateToChat()
 
-        let textStart = app.descendants(matching: .any)
-            .matching(identifier: "empty-start-text").firstMatch
-        if textStart.waitForExistence(timeout: 5) { textStart.tap() }
-
-        let chatView = app.descendants(matching: .any)
-            .matching(identifier: "chat-view").firstMatch
-        XCTAssertTrue(chatView.waitForExistence(timeout: 5))
+        let chatView = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == 'chat-view'")
+        ).firstMatch
+        XCTAssertTrue(chatView.waitForExistence(timeout: 3))
 
         let start = chatView.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = chatView.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
         start.press(forDuration: 0.05, thenDragTo: end)
 
-        let drawer = app.descendants(matching: .any)
-            .matching(identifier: "conv-drawer").firstMatch
-        XCTAssertTrue(drawer.waitForExistence(timeout: 2), "conv-drawer didn't appear after edge-swipe")
+        let drawerTitle = app.staticTexts["Диалоги"]
+        XCTAssertTrue(drawerTitle.waitForExistence(timeout: 2), "drawer header 'Диалоги' didn't appear after edge-swipe")
     }
 }

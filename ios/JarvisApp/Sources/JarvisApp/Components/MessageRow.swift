@@ -450,6 +450,7 @@ struct ThinkingRow: View {
         }
         .padding(.horizontal, Theme.rowPadH)
         .padding(.vertical, Theme.rowPadV)
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("Jarvis обрабатывает запрос")
         .accessibilityIdentifier("thinking-row")
         .onAppear { startDots() }

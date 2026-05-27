@@ -355,13 +355,11 @@ struct ChatView: View {
             Button {
                 withAnimation(.spring(duration: 0.35, bounce: 0.05)) { drawerOpen = true }
             } label: {
-                VStack(spacing: 4) {
-                    Rectangle().frame(width: 18, height: 1.5)
-                    Rectangle().frame(width: 14, height: 1.5)
-                    Rectangle().frame(width: 18, height: 1.5)
-                }
-                .foregroundStyle(Theme.accentMedium)
-                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 16, weight: .light))
+                    .foregroundStyle(Theme.accentMedium)
+                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    .contentShape(Rectangle())
             }
             .accessibilityIdentifier("hamburger-btn")
             .accessibilityLabel("Открыть список диалогов")

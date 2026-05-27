@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const PORT = parseInt(process.env.MOCK_WS_PORT ?? '8765', 10);
+const REPLY_DELAY_MS = parseInt(process.env.MOCK_REPLY_DELAY_MS ?? '2000', 10);
 
 const server = createServer();
 const wss = new WebSocketServer({ server });
@@ -36,7 +37,7 @@ wss.on('connection', (ws: WebSocket) => {
           conversationId: convId,
           timestamp: new Date().toISOString(),
         }));
-      }, 500);
+      }, REPLY_DELAY_MS);
       return;
     }
 
