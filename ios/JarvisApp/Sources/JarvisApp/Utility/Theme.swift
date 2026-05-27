@@ -33,12 +33,6 @@ enum Theme {
     /// Decorative only — large text labels, borders. 3.8:1 on bg (large text OK).
     static let accentSubtle = Color(red: 0.214, green: 0.466, blue: 0.494)  // #37777E
 
-    // MARK: – Bubbles
-    static let assistantBubble       = Color(red: 0.067, green: 0.098, blue: 0.133)
-    static let assistantBubbleBorder = Color.white.opacity(0.08)
-    static let userBubble            = Color(red: 0.05, green: 0.22, blue: 0.38).opacity(0.5)
-    static let userBubbleBorder      = Color(red: 0.33, green: 0.74, blue: 0.77).opacity(0.08)
-
     // MARK: – Status
     static let online  = Color(red: 0.29, green: 0.87, blue: 0.50)  // #4ADE80
     static let offline = Color(red: 0.95, green: 0.26, blue: 0.21)  // #F24236, 5.0:1 on bg
@@ -65,7 +59,6 @@ enum Theme {
     static var titleFont: Font { .system(size: fontTitle, weight: .light) }
 
     // MARK: – Corners (adaptive)
-    static var bubbleRadius: CGFloat { scaled(16) }
     static var inputRadius:  CGFloat { scaled(20) }
     static var chipRadius:   CGFloat { scaled(14) }
     static var cardRadius:   CGFloat { scaled(12) }
