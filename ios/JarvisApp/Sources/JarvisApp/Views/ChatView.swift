@@ -30,6 +30,8 @@ struct ChatView: View {
     @State private var lastSeenCount = 0
     @State private var scrollToBottomAction: (() -> Void)?
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
+    @State private var drawerOpen = false
+    @State private var drawerDragOffset: CGFloat = 0
 
     private var ws: WebSocketClient { coordinator.ws }
     private var store: ConversationStore { coordinator.store }
@@ -50,6 +52,7 @@ struct ChatView: View {
     }
 
     var body: some View {
+        ZStack(alignment: .leading) {
         VStack(spacing: 0) {
             // MARK: – Custom header
             header
@@ -238,6 +241,37 @@ struct ChatView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .gesture(edgeSwipeGesture)
+
+        // Shroud overlay when drawer open
+        if drawerOpen {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture { withAnimation { drawerOpen = false } }
+                .transition(.opacity)
+        }
+
+        // Drawer slides in from left
+        DrawerContent(
+            store: store,
+            onAction: { action in
+                coordinator.handleAction(action)
+                withAnimation { drawerOpen = false; drawerDragOffset = 0 }
+            },
+            onSettings: {
+                withAnimation { drawerOpen = false }
+                showSettings = true
+            }
+        )
+        .frame(width: Theme.drawerWidth)
+        .offset(x: drawerOpen
+                ? max(-Theme.drawerWidth, drawerDragOffset)
+                : -Theme.drawerWidth)
+        .gesture(drawerDragToClose)
+        .shadow(color: .black.opacity(drawerOpen ? 0.4 : 0), radius: 12, x: 4)
+        .animation(.spring(duration: 0.35, bounce: 0.05), value: drawerOpen)
+
+        } // ZStack
         .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)
         .background {
             GeometryReader { geo in
@@ -305,6 +339,20 @@ struct ChatView: View {
 
     private var header: some View {
         HStack {
+            Button {
+                withAnimation(.spring(duration: 0.35, bounce: 0.05)) { drawerOpen = true }
+            } label: {
+                VStack(spacing: 4) {
+                    Rectangle().frame(width: 18, height: 1.5)
+                    Rectangle().frame(width: 14, height: 1.5)
+                    Rectangle().frame(width: 18, height: 1.5)
+                }
+                .foregroundStyle(Theme.accentMedium)
+                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+            }
+            .accessibilityIdentifier("hamburger-btn")
+            .accessibilityLabel("Открыть список диалогов")
+
             Button { showProfile = true } label: {
                 ZStack {
                     Circle()
@@ -395,6 +443,46 @@ struct ChatView: View {
         .padding(.trailing, Theme.scaled(8))
         .padding(.bottom, Theme.scaled(8))
         .accessibilityLabel(unreadCount > 0 ? "Вниз, \(unreadCount) новых" : "Прокрутить вниз")
+    }
+
+    // MARK: – Drawer gestures
+
+    private var edgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                if value.startLocation.x < 24 && value.translation.width > 0 && !drawerOpen {
+                    drawerDragOffset = min(value.translation.width - Theme.drawerWidth, 0)
+                }
+            }
+            .onEnded { value in
+                if !drawerOpen && value.startLocation.x < 24 && value.translation.width > 80 {
+                    withAnimation(.spring(duration: 0.3)) {
+                        drawerOpen = true
+                        drawerDragOffset = 0
+                    }
+                } else if !drawerOpen {
+                    withAnimation { drawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var drawerDragToClose: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if drawerOpen && value.translation.width < 0 {
+                    drawerDragOffset = value.translation.width
+                }
+            }
+            .onEnded { value in
+                if drawerOpen && value.translation.width < -60 {
+                    withAnimation(.spring(duration: 0.3)) {
+                        drawerOpen = false
+                        drawerDragOffset = 0
+                    }
+                } else {
+                    withAnimation { drawerDragOffset = 0 }
+                }
+            }
     }
 
     // MARK: – Date separators
