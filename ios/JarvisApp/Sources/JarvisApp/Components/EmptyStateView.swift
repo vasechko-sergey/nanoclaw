@@ -1,134 +1,76 @@
 import SwiftUI
 
-/// Empty chat state: a central orb with suggestion satellites.
-/// Tap orb → triggers voice input. Tap suggestion → sends it directly.
-/// Mirrors the home screen aesthetic but in-chat context.
 struct EmptyStateView: View {
     var onSuggestion: (String) -> Void
     var onStartVoice: () -> Void
     var onStartText: () -> Void
 
-    @State private var showActions = false
-
-    private var suggestions: [String] {
-        SuggestionEngine.suggestions(count: 4)
-    }
+    private let suggestions = [
+        "Что в календаре на сегодня?",
+        "Покажи последние задачи",
+        "Сделай резюме рабочего дня"
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 24) {
             Spacer()
 
-            ZStack {
-                // Suggestion satellites
-                ForEach(Array(suggestions.enumerated()), id: \.offset) { index, text in
-                    let count = suggestions.count
-                    let angle = -.pi / 2 + (2 * .pi / Double(count)) * Double(index)
-                    let radius = Theme.scaled(110)
-                    let x = cos(angle) * radius
-                    let y = sin(angle) * radius
+            MiniOrbView(size: 96, mood: .calm)
 
-                    EmptySatellite(icon: SuggestionEngine.icon(for: text), label: text) {
-                        Theme.hapticSend()
-                        SuggestionEngine.recordUsage(text)
-                        onSuggestion(text)
+            Text("О чём поговорим?")
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(Theme.textPrimary.opacity(0.85))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(suggestions, id: \.self) { s in
+                        Button { onSuggestion(s) } label: {
+                            Text(s)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.accent)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .overlay(
+                                    Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: 0.5)
+                                )
+                                .clipShape(Capsule())
+                        }
                     }
-                    .offset(x: showActions ? 0 : x, y: showActions ? 0 : y)
-                    .scaleEffect(showActions ? 0.3 : 1.0)
-                    .opacity(showActions ? 0 : 1.0)
-                    .animation(
-                        .spring(duration: 0.4, bounce: 0.25).delay(Double(index) * 0.06),
-                        value: showActions
-                    )
                 }
-
-                // Central orb + label
-                VStack(spacing: Theme.scaled(8)) {
-                    OrbView(size: Theme.scaled(100), mood: .welcoming)
-                        .onTapGesture {
-                            Theme.hapticSend()
-                            onStartVoice()
-                        }
-                        .onLongPressGesture(minimumDuration: 0.3) {
-                            Theme.hapticMedium()
-                            onStartText()
-                        }
-                        .accessibilityLabel("Начать диалог")
-
-                    Text("К вашим услугам")
-                        .font(.system(size: Theme.scaled(11), weight: .light))
-                        .tracking(1.5)
-                        .foregroundStyle(Theme.accentMedium.opacity(0.7))
-                }
+                .padding(.horizontal, Theme.hPadding)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: Theme.scaled(320))
 
-            // Keyboard shortcut hint
-            HStack {
-                Spacer()
-                Button { onStartText() } label: {
-                    HStack(spacing: Theme.scaled(4)) {
+            Spacer()
+
+            HStack(spacing: 12) {
+                Button(action: onStartVoice) {
+                    HStack {
+                        Image(systemName: "mic.fill")
+                        Text("Голосом")
+                    }
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .overlay(Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: 0.5))
+                    .clipShape(Capsule())
+                }
+
+                Button(action: onStartText) {
+                    HStack {
                         Image(systemName: "keyboard")
-                            .font(.system(size: Theme.scaled(12)))
-                        Text("или введите запрос")
-                            .font(.system(size: Theme.scaled(11)))
+                        Text("Текстом")
                     }
-                    .foregroundStyle(Theme.accentMedium.opacity(0.4))
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .overlay(Capsule().stroke(Theme.accent.opacity(0.3), lineWidth: 0.5))
+                    .clipShape(Capsule())
                 }
-                .frame(minHeight: Theme.minTapSize)
                 .accessibilityIdentifier("empty-start-text")
-                Spacer()
             }
-
-            Spacer()
+            .padding(.horizontal, Theme.hPadding)
+            .padding(.bottom, 30)
         }
-    }
-}
-
-// MARK: – Empty State Satellite
-
-private struct EmptySatellite: View {
-    let icon: String
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: Theme.scaled(5)) {
-                ZStack {
-                    // Subtle glow
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [Theme.accent.opacity(0.05), Color.clear],
-                                center: .center,
-                                startRadius: Theme.scaled(16),
-                                endRadius: Theme.scaled(30)
-                            )
-                        )
-                        .frame(width: Theme.scaled(50), height: Theme.scaled(50))
-                    // Main circle
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Theme.surface.opacity(0.9), Theme.background.opacity(0.7)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: Theme.scaled(44), height: Theme.scaled(44))
-                        .overlay(
-                            Circle().stroke(Theme.accent.opacity(0.12), lineWidth: 0.5)
-                        )
-                    Image(systemName: icon)
-                        .font(.system(size: Theme.scaled(18), weight: .light))
-                        .foregroundStyle(Theme.accentMedium.opacity(0.8))
-                }
-                Text(label)
-                    .font(.system(size: Theme.scaled(10), weight: .medium))
-                    .foregroundStyle(Theme.accentMedium.opacity(0.6))
-            }
-        }
-        .accessibilityLabel(label)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
