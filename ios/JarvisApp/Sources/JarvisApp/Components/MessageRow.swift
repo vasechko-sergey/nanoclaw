@@ -10,6 +10,7 @@ struct MessageRow: View {
     var onFeedback: ((String, Bool) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil
     var onSpeak: ((String) -> Void)? = nil
+    var onRetry: ((String) -> Void)? = nil
 
     @State private var feedback: FeedbackState = .none
 
@@ -139,7 +140,9 @@ struct MessageRow: View {
                 .font(Theme.metaFont)
                 .foregroundStyle(Theme.timestamp)
             if isUser {
-                DeliveryChecks(status: message.deliveryStatus)
+                DeliveryChecks(status: message.deliveryStatus, onRetryTap: {
+                    onRetry?(message.id)
+                })
             }
             if !isUser && feedback != .none {
                 Image(systemName: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")

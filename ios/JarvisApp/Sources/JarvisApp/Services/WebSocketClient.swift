@@ -208,6 +208,22 @@ final class WebSocketClient {
         bumpStaleSentEntries(now: now)
     }
 
+    /// Manual retry of a single outbox entry — triggered by tapping the red
+    /// .failed indicator. Resets attempts/lastAttempt so backoff doesn't
+    /// immediately re-skip, sets the row back to .sending, fires a haptic,
+    /// and re-flushes.
+    @MainActor
+    func retrySend(id: String) {
+        guard let idx = outbox.entries.firstIndex(where: { $0.id == id }) else { return }
+        outbox.entries[idx].attempts = 0
+        outbox.entries[idx].lastAttempt = nil
+        outbox.entries[idx].deliveryStatus = .sending
+        outbox.save()
+        updateDeliveryStatus(id, .sending)
+        flushOutbox()
+        Theme.hapticMedium()
+    }
+
     /// Try to send everything currently in the outbox. No-op when WS is down.
     func flushOutbox() {
         bumpStaleSentEntries()

@@ -14,6 +14,7 @@ struct CheckmarkShape: Shape {
 /// Delivery state indicator. Replaces overlapping SF Symbol checkmarks.
 struct DeliveryChecks: View {
     let status: DeliveryStatus
+    var onRetryTap: (() -> Void)? = nil
 
     @State private var spinRotation: Double = 0
     @State private var secondCheckOpacity: Double = 1
@@ -57,9 +58,15 @@ struct DeliveryChecks: View {
                         }
                 }
             case .failed:
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.red.opacity(0.9))
+                Button {
+                    onRetryTap?()
+                } label: {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.red.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Повторить отправку")
             }
         }
         .frame(width: 14, height: 10)

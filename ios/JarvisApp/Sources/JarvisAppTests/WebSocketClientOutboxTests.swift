@@ -167,4 +167,28 @@ final class WebSocketClientOutboxTests: XCTestCase {
         XCTAssertEqual(outbox.entries.first?.deliveryStatus, .failed)
         XCTAssertEqual(ws.messages.first?.deliveryStatus, .failed)
     }
+
+    func testRetrySendResetsAttemptsAndFlushesSingleEntry() {
+        let outbox = OutboxStore(directory: tempDir)
+        var entry = OutboxEntry(id: "retry-me", conversationId: nil, createdAt: Date(),
+                                payload: Data(), textPreview: "x", hasAttachments: false,
+                                deliveryStatus: .failed)
+        entry.attempts = 5
+        entry.lastAttempt = Date()
+        outbox.entries = [entry]
+        outbox.save()
+
+        let ws = WebSocketClient(outbox: outbox)
+        // Stage matching UI row in .failed
+        var uiMsg = ChatMessage.text("retry-me", role: .user, text: "x", timestamp: Date())
+        uiMsg.deliveryStatus = .failed
+        ws.messages = [uiMsg]
+
+        ws.retrySend(id: "retry-me")
+
+        XCTAssertEqual(outbox.entries.first?.attempts, 0, "manual retry must reset attempts so backoff doesn't block")
+        XCTAssertEqual(outbox.entries.first?.deliveryStatus, .sending,
+                       "manual retry returns the entry to .sending so the UI shows the spinner")
+        XCTAssertEqual(ws.messages.first?.deliveryStatus, .sending)
+    }
 }
