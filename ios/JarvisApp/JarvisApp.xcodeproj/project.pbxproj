@@ -21,6 +21,7 @@
 		3502D3234561E8F256B9EAD5 /* JarvisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */; };
 		3B780D772FC0C9C43796F3F8 /* JarvisUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */; };
 		3BC3B261F475A3B3A3E3FF7B /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D3D7941261E832088202BF /* EmptyStateView.swift */; };
+		3C2899CEF9F5FC865E470679 /* MessageCacheDeliveryStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAC0AC197B336538A3BB964 /* MessageCacheDeliveryStatusTests.swift */; };
 		3C54FACBB07CA653BD1BE313 /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FB3889146F12123FB99824E /* WebSocketClient.swift */; };
 		3EB9B81E598895106D47F1DB /* FullScreenImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */; };
 		3F712956E032728A955B67F8 /* HealthSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A055AF8989128A047D605C /* HealthSync.swift */; };
@@ -121,6 +122,7 @@
 		9F0295CB82FF20C8764842F6 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		A9E51F90AF529EB74BF8AF13 /* MessageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCache.swift; sourceTree = "<group>"; };
 		ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionEngine.swift; sourceTree = "<group>"; };
+		AFAC0AC197B336538A3BB964 /* MessageCacheDeliveryStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCacheDeliveryStatusTests.swift; sourceTree = "<group>"; };
 		B254569C52137C9E716B3DCD /* OrbHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbHomeView.swift; sourceTree = "<group>"; };
 		B3C4FB0DCE7115FB8C5039E7 /* JarvisAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JarvisAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B6BD1E4ABB502A83CDD29883 /* MiniOrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniOrbView.swift; sourceTree = "<group>"; };
@@ -227,6 +229,7 @@
 				5114A888276D0E083FC387EB /* ContextBuilderTests.swift */,
 				24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */,
 				75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */,
+				AFAC0AC197B336538A3BB964 /* MessageCacheDeliveryStatusTests.swift */,
 				34055B05F8F79D7466F877DF /* OutboxStoreTests.swift */,
 				60C2993F84719DC44B59A9ED /* WebSocketClientBusyTests.swift */,
 			);
@@ -460,6 +463,7 @@
 				4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */,
 				EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */,
 				CB6576F08C01F04D5D766774 /* HeartbeatTests.swift in Sources */,
+				3C2899CEF9F5FC865E470679 /* MessageCacheDeliveryStatusTests.swift in Sources */,
 				CEDBAE9FAEC01EA3E2B4D17E /* OutboxStoreTests.swift in Sources */,
 				F25913DEABB1C45EC25092C1 /* WebSocketClientBusyTests.swift in Sources */,
 			);
