@@ -198,6 +198,9 @@ final class WebSocketClient {
             ws.send(.data(entry.payload)) { [weak self] error in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    // If the ack beat us (very fast server), entry is already removed
+                    // and status is .delivered — don't downgrade to .sent.
+                    guard self.outbox.entries.contains(where: { $0.id == entry.id }) else { return }
                     self.updateDeliveryStatus(entry.id, error == nil ? .sent : .failed)
                     // Entry stays in the outbox; removal happens on message_ack.
                 }
