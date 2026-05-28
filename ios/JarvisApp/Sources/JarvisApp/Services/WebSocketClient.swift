@@ -71,6 +71,9 @@ final class WebSocketClient {
     /// Callback when connection state changes (for coordinator to track connection phase).
     @ObservationIgnored var onConnectionChanged: ((Bool) -> Void)?
 
+    /// Test seam: fires whenever the connection-success path calls flushOutbox.
+    @ObservationIgnored var onFlushForTesting: (() -> Void)?
+
     func connect(settings: AppSettings) {
         self.settings = settings
         stopped = false
@@ -323,6 +326,15 @@ final class WebSocketClient {
         }
     }
 
+    /// Test seam: mimics the success branch of doConnect (sets isConnected = true
+    /// and runs the same post-connect actions, minus the URLSession plumbing).
+    @MainActor
+    func notifyConnectedForTesting() {
+        isConnected = true
+        flushOutbox()
+        onFlushForTesting?()
+    }
+
     @MainActor
     internal func forceReconnect(reason: String) {
         print("WS reconnect: \(reason)")
@@ -437,6 +449,8 @@ final class WebSocketClient {
         // --- Auth ---
         if t == "auth_ok" {
             isConnected = true
+            flushOutbox()
+            onFlushForTesting?()
             startHeartbeat()
             if let tok = pendingApnsToken { sendApnsToken(tok) }
             if let cmds = obj["commands"] as? [[String: String]] {

@@ -72,4 +72,26 @@ final class WebSocketClientOutboxTests: XCTestCase {
         }
         XCTAssertEqual(warnings.count, 1)
     }
+
+    func testFlushOutboxNoOpWhenDisconnected() {
+        let outbox = OutboxStore(directory: tempDir)
+        _ = outbox.enqueue(OutboxEntry(id: "x", conversationId: nil, createdAt: Date(),
+                                       payload: Data(), textPreview: "x", hasAttachments: false))
+        let ws = WebSocketClient(outbox: outbox)
+        XCTAssertFalse(ws.isConnected)
+        ws.flushOutbox()
+        XCTAssertEqual(outbox.entries.count, 1)
+        XCTAssertEqual(outbox.entries.first?.attempts, 0, "no attempt should be recorded when WS is down")
+    }
+
+    func testReconnectTriggersFlush() {
+        let outbox = OutboxStore(directory: tempDir)
+        _ = outbox.enqueue(OutboxEntry(id: "x", conversationId: nil, createdAt: Date(),
+                                       payload: Data(), textPreview: "x", hasAttachments: false))
+        let ws = WebSocketClient(outbox: outbox)
+        var flushCalls = 0
+        ws.onFlushForTesting = { flushCalls += 1 }
+        ws.notifyConnectedForTesting()
+        XCTAssertEqual(flushCalls, 1, "on transition to connected, flushOutbox must be invoked")
+    }
 }
