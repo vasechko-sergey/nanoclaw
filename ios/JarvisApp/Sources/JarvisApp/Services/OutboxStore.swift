@@ -38,7 +38,6 @@ struct OutboxEntry: Codable, Equatable {
     var entries: [OutboxEntry] = []   // sorted by createdAt asc
 
     @ObservationIgnored private let url: URL
-    @ObservationIgnored static let maxEntries = 100
 
     init(directory: URL? = nil) {
         let dir = directory ?? FileManager.default
@@ -61,24 +60,45 @@ struct OutboxEntry: Codable, Equatable {
     }
 
     func load() {
-        guard let data = try? Data(contentsOf: url) else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            // No file yet — normal on first launch.
+            return
+        }
         let dec = JSONDecoder()
         dec.dateDecodingStrategy = .iso8601
-        if let arr = try? dec.decode([OutboxEntry].self, from: data) {
+        do {
+            let arr = try dec.decode([OutboxEntry].self, from: data)
             entries = arr.sorted { $0.createdAt < $1.createdAt }
+        } catch {
+            print("OutboxStore: decode failed — \(error). Quarantining bad file.")
+            let ts = Int(Date().timeIntervalSince1970)
+            let bad = url.appendingPathExtension("corrupt-\(ts)")
+            _ = try? FileManager.default.moveItem(at: url, to: bad)
+            // entries stays [] — next save writes a fresh queue.json.
         }
     }
 
     func save() {
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .iso8601
-        guard let data = try? enc.encode(entries) else { return }
+        let data: Data
+        do {
+            data = try enc.encode(entries)
+        } catch {
+            print("OutboxStore: encode failed — \(error)")
+            return
+        }
         let tmp = url.appendingPathExtension("tmp")
         do {
-            try data.write(to: tmp, options: .atomic)
-            _ = try? FileManager.default.replaceItemAt(url, withItemAt: tmp)
+            try data.write(to: tmp)
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
         } catch {
             print("OutboxStore: save failed — \(error)")
+            // Clean up orphaned tmp on failure
+            try? FileManager.default.removeItem(at: tmp)
         }
     }
 }

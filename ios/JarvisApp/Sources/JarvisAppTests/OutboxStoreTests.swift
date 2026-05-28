@@ -60,4 +60,19 @@ final class OutboxStoreTests: XCTestCase {
         let reloaded = OutboxStore(directory: tempDir)
         XCTAssertEqual(reloaded.entries.map(\.id), ["b"])
     }
+
+    func testEnqueueAfterReloadStillPersists() {
+        // Exercises the replaceItemAt path on a populated queue.json,
+        // not just the initial-write-to-empty-dir path.
+        let s1 = OutboxStore(directory: tempDir)
+        s1.enqueue(makeEntry(id: "first"))
+
+        let s2 = OutboxStore(directory: tempDir)
+        XCTAssertEqual(s2.entries.map(\.id), ["first"])
+        s2.enqueue(makeEntry(id: "second"))
+
+        let s3 = OutboxStore(directory: tempDir)
+        XCTAssertEqual(s3.entries.map(\.id), ["first", "second"],
+                       "replace-on-populated path must preserve all entries in order")
+    }
 }
