@@ -94,4 +94,28 @@ final class WebSocketClientOutboxTests: XCTestCase {
         ws.notifyConnectedForTesting()
         XCTAssertEqual(flushCalls, 1, "on transition to connected, flushOutbox must be invoked")
     }
+
+    func testMessageAckRemovesEntryAndMarksDelivered() {
+        let outbox = OutboxStore(directory: tempDir)
+        let ws = WebSocketClient(outbox: outbox)
+        ws.send(text: "boom", timezone: "UTC", status: nil, attachments: [], context: nil)
+        guard let id = ws.messages.first?.id else { XCTFail("no message"); return }
+        XCTAssertEqual(outbox.entries.count, 1)
+
+        ws.handleMessageAckForTesting(clientMessageId: id)
+
+        XCTAssertEqual(outbox.entries.count, 0, "ack must remove the outbox entry")
+        XCTAssertEqual(ws.messages.first?.deliveryStatus, .delivered)
+    }
+
+    func testUnknownAckIsIgnored() {
+        let outbox = OutboxStore(directory: tempDir)
+        let ws = WebSocketClient(outbox: outbox)
+        ws.send(text: "x", timezone: "UTC", status: nil, attachments: [], context: nil)
+        let startingCount = outbox.entries.count
+
+        ws.handleMessageAckForTesting(clientMessageId: "unknown-id")
+
+        XCTAssertEqual(outbox.entries.count, startingCount, "ack for unknown id must be a no-op")
+    }
 }

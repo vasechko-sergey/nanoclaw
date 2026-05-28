@@ -282,6 +282,24 @@ final class WebSocketClient {
         onMessagesChanged?(messages)
     }
 
+    /// Server confirmed receipt of a previously-sent client message. Remove the
+    /// outbox entry and mark the UI row as `.delivered`. Idempotent: unknown
+    /// clientMessageId is a no-op (e.g. server replay after we already removed).
+    @MainActor
+    func handleMessageAck(clientMessageId: String) {
+        guard outbox.entries.contains(where: { $0.id == clientMessageId }) else {
+            return
+        }
+        outbox.remove(clientMessageId)
+        updateDeliveryStatus(clientMessageId, .delivered)
+    }
+
+    /// Test seam — call `handleMessageAck` directly without a real socket.
+    @MainActor
+    func handleMessageAckForTesting(clientMessageId: String) {
+        handleMessageAck(clientMessageId: clientMessageId)
+    }
+
     private func sendApnsToken(_ hex: String) {
         guard let ws = task, isConnected else { return }
         guard let pay = try? JSONSerialization.data(withJSONObject: ["type": "apns_token", "token": hex]) else { return }
@@ -480,7 +498,7 @@ final class WebSocketClient {
         // --- Message ack (server confirmed receipt of user message) ---
         if t == "message_ack",
            let clientMsgId = obj["clientMessageId"] as? String {
-            updateDeliveryStatus(clientMsgId, .delivered)
+            handleMessageAck(clientMessageId: clientMsgId)
             return
         }
 
