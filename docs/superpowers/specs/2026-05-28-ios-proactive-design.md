@@ -117,7 +117,9 @@ iOS wakes the app briefly (~10s) on significant-change. Enough to reconnect WS a
 
 ### HealthKit Observer
 
-`HealthManager` is currently snapshot-only (read-on-demand). Add observer queries that survive backgrounding:
+`HealthManager` is currently snapshot-only (read-on-demand). Add observer queries that survive backgrounding — but the observer's only job is to **fire an event-type ping**, not to ship health data.
+
+The agent already has `request_context` (snapshot) and the HTTP `/ios/health/requests` pull path for history. Proactive triggers are a **wake signal**, not a data channel. When the ping arrives, the agent decides whether to pull details via the existing mechanisms.
 
 ```swift
 let hrType = HKQuantityType(.heartRate)
@@ -126,13 +128,10 @@ let store = HKHealthStore()
 let q = HKObserverQuery(sampleType: hrType, predicate: nil) { _, _, error in
     guard error == nil else { return }
     Task { @MainActor in
-        // Pull last 5 min of HR samples, check for spike vs baseline
-        if let spike = await self.detectHrSpike() {
-            self.dispatcher?.fire(type: "health_hr", payload: [
-                "bpm": spike.peakBpm,
-                "baseline": spike.baselineBpm,
-                "duration_sec": spike.durationSec,
-            ])
+        // Minimal local check just to avoid waking the agent on every routine HR sample.
+        // The detector returns ONLY a Bool — no values shipped.
+        if await self.detectHrSpike() {
+            self.dispatcher?.fire(type: "health_hr_spike", payload: [:])
         }
     }
 }
@@ -140,12 +139,17 @@ store.execute(q)
 store.enableBackgroundDelivery(for: hrType, frequency: .immediate) { _, _ in }
 ```
 
-Similar for sleep (`HKCategoryType(.sleepAnalysis)`) and workout (`HKWorkoutType.workoutType()`).
+Similar for sleep (`HKCategoryType(.sleepAnalysis)`) and workout (`HKWorkoutType.workoutType()`) — each fires `health_sleep_end` / `health_workout_end` with an empty payload.
 
-**Definitions:**
+**Why detect in the app at all (not just push every HK sample)?**
+HealthKit can wake the app dozens of times per hour with routine samples. The agent container is expensive to wake. We do a coarse threshold check locally; only fire when something interesting happened. The interesting-ness threshold lives in the app; the meaning of the event lives in the agent.
+
+**Detector definitions (local, app-side):**
 - **HR spike:** peak ≥ baseline_resting + 30 bpm sustained > 60s, with no detected workout in progress.
 - **Sleep end:** sleep stage transition from `.asleep*` to `.awake` (most recent sample).
 - **Workout end:** new `HKWorkout` sample with `endDate` within last 5 min.
+
+The agent receives `health_hr_spike` and, if it wants details, calls `request_context` with `["health"]` to read the current snapshot — same mechanism used today on user-initiated messages.
 
 ### Calendar
 
@@ -184,11 +188,23 @@ WS message:
 {
   "type": "proactive",
   "trigger": "geofence",
-  "payload": { "lat": 8.6478, "lon": 115.1385, "city": "Canggu", "speed": 0.4 },
+  "payload": { "lat": 8.6478, "lon": 115.1385, "city": "Canggu" },
   "ts": "2026-05-28T14:32:00+08:00",
   "tz": "Asia/Makassar"
 }
 ```
+
+**Payload contents by trigger** (deliberately thin — agent pulls details if needed):
+
+| Trigger | Payload |
+|---|---|
+| `geofence` | `{lat, lon, city}` — cheap, already in hand from the wake event |
+| `health_hr_spike` | `{}` — agent calls `request_context(["health"])` if it wants the bpm |
+| `health_sleep_end` | `{}` |
+| `health_workout_end` | `{}` — agent pulls workout history via `/ios/health/requests` if needed |
+| `calendar_warn` | `{title, start}` — already known from the local scheduler |
+
+The rule: **carry only what came for free with the wake event**. Anything that requires an extra HealthKit query lives behind `request_context`.
 
 HTTP fallback (when WS not connected, e.g., woken from significant-change with no time to reconnect):
 
@@ -260,9 +276,9 @@ Append to `groups/jarvis/CLAUDE.md`:
 Когда приходит сообщение `[proactive trigger=…]`:
 
 - `geofence` — отметь смену места если она значима (приехал/уехал из дома/офиса). Если место незнакомое — **молчи**, дай дню развернуться.
-- `health_hr` — если пульс высокий вне тренировки, спроси аккуратно: «Заметил пульс. Всё в порядке?»
-- `health_sleep` — после пробуждения **не здоровайся пока сам не напишет**. Это сигнал что хозяин проснулся, не приглашение к разговору.
-- `health_workout` — поздравь коротко с тренировкой, без воды.
+- `health_hr_spike` — приложение заметило всплеск пульса вне тренировки. Если нужны цифры — позови `request_context(["health"])`. Если решил вмешаться, спроси аккуратно: «Заметил пульс. Всё в порядке?»
+- `health_sleep_end` — после пробуждения **не здоровайся пока сам не напишет**. Это сигнал что хозяин проснулся, не приглашение к разговору.
+- `health_workout_end` — поздравь коротко с тренировкой, без воды. Детали по тренировке (длительность, ккал) если нужны — `/ios/health/requests` history pull.
 - `calendar_warn` — за 15 мин до события: одно предложение, факты. «Стэндап через 15 минут.»
 
 Молчание — валидный ответ на любой proactive. Не отвечай ради ответа.
@@ -315,7 +331,8 @@ Agent reads, decides: respond / schedule / silence
 | `ProactiveDispatcherRateLimitTest` | back-to-back fires of same type within `minInterval` only emit once |
 | `ProactiveDispatcherDifferentTypesTest` | geofence + health fired back-to-back both delivered |
 | `ProactiveDispatcherDisabledTest` | with `proactiveGeofence = false`, geofence fire is no-op |
-| `HrSpikeDetectorTest` | given a sample stream with one 75→110 bpm spike, detector identifies it; quiet stream returns nil |
+| `HrSpikeDetectorTest` | given a sample stream with one 75→110 bpm spike, detector returns `true`; quiet stream returns `false`. Detector returns Bool only — no values exposed |
+| `ProactivePayloadShapeTest` | `health_hr_spike` ping has empty payload (asserts no `bpm` / `baseline` leak); `geofence` has `lat`/`lon`/`city`; `calendar_warn` has `title`/`start` |
 | `CalendarSchedulerTest` | event 14:00 schedules notification at 13:45; past event ignored |
 
 **Server-side tests (`src/channels/`):**
