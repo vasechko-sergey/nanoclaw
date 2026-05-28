@@ -16,7 +16,8 @@ struct ContextBuilder {
         let want = fields.isEmpty ? ["location", "health", "device", "calendar"] : fields
         var ctx: [String: Any] = [:]
 
-        if want.contains("location"), settings.useLocation, let loc = location.lastLocation {
+        if want.contains("location"), settings.useLocation, let loc = location.lastLocation,
+           Date().timeIntervalSince(loc.timestamp) < 15 * 60 {
             ctx["location"] = [
                 "lat":  (loc.coordinate.latitude  * 1e4).rounded() / 1e4,
                 "lon":  (loc.coordinate.longitude * 1e4).rounded() / 1e4,

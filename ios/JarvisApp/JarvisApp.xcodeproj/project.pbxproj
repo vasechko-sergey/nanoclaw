@@ -28,6 +28,7 @@
 		461CEB084ABB3FAFC32124BC /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */; };
 		496C7C87D93A74983F21EF54 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B48F479168B41727E62B105 /* InputBar.swift */; };
 		4C81E915D4CA0441EEA698DF /* HealthHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC04EA76CC0F89FF14E7849 /* HealthHistory.swift */; };
+		4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114A888276D0E083FC387EB /* ContextBuilderTests.swift */; };
 		54243BCC1655A76DE5E1F02F /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD51F238E46BCB805C742CEE /* LocationManager.swift */; };
 		54CEE570C41AE7314548DBB8 /* CalendarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */; };
 		6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F4B9D1F796C301C15ED1A3D /* AppSettings.swift */; };
@@ -98,6 +99,7 @@
 		43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisApp.swift; sourceTree = "<group>"; };
 		48A9578A316F0AB1F8247B95 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		4FB3889146F12123FB99824E /* WebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClient.swift; sourceTree = "<group>"; };
+		5114A888276D0E083FC387EB /* ContextBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilderTests.swift; sourceTree = "<group>"; };
 		60C2993F84719DC44B59A9ED /* WebSocketClientBusyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClientBusyTests.swift; sourceTree = "<group>"; };
 		63F99A4953300541E52CE55B /* DraftAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftAttachment.swift; sourceTree = "<group>"; };
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -218,6 +220,7 @@
 			isa = PBXGroup;
 			children = (
 				6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */,
+				5114A888276D0E083FC387EB /* ContextBuilderTests.swift */,
 				24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */,
 				75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */,
 				60C2993F84719DC44B59A9ED /* WebSocketClientBusyTests.swift */,
@@ -447,6 +450,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */,
 				EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */,
 				CB6576F08C01F04D5D766774 /* HeartbeatTests.swift in Sources */,
 				F25913DEABB1C45EC25092C1 /* WebSocketClientBusyTests.swift in Sources */,
