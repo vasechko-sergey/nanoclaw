@@ -50,8 +50,8 @@ struct OutboxEntry: Codable, Equatable {
     }
 
     /// Enqueue a new entry. Returns `true` on success, `false` if the outbox is
-    /// full and no `.failed` entry is available to evict.
-    @discardableResult
+    /// full and no `.failed` entry is available to evict. Callers MUST handle
+    /// the `false` case — a silent drop means a lost user message.
     func enqueue(_ entry: OutboxEntry) -> Bool {
         if entries.count >= Self.maxEntries {
             // Drop the oldest .failed entry, if any

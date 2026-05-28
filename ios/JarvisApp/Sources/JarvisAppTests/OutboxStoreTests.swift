@@ -40,7 +40,7 @@ final class OutboxStoreTests: XCTestCase {
     func testEnqueuePersistsAcrossReload() {
         let store = OutboxStore(directory: tempDir)
         let e = makeEntry(id: "abc", text: "hello")
-        store.enqueue(e)
+        _ = store.enqueue(e)
         XCTAssertEqual(store.entries.count, 1)
         XCTAssertEqual(store.entries.first?.id, "abc")
 
@@ -52,8 +52,8 @@ final class OutboxStoreTests: XCTestCase {
 
     func testRemoveErasesEntry() {
         let store = OutboxStore(directory: tempDir)
-        store.enqueue(makeEntry(id: "a"))
-        store.enqueue(makeEntry(id: "b"))
+        _ = store.enqueue(makeEntry(id: "a"))
+        _ = store.enqueue(makeEntry(id: "b"))
         store.remove("a")
         XCTAssertEqual(store.entries.map(\.id), ["b"])
 
@@ -65,11 +65,11 @@ final class OutboxStoreTests: XCTestCase {
         // Exercises the replaceItemAt path on a populated queue.json,
         // not just the initial-write-to-empty-dir path.
         let s1 = OutboxStore(directory: tempDir)
-        s1.enqueue(makeEntry(id: "first"))
+        _ = s1.enqueue(makeEntry(id: "first"))
 
         let s2 = OutboxStore(directory: tempDir)
         XCTAssertEqual(s2.entries.map(\.id), ["first"])
-        s2.enqueue(makeEntry(id: "second"))
+        _ = s2.enqueue(makeEntry(id: "second"))
 
         let s3 = OutboxStore(directory: tempDir)
         XCTAssertEqual(s3.entries.map(\.id), ["first", "second"],
