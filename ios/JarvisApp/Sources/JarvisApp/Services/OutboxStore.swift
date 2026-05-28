@@ -37,6 +37,7 @@ struct OutboxEntry: Codable, Equatable {
 @Observable @MainActor final class OutboxStore {
     var entries: [OutboxEntry] = []   // sorted by createdAt asc
 
+    @ObservationIgnored static let maxEntries = 100
     @ObservationIgnored private let url: URL
 
     init(directory: URL? = nil) {
@@ -48,10 +49,23 @@ struct OutboxEntry: Codable, Equatable {
         load()
     }
 
-    func enqueue(_ entry: OutboxEntry) {
+    /// Enqueue a new entry. Returns `true` on success, `false` if the outbox is
+    /// full and no `.failed` entry is available to evict.
+    @discardableResult
+    func enqueue(_ entry: OutboxEntry) -> Bool {
+        if entries.count >= Self.maxEntries {
+            // Drop the oldest .failed entry, if any
+            if let idx = entries.firstIndex(where: { $0.deliveryStatus == .failed }) {
+                entries.remove(at: idx)
+            } else {
+                // Nothing droppable — refuse
+                return false
+            }
+        }
         entries.append(entry)
         entries.sort { $0.createdAt < $1.createdAt }
         save()
+        return true
     }
 
     func remove(_ id: String) {
