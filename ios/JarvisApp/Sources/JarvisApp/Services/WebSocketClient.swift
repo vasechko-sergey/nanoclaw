@@ -115,12 +115,13 @@ final class WebSocketClient {
 
     // MARK: – Send methods
 
-    func send(text: String, timezone: String, status: String?, attachments: [DraftAttachment] = []) {
+    func send(text: String, timezone: String, status: String?, attachments: [DraftAttachment] = [], context: [String: Any]? = nil) {
         guard let ws = task, isConnected else { return }
         var payload: [String: Any] = ["type": "message", "text": text, "timezone": timezone]
         if let st = status, !st.isEmpty { payload["status"] = st }
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         if !attachments.isEmpty { payload["attachments"] = attachments.map { $0.payload } }
+        if let ctx = context, !ctx.isEmpty { payload["context"] = ctx }
         let clientMsgId = UUID().uuidString
         payload["clientMessageId"] = clientMsgId
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }

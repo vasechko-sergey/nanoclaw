@@ -76,11 +76,29 @@ final class AppCoordinator {
 
     func sendMessage(_ text: String, viaVoice: Bool = false, attachments: [DraftAttachment] = []) {
         lastSendWasVoice = viaVoice
-        // Pull-model: don't push heavy context per message. Only the timezone
-        // (always) and the user's status emoji (cheap) ride along; the agent
-        // pulls richer context on demand via request_context.
+        // Push a light inline context snapshot (location/health/calendar per the user's
+        // privacy toggles) so the agent always has timezone + location + next event +
+        // status in-band. The pull model still works on top: the agent can fire
+        // `context_request` for a fresher pull when it needs to.
         let emoji = settings.statusEmoji.trimmingCharacters(in: .whitespaces)
-        ws.send(text: text, timezone: TimeZone.current.identifier, status: emoji.isEmpty ? nil : emoji, attachments: attachments)
+        // Trigger lazy refreshes — the response from build() uses whatever's currently cached
+        if settings.useLocation { location.requestAndUpdate() }
+        if settings.useHealth   { health.requestAndFetch()    }
+        if settings.useCalendar { calendar.requestAndFetch()  }
+        let ctx = ContextBuilder.build(
+            fields: [],
+            settings: settings,
+            location: location,
+            health: health,
+            calendar: calendar
+        )
+        ws.send(
+            text: text,
+            timezone: TimeZone.current.identifier,
+            status: emoji.isEmpty ? nil : emoji,
+            attachments: attachments,
+            context: ctx
+        )
     }
 
     /// Speak arbitrary text on demand (manual "Проговорить" from a bubble).

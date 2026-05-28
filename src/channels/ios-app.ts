@@ -360,7 +360,23 @@ export function createIosWsHandler(opts: {
         if (typeof msg.timezone === 'string' && msg.timezone) lastTimezone.set(pid, msg.timezone);
         const status = typeof msg.status === 'string' && msg.status ? `[status: ${msg.status}]\n` : '';
         const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
-        const content: Record<string, unknown> = { text: status + msg.text, senderId: pid };
+        // Inline context block (location / health / device / nextEvent) — sent
+        // alongside every user message so the agent always has timezone, location,
+        // and next event in-band. The pull model still works on top.
+        let inlineCtx = '';
+        if (msg.context && typeof msg.context === 'object') {
+          const ctxObj = msg.context as Record<string, unknown>;
+          if (typeof ctxObj.timezone !== 'string' && msg.timezone) {
+            ctxObj.timezone = msg.timezone as string;
+          }
+          try {
+            const block = buildCtx(ctxObj);
+            if (block) inlineCtx = `${block}\n`;
+          } catch {
+            // Bad context payload — skip, don't fail the message
+          }
+        }
+        const content: Record<string, unknown> = { text: inlineCtx + status + msg.text, senderId: pid };
         if (Array.isArray(msg.attachments)) {
           const atts = (msg.attachments as Array<Record<string, unknown>>).filter(
             (a) => a && typeof a.data === 'string',

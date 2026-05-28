@@ -307,6 +307,7 @@ struct DrawerContent: View {
     var store: ConversationStore
     var onAction: (ConversationAction) -> Void
     var onSettings: () -> Void = {}
+    var onProfile: () -> Void = {}
 
     @State private var searchText = ""
     @State private var conversationToDelete: Conversation? = nil
@@ -415,18 +416,31 @@ struct DrawerContent: View {
                 .scrollContentBackground(.hidden)
             }
 
-            // Settings footer
+            // Profile + Settings footer
             Divider().background(Theme.hairlineColor)
-            Button(action: onSettings) {
-                HStack(spacing: 8) {
-                    Image(systemName: "gearshape")
-                    Text("Настройки")
+            HStack(spacing: 0) {
+                Button(action: onProfile) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.circle")
+                        Text("Профиль")
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.accentMedium)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.hPadding)
+                    .padding(.vertical, 14)
                 }
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.accentMedium)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Theme.hPadding)
-                .padding(.vertical, 14)
+                Button(action: onSettings) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gearshape")
+                        Text("Настройки")
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.accentMedium)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.hPadding)
+                    .padding(.vertical, 14)
+                }
             }
         }
         .background(Color(red: 0.04, green: 0.08, blue: 0.11))

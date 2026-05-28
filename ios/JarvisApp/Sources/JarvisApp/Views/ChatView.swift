@@ -248,7 +248,7 @@ struct ChatView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .gesture(edgeSwipeGesture)
+        .simultaneousGesture(edgeSwipeGesture)
 
         // Shroud overlay when drawer open
         if drawerOpen {
@@ -268,6 +268,10 @@ struct ChatView: View {
             onSettings: {
                 withAnimation { drawerOpen = false }
                 showSettings = true
+            },
+            onProfile: {
+                withAnimation { drawerOpen = false }
+                showProfile = true
             }
         )
         .frame(width: Theme.drawerWidth)
@@ -352,7 +356,9 @@ struct ChatView: View {
 
     private var header: some View {
         HStack {
-            Button { showProfile = true } label: {
+            Button {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) { drawerOpen = true }
+            } label: {
                 ZStack(alignment: .bottomTrailing) {
                     MiniOrbView(size: 28, mood: orbMood)
                     Circle()
@@ -362,7 +368,8 @@ struct ChatView: View {
                 }
                 .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             }
-            .accessibilityLabel(ws.isConnected ? "Статус: подключено. Профиль" : "Статус: отключено. Профиль")
+            .accessibilityIdentifier("orb-drawer-btn")
+            .accessibilityLabel(ws.isConnected ? "Открыть список диалогов. Подключено" : "Открыть список диалогов. Отключено")
 
             Spacer()
 
@@ -444,15 +451,27 @@ struct ChatView: View {
 
     // MARK: – Drawer gestures
 
+    /// Edge-swipe trigger zone. Widened to 40pt so the gesture is reliable;
+    /// iOS 26's left-edge back-gesture protector consumes the first ~16pt on
+    /// some devices, so a narrow 24pt zone misses many real attempts.
+    private static let edgeSwipeZone: CGFloat = 40
+
     private var edgeSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 10)
+        DragGesture(minimumDistance: 8)
             .onChanged { value in
-                if value.startLocation.x < 24 && value.translation.width > 0 && !drawerOpen {
+                if value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 0
+                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
+                    && !drawerOpen {
                     drawerDragOffset = min(value.translation.width, Theme.drawerWidth)
                 }
             }
             .onEnded { value in
-                if !drawerOpen && value.startLocation.x < 24 && value.translation.width > 80 {
+                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
+                if !drawerOpen
+                    && value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 60
+                    && horizontal {
                     withAnimation(.spring(duration: 0.3)) {
                         drawerOpen = true
                         drawerDragOffset = 0
