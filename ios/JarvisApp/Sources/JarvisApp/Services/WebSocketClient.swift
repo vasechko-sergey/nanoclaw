@@ -166,7 +166,12 @@ final class WebSocketClient {
             hasAttachments: !attachments.isEmpty
         ))
         if !added {
-            // Outbox full and nothing droppable — surface a system row.
+            // Outbox full and nothing droppable — mark the just-appended user message
+            // as .failed so it doesn't sit on the .sending spinner forever, then
+            // surface a system row explaining why.
+            if let idx = messages.firstIndex(where: { $0.id == clientMsgId }) {
+                messages[idx].deliveryStatus = .failed
+            }
             let warn = ChatMessage.status(UUID().uuidString,
                                           text: "Очередь переполнена, проверьте соединение",
                                           level: .warning, timestamp: Date())
