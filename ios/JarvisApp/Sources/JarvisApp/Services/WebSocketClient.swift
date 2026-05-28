@@ -40,6 +40,12 @@ final class WebSocketClient {
     @ObservationIgnored private var pendingApnsToken: String?
     @ObservationIgnored private var sentReadIds: Set<String> = []
 
+    @ObservationIgnored let outbox: OutboxStore
+
+    init(outbox: OutboxStore? = nil) {
+        self.outbox = outbox ?? OutboxStore()
+    }
+
     /// Current conversation, set by coordinator.
     var conversationId: UUID?
 
@@ -116,27 +122,29 @@ final class WebSocketClient {
     // MARK: – Send methods
 
     func send(text: String, timezone: String, status: String?, attachments: [DraftAttachment] = [], context: [String: Any]? = nil) {
-        guard let ws = task, isConnected else { return }
-        var payload: [String: Any] = ["type": "message", "text": text, "timezone": timezone]
+        let clientMsgId = UUID().uuidString
+        let ts = Date()
+
+        // Build the payload up front — same shape whether we send now or later.
+        var payload: [String: Any] = [
+            "type": "message",
+            "text": text,
+            "timezone": timezone,
+            "clientMessageId": clientMsgId,
+        ]
         if let st = status, !st.isEmpty { payload["status"] = st }
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         if !attachments.isEmpty { payload["attachments"] = attachments.map { $0.payload } }
         if let ctx = context, !ctx.isEmpty { payload["context"] = ctx }
-        let clientMsgId = UUID().uuidString
-        payload["clientMessageId"] = clientMsgId
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+
+        // 1. Append to UI as .sending so the user sees their own message immediately.
         isTyping = true
         lastUserSentAt = Date()
-        let ts = Date()
         if !text.isEmpty {
             var msg = ChatMessage.text(clientMsgId, role: .user, text: text, timestamp: ts)
             msg.deliveryStatus = .sending
             messages.append(msg)
-        }
-        ws.send(.data(data)) { [weak self] error in
-            Task { @MainActor [weak self] in
-                self?.updateDeliveryStatus(clientMsgId, error == nil ? .sent : .failed)
-            }
         }
         for att in attachments {
             if let img = att.image {
@@ -147,6 +155,46 @@ final class WebSocketClient {
             }
         }
         onMessagesChanged?(messages)
+
+        // 2. Enqueue locally — survives crash, offline, anything.
+        let added = outbox.enqueue(OutboxEntry(
+            id: clientMsgId,
+            conversationId: conversationId,
+            createdAt: ts,
+            payload: data,
+            textPreview: text,
+            hasAttachments: !attachments.isEmpty
+        ))
+        if !added {
+            // Outbox full and nothing droppable — surface a system row.
+            let warn = ChatMessage.status(UUID().uuidString,
+                                          text: "Очередь переполнена, проверьте соединение",
+                                          level: .warning, timestamp: Date())
+            messages.append(warn)
+            onMessagesChanged?(messages)
+            return
+        }
+
+        // 3. Best-effort immediate send. flushOutbox handles wire-or-stay decision.
+        flushOutbox()
+    }
+
+    /// Try to send everything currently in the outbox. No-op when WS is down.
+    func flushOutbox() {
+        guard let ws = task, isConnected else { return }
+        let snapshot = outbox.entries
+        let now = Date()
+        for entry in snapshot {
+            guard outbox.shouldRetry(entry.id, now: now) else { continue }
+            outbox.bumpAttempt(entry.id)
+            ws.send(.data(entry.payload)) { [weak self] error in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.updateDeliveryStatus(entry.id, error == nil ? .sent : .failed)
+                    // Entry stays in the outbox; removal happens on message_ack.
+                }
+            }
+        }
     }
 
     func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {

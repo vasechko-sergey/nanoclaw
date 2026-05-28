@@ -6,6 +6,7 @@ import Foundation
 final class AppCoordinator {
 
     // MARK: – Services (owned)
+    private(set) var outbox: OutboxStore
     private(set) var ws: WebSocketClient
     private(set) var store: ConversationStore
     private(set) var location: LocationManager
@@ -34,7 +35,9 @@ final class AppCoordinator {
 
     init(settings: AppSettings) {
         self.settings = settings
-        self.ws = WebSocketClient()
+        let outbox = OutboxStore()
+        self.outbox = outbox
+        self.ws = WebSocketClient(outbox: outbox)
         self.store = ConversationStore()
         self.location = LocationManager()
         self.health = HealthManager()
