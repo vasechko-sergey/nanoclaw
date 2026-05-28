@@ -145,4 +145,26 @@ final class WebSocketClientOutboxTests: XCTestCase {
         XCTAssertEqual(ws.messages.first?.deliveryStatus, .delivered,
                        "status must stay .delivered after ack — no downgrade to .sent")
     }
+
+    func testStaleSentEntryBumpsToFailedOnFlush() {
+        let outbox = OutboxStore(directory: tempDir)
+        var entry = OutboxEntry(id: "stale", conversationId: nil,
+                                createdAt: Date().addingTimeInterval(-60),
+                                payload: Data(), textPreview: "x", hasAttachments: false,
+                                deliveryStatus: .sent)
+        entry.lastAttempt = Date().addingTimeInterval(-31)
+        outbox.entries = [entry]
+        outbox.save()
+
+        let ws = WebSocketClient(outbox: outbox)
+        // Stage a matching UI row in .sent state
+        var uiMsg = ChatMessage.text("stale", role: .user, text: "x", timestamp: Date())
+        uiMsg.deliveryStatus = .sent
+        ws.messages = [uiMsg]
+
+        ws.bumpStaleSentEntriesForTesting(now: Date())
+
+        XCTAssertEqual(outbox.entries.first?.deliveryStatus, .failed)
+        XCTAssertEqual(ws.messages.first?.deliveryStatus, .failed)
+    }
 }

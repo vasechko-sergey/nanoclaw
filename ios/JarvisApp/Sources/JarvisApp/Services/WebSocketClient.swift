@@ -187,8 +187,30 @@ final class WebSocketClient {
         flushOutbox()
     }
 
+    /// 30s after we marked an entry as .sent, if no message_ack has arrived,
+    /// downgrade it to .failed so the next flush re-sends it.
+    @MainActor
+    func bumpStaleSentEntries(now: Date = Date()) {
+        for entry in outbox.entries where entry.deliveryStatus == .sent {
+            guard let last = entry.lastAttempt,
+                  now.timeIntervalSince(last) > 30 else { continue }
+            if let idx = outbox.entries.firstIndex(where: { $0.id == entry.id }) {
+                outbox.entries[idx].deliveryStatus = .failed
+            }
+            updateDeliveryStatus(entry.id, .failed)
+        }
+        outbox.save()
+    }
+
+    /// Test seam.
+    @MainActor
+    func bumpStaleSentEntriesForTesting(now: Date) {
+        bumpStaleSentEntries(now: now)
+    }
+
     /// Try to send everything currently in the outbox. No-op when WS is down.
     func flushOutbox() {
+        bumpStaleSentEntries()
         guard let ws = task, isConnected else { return }
         let snapshot = outbox.entries
         let now = Date()
