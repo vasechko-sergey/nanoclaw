@@ -15,7 +15,7 @@ struct EmptyStateView: View {
         VStack(spacing: 24) {
             Spacer()
 
-            OrbView(size: 96, mood: .calm)
+            MiniOrbView(size: 96, mood: .calm)
 
             Text("О чём поговорим?")
                 .font(.system(size: 22, weight: .light))

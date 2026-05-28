@@ -68,37 +68,6 @@ struct OrbView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            orbCanvas
-
-            // Particle overlay: 3 dots rotating around the orb,
-            // only for .processing at size >= 20 (too noisy at smaller sizes).
-            if size >= 20 && mood == .processing {
-                TimelineView(.animation) { timeline in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    let angle = t * currentSpeed * 1.5
-                    let orbit = size / 2 + 4
-
-                    ZStack {
-                        ForEach(0..<3, id: \.self) { i in
-                            let phase = angle + Double(i) * (2 * .pi / 3)
-                            Circle()
-                                .fill(cyan.opacity(0.7))
-                                .frame(width: 2.5, height: 2.5)
-                                .offset(x: cos(phase) * orbit, y: sin(phase) * orbit)
-                        }
-                    }
-                    .frame(width: size + 12, height: size + 12)
-                }
-            }
-        }
-        .frame(width: size, height: size)
-        .onAppear { snapToMood() }
-        .onChange(of: mood) { lerpToMood() }
-    }
-
-    @ViewBuilder
-    private var orbCanvas: some View {
         TimelineView(.animation) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             Canvas { context, canvasSize in
@@ -197,8 +166,10 @@ struct OrbView: View {
                 drawFullCircle(context: &context, center: center, radius: r * 1.03,
                                lineWidth: 0.5, alpha: a * 0.25)
             }
-            .frame(width: size, height: size)
         }
+        .frame(width: size, height: size)
+        .onAppear { snapToMood() }
+        .onChange(of: mood) { lerpToMood() }
     }
 
     // MARK: - Drawing helpers

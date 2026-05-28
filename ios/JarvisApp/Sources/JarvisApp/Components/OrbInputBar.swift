@@ -179,7 +179,7 @@ struct OrbInputBar: View {
                     .foregroundStyle(Theme.accent)
                     .matchedGeometryEffect(id: "orbInput", in: orbTransition)
             } else {
-                OrbView(size: Theme.scaled(84), mood: currentOrbMood)
+                MiniOrbView(size: Theme.scaled(84), mood: currentOrbMood)
                     .matchedGeometryEffect(id: "orbInput", in: orbTransition)
                 Image(systemName: orbPrimary == "voice" ? "mic.fill" : "keyboard")
                     .font(.system(size: Theme.scaled(18)))

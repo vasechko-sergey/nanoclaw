@@ -200,7 +200,7 @@ private struct VoiceButton: View {
                         .foregroundStyle(.white)
                 } else {
                     // Orb mode — mini orb as the button
-                    OrbView(size: orbSize, mood: orbMood)
+                    MiniOrbView(size: orbSize, mood: orbMood)
                 }
             }
             .frame(width: buttonSize, height: buttonSize)

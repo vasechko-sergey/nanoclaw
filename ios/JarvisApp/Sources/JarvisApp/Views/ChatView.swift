@@ -354,7 +354,7 @@ struct ChatView: View {
         HStack {
             Button { showProfile = true } label: {
                 ZStack(alignment: .bottomTrailing) {
-                    OrbView(size: 28, mood: orbMood)
+                    MiniOrbView(size: 28, mood: orbMood)
                     Circle()
                         .fill(ws.isConnected ? Theme.online : Theme.offline)
                         .frame(width: 6, height: 6)

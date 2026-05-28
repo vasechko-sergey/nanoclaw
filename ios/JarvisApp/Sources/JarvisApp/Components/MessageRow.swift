@@ -441,7 +441,7 @@ struct ThinkingRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            OrbView(size: 14, mood: .processing)
+            MiniOrbView(size: 14, mood: .processing)
                 .padding(.leading, 1)
             Text(label + dots)
                 .font(.system(size: 13, design: .default).italic())

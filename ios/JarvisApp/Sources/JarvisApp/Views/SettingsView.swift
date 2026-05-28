@@ -48,7 +48,7 @@ struct SettingsView: View {
                     if isInitialSetup {
                         // Setup header
                         VStack(spacing: Theme.scaled(8)) {
-                            OrbView(size: Theme.scaled(80), mood: .calm)
+                            MiniOrbView(size: Theme.scaled(80), mood: .calm)
                             Text("Настройка")
                                 .font(.system(size: Theme.scaled(20), weight: .medium))
                                 .foregroundStyle(Theme.textPrimary.opacity(0.8))
