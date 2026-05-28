@@ -73,6 +73,23 @@ struct OutboxEntry: Codable, Equatable {
         save()
     }
 
+    /// Mark an entry as just-attempted: bumps `attempts`, sets `lastAttempt = now`.
+    func bumpAttempt(_ id: String) {
+        guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[idx].attempts += 1
+        entries[idx].lastAttempt = Date()
+        save()
+    }
+
+    /// Whether the flush loop should attempt this entry now. Skip if there have
+    /// been 5+ attempts within the last 60 seconds (tight-loop guard).
+    func shouldRetry(_ id: String, now: Date = Date()) -> Bool {
+        guard let entry = entries.first(where: { $0.id == id }) else { return false }
+        if entry.attempts < 5 { return true }
+        guard let last = entry.lastAttempt else { return true }
+        return now.timeIntervalSince(last) > 60
+    }
+
     func load() {
         let data: Data
         do {

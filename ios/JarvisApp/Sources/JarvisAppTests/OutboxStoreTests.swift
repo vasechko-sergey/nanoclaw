@@ -113,4 +113,37 @@ final class OutboxStoreTests: XCTestCase {
         XCTAssertEqual(store.entries.count, 100)
         XCTAssertFalse(store.entries.contains { $0.id == "newcomer" })
     }
+
+    func testBumpAttemptIncrementsAndPersists() {
+        let store = OutboxStore(directory: tempDir)
+        _ = store.enqueue(makeEntry(id: "a"))
+        store.bumpAttempt("a")
+        XCTAssertEqual(store.entries.first?.attempts, 1)
+        XCTAssertNotNil(store.entries.first?.lastAttempt)
+
+        let reloaded = OutboxStore(directory: tempDir)
+        XCTAssertEqual(reloaded.entries.first?.attempts, 1)
+    }
+
+    func testShouldRetryTrueWhenAttemptsLow() {
+        let store = OutboxStore(directory: tempDir)
+        _ = store.enqueue(makeEntry(id: "a"))
+        XCTAssertTrue(store.shouldRetry("a", now: Date()))
+    }
+
+    func testShouldRetryFalseAfterFiveQuickAttempts() {
+        let store = OutboxStore(directory: tempDir)
+        _ = store.enqueue(makeEntry(id: "a"))
+        let now = Date()
+        for _ in 0..<5 { store.bumpAttempt("a") }
+        XCTAssertFalse(store.shouldRetry("a", now: now), "5+ attempts in 60s window should be skipped")
+    }
+
+    func testShouldRetryTrueAfter60sWindow() {
+        let store = OutboxStore(directory: tempDir)
+        _ = store.enqueue(makeEntry(id: "a"))
+        for _ in 0..<5 { store.bumpAttempt("a") }
+        let future = Date().addingTimeInterval(61)
+        XCTAssertTrue(store.shouldRetry("a", now: future), "after 60s window passes, retry is allowed again")
+    }
 }
