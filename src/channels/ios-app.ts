@@ -250,6 +250,9 @@ export interface IosWsHandlerState {
   pendingMessages: Map<string, QueuedMessage[]>;
   deliveredIds: Map<string, Set<string>>;
   lastTimezone: Map<string, string>;
+  /** Per-device LRU of clientMessageIds we've already forwarded to the agent.
+   *  Second-and-later occurrences emit ack only — never call onInbound twice. */
+  processedClientMsgIds: Map<string, Set<string>>;
 }
 
 export function createIosWsHandler(opts: {
@@ -271,6 +274,18 @@ export function createIosWsHandler(opts: {
     if (!s) deliveredIds.set(pid, (s = new Set()));
     if (s.size > 500) s.clear();
     s.add(id);
+  }
+
+  function isDuplicateClientMsgId(pid: string, cmid: string): boolean {
+    let s = state.processedClientMsgIds.get(pid);
+    if (!s) state.processedClientMsgIds.set(pid, (s = new Set()));
+    if (s.has(cmid)) return true;
+    if (s.size > 500) {
+      // Simple LRU: blow the cache when it gets too big.
+      s.clear();
+    }
+    s.add(cmid);
+    return false;
   }
 
   function removeClient(pid: string, ws: WebSocket) {
@@ -357,6 +372,14 @@ export function createIosWsHandler(opts: {
       }
 
       if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
+        const cmid = typeof msg.clientMessageId === 'string' ? msg.clientMessageId : '';
+
+        // Dedup BEFORE onInbound. Always ack so the client stops retrying.
+        if (cmid && isDuplicateClientMsgId(pid, cmid)) {
+          ws.send(JSON.stringify({ type: 'message_ack', clientMessageId: cmid }));
+          return;
+        }
+
         if (typeof msg.timezone === 'string' && msg.timezone) lastTimezone.set(pid, msg.timezone);
         const status = typeof msg.status === 'string' && msg.status ? `[status: ${msg.status}]\n` : '';
         const tid = typeof msg.conversationId === 'string' ? msg.conversationId : null;
@@ -389,8 +412,8 @@ export function createIosWsHandler(opts: {
           content,
           timestamp: new Date().toISOString(),
         } as Record<string, unknown>);
-        if (typeof msg.clientMessageId === 'string' && msg.clientMessageId) {
-          ws.send(JSON.stringify({ type: 'message_ack', clientMessageId: msg.clientMessageId }));
+        if (cmid) {
+          ws.send(JSON.stringify({ type: 'message_ack', clientMessageId: cmid }));
         }
       }
 
@@ -635,6 +658,7 @@ function createIOSAdapter(): ChannelAdapter | null {
         pendingMessages,
         deliveredIds,
         lastTimezone,
+        processedClientMsgIds: new Map(),
       };
 
       wss.on(

@@ -12,6 +12,7 @@ function makeState(): IosWsHandlerState {
     pendingMessages: new Map(),
     deliveredIds: new Map(),
     lastTimezone: new Map(),
+    processedClientMsgIds: new Map(),
   };
 }
 

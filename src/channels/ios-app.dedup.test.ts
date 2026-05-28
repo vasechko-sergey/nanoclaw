@@ -49,16 +49,22 @@ async function setup() {
     ws.once('open', resolve);
     ws.once('error', reject);
   });
+  const acks: string[] = [];
+  ws.on('message', (data) => {
+    const m = JSON.parse(data.toString());
+    if (m.type === 'message_ack' && typeof m.clientMessageId === 'string') {
+      acks.push(m.clientMessageId);
+    }
+  });
   await new Promise<void>((resolve, reject) => {
     ws.once('message', () => resolve());
     ws.once('close', () => reject(new Error('closed before auth_ok')));
-    ws.send(JSON.stringify({ type: 'auth', token: 'test-token', platformId: 'ios:ctx-test' }));
+    ws.send(JSON.stringify({ type: 'auth', token: 'test-token', platformId: 'ios:dup-test' }));
   });
-
-  return { store, inbound, ws, close };
+  return { inbound, ws, close, acks };
 }
 
-describe('ios-app context injection', () => {
+describe('ios-app clientMessageId dedup', () => {
   let ctx: Awaited<ReturnType<typeof setup>>;
 
   beforeEach(async () => {
@@ -69,35 +75,29 @@ describe('ios-app context injection', () => {
     await ctx.close();
   });
 
-  it('context_response with pending receipts → inbound text contains [read receipts]', async () => {
-    ctx.store.record('ios:ctx-test', 'msg-abc', 'delivered');
-    ctx.ws.send(JSON.stringify({ type: 'context_response', context: { timezone: 'Asia/Tbilisi' } }));
-    await new Promise((r) => setTimeout(r, 200));
+  it('first message → onInbound called and ack emitted', async () => {
+    ctx.ws.send(JSON.stringify({ type: 'message', text: 'hi', clientMessageId: 'cmsg-1' }));
+    await new Promise((r) => setTimeout(r, 150));
     expect(ctx.inbound).toHaveLength(1);
-    expect(ctx.inbound[0].text).toContain('[read receipts]');
-    expect(ctx.inbound[0].text).toContain('msg-abc');
+    expect(ctx.acks).toContain('cmsg-1');
   });
 
-  it('receipts are marked injected after context_response', async () => {
-    ctx.store.record('ios:ctx-test', 'msg-xyz', 'delivered');
-    ctx.ws.send(JSON.stringify({ type: 'context_response', context: {} }));
-    await new Promise((r) => setTimeout(r, 200));
-    expect(ctx.store.getPending('ios:ctx-test')).toHaveLength(0);
+  it('duplicate clientMessageId → onInbound not called again, ack still emitted', async () => {
+    ctx.ws.send(JSON.stringify({ type: 'message', text: 'hi', clientMessageId: 'cmsg-2' }));
+    await new Promise((r) => setTimeout(r, 100));
+    ctx.ws.send(JSON.stringify({ type: 'message', text: 'hi', clientMessageId: 'cmsg-2' }));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(ctx.inbound).toHaveLength(1);
+    expect(ctx.acks.filter((a) => a === 'cmsg-2')).toHaveLength(2);
   });
 
-  it('second context_response does not re-inject already injected receipts', async () => {
-    ctx.store.record('ios:ctx-test', 'msg-dup', 'delivered');
-    ctx.ws.send(JSON.stringify({ type: 'context_response', context: {} }));
-    await new Promise((r) => setTimeout(r, 200));
-    ctx.ws.send(JSON.stringify({ type: 'context_response', context: {} }));
-    await new Promise((r) => setTimeout(r, 200));
+  it('different clientMessageIds → both onInbound and both acks', async () => {
+    ctx.ws.send(JSON.stringify({ type: 'message', text: 'a', clientMessageId: 'cmsg-3' }));
+    await new Promise((r) => setTimeout(r, 100));
+    ctx.ws.send(JSON.stringify({ type: 'message', text: 'b', clientMessageId: 'cmsg-4' }));
+    await new Promise((r) => setTimeout(r, 150));
     expect(ctx.inbound).toHaveLength(2);
-    expect(ctx.inbound[1].text).not.toContain('msg-dup');
-  });
-
-  it('context_response without pending receipts → no [read receipts] block', async () => {
-    ctx.ws.send(JSON.stringify({ type: 'context_response', context: {} }));
-    await new Promise((r) => setTimeout(r, 200));
-    expect(ctx.inbound[0].text).not.toContain('[read receipts]');
+    expect(ctx.acks).toContain('cmsg-3');
+    expect(ctx.acks).toContain('cmsg-4');
   });
 });
