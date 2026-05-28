@@ -16,17 +16,19 @@ func send(text: String, ...) {
 
 Symptom: user types a message while train tunnel / lift / spotty wifi → tap send → nothing visible in the message list → message lost. No `failed` status, no retry, no warning. This violates the "guaranteed delivery" requirement.
 
-Two related gaps:
+Tests missing: no offline-queue, no `request_context` end-to-end on iOS side, no auto-context-merge coverage (the feature is implemented but unverified).
 
-1. **`deliveryStatus` defaults to `.delivered`** ([`Message.swift:55`](../../ios/JarvisApp/Sources/JarvisApp/Models/Message.swift#L55)). On app relaunch from `MessageCache`, any message that was previously `.sending` / `.sent` / `.failed` comes back as `.delivered` — a lie.
-2. **Tests missing:** no offline-queue, no video attachments, no `request_context` end-to-end on iOS side, no auto-context-merge on `send()`.
+**Already in place** (verified during spec review — do NOT re-implement):
+
+- `MessageCache` round-trips `deliveryStatus` for `.sent` / `.failed` / `.delivered` ([`MessageCache.swift:56-62`](../../ios/JarvisApp/Sources/JarvisApp/Services/MessageCache.swift#L56)). Legacy entries without the key default to `.delivered`. `.sending` collapses to `.delivered` on reload (treats interrupted sends as completed in past sessions — this is a design choice we keep; the outbox is the source of truth for genuinely unsent messages, and on next launch the outbox will re-flush).
+- `AppCoordinator.sendMessage` calls `ContextBuilder.build(fields: [])` on every send ([`AppCoordinator.swift:88`](../../ios/JarvisApp/Sources/JarvisApp/Services/AppCoordinator.swift#L88)), pushing the full inline snapshot (location/health/calendar/device/timestamp/timezone) honoring privacy toggles. No new builder needed.
 
 ## Goals
 
 - **Never drop a user message.** Every `send()` produces an entry in the local outbox, regardless of WS state.
-- **Persist delivery status across app launches.** `MessageCache` round-trips `deliveryStatus`.
 - **Retry on reconnect** with exponential backoff (already present on server outbound; needed on iOS outbound).
-- **Tests:** offline queue, replay on reconnect, persisted status, context-pull end-to-end (iOS side), auto-context-merge.
+- **Server-side dedup** of repeated `clientMessageId` (so retry doesn't double-deliver).
+- **Tests** for: offline queue, reconnect replay, existing-but-untested round-trip of `deliveryStatus` through `MessageCache`, existing-but-untested auto-context-merge via `ContextBuilder.build`, `request_context` end-to-end on iOS side.
 
 ## Non-Goals
 
@@ -138,65 +140,44 @@ On reconnect (existing `doConnect` success path) → `flushOutbox()` runs automa
 - **Manual retry:** tapping the red `failed` indicator on a row calls `flushOutbox(entry.id)` for just that one.
 - **Drop policy:** outbox capped at 100. If full on enqueue, drop oldest entry **only if its status is `.failed`**. If all 100 are `.sending` / `.sent`, refuse enqueue and surface a system row "Очередь переполнена, проверьте соединение" — does not happen in practice with healthy reconnect.
 
-### Persisted Delivery Status
+### Delivery Status — Existing Behavior
 
-Two changes:
+`MessageCache` already persists `deliveryStatus` through `CachedMessage` and restores via `restoredStatus` in `MessageCache.load(from:)` (see [`MessageCache.swift:56-62`](../../ios/JarvisApp/Sources/JarvisApp/Services/MessageCache.swift#L56)).
 
-1. `Message.swift` — change `var deliveryStatus: DeliveryStatus = .delivered` to no default, force callers to set it explicitly. For assistant messages, init to `.delivered`. For user messages, init via the send path.
+What this spec **does not change**:
 
-2. `MessageCache` — add `deliveryStatus` to `CachedMessage`:
+- The default `var deliveryStatus: DeliveryStatus = .delivered` on `Message.swift:55` stays. Assistant messages legitimately default to `.delivered`. User messages get their status set in the send path before append.
+- `.sending` collapses to `.delivered` on reload. This is correct: anything genuinely unsent lives in the outbox, not in cache; cache is "what the UI showed last". The outbox re-flushes those entries on next reconnect.
 
-```swift
-struct CachedMessage: Codable {
-    let id: String
-    let role: ChatMessage.Role
-    let kind: Kind                   // .text, .image, .file, .action
-    let text: String?
-    let timestamp: Date
-    let imagePath: String?
-    let fileInfo: FileInfo?
-    let deliveryStatus: DeliveryStatus  // NEW
-}
-```
+What this spec **adds** (tests only):
 
-On load, status round-trips. Migration: if missing key in JSON, default to `.delivered` for assistant rows and `.sent` for user rows (best-effort guess for legacy cache).
+- `MessageCacheDeliveryStatusRoundTripTest` — explicit coverage for the existing behavior so future refactors don't break it.
 
-### Auto-Context-Merge on Send
+### Auto-Context-Merge — Existing Behavior
 
-Today, `WebSocketClient.send()` accepts an optional `context: [String: Any]?`. `AppCoordinator.sendCurrent()` should pass a minimal context dict **on every send** containing at minimum:
-
-- `timestamp` (always)
-- `timezone` (always)
-- `location` (if `settings.useLocation` AND fresh location available — older than 15min counts as not-fresh)
-- `device.battery` (always — cheap, useful for proactive features)
-
-Heavy fields (`health`, `calendar`) remain pull-only via `request_context`.
-
-`ContextBuilder.build()` already supports field selection. New `ContextBuilder.buildAutoSend(...)` returns the minimal subset:
+Already wired. `AppCoordinator.sendMessage` ([`AppCoordinator.swift:88`](../../ios/JarvisApp/Sources/JarvisApp/Services/AppCoordinator.swift#L88)) calls:
 
 ```swift
-static func buildAutoSend(settings: AppSettings, location: LocationManager) -> [String: Any] {
-    var ctx: [String: Any] = [
-        "timestamp": ISO8601DateFormatter().string(from: Date()),
-        "timezone": TimeZone.current.identifier,
-    ]
-    if settings.useLocation,
-       let loc = location.lastLocation,
-       Date().timeIntervalSince(loc.timestamp) < 900 {
-        ctx["location"] = [
-            "lat": (loc.coordinate.latitude * 1e4).rounded() / 1e4,
-            "lon": (loc.coordinate.longitude * 1e4).rounded() / 1e4,
-            "city": location.cityName ?? "",
-        ]
-    }
-    UIDevice.current.isBatteryMonitoringEnabled = true
-    let battery = UIDevice.current.batteryLevel
-    if battery >= 0 { ctx["device"] = ["battery": Int((battery * 100).rounded())] }
-    return ctx
-}
+let ctx = ContextBuilder.build(
+    fields: [],         // empty = all available fields
+    settings: settings,
+    location: location,
+    health: health,
+    calendar: calendar,
+)
+ws.send(text:..., context: ctx)
 ```
 
-Wired in `AppCoordinator.sendCurrent()` before calling `ws.send(...)`.
+`ContextBuilder.build` honors privacy toggles (`useLocation` / `useHealth` / `useCalendar`) and always appends `timestamp` + `timezone`. Battery is bundled under the `device` block.
+
+What this spec **does not change**: the behavior itself.
+
+What this spec **adds**:
+
+- `ContextBuilderAutoSendMatrixTest` — covers the matrix: useLocation off → no location key; stale location → no key; fresh → present; battery always present when `level >= 0`; timezone always present.
+- Doc note in `ios-app.ts` confirming that the inline context block already covers reliability needs (no new path needed for "always-send a minimum" — the path exists).
+
+**Open question:** today `ContextBuilder` sends the location even when stale (no 15min guard — that 15min cache exists in `LocationManager`, not the builder). Decision needed: tighten in the builder (preferred — defence in depth) or leave to `LocationManager.lastLocation` to be nil-on-stale. Proposal: tighten in the builder during the test pass, since it's a one-line guard.
 
 ## Data Flow
 
@@ -250,9 +231,9 @@ flushOutbox()
 | `OutboxStoreEnqueueTest` | enqueue → persisted to disk → reload reproduces entry |
 | `OutboxStoreCapTest` | enqueueing 101st entry: with one .failed at front, oldest .failed dropped; with none .failed, refused |
 | `OutboxBackoffTest` | entry with 5+ attempts in last 60s skipped by flush; after 60s included again |
-| `MessageCacheDeliveryStatusTest` | round-trip `.sending`, `.sent`, `.delivered`, `.failed` through save/load |
-| `MessageCacheLegacyMigrationTest` | JSON without `deliveryStatus` key loads with `.delivered` (assistant) / `.sent` (user) defaults |
-| `ContextBuilderAutoSendTest` | matrix: useLocation off → no location key; stale location → no key; fresh → present; battery always present when level >= 0 |
+| `MessageCacheDeliveryStatusRoundTripTest` | round-trip `.sent`, `.delivered`, `.failed` through save/load via existing `CachedMessage.deliveryStatus` field; `.sending` collapses to `.delivered` per spec note |
+| `MessageCacheLegacyMigrationTest` | JSON without `deliveryStatus` key loads with `.delivered` default (existing fallback in `MessageCache.load`) |
+| `ContextBuilderAutoSendMatrixTest` | matrix on existing `ContextBuilder.build(fields: [])`: useLocation off → no location key; stale location → no key (after the builder-level 15min guard is added); fresh → present; timezone always present; battery present when level >= 0 |
 | `WebSocketClientOfflineSendTest` | call `send()` with `task = nil` → message appears in `messages` as `.sending`, outbox count = 1, no crash |
 | `WebSocketClientReconnectFlushTest` | enqueue 3 offline messages, simulate reconnect → all three sent in order, statuses go to `.sent` then `.delivered` on ack |
 | `WebSocketClientStaleSentTest` | mark entry `.sent` 31s ago, run flush → status bumps to `.failed`, entry re-attempted |
@@ -275,7 +256,7 @@ The duplicate-dedup feature is **new server logic** — needed because the iOS r
 
 ## Migration
 
-- `MessageCache` v2 schema: bumps `index.json` to include `deliveryStatus`. Legacy `index.json` reads with defaults.
+- `MessageCache` schema unchanged — `deliveryStatus` already present in `CachedMessage` and legacy fallback already there.
 - `OutboxStore` is new — empty on first launch, no migration.
 - No server schema changes (only dedup state, in-memory).
 

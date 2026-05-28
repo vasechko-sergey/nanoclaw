@@ -206,6 +206,8 @@ WS message:
 
 The rule: **carry only what came for free with the wake event**. Anything that requires an extra HealthKit query lives behind `request_context`.
 
+**Geofence vs. auto-context-merge — not a duplicate.** The `geofence` payload is the *event snapshot* — the lat/lon that fired the trigger, recorded at trigger time. The auto-context-merge (added in the reliability spec, already wired via `ContextBuilder.build(fields: [])`) is the *current state* attached to a subsequent user message, possibly minutes later when the user finally taps Send. The two paths share the field shape but represent different moments. The agent reads them as separate signals: `geofence` says "this happened", inline context on the next user message says "this is where I am now".
+
 HTTP fallback (when WS not connected, e.g., woken from significant-change with no time to reconnect):
 
 ```
