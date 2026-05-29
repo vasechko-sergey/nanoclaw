@@ -145,7 +145,33 @@ struct AttachmentChips: View {
     private func chip(_ att: DraftAttachment) -> some View {
         ZStack(alignment: .topTrailing) {
             Group {
-                if let img = att.image {
+                if att.kind == .video, let thumb = att.thumbnail {
+                    ZStack(alignment: .bottomLeading) {
+                        Image(uiImage: thumb)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: Theme.scaled(56), height: Theme.scaled(56))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.chipRadius))
+
+                        Image(systemName: "play.fill")
+                            .font(.system(size: Theme.scaled(14)))
+                            .foregroundStyle(.white)
+                            .padding(Theme.scaled(4))
+                            .background(Color.black.opacity(0.45), in: Circle())
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+
+                        if let dur = att.duration {
+                            Text(formatDuration(dur))
+                                .font(.system(size: 9, design: .monospaced))
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(Color.black.opacity(0.6),
+                                            in: RoundedRectangle(cornerRadius: 3))
+                                .foregroundStyle(.white)
+                                .padding(Theme.scaled(4))
+                        }
+                    }
+                    .frame(width: Theme.scaled(56), height: Theme.scaled(56))
+                } else if let img = att.image {
                     Image(uiImage: img)
                         .resizable()
                         .scaledToFill()
@@ -184,6 +210,13 @@ struct AttachmentChips: View {
             .offset(x: Theme.scaled(6), y: -Theme.scaled(6))
             .accessibilityLabel("Удалить вложение")
         }
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds.rounded())
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%d:%02d", m, s)
     }
 }
 
