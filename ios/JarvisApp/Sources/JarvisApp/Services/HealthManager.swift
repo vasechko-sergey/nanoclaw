@@ -109,4 +109,131 @@ import HealthKit
         }
         store.execute(q)
     }
+
+    /// Wire HK observer queries for the three proactive trigger types. Idempotent.
+    /// The dispatcher is responsible for opt-in / rate limit / settings gating.
+    func installObservers(dispatcher: ProactiveDispatcher) {
+        guard observersInstalled == false else { return }
+        observersInstalled = true
+        installHrObserver(dispatcher: dispatcher)
+        installSleepObserver(dispatcher: dispatcher)
+        installWorkoutObserver(dispatcher: dispatcher)
+    }
+
+    private var observersInstalled = false
+
+    private func installHrObserver(dispatcher: ProactiveDispatcher) {
+        let hrType = HKQuantityType(.heartRate)
+        let q = HKObserverQuery(sampleType: hrType, predicate: nil) { [weak self, weak dispatcher] _, _, error in
+            guard error == nil, let self else { return }
+            Task { @MainActor in
+                let samples = await self.recentHrSamples(window: 180)
+                let baseline = await self.recentRestingHR() ?? 70
+                if HrSpikeDetector.detect(samples: samples, baseline: baseline, now: Date()) {
+                    dispatcher?.fire(type: "health_hr_spike", payload: [:])
+                }
+            }
+        }
+        store.execute(q)
+        store.enableBackgroundDelivery(for: hrType, frequency: .immediate) { _, _ in }
+    }
+
+    private func installSleepObserver(dispatcher: ProactiveDispatcher) {
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
+        let q = HKObserverQuery(sampleType: sleepType, predicate: nil) { [weak self, weak dispatcher] _, _, error in
+            guard error == nil, let self else { return }
+            Task { @MainActor in
+                if await self.detectSleepEnd() {
+                    dispatcher?.fire(type: "health_sleep_end", payload: [:])
+                }
+            }
+        }
+        store.execute(q)
+        store.enableBackgroundDelivery(for: sleepType, frequency: .hourly) { _, _ in }
+    }
+
+    private func installWorkoutObserver(dispatcher: ProactiveDispatcher) {
+        let q = HKObserverQuery(sampleType: HKWorkoutType.workoutType(), predicate: nil) { [weak self, weak dispatcher] _, _, error in
+            guard error == nil, let self else { return }
+            Task { @MainActor in
+                if await self.detectWorkoutEnd() {
+                    dispatcher?.fire(type: "health_workout_end", payload: [:])
+                }
+            }
+        }
+        store.execute(q)
+        store.enableBackgroundDelivery(for: HKWorkoutType.workoutType(), frequency: .immediate) { _, _ in }
+    }
+
+    /// Window in seconds. Returns recent HR sample pairs (bpm, at).
+    private func recentHrSamples(window seconds: TimeInterval) async -> [HrSpikeDetector.Sample] {
+        let start = Date().addingTimeInterval(-seconds)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKQuantityType(.heartRate),
+                                  predicate: predicate,
+                                  limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: nil) { _, results, _ in
+                let arr = (results as? [HKQuantitySample] ?? []).map { s -> HrSpikeDetector.Sample in
+                    let bpm = s.quantity.doubleValue(for: .count().unitDivided(by: .minute()))
+                    return .init(bpm: bpm, at: s.endDate)
+                }
+                cont.resume(returning: arr)
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Pull the latest known resting-heart-rate sample (Apple Watch / iPhone derived).
+    private func recentRestingHR() async -> Double? {
+        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-30 * 24 * 3600),
+                                                    end: Date(), options: .strictStartDate)
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKQuantityType(.restingHeartRate),
+                                  predicate: predicate,
+                                  limit: 1,
+                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]) { _, results, _ in
+                if let s = (results as? [HKQuantitySample])?.first {
+                    let bpm = s.quantity.doubleValue(for: .count().unitDivided(by: .minute()))
+                    cont.resume(returning: bpm)
+                } else {
+                    cont.resume(returning: nil)
+                }
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Returns true when the most recent sleep sample's category is `.awake`
+    /// AND its end is within the last 10 minutes.
+    private func detectSleepEnd() async -> Bool {
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return false }
+        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-10 * 60),
+                                                    end: Date(), options: .strictStartDate)
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: 1,
+                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]) { _, results, _ in
+                if let s = (results as? [HKCategorySample])?.first,
+                   s.value == HKCategoryValueSleepAnalysis.awake.rawValue {
+                    cont.resume(returning: true)
+                } else {
+                    cont.resume(returning: false)
+                }
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Returns true when a new HKWorkout sample ended within the last 5 minutes.
+    private func detectWorkoutEnd() async -> Bool {
+        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-5 * 60),
+                                                    end: Date(), options: .strictStartDate)
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKWorkoutType.workoutType(), predicate: predicate,
+                                  limit: 1, sortDescriptors: nil) { _, results, _ in
+                cont.resume(returning: !((results as? [HKWorkout]) ?? []).isEmpty)
+            }
+            store.execute(q)
+        }
+    }
 }
