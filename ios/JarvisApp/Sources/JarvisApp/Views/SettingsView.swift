@@ -104,6 +104,43 @@ struct SettingsFormBody: View {
                     }
                 }
 
+                // Voice mode (Glass) section
+                if !isInitialSetup {
+                    settingsSection(title: "Голосовой режим") {
+                        settingsToggle(icon: "arrow.clockwise.circle",
+                                       label: "Авто-возобновление слушания",
+                                       isOn: $settings.autoResumeListening)
+                        settingsDivider()
+                        settingsToggle(icon: "hand.tap",
+                                       label: "Зажать орб для записи",
+                                       isOn: $settings.pushToTalk)
+                        settingsDivider()
+                        HStack(spacing: Theme.scaled(10)) {
+                            Image(systemName: "timer")
+                                .font(.system(size: Theme.fontCaption))
+                                .foregroundStyle(Theme.accentMedium)
+                                .frame(width: Theme.scaled(20))
+                            Text("Тайм-аут тишины")
+                                .font(.system(size: Theme.fontSubhead))
+                                .foregroundStyle(Theme.textSecondary)
+                            Spacer()
+                            Picker("Тайм-аут тишины",
+                                   selection: Binding(
+                                    get: { settings.silenceTimeoutSec },
+                                    set: { settings.silenceTimeoutSec = $0 })) {
+                                Text("15 с").tag(15)
+                                Text("30 с").tag(30)
+                                Text("60 с").tag(60)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(maxWidth: Theme.scaled(180))
+                            .labelsHidden()
+                        }
+                        .padding(.horizontal, Theme.hPadding)
+                        .frame(minHeight: Theme.minTapSize)
+                    }
+                }
+
                 // Input section
                 if !isInitialSetup {
                     settingsSection(title: "Ввод") {
