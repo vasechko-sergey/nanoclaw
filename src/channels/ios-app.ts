@@ -401,9 +401,18 @@ export function createIosWsHandler(opts: {
         }
         const content: Record<string, unknown> = { text: inlineCtx + status + msg.text, senderId: pid };
         if (Array.isArray(msg.attachments)) {
-          const atts = (msg.attachments as Array<Record<string, unknown>>).filter(
-            (a) => a && typeof a.data === 'string',
-          );
+          const atts = (msg.attachments as Array<Record<string, unknown>>)
+            .filter((a) => a && typeof a.data === 'string')
+            .map((a) => {
+              const out: Record<string, unknown> = {
+                name: a.name,
+                mimeType: a.mimeType,
+                data: a.data,
+                size: a.size,
+              };
+              if (typeof a.duration === 'number') out.duration = a.duration;
+              return out;
+            });
           if (atts.length > 0) content.attachments = atts;
         }
         await cfg.onInbound(pid, tid, {
