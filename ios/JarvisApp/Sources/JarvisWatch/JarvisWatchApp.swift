@@ -2,9 +2,12 @@ import SwiftUI
 
 @main
 struct JarvisWatchApp: App {
+    @State private var state = WatchAppState()
+
     var body: some Scene {
         WindowGroup {
-            Text("Jarvis")
+            WatchContentView()
+                .environment(state)
         }
     }
 }
