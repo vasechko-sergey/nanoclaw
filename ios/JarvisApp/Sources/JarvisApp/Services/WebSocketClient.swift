@@ -34,13 +34,8 @@ final class WebSocketClient {
     @ObservationIgnored private static let busyTimeoutSeconds: TimeInterval = 300           // 5 minutes
     @ObservationIgnored private static let thinkingDetailClearSeconds: TimeInterval = 30    // auto-clear delay
 
-    @ObservationIgnored private var task: URLSessionWebSocketTask?
+    @ObservationIgnored private let transport: WSTransport
     @ObservationIgnored private var settings: AppSettings?
-    @ObservationIgnored private var reconnectDelay: TimeInterval = 1
-    @ObservationIgnored private var heartbeatTimer: Timer?
-    @ObservationIgnored internal var lastPongAt: Date = .distantPast
-    @ObservationIgnored private let pingInterval: TimeInterval = 25
-    @ObservationIgnored private let pongTimeout: TimeInterval = 35
     @ObservationIgnored private var stopped           = false
     @ObservationIgnored private var pendingApnsToken: String?
     @ObservationIgnored private var sentReadIds: Set<String> = []
@@ -49,6 +44,48 @@ final class WebSocketClient {
 
     init(outbox: OutboxStore? = nil) {
         self.outbox = outbox ?? OutboxStore()
+        self.transport = WSTransport()
+        wireTransport()
+    }
+
+    /// Wire transport callbacks to client behaviour. Called once from init.
+    private func wireTransport() {
+        transport.onConnectionChanged = { [weak self] connected in
+            guard let self else { return }
+            // Mirror transport connection state into the @Observable bit so views update.
+            // The didSet on isConnected fires onConnectionChanged?() for external observers.
+            self.isConnected = connected
+            if !connected {
+                // Drop transient UI state on disconnect — fresh slate on reconnect.
+                self.isTyping = false
+                self.lastUserSentAt = nil
+                self.lastAssistantAt = nil
+                self.thinkingDetail = nil
+            }
+        }
+        transport.onMessage = { [weak self] msg in
+            guard let self else { return }
+            let data: Data
+            switch msg {
+            case .data(let d):   data = d
+            case .string(let s): data = Data(s.utf8)
+            @unknown default:    return
+            }
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                self.handleIncoming(obj)
+            }
+        }
+        transport.onAuthPayload = { settings in
+            let token = JarvisApp.isUITesting ? "uitest-token" : settings.bearerToken
+            return try? JSONSerialization.data(withJSONObject: [
+                "type": "auth",
+                "token": token,
+                "platformId": settings.platformId,
+            ] as [String: Any])
+        }
+        transport.onConnectedForTesting = { [weak self] in
+            self?.onFlushForTesting?()
+        }
     }
 
     /// Current conversation, set by coordinator.
@@ -79,6 +116,49 @@ final class WebSocketClient {
     /// Test seam: fires whenever the connection-success path calls flushOutbox.
     @ObservationIgnored var onFlushForTesting: (() -> Void)?
 
+    // MARK: – Transport-backed test seams
+    //
+    // These keep the public API stable for tests that predate the WSTransport
+    // extraction. They forward straight through to the transport.
+
+    /// Test seam: mimics the success branch of doConnect.
+    @MainActor
+    func notifyConnectedForTesting() {
+        transport.notifyConnectedForTesting()
+        flushOutbox()
+    }
+
+    /// Test seam: stale-pong path without a live URLSessionWebSocketTask.
+    /// The transport's own `tickHeartbeatForTesting` may early-return when its
+    /// `isConnected` is already false (which it always is in pure unit tests
+    /// that fake the client state), so we mirror the stale-pong check here.
+    @MainActor
+    internal func tickHeartbeatForTesting() {
+        if Date().timeIntervalSince(lastPongAt) > 35 {
+            forceReconnect(reason: "pong timeout (test)")
+        }
+    }
+
+    /// Test seam: lets tests poke lastPongAt directly.
+    internal var lastPongAt: Date {
+        get { transport.lastPongAt }
+        set { transport.lastPongAt = newValue }
+    }
+
+    @MainActor
+    internal func forceReconnect(reason: String) {
+        // Clear our own UI-side state explicitly. In production this also happens
+        // via transport.onConnectionChanged, but tests can fake the client-side
+        // `isConnected` directly without ever syncing the transport, so we have
+        // to clear here too.
+        isConnected = false
+        isTyping = false
+        lastUserSentAt = nil
+        lastAssistantAt = nil
+        thinkingDetail = nil
+        transport.forceReconnect(reason: reason)
+    }
+
     func connect(settings: AppSettings) {
         self.settings = settings
         stopped = false
@@ -87,18 +167,15 @@ final class WebSocketClient {
         ConnectivityMonitor.shared.onSatisfied = { [weak self] in
             Task { @MainActor in
                 guard let self, !self.isConnected, !self.stopped, let s = self.settings else { return }
-                self.doConnect(settings: s)
+                self.transport.connect(settings: s)
             }
         }
-        doConnect(settings: settings)
+        transport.connect(settings: settings)
     }
 
     func disconnect() {
-        stopHeartbeat()
         stopped = true
-        task?.cancel(with: .normalClosure, reason: nil)
-        task = nil
-        isConnected = false
+        transport.disconnect()
     }
 
     func registerApnsToken(_ hex: String) {
@@ -109,13 +186,13 @@ final class WebSocketClient {
     // MARK: – Conversations
 
     func sendNewConversation(id: UUID) {
-        guard let ws = task, isConnected else { return }
+        guard isConnected else { return }
         let payload: [String: Any] = [
             "type": "new_conversation",
             "conversationId": id.uuidString
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
+        transport.send(data) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
     }
 
     func loadMessages(from store: ConversationStore) {
@@ -232,13 +309,13 @@ final class WebSocketClient {
     /// Try to send everything currently in the outbox. No-op when WS is down.
     func flushOutbox() {
         bumpStaleSentEntries()
-        guard let ws = task, isConnected else { return }
+        guard isConnected else { return }
         let snapshot = outbox.entries
         let now = Date()
         for entry in snapshot {
             guard outbox.shouldRetry(entry.id, now: now) else { continue }
             outbox.bumpAttempt(entry.id)
-            ws.send(.data(entry.payload)) { [weak self] error in
+            transport.send(entry.payload) { [weak self] error in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     // If the ack beat us (very fast server), entry is already removed
@@ -252,7 +329,7 @@ final class WebSocketClient {
     }
 
     func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {
-        guard let ws = task, isConnected else { return }
+        guard isConnected else { return }
         var payload: [String: Any] = [
             "type": "feedback",
             "messageId": messageId,
@@ -261,12 +338,12 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
+        transport.send(data) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
     }
 
     /// Reply to an agent context pull. Technical, not rendered.
     func sendContextResponse(requestId: String, context: [String: Any]) {
-        guard let ws = task, isConnected else { return }
+        guard isConnected else { return }
         var payload: [String: Any] = [
             "type": "context_response",
             "requestId": requestId,
@@ -274,27 +351,27 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send(context_response) failed: \(e)") } }
+        transport.send(data) { if let e = $0 { Log.warn(.ws, "send(context_response) failed: \(e)") } }
     }
 
     func sendMessageDelivered(_ messageId: String, conversationId: UUID?) {
-        guard let ws = task, isConnected else { return }
+        guard isConnected else { return }
         var payload: [String: Any] = ["type": "message_delivered", "messageId": messageId]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send(message_delivered) failed: \(e)") } }
+        transport.send(data) { if let e = $0 { Log.warn(.ws, "send(message_delivered) failed: \(e)") } }
     }
 
     func sendMessageRead(_ messageId: String, conversationId: UUID?) {
         guard sentReadIds.insert(messageId).inserted else { return }
-        guard let ws = task, isConnected else {
+        guard isConnected else {
             sentReadIds.remove(messageId)
             return
         }
         var payload: [String: Any] = ["type": "message_read", "messageId": messageId]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send(message_read) failed: \(e)") } }
+        transport.send(data) { if let e = $0 { Log.warn(.ws, "send(message_read) failed: \(e)") } }
     }
 
     /// Emit a `proactive` envelope on the wire. Returns false when the
@@ -302,7 +379,7 @@ final class WebSocketClient {
     /// WebSocket sink wrapper) is expected to fall back to HTTP.
     @discardableResult
     func sendProactive(triggerType: String, payload: [String: Any]) -> Bool {
-        guard let ws = task, isConnected else { return false }
+        guard isConnected else { return false }
         let envelope: [String: Any] = [
             "type": "proactive",
             "trigger": triggerType,
@@ -311,14 +388,14 @@ final class WebSocketClient {
             "tz": TimeZone.current.identifier,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: envelope) else { return false }
-        ws.send(.data(data)) { error in
+        transport.send(data) { error in
             if let error { Log.warn(.ws, "sendProactive failed: \(error)") }
         }
         return true
     }
 
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
-        guard let ws = task, isConnected else { return }
+        guard isConnected else { return }
         var payload: [String: Any] = [
             "type": "action_response",
             "messageId": messageId,
@@ -327,7 +404,7 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
+        transport.send(data) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
 
         // Mark action as answered locally
         if let idx = messages.firstIndex(where: { $0.id == messageId }),
@@ -367,163 +444,20 @@ final class WebSocketClient {
     }
 
     private func sendApnsToken(_ hex: String) {
-        guard let ws = task, isConnected else { return }
+        guard isConnected else { return }
         guard let pay = try? JSONSerialization.data(withJSONObject: ["type": "apns_token", "token": hex]) else { return }
-        ws.send(.data(pay)) { if let e = $0 { Log.warn(.ws, "send(apns_token) failed: \(e)") } }
-    }
-
-    private func startHeartbeat() {
-        heartbeatTimer?.invalidate()
-        lastPongAt = Date()
-        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: pingInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tickHeartbeat() }
-        }
-    }
-
-    private func stopHeartbeat() {
-        heartbeatTimer?.invalidate()
-        heartbeatTimer = nil
-    }
-
-    @MainActor
-    internal func tickHeartbeat() {
-        guard let ws = task, isConnected else { return }
-        if Date().timeIntervalSince(lastPongAt) > pongTimeout {
-            forceReconnect(reason: "pong timeout")
-            return
-        }
-        ws.sendPing { [weak self] error in
-            Task { @MainActor in
-                if error == nil { self?.lastPongAt = Date() }
-                else { self?.forceReconnect(reason: "ping failed") }
-            }
-        }
-    }
-
-    /// Test seam: lets tests trigger the heartbeat tick without a live URLSessionWebSocketTask.
-    /// The real `tickHeartbeat()` early-returns when `task == nil`, so this inlines just the
-    /// stale-pong check.
-    @MainActor
-    internal func tickHeartbeatForTesting() {
-        if Date().timeIntervalSince(lastPongAt) > pongTimeout {
-            forceReconnect(reason: "pong timeout (test)")
-        }
-    }
-
-    /// Test seam: mimics the success branch of doConnect (sets isConnected = true
-    /// and runs the same post-connect actions, minus the URLSession plumbing).
-    @MainActor
-    func notifyConnectedForTesting() {
-        isConnected = true
-        flushOutbox()
-        onFlushForTesting?()
-    }
-
-    @MainActor
-    internal func forceReconnect(reason: String) {
-        Log.info(.ws, "reconnect: \(reason)")
-        task?.cancel(with: .goingAway, reason: nil)
-        // Clear all transient UI state on reconnect — fresh slate when the socket drops.
-        // If doConnect fails to establish (e.g. invalid URL), the receive() failure branch
-        // will schedule a retry via reconnectDelay backoff.
-        isConnected = false
-        isTyping = false
-        lastUserSentAt = nil
-        lastAssistantAt = nil
-        thinkingDetail = nil
-        reconnectDelay = 1
-        stopHeartbeat()
-        guard !stopped, let settings else { return }
-        doConnect(settings: settings)
+        transport.send(pay) { if let e = $0 { Log.warn(.ws, "send(apns_token) failed: \(e)") } }
     }
 
     @MainActor
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
-            if !isConnected, !stopped, let settings {
-                doConnect(settings: settings)
-            } else if isConnected {
-                tickHeartbeat()
-            }
+            transport.handleBecameActive()
         case .background, .inactive:
             break
         @unknown default:
             break
-        }
-    }
-
-    private func doConnect(settings: AppSettings) {
-        stopHeartbeat()
-        guard !stopped else { return }
-        let rawUrl: String
-        let authToken: String
-        if JarvisApp.isUITesting {
-            rawUrl = "ws://127.0.0.1:8765"
-            authToken = "uitest-token"
-        } else {
-            guard !settings.serverURL.isEmpty else { return }
-            rawUrl = settings.serverURL
-            authToken = settings.bearerToken
-        }
-        var s = rawUrl
-        if      s.hasPrefix("https://") { s = "wss://" + s.dropFirst(8) }
-        else if s.hasPrefix("http://")  { s = "ws://"  + s.dropFirst(7) }
-        else if !s.hasPrefix("ws")      { s = "ws://"  + s }
-        guard let url = URL(string: s) else { return }
-
-        // Cancel any prior task so we never run two concurrent receive loops.
-        task?.cancel(with: .normalClosure, reason: nil)
-
-        let ws = URLSession.shared.webSocketTask(with: url)
-        self.task = ws
-        ws.resume()
-
-        guard let auth = try? JSONSerialization.data(withJSONObject: [
-            "type": "auth",
-            "token": authToken,
-            "platformId": settings.platformId,
-        ] as [String: Any]) else { return }
-        ws.send(.data(auth)) { if let e = $0 { Log.warn(.ws, "send(auth) failed: \(e)") } }
-        receive(ws: ws)
-    }
-
-    private func receive(ws: URLSessionWebSocketTask) {
-        ws.receive { [weak self] result in
-            guard let self else { return }
-            Task { @MainActor in
-                switch result {
-                case .failure:
-                    // Ignore failures from a socket we've already replaced.
-                    guard self.task === ws else { return }
-                    self.isConnected = false
-                    self.isTyping    = false
-                    self.lastUserSentAt = nil
-                    self.lastAssistantAt = nil
-                    self.thinkingDetail = nil
-                    guard !self.stopped, let settings = self.settings else { return }
-                    try? await Task.sleep(nanoseconds: UInt64(self.reconnectDelay * 1_000_000_000))
-                    self.reconnectDelay = min(self.reconnectDelay * 2, 30)
-                    // Re-check: disconnect() may have fired during the sleep.
-                    guard !self.stopped else { return }
-                    self.doConnect(settings: settings)
-
-                case .success(let msg):
-                    self.reconnectDelay = 1
-                    let data: Data
-                    switch msg {
-                    case .data(let d):   data = d
-                    case .string(let s): data = Data(s.utf8)
-                    @unknown default:    self.receive(ws: ws); return
-                    }
-                    if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        self.handleIncoming(obj)
-                    }
-                    // Don't keep reading a socket we've replaced or shut down.
-                    guard !self.stopped, self.task === ws else { return }
-                    self.receive(ws: ws)
-                }
-            }
         }
     }
 
@@ -532,10 +466,13 @@ final class WebSocketClient {
 
         // --- Auth ---
         if t == "auth_ok" {
+            // Transport already flipped isConnected to true when the socket
+            // opened — auth_ok is the server saying "creds accepted". We mirror
+            // it as a no-op state set + run post-auth side effects.
             isConnected = true
             flushOutbox()
             onFlushForTesting?()
-            startHeartbeat()
+            transport.startHeartbeat()
             if let tok = pendingApnsToken { sendApnsToken(tok) }
             if let cmds = obj["commands"] as? [[String: String]] {
                 commands = cmds.compactMap { d in
