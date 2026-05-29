@@ -12,6 +12,7 @@ struct UnifiedInputBar: View {
     var enterToSend: Bool = true
     @Binding var autoStartVoice: Bool
     let onSend: () -> Void
+    var onPinchOut: (() -> Void)? = nil
 
     @State private var speech = SpeechManager()
     @State private var showCommands = false
@@ -86,6 +87,14 @@ struct UnifiedInputBar: View {
 
                 // Single right button: mic / stop / send
                 rightButton
+                    .simultaneousGesture(
+                        MagnifyGesture()
+                            .onEnded { value in
+                                if value.magnification > 1.4 {
+                                    onPinchOut?()
+                                }
+                            }
+                    )
             }
             .padding(.horizontal, Theme.scaled(8))
             .padding(.vertical, Theme.scaled(8))

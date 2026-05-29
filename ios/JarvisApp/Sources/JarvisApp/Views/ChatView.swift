@@ -32,6 +32,7 @@ struct ChatView: View {
     @State private var drawerDragOffset: CGFloat = 0
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
+    @State private var showVoiceFullscreen = false
 
     private var ws: WebSocketClient { coordinator.ws }
     private var store: ConversationStore { coordinator.store }
@@ -245,7 +246,8 @@ struct ChatView: View {
                                 commands: ws.commands, isDisabled: !ws.isConnected,
                                 enterToSend: settings.enterToSend,
                                 autoStartVoice: $autoStartVoice,
-                                onSend: sendCurrent)
+                                onSend: sendCurrent,
+                                onPinchOut: { showVoiceFullscreen = true })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -341,6 +343,9 @@ struct ChatView: View {
             set: { fullScreenImage = $0?.image }
         )) { item in
             FullScreenImageView(image: item.image)
+        }
+        .fullScreenCover(isPresented: $showVoiceFullscreen) {
+            OrbVoiceView(coordinator: coordinator, onHandoffToChat: nil)
         }
         .onAppear {
             // Wire haptics in UI layer
