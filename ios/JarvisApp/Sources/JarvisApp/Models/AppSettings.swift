@@ -17,6 +17,16 @@ final class AppSettings {
     @ObservationIgnored @AppStorage("voiceRate")     var voiceRate    = 0.47
     @ObservationIgnored @AppStorage("voicePitch")    var voicePitch   = 0.93
 
+    // MARK: – Voice-fullscreen ("Glass") mode
+    /// After TTS finishes reading the assistant reply, auto-resume the
+    /// listening loop instead of waiting for the user to tap the orb.
+    @ObservationIgnored @AppStorage("autoResumeListening") var autoResumeListening = true
+    /// Push-to-talk: orb held while speaking, released to send. Default off
+    /// (taps drive the auto-loop).
+    @ObservationIgnored @AppStorage("pushToTalk")          var pushToTalk          = false
+    /// Silence-timeout for the listening loop (seconds). Allowed: 15, 30, 60.
+    @ObservationIgnored @AppStorage("silenceTimeoutSec")   var silenceTimeoutSec   = 30
+
     var platformId: String {
         if let v = UserDefaults.standard.string(forKey: "platformId") { return v }
         let id = "ios:" + (UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString)
