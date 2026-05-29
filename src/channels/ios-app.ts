@@ -371,6 +371,25 @@ export function createIosWsHandler(opts: {
         persist.receipts();
       }
 
+      if (msg.type === 'proactive' && pid && typeof msg.trigger === 'string') {
+        const trigger = msg.trigger as string;
+        const ts = typeof msg.ts === 'string' ? (msg.ts as string) : new Date().toISOString();
+        const tz = typeof msg.tz === 'string' ? (msg.tz as string) : '';
+        if (tz) lastTimezone.set(pid, tz);
+        const payload = (msg.payload as Record<string, unknown> | undefined) ?? {};
+        let body = `[proactive trigger=${trigger} ts=${ts}${tz ? ` tz=${tz}` : ''}]`;
+        const lines = Object.entries(payload).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`);
+        if (lines.length > 0) body += '\n' + lines.join(' ');
+        body += '\n---';
+        await cfg.onInbound(pid, null, {
+          id: randomUUID(),
+          kind: 'chat',
+          content: { text: body, senderId: pid },
+          timestamp: new Date().toISOString(),
+        } as Record<string, unknown>);
+        return;
+      }
+
       if (msg.type === 'message' && typeof msg.text === 'string' && pid) {
         const cmid = typeof msg.clientMessageId === 'string' ? msg.clientMessageId : '';
 
