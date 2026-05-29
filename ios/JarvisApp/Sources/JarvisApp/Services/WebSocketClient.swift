@@ -292,6 +292,26 @@ final class WebSocketClient {
         ws.send(.data(data)) { if let e = $0 { print("WS send(message_read) failed: \(e)") } }
     }
 
+    /// Emit a `proactive` envelope on the wire. Returns false when the
+    /// socket isn't connected — caller (typically ProactiveDispatcher's
+    /// WebSocket sink wrapper) is expected to fall back to HTTP.
+    @discardableResult
+    func sendProactive(triggerType: String, payload: [String: Any]) -> Bool {
+        guard let ws = task, isConnected else { return false }
+        let envelope: [String: Any] = [
+            "type": "proactive",
+            "trigger": triggerType,
+            "payload": payload,
+            "ts": ISO8601DateFormatter().string(from: Date()),
+            "tz": TimeZone.current.identifier,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: envelope) else { return false }
+        ws.send(.data(data)) { error in
+            if let error { print("[WS] sendProactive failed: \(error)") }
+        }
+        return true
+    }
+
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
         guard let ws = task, isConnected else { return }
         var payload: [String: Any] = [
