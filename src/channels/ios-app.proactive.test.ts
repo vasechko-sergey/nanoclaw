@@ -103,3 +103,92 @@ describe('ios-app proactive triggers (WS path)', () => {
     expect(text.startsWith('[proactive trigger=health_hr_spike')).toBe(true);
   });
 });
+
+import http from 'node:http';
+
+async function postJson(baseUrl: string, body: any, token: string): Promise<{ status: number }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(baseUrl);
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname,
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+      },
+      (res) => {
+        res.resume();
+        res.on('end', () => resolve({ status: res.statusCode ?? 0 }));
+      },
+    );
+    req.on('error', reject);
+    req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+describe('ios-app proactive triggers (HTTP path)', () => {
+  async function setupHttp() {
+    const { createIosHttpHandler } = await import('./ios-app.js');
+    const inbound: Array<Record<string, unknown>> = [];
+    const state = makeState();
+    const httpHandler = createIosHttpHandler({
+      token: 'test-token',
+      cfg: {
+        onInbound: async (_pid, _tid, msg) => {
+          inbound.push(msg);
+        },
+      },
+      state,
+    });
+    const server = createServer((req, res) => {
+      httpHandler(req, res).catch(() => {
+        res.statusCode = 500;
+        res.end();
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as AddressInfo).port;
+    return {
+      inbound,
+      baseUrl: `http://127.0.0.1:${port}`,
+      close: () => new Promise<void>((r) => server.close(() => r())),
+    };
+  }
+
+  it('POST /ios/proactive with valid bearer → 204 + onInbound system message', async () => {
+    const { inbound, baseUrl, close } = await setupHttp();
+    const res = await postJson(
+      `${baseUrl}/ios/proactive`,
+      {
+        platformId: 'ios:http-test',
+        trigger: 'geofence',
+        payload: { lat: 8.6, lon: 115.1, city: 'Canggu' },
+        ts: '2026-05-29T14:32:00+08:00',
+        tz: 'Asia/Makassar',
+      },
+      'test-token',
+    );
+    expect(res.status).toBe(204);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(inbound).toHaveLength(1);
+    const text = (inbound[0].content as Record<string, unknown>).text as string;
+    expect(text.startsWith('[proactive trigger=geofence')).toBe(true);
+    await close();
+  });
+
+  it('POST /ios/proactive with bad bearer → 401', async () => {
+    const { baseUrl, close } = await setupHttp();
+    const res = await postJson(
+      `${baseUrl}/ios/proactive`,
+      { platformId: 'x', trigger: 'geofence', payload: {} },
+      'wrong',
+    );
+    expect(res.status).toBe(401);
+    await close();
+  });
+});

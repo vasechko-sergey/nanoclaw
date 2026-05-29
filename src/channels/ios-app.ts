@@ -525,6 +525,70 @@ export function createIosWsHandler(opts: {
   };
 }
 
+/**
+ * HTTP fallback handler for proactive triggers from iOS.
+ *
+ * When the dispatcher fires (geofence / HK / calendar) and the WS can't
+ * reconnect in time, the iOS app POSTs to /ios/proactive with the same
+ * envelope shape as the WS `proactive` message. The agent-facing inbound
+ * message is identical to the WS path.
+ *
+ * Standalone factory — does not handle the other /ios/* routes (those live
+ * inline in the adapter setup). Tests use this directly without spinning up
+ * the full adapter.
+ */
+export function createIosHttpHandler(opts: {
+  token: string;
+  cfg: { onInbound: (pid: string, tid: string | null, msg: Record<string, unknown>) => Promise<void> };
+  state: IosWsHandlerState;
+}): (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void> {
+  return async (req, res) => {
+    if (req.method === 'POST' && req.url === '/ios/proactive') {
+      const auth = req.headers['authorization'];
+      if (auth !== `Bearer ${opts.token}`) {
+        res.statusCode = 401;
+        res.end();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+      } catch {
+        res.statusCode = 400;
+        res.end();
+        return;
+      }
+      const pid = typeof body.platformId === 'string' ? body.platformId : null;
+      const trigger = typeof body.trigger === 'string' ? body.trigger : null;
+      if (!pid || !trigger) {
+        res.statusCode = 400;
+        res.end();
+        return;
+      }
+      const payload = body.payload && typeof body.payload === 'object' ? (body.payload as Record<string, unknown>) : {};
+      const ts = typeof body.ts === 'string' ? body.ts : new Date().toISOString();
+      const tz = typeof body.tz === 'string' ? body.tz : '';
+      let text = `[proactive trigger=${trigger} ts=${ts}${tz ? ` tz=${tz}` : ''}]`;
+      const lines = Object.entries(payload).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`);
+      if (lines.length > 0) text += '\n' + lines.join(' ');
+      text += '\n---';
+      await opts.cfg.onInbound(pid, null, {
+        id: randomUUID(),
+        kind: 'chat',
+        content: { text, senderId: pid },
+        timestamp: new Date().toISOString(),
+      } as Record<string, unknown>);
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  };
+}
+
 function createIOSAdapter(): ChannelAdapter | null {
   const env = readEnvFile([
     'IOS_APP_TOKEN',
