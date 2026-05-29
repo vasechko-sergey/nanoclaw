@@ -62,6 +62,33 @@ struct OrbHomeView: View {
         return items
     }
 
+    private var conversationSatellites: [(icon: String, label: String, isChat: Bool, action: () -> Void)] {
+        let lastAssistantAt = coordinator.ws.messages.last(where: { $0.role == .assistant })?.timestamp
+        let satellites = ConversationSatelliteBuilder.build(
+            activeConversationId: coordinator.store.activeConversationId,
+            lastAssistantTimestamp: lastAssistantAt,
+            allConversations: coordinator.store.conversations,
+            now: Date()
+        )
+
+        return satellites.map { sat in
+            let truncated = truncateTitle(sat.title, max: 14)
+            let icon = sat.kind == .active ? "bubble.left.fill" : "pin.fill"
+            let isActiveKind = sat.kind == .active
+            return (icon, truncated, isActiveKind, {
+                if !isActiveKind, let conv = coordinator.store.conversations.first(where: { $0.id == sat.id }) {
+                    coordinator.handleAction(.open(conv))
+                }
+                onContinueChat()
+            })
+        }
+    }
+
+    private func truncateTitle(_ title: String, max: Int) -> String {
+        guard title.count > max else { return title }
+        return String(title.prefix(max)) + "…"
+    }
+
     // Default satellites (suggestions + optional dialog) — always visible
     private var defaultSatellites: [(icon: String, label: String, isChat: Bool, action: () -> Void)] {
         var items: [(String, String, Bool, () -> Void)] = contextualSuggestions.map { text in
@@ -71,11 +98,7 @@ struct OrbHomeView: View {
                 onStartChat(text)
             })
         }
-        if hasActiveChat {
-            items.append(("bubble.left.and.bubble.right", "Диалог", true, {
-                onContinueChat()
-            }))
-        }
+        items.append(contentsOf: conversationSatellites)
         return items
     }
 
@@ -260,7 +283,7 @@ struct OrbHomeView: View {
             ForEach(Array(defaultSatellites.enumerated()), id: \.offset) { index, sat in
                 let count = defaultSatellites.count
                 let angle = -.pi / 2 + (2 * .pi / Double(count)) * Double(index)
-                let radius = Theme.scaled(130)
+                let radius = Theme.scaled(defaultSatellites.count > 6 ? 150 : 130)
                 let x = cos(angle) * radius
                 let y = sin(angle) * radius
 
@@ -285,7 +308,7 @@ struct OrbHomeView: View {
             ForEach(Array(actionSatellites.enumerated()), id: \.offset) { index, sat in
                 let count = actionSatellites.count
                 let angle = -.pi / 2 + (2 * .pi / Double(count)) * Double(index)
-                let radius = Theme.scaled(130)
+                let radius = Theme.scaled(defaultSatellites.count > 6 ? 150 : 130)
                 let x = cos(angle) * radius
                 let y = sin(angle) * radius
 
