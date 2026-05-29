@@ -5,8 +5,19 @@ enum Theme {
 
     // MARK: – Adaptive scale
     // Base: 390pt (iPhone 13/14/15 Pro). Clamped so extremes stay sane.
-    private static var screenWidth: CGFloat {
-        UIApplication.shared.connectedScenes
+
+    /// Cached scale factor. Refreshed lazily on first access and explicitly via
+    /// `refreshScale()` when the host app sees a scene-phase change.
+    private static var _cachedScale: CGFloat?
+
+    /// Force a re-read of the active window scene width. Call from the app's
+    /// scene observer when the active scene changes or rotates.
+    static func refreshScale() {
+        _cachedScale = computeScale()
+    }
+
+    private static func computeScale() -> CGFloat {
+        let width = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first(where: { $0.activationState == .foregroundActive })?
             .screen.bounds.width
@@ -14,9 +25,16 @@ enum Theme {
                 .compactMap { $0 as? UIWindowScene }.first?
                 .screen.bounds.width
             ?? 390
+        return min(max(width / 390, 0.92), 1.15)
     }
+
     /// 0.96 on 12 mini (375), 1.0 on 13 Pro (390), 1.01 on 16 Pro (393), 1.10 on Pro Max (430)
-    static var scale: CGFloat { min(max(screenWidth / 390, 0.92), 1.15) }
+    static var scale: CGFloat {
+        if let cached = _cachedScale { return cached }
+        let s = computeScale()
+        _cachedScale = s
+        return s
+    }
     /// Rounds a base value by current scale
     static func scaled(_ base: CGFloat) -> CGFloat { round(base * scale) }
 
@@ -77,11 +95,24 @@ enum Theme {
     static let metaFont = Font.system(size: 10, design: .monospaced)
     static let avatarDotSize: CGFloat = 8
     static let hairlineColor = Theme.accent.opacity(0.05)
-    static var drawerWidth: CGFloat {
+    private static var _cachedDrawerWidth: CGFloat?
+
+    static func refreshDrawerWidth() {
+        _cachedDrawerWidth = computeDrawerWidth()
+    }
+
+    private static func computeDrawerWidth() -> CGFloat {
         let screen = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.screen
         return (screen?.bounds.width ?? 393) * 0.78
+    }
+
+    static var drawerWidth: CGFloat {
+        if let cached = _cachedDrawerWidth { return cached }
+        let v = computeDrawerWidth()
+        _cachedDrawerWidth = v
+        return v
     }
     static let inputBarRadius: CGFloat = 22
 

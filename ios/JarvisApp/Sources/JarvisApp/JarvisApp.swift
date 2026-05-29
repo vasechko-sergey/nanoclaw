@@ -94,6 +94,10 @@ struct JarvisApp: App {
                 .environment(settings)
                 .environment(coordinator)
                 .onChange(of: scenePhase) { _, new in
+                    if new == .active {
+                        Theme.refreshScale()
+                        Theme.refreshDrawerWidth()
+                    }
                     Task { @MainActor in
                         coordinator.ws.handleScenePhase(new)
                     }
