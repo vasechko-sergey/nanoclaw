@@ -5,7 +5,7 @@ import SwiftUI
 /// initial setup) and `RightDrawerContent` (drawer in normal flow).
 /// Renders only the rows, no header or NavigationStack chrome.
 struct SettingsFormBody: View {
-    let isInitialSetup: Bool
+    var isInitialSetup: Bool = false
     var store: ConversationStore? = nil
     var onConversationAction: ((ConversationAction) -> Void)? = nil
     @Environment(AppSettings.self) var settings
