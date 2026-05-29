@@ -61,6 +61,7 @@
 		CB6576F08C01F04D5D766774 /* HeartbeatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */; };
 		CEDBAE9FAEC01EA3E2B4D17E /* OutboxStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34055B05F8F79D7466F877DF /* OutboxStoreTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
+		D76B99448549A036E84A20B1 /* VoiceFullscreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */; };
 		D9D85A8E3CB2F7583D9CCBB7 /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0295CB82FF20C8764842F6 /* CameraPicker.swift */; };
 		E245CC67857A2E7A34987A8E /* OutboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6CA65BDC41BA8B24F8209E5 /* OutboxStore.swift */; };
 		E653E1C200C705930FF7958A /* OrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */; };
@@ -149,6 +150,7 @@
 		E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageView.swift; sourceTree = "<group>"; };
 		E1E7FBAD4AE7AF8E526AC62E /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		E5DD83E71D9C3008ACBE81F2 /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
+		E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFullscreenTests.swift; sourceTree = "<group>"; };
 		E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
 		F0C84294434D6D5A3845BD5D /* HealthUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthUpload.swift; sourceTree = "<group>"; };
 		F4800B2F3554B52EE041BEAD /* VoiceLoopController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoopController.swift; sourceTree = "<group>"; };
@@ -266,6 +268,7 @@
 				7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */,
 				39A1411D12B13E550ED69744 /* RightDrawerTests.swift */,
 				05AA5A25FF72A993B2BA61E6 /* ThinkingRowTests.swift */,
+				E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */,
 			);
 			name = JarvisUITests;
 			path = Sources/JarvisUITests;
@@ -427,6 +430,7 @@
 				3B780D772FC0C9C43796F3F8 /* JarvisUITests.swift in Sources */,
 				B5715D361A0394CCB595AA15 /* RightDrawerTests.swift in Sources */,
 				B065348C458302F95325E16F /* ThinkingRowTests.swift in Sources */,
+				D76B99448549A036E84A20B1 /* VoiceFullscreenTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

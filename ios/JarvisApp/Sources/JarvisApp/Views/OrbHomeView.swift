@@ -313,27 +313,45 @@ struct OrbHomeView: View {
 
             // Central orb + greeting label
             VStack(spacing: Theme.scaled(8)) {
-                OrbView(size: Theme.orbSize, mood: showSatellites ? .heroic : .welcoming)
-                    .scaleEffect(showSatellites ? 1.08 : 1.0)
-                    .animation(.spring(duration: 0.3), value: showSatellites)
-                    .onTapGesture {
-                        if showSatellites {
-                            withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
-                                showSatellites = false
+                ZStack {
+                    OrbView(size: Theme.orbSize, mood: showSatellites ? .heroic : .welcoming)
+                        .scaleEffect(showSatellites ? 1.08 : 1.0)
+                        .animation(.spring(duration: 0.3), value: showSatellites)
+                        .onTapGesture {
+                            if showSatellites {
+                                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                                    showSatellites = false
+                                }
+                            } else {
+                                Theme.hapticSend()
+                                showVoiceFullscreen = true
                             }
-                        } else {
-                            Theme.hapticSend()
+                        }
+                        .onLongPressGesture(minimumDuration: 0.3) {
+                            Theme.hapticMedium()
+                            withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
+                                showSatellites.toggle()
+                            }
+                        }
+                        .accessibilityLabel("Начать диалог")
+                        .accessibilityIdentifier("home-orb")
+
+                    // UI-test-only: reliable Button tap target that opens the voice
+                    // fullscreen. The OrbView's `.onTapGesture` is not always picked
+                    // up by XCUITest (TimelineView + custom rendering + parent
+                    // identifier propagation interfere with hit-test discovery).
+                    if JarvisApp.isUITesting && !showSatellites {
+                        Button(action: {
                             showVoiceFullscreen = true
+                        }) {
+                            Rectangle()
+                                .fill(Color.white.opacity(0.01))
+                                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                         }
+                        .accessibilityLabel("uitest-home-orb")
+                        .accessibilityIdentifier("home-orb-uitest")
                     }
-                    .onLongPressGesture(minimumDuration: 0.3) {
-                        Theme.hapticMedium()
-                        withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
-                            showSatellites.toggle()
-                        }
-                    }
-                    .accessibilityLabel("Начать диалог")
-                    .accessibilityIdentifier("home-orb")
+                }
 
                 Text(greeting)
                     .font(.system(size: Theme.scaled(11), weight: .light))
@@ -344,8 +362,10 @@ struct OrbHomeView: View {
             }
 
             // UI-test-only: tap target to reveal action satellites.
-            // Only present when satellites are hidden — once visible, action satellites must
-            // receive taps directly (this button sits on top in the ZStack and would intercept).
+            // Offset off the central orb so taps on the orb itself (which open the
+            // voice fullscreen) are not intercepted by this overlay. Only present
+            // when satellites are hidden — once visible, action satellites must
+            // receive taps directly.
             if JarvisApp.isUITesting && !showSatellites {
                 Button(action: {
                     withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
@@ -354,10 +374,12 @@ struct OrbHomeView: View {
                 }) {
                     Rectangle()
                         .fill(Color.white.opacity(0.01))
-                        .frame(width: Theme.orbSize, height: Theme.orbSize)
+                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                 }
                 .accessibilityLabel("Toggle satellite menu")
                 .accessibilityIdentifier("orb-satellites-toggle")
+                // Park near the top of the cluster, clear of the central orb's hit area.
+                .offset(y: -Theme.scaled(170))
             }
         }
         .frame(maxWidth: .infinity)
