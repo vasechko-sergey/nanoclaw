@@ -22,8 +22,6 @@ struct ChatView: View {
     @State private var inputText       = ""
     @State private var inputViaVoice   = false
     @State private var drafts: [DraftAttachment] = []
-    @State private var showSettings    = false
-    @State private var showProfile     = false
     @State private var fullScreenImage: UIImage? = nil
     @State private var isScrolledUp = false
     @State private var unreadCount  = 0
@@ -269,14 +267,8 @@ struct ChatView: View {
                 coordinator.handleAction(action)
                 withAnimation { drawerOpen = false; drawerDragOffset = 0 }
             },
-            onSettings: {
-                withAnimation { drawerOpen = false }
-                showSettings = true
-            },
-            onProfile: {
-                withAnimation { drawerOpen = false }
-                showProfile = true
-            }
+            onSettings: {},
+            onProfile: {}
         )
         .frame(width: Theme.drawerWidth)
         .offset(x: {
@@ -345,28 +337,6 @@ struct ChatView: View {
                 }
             }
             .ignoresSafeArea()
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(isInitialSetup: false, store: store) { action in
-                showSettings = false
-                coordinator.handleAction(action)
-                inputText = ""
-            }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Theme.background)
-        }
-        .sheet(isPresented: $showProfile) {
-            ProfileView(store: store, isConnected: ws.isConnected, onReconnect: {
-                    coordinator.disconnect()
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(300))
-                        coordinator.connect()
-                    }
-                })
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(Theme.background)
         }
         .fullScreenCover(item: Binding(
             get: { fullScreenImage.map { IdentifiableImage(image: $0) } },
