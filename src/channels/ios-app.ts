@@ -41,38 +41,54 @@ const TOKENS_FILE = path.join(process.cwd(), 'data', 'ios-apns-tokens.json');
 const READ_RECEIPTS_FILE = path.join(process.cwd(), 'data', 'ios-read-receipts.json');
 const readReceiptStore = new ReadReceiptStore();
 
-// Health time-series store for the autonomous analyzer (Greg). Lives INSIDE Greg's
-// group folder so it is auto-mounted into his container at /workspace/agent/health
-// (no additional_mounts / allowlist needed — mirrors how jarvis uses its folder).
-// Host writes raw.jsonl (one daily row per line); Greg reads it. requests/ holds
-// Greg's fetch_health asks, serviced by the watcher in setup() — no agent/LLM in
-// the data-acquisition path. See plan "Заход 2".
-const HEALTH_DIR = path.join(process.cwd(), 'groups', 'health-analyzer', 'health');
-const HEALTH_RAW = path.join(HEALTH_DIR, 'raw.jsonl');
-const HEALTH_REQ_DIR = path.join(HEALTH_DIR, 'requests');
+/**
+ * Per-instance health-history paths derived from `IosChannelConfig.healthHistoryDir`.
+ * Lives INSIDE the analyzer agent's group folder so it is auto-mounted into the
+ * container at /workspace/agent/health (no additional_mounts / allowlist needed
+ * — mirrors how jarvis uses its folder). Host writes raw.jsonl (one daily row
+ * per line); the analyzer reads it. requests/ holds fetch_health asks, serviced
+ * by the HTTP poll endpoints below — no agent/LLM in the data-acquisition path.
+ * See plan "Заход 2".
+ */
+interface HealthPaths {
+  dir: string;
+  raw: string;
+  reqDir: string;
+}
+
+function resolveHealthPaths(healthHistoryDir?: string): HealthPaths {
+  // Default preserves the original behavior — back-compat for existing installs
+  // where the analyzer agent group is literally named "health-analyzer".
+  const rel =
+    healthHistoryDir && healthHistoryDir.length > 0
+      ? healthHistoryDir
+      : path.join('groups', 'health-analyzer', 'health');
+  const dir = path.isAbsolute(rel) ? rel : path.join(process.cwd(), rel);
+  return { dir, raw: path.join(dir, 'raw.jsonl'), reqDir: path.join(dir, 'requests') };
+}
 
 // Shared health-history ingestion — used by both the WS path (foreground) and the
 // HTTP upload path (background). Appends/upserts rows and clears the serviced request.
-function ingestHealthHistory(days: Array<Record<string, unknown>>, requestId?: string): void {
-  appendHealthRows(days);
+function ingestHealthHistory(paths: HealthPaths, days: Array<Record<string, unknown>>, requestId?: string): void {
+  appendHealthRows(paths, days);
   if (requestId) {
     try {
-      fs.unlinkSync(path.join(HEALTH_REQ_DIR, `${requestId}.json`));
+      fs.unlinkSync(path.join(paths.reqDir, `${requestId}.json`));
     } catch {
       // already gone
     }
   }
 }
 
-function appendHealthRows(rows: Array<Record<string, unknown>>): void {
+function appendHealthRows(paths: HealthPaths, rows: Array<Record<string, unknown>>): void {
   if (!rows.length) return;
   try {
-    fs.mkdirSync(HEALTH_DIR, { recursive: true });
+    fs.mkdirSync(paths.dir, { recursive: true });
     // Upsert by date: one row per day (incoming wins), so re-fetches don't grow
     // the file with duplicates. Single writer (this adapter) → read-modify-write safe.
     const byDate = new Map<string, Record<string, unknown>>();
     try {
-      for (const line of fs.readFileSync(HEALTH_RAW, 'utf8').split('\n')) {
+      for (const line of fs.readFileSync(paths.raw, 'utf8').split('\n')) {
         const s = line.trim();
         if (!s) continue;
         const r = JSON.parse(s) as Record<string, unknown>;
@@ -89,9 +105,9 @@ function appendHealthRows(rows: Array<Record<string, unknown>>): void {
         .sort()
         .map((d) => JSON.stringify(byDate.get(d)))
         .join('\n') + '\n';
-    const tmp = `${HEALTH_RAW}.tmp`;
+    const tmp = `${paths.raw}.tmp`;
     fs.writeFileSync(tmp, out);
-    fs.renameSync(tmp, HEALTH_RAW);
+    fs.renameSync(tmp, paths.raw);
   } catch {
     // best-effort; analyzer tolerates gaps
   }
@@ -598,10 +614,17 @@ function createIOSAdapter(): ChannelAdapter | null {
     'IOS_APNS_BUNDLE_ID',
     'IOS_APNS_KEY',
     'IOS_APNS_ENV',
+    'IOS_HEALTH_HISTORY_DIR',
   ]);
   const token = env.IOS_APP_TOKEN;
   if (!token) return null;
   const port = parseInt(env.IOS_APP_PORT ?? '3001', 10);
+  // Where iOS health-history JSONL ingestion lands. Reads (analyzer's fetch
+  // requests) and writes (daily aggregates) both happen here. Defaults to
+  // `groups/health-analyzer/health/` for back-compat — override with
+  // `IOS_HEALTH_HISTORY_DIR` when the analyzer agent lives under a different
+  // group name. Absolute paths supported; relative paths resolve against cwd.
+  const healthPaths = resolveHealthPaths(env.IOS_HEALTH_HISTORY_DIR);
 
   const apnsCfg: ApnsConfig | null =
     env.IOS_APNS_KEY_ID && env.IOS_APNS_TEAM_ID && env.IOS_APNS_KEY && env.IOS_APNS_BUNDLE_ID
@@ -700,10 +723,10 @@ function createIOSAdapter(): ChannelAdapter | null {
           let pending: Array<Record<string, unknown>> = [];
           try {
             pending = fs
-              .readdirSync(HEALTH_REQ_DIR)
+              .readdirSync(healthPaths.reqDir)
               .filter((f) => f.endsWith('.json'))
               .map((f) => {
-                const r = JSON.parse(fs.readFileSync(path.join(HEALTH_REQ_DIR, f), 'utf8'));
+                const r = JSON.parse(fs.readFileSync(path.join(healthPaths.reqDir, f), 'utf8'));
                 return { requestId: f.replace(/\.json$/, ''), from: r.from, to: r.to };
               });
           } catch {
@@ -730,7 +753,7 @@ function createIOSAdapter(): ChannelAdapter | null {
             try {
               const obj = JSON.parse(raw) as { requestId?: string; days?: Array<Record<string, unknown>> };
               const days = Array.isArray(obj.days) ? obj.days : [];
-              ingestHealthHistory(days, typeof obj.requestId === 'string' ? obj.requestId : undefined);
+              ingestHealthHistory(healthPaths, days, typeof obj.requestId === 'string' ? obj.requestId : undefined);
               log(`health_history (http): +${days.length} day(s)${obj.requestId ? ` (req ${obj.requestId})` : ''}`);
               res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
             } catch {
@@ -773,7 +796,7 @@ function createIOSAdapter(): ChannelAdapter | null {
 
       // Ensure the request queue dir exists; the app drains it via HTTP poll.
       try {
-        fs.mkdirSync(HEALTH_REQ_DIR, { recursive: true });
+        fs.mkdirSync(healthPaths.reqDir, { recursive: true });
       } catch {
         // best-effort
       }
