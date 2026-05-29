@@ -22,10 +22,20 @@ struct RightDrawerContent: View {
                 ProfileFormBody(store: store, isConnected: isConnected, onReconnect: onReconnect)
                     .padding(.bottom, Theme.scaled(12))
 
-                // CONTEXT — placeholder until proactive spec adds the real rows
+                // CONTEXT — proactive triggers
                 sectionHeader("Контекст")
-                contextPlaceholder
-                    .padding(.bottom, Theme.scaled(12))
+                VStack(alignment: .leading, spacing: Theme.scaled(10)) {
+                    @Bindable var s = settings
+                    Toggle("Уведомлять о смене места", isOn: $s.proactiveGeofence)
+                    Toggle("Замечать всплески пульса", isOn: $s.proactiveHealthHR)
+                    Toggle("Сигналить о пробуждении", isOn: $s.proactiveHealthSleep)
+                    Toggle("После тренировки — поздравление", isOn: $s.proactiveHealthWorkout)
+                    Toggle("За 15 мин до события календаря", isOn: $s.proactiveCalendarWarn)
+                }
+                .toggleStyle(.switch)
+                .tint(Theme.accent)
+                .padding(.horizontal, Theme.hPadding)
+                .padding(.bottom, Theme.scaled(12))
 
                 // SETTINGS
                 sectionHeader("Настройки")
@@ -60,15 +70,4 @@ struct RightDrawerContent: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Placeholder Context section — the proactive spec replaces this with live
-    /// per-source toggles (location / health / calendar) plus a "force pull"
-    /// button. For now the block tells the user what will live here.
-    private var contextPlaceholder: some View {
-        VStack(alignment: .leading, spacing: Theme.scaled(6)) {
-            Text("Здесь появятся живые сигналы устройства, которые видит Джарвис: геолокация, здоровье, ближайшее событие в календаре.")
-                .font(.system(size: Theme.fontCaption))
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.horizontal, Theme.hPadding)
-        }
-    }
 }

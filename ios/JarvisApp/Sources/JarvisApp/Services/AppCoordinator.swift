@@ -13,6 +13,7 @@ final class AppCoordinator {
     private(set) var health: HealthManager
     private(set) var calendar: CalendarManager
     private(set) var speech: SpeechSynthesizer
+    private(set) var proactiveDispatcher: ProactiveDispatcher!
 
     // MARK: – Connection state
     var connectionPhase: ConnectionPhase = .idle
@@ -43,6 +44,24 @@ final class AppCoordinator {
         self.health = HealthManager()
         self.calendar = CalendarManager()
         self.speech = SpeechSynthesizer()
+
+        let sink = WebSocketProactiveSink(ws: ws, settings: settings)
+        self.proactiveDispatcher = ProactiveDispatcher(settings: settings, sink: sink)
+
+        // Wire trigger sources
+        location.attachDispatcher(proactiveDispatcher)
+        if settings.proactiveGeofence {
+            location.startSignificantLocationMonitoring()
+        }
+        if settings.proactiveHealthHR || settings.proactiveHealthSleep || settings.proactiveHealthWorkout {
+            health.installObservers(dispatcher: proactiveDispatcher)
+        }
+
+        AppDelegate.dispatchProactive = { [weak self] type, payload in
+            Task { @MainActor in
+                self?.proactiveDispatcher?.fire(type: type, payload: payload)
+            }
+        }
 
         wireUp()
 
