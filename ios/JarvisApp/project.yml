@@ -84,3 +84,28 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 24Z6S27D7U
         GENERATE_INFOPLIST_FILE: YES
+
+  JarvisWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: Sources/JarvisWatch
+    info:
+      path: Sources/JarvisWatch/Info.plist
+      properties:
+        WKApplication: true
+        WKWatchKitApp: false
+        NSMicrophoneUsageDescription: "Микрофон для голосового ввода Jarvis"
+        NSSpeechRecognitionUsageDescription: "Распознавание речи для голосового ввода Jarvis"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis.watch
+        PRODUCT_NAME: JarvisWatch
+        INFOPLIST_KEY_CFBundleDisplayName: Jarvis
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "4"
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 24Z6S27D7U
+        GENERATE_INFOPLIST_FILE: NO
