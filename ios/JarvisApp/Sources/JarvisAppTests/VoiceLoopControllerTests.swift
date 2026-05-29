@@ -53,4 +53,27 @@ final class VoiceLoopControllerTests: XCTestCase {
         c.handleError(.sttUnavailable)
         XCTAssertEqual(c.phase, .error)
     }
+
+    func testSilenceTimeoutTransitionsToCalmWhenNoPartial() {
+        let c = VoiceLoopController()
+        c.start()
+        c.tickSilenceTimerForTesting(elapsed: 31, threshold: 30)
+        XCTAssertEqual(c.phase, .calm, "no partial in window → return to calm")
+    }
+
+    func testSilenceTimeoutDoesNothingIfPartialReceived() {
+        let c = VoiceLoopController()
+        c.start()
+        c.handleTranscript("прив", isFinal: false)
+        c.tickSilenceTimerForTesting(elapsed: 31, threshold: 30)
+        XCTAssertEqual(c.phase, .listening, "partial within window keeps us listening")
+    }
+
+    func testSilenceTimeoutOnlyAppliesWhenListening() {
+        let c = VoiceLoopController()
+        c.start()
+        c.handleTranscript("привет", isFinal: true)
+        c.tickSilenceTimerForTesting(elapsed: 999, threshold: 30)
+        XCTAssertEqual(c.phase, .processing, "silence timeout ignored when not listening")
+    }
 }
