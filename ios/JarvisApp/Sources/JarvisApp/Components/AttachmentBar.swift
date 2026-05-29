@@ -17,7 +17,8 @@ struct AttachmentPickers: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 5, matching: .images)
+            .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 5,
+                          matching: .any(of: [.images, .videos]))
             .onChange(of: photoItems) { loadPhotos() }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { img in
@@ -38,15 +39,33 @@ struct AttachmentPickers: ViewModifier {
         photoItems = []
         for item in items {
             Task {
-                guard let data = try? await item.loadTransferable(type: Data.self),
-                      let img = UIImage(data: data) else { return }
-                let name = "photo-\(Int(Date().timeIntervalSince1970)).jpg"
-                await MainActor.run {
-                    if let d = DraftAttachment.image(img, name: name) { drafts.append(d) }
+                // Try image first; if not an image, attempt video as a Movie transferable.
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let img = UIImage(data: data) {
+                    let name = "photo-\(Int(Date().timeIntervalSince1970)).jpg"
+                    await MainActor.run {
+                        if let d = DraftAttachment.image(img, name: name) { drafts.append(d) }
+                    }
+                    return
+                }
+                // Video path: write the picker transferable to a temp file, then load.
+                if let movieURL = (try? await item.loadTransferable(type: VideoTransferable.self))?.url {
+                    do {
+                        let draft = try await DraftAttachment.video(from: movieURL)
+                        await MainActor.run { drafts.append(draft) }
+                    } catch {
+                        await MainActor.run { surfaceVideoError(error) }
+                    }
                 }
             }
         }
         if !items.isEmpty { Theme.hapticSend() }
+    }
+
+    private func surfaceVideoError(_ error: Error) {
+        // Toast-style error surface isn't built; for v1 just log. Future:
+        // pipe to AppCoordinator.onMessageReceived-equivalent for inline UI.
+        print("[AttachmentBar] video load failed: \(error)")
     }
 
     private func handleDocs(_ result: Result<[URL], Error>) {
@@ -164,6 +183,22 @@ struct AttachmentChips: View {
             }
             .offset(x: Theme.scaled(6), y: -Theme.scaled(6))
             .accessibilityLabel("Удалить вложение")
+        }
+    }
+}
+
+/// Minimal `Transferable` wrapper used to receive a movie file from
+/// PhotosPickerItem and expose its temporary URL so the async loader can read it.
+struct VideoTransferable: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { video in
+            SentTransferredFile(video.url)
+        } importing: { received in
+            let copy = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + received.file.lastPathComponent)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return VideoTransferable(url: copy)
         }
     }
 }
