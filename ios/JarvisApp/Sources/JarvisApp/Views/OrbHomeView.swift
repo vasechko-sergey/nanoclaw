@@ -11,6 +11,7 @@ struct OrbHomeView: View {
     var onContinueChat: () -> Void
 
     @State private var showSatellites = false
+    @State private var showVoiceFullscreen = false
 
     @State private var leftDrawerOpen = false
     @State private var leftDrawerDragOffset: CGFloat = 0
@@ -192,6 +193,11 @@ struct OrbHomeView: View {
                 onStartChat(nil)
             }
         }
+        .fullScreenCover(isPresented: $showVoiceFullscreen) {
+            OrbVoiceView(coordinator: coordinator, onHandoffToChat: {
+                onStartVoiceChat()
+            })
+        }
     }
 
     // MARK: – Header
@@ -315,7 +321,7 @@ struct OrbHomeView: View {
                             }
                         } else {
                             Theme.hapticSend()
-                            onStartVoiceChat()
+                            showVoiceFullscreen = true
                         }
                     }
                     .onLongPressGesture(minimumDuration: 0.3) {
