@@ -6,12 +6,33 @@ import UserNotifications
 final class CalendarManager: ObservableObject {
     @Published var nextEvent: (title: String, start: Date)?
 
+    /// When true, fetchAndScheduleProactive() schedules 15-min warns for upcoming events.
+    var proactiveEnabled: Bool = false
+
     private let store = EKEventStore()
 
     func requestAndFetch() {
         store.requestFullAccessToEvents { [weak self] granted, _ in
             guard granted else { return }
             self?.fetchNext()
+            Task { [weak self] in
+                await self?.fetchAndScheduleProactive()
+            }
+        }
+    }
+
+    /// Pull the next 24h of events and schedule a 15-min proactive warn for each
+    /// when proactiveCalendarWarn opt-in is on. Re-adding a request with the same
+    /// identifier replaces the pending one, so this is safe to call repeatedly.
+    func fetchAndScheduleProactive(now: Date = Date()) async {
+        guard proactiveEnabled else { return }
+        let predicate = store.predicateForEvents(withStart: now,
+                                                  end: now.addingTimeInterval(24 * 3600),
+                                                  calendars: nil)
+        let events = store.events(matching: predicate)
+            .filter { !$0.isAllDay && $0.startDate >= now }
+        for ev in events {
+            scheduleCalendarWarn(for: ev)
         }
     }
 

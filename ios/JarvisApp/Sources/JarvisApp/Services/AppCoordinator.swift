@@ -50,12 +50,13 @@ final class AppCoordinator {
 
         // Wire trigger sources
         location.attachDispatcher(proactiveDispatcher)
-        if settings.proactiveGeofence {
-            location.startSignificantLocationMonitoring()
-        }
-        if settings.proactiveHealthHR || settings.proactiveHealthSleep || settings.proactiveHealthWorkout {
-            health.installObservers(dispatcher: proactiveDispatcher)
-        }
+        // Always start sources — dispatcher.fire gates per-type opt-ins.
+        // The OS-level cost of significant-change monitoring is negligible.
+        location.startSignificantLocationMonitoring()
+        health.installObservers(dispatcher: proactiveDispatcher)
+
+        calendar.proactiveEnabled = settings.proactiveCalendarWarn
+        Task { await calendar.fetchAndScheduleProactive() }
 
         AppDelegate.dispatchProactive = { [weak self] type, payload in
             Task { @MainActor in
