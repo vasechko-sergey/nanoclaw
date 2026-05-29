@@ -90,4 +90,20 @@ import Foundation
     func tickSilenceTimerForTesting(elapsed: TimeInterval, threshold: TimeInterval) {
         tickSilence(elapsed: elapsed, threshold: threshold)
     }
+
+    /// Push-to-talk: gesture began on the orb. Equivalent to `start()` but
+    /// named for gesture lifecycle clarity.
+    func holdStart() {
+        start()
+    }
+
+    /// Push-to-talk: gesture ended. Non-empty transcript → .processing;
+    /// empty → .calm. Auto-resume is not triggered here — push-to-talk is explicit.
+    func holdEnd() {
+        if transcript.isEmpty {
+            phase = .calm
+        } else {
+            phase = .processing
+        }
+    }
 }

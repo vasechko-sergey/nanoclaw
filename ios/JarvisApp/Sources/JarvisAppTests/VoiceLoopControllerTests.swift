@@ -76,4 +76,26 @@ final class VoiceLoopControllerTests: XCTestCase {
         c.tickSilenceTimerForTesting(elapsed: 999, threshold: 30)
         XCTAssertEqual(c.phase, .processing, "silence timeout ignored when not listening")
     }
+
+    func testHoldStartTransitionsToListening() {
+        let c = VoiceLoopController()
+        c.holdStart()
+        XCTAssertEqual(c.phase, .listening)
+    }
+
+    func testHoldEndWithEmptyTranscriptReturnsCalm() {
+        let c = VoiceLoopController()
+        c.holdStart()
+        c.holdEnd()
+        XCTAssertEqual(c.phase, .calm)
+    }
+
+    func testHoldEndWithPartialTranscriptTransitionsToProcessing() {
+        let c = VoiceLoopController()
+        c.holdStart()
+        c.handleTranscript("привет", isFinal: false)
+        c.holdEnd()
+        XCTAssertEqual(c.phase, .processing,
+                       "hold-release with non-empty partial finalises and ships the text")
+    }
 }
