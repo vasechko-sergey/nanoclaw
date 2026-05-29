@@ -140,9 +140,7 @@ struct OrbHomeView: View {
                 onAction: { action in
                     coordinator.handleAction(action)
                     withAnimation { leftDrawerOpen = false; leftDrawerDragOffset = 0 }
-                },
-                onSettings: {},
-                onProfile: {}
+                }
             )
             .frame(width: Theme.drawerWidth)
             .offset(x: {

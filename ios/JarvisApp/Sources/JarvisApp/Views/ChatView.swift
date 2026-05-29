@@ -266,9 +266,7 @@ struct ChatView: View {
             onAction: { action in
                 coordinator.handleAction(action)
                 withAnimation { drawerOpen = false; drawerDragOffset = 0 }
-            },
-            onSettings: {},
-            onProfile: {}
+            }
         )
         .frame(width: Theme.drawerWidth)
         .offset(x: {
