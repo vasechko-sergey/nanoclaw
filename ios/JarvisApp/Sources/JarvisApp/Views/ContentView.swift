@@ -299,6 +299,21 @@ struct SplashView: View {
             statusOpacity = 1
         }
 
+        // UI-testing fast-path: there is no WebSocket server in the test environment,
+        // so the splash would otherwise sit on "connecting" for 10s before falling
+        // into the .failed state. Skip straight to .ready and fire onReady.
+        if JarvisApp.isUITesting {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(200))
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    phase = .ready
+                }
+                try? await Task.sleep(for: .milliseconds(200))
+                onReady()
+            }
+            return
+        }
+
         if showSetup {
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(800))
