@@ -9,10 +9,8 @@ struct OrbHomeView: View {
     var onStartChat: (String?) -> Void   // nil = open empty chat, String = send immediately
     var onStartVoiceChat: () -> Void    // open chat + auto-start voice recording
     var onContinueChat: () -> Void
-    var onShowSettings: () -> Void
 
     @State private var showSatellites = false
-    @State private var showProfile = false
 
     @State private var leftDrawerOpen = false
     @State private var leftDrawerDragOffset: CGFloat = 0
@@ -189,18 +187,6 @@ struct OrbHomeView: View {
         }
         .simultaneousGesture(leftEdgeSwipeGesture)
         .simultaneousGesture(rightEdgeSwipeGesture)
-        .sheet(isPresented: $showProfile) {
-            ProfileView(store: coordinator.store, isConnected: coordinator.ws.isConnected, onReconnect: {
-                coordinator.disconnect()
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(300))
-                    coordinator.connect()
-                }
-            })
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Theme.background)
-        }
         .attachmentPickers(drafts: $drafts, showPhotos: $showPhotos, showCamera: $showCamera, showDoc: $showDoc)
         .onChange(of: drafts) {
             if !drafts.isEmpty {

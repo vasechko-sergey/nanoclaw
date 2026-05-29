@@ -6,7 +6,6 @@ struct ContentView: View {
 
     @State private var appPhase: AppPhase = .splash
     @State private var showSetupOnSplash = false
-    @State private var showSettings = false
     @State private var pendingMessage: String? = nil
     @State private var autoStartVoice = false
 
@@ -44,8 +43,7 @@ struct ContentView: View {
                         withAnimation(.easeOut(duration: 0.4)) {
                             appPhase = .chat
                         }
-                    },
-                    onShowSettings: { showSettings = true }
+                    }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .zIndex(0.5)
@@ -66,18 +64,6 @@ struct ContentView: View {
                 .transition(.opacity)
                 .zIndex(1)
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(isInitialSetup: false, store: coordinator.store) { action in
-                showSettings = false
-                coordinator.handleAction(action)
-                withAnimation(.easeOut(duration: 0.4)) {
-                    appPhase = .chat
-                }
-            }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Theme.background)
         }
         .onAppear {
             if settings.isConfigured {
