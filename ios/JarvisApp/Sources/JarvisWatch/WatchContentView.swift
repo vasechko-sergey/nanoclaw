@@ -1,10 +1,8 @@
 import SwiftUI
+import WatchKit
 
 struct WatchContentView: View {
     @Environment(WatchAppState.self) var state
-    /// Injected from JarvisWatchApp — drives the mic recording lifecycle.
-    var onPushToTalkStart: () -> Void = {}
-    var onPushToTalkEnd: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -32,12 +30,6 @@ struct WatchContentView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .id(m.id)
                             }
-                            if state.isRecording && !state.partialTranscript.isEmpty {
-                                Text(state.partialTranscript)
-                                    .font(WatchTheme.messageFont)
-                                    .foregroundStyle(WatchTheme.accent.opacity(0.85))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
                         }
                         .padding(.horizontal, 6)
                     }
@@ -48,30 +40,29 @@ struct WatchContentView: View {
                     }
                 }
 
-                pttButton
-                    .padding(.bottom, 4)
+                Button(action: presentDictation) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(WatchTheme.accent)
+                        .padding(10)
+                        .background(Circle().fill(WatchTheme.surface))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Голосовое сообщение")
+                .padding(.bottom, 4)
             }
         }
     }
 
-    private var pttButton: some View {
-        Image(systemName: state.isRecording ? "mic.fill" : "mic")
-            .font(.system(size: 22, weight: .medium))
-            .foregroundStyle(WatchTheme.accent)
-            .padding(10)
-            .background(
-                Circle()
-                    .fill(state.isRecording ? WatchTheme.accent.opacity(0.18) : WatchTheme.surface)
-            )
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        if !state.isRecording { onPushToTalkStart() }
-                    }
-                    .onEnded { _ in
-                        if state.isRecording { onPushToTalkEnd() }
-                    }
-            )
-            .accessibilityLabel("Удерживайте для голоса")
+    private func presentDictation() {
+        WKApplication.shared().visibleInterfaceController?.presentTextInputController(
+            withSuggestions: nil,
+            allowedInputMode: .plain
+        ) { results in
+            guard let first = results?.first as? String, !first.isEmpty else { return }
+            Task { @MainActor in
+                state.sendDictatedTextToPhone(first)
+            }
+        }
     }
 }
