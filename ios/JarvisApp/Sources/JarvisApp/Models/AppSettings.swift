@@ -27,6 +27,25 @@ final class AppSettings {
     /// Silence-timeout for the listening loop (seconds). Allowed: 15, 30, 60.
     @ObservationIgnored @AppStorage("silenceTimeoutSec")   var silenceTimeoutSec   = 30
 
+    // MARK: – Proactive triggers (all opt-in, default off)
+    @ObservationIgnored @AppStorage("proactiveGeofence")        var proactiveGeofence        = false
+    @ObservationIgnored @AppStorage("proactiveHealthHR")        var proactiveHealthHR        = false
+    @ObservationIgnored @AppStorage("proactiveHealthSleep")     var proactiveHealthSleep     = false
+    @ObservationIgnored @AppStorage("proactiveHealthWorkout")   var proactiveHealthWorkout   = false
+    @ObservationIgnored @AppStorage("proactiveCalendarWarn")    var proactiveCalendarWarn    = false
+
+    /// Whether a given trigger type is allowed to fire. Used by ProactiveDispatcher.fire.
+    func proactiveEnabled(_ triggerType: String) -> Bool {
+        switch triggerType {
+        case "geofence":              return proactiveGeofence
+        case "health_hr_spike":       return proactiveHealthHR
+        case "health_sleep_end":      return proactiveHealthSleep
+        case "health_workout_end":    return proactiveHealthWorkout
+        case "calendar_warn":         return proactiveCalendarWarn
+        default:                      return false
+        }
+    }
+
     var platformId: String {
         if let v = UserDefaults.standard.string(forKey: "platformId") { return v }
         let id = "ios:" + (UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString)
