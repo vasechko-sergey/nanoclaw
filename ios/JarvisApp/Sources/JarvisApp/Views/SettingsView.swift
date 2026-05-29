@@ -1,12 +1,14 @@
 import AVFoundation
 import SwiftUI
 
-struct SettingsView: View {
+/// Embeddable settings form body — used by both `SettingsView` (sheet during
+/// initial setup) and `RightDrawerContent` (drawer in normal flow).
+/// Renders only the rows, no header or NavigationStack chrome.
+struct SettingsFormBody: View {
     let isInitialSetup: Bool
     var store: ConversationStore? = nil
     var onConversationAction: ((ConversationAction) -> Void)? = nil
     @Environment(AppSettings.self) var settings
-    @Environment(\.dismiss) private var dismiss
     @State private var previewSynth = SpeechSynthesizer()
 
     private var appVersion: String {
@@ -18,180 +20,150 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var settings = settings
-        return NavigationStack {
-        VStack(spacing: 0) {
-            // Header
-            if !isInitialSetup {
-                HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: Theme.fontBody))
+        return ScrollView {
+            VStack(spacing: Theme.scaled(20)) {
+                if isInitialSetup {
+                    // Setup header
+                    VStack(spacing: Theme.scaled(8)) {
+                        MiniOrbView(size: Theme.scaled(80), mood: .calm)
+                        Text("Настройка")
+                            .font(.system(size: Theme.scaled(20), weight: .medium))
+                            .foregroundStyle(Theme.textPrimary.opacity(0.8))
+                        Text("Укажите параметры подключения")
+                            .font(.system(size: Theme.fontCaption))
                             .foregroundStyle(Theme.accentMedium)
-                            .frame(width: Theme.minTapSize, height: Theme.minTapSize)
                     }
-                    Spacer()
-                    Text("Настройки")
-                        .font(.system(size: Theme.fontBody, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary.opacity(0.8))
-                    Spacer()
-                    Color.clear.frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    .padding(.top, Theme.scaled(24))
+                    .padding(.bottom, Theme.scaled(4))
                 }
-                .padding(.horizontal, Theme.hPadding)
-                .padding(.vertical, Theme.scaled(10))
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(Theme.accent.opacity(0.08)).frame(height: 0.5)
-                }
-            }
 
-            ScrollView {
-                VStack(spacing: Theme.scaled(20)) {
-                    if isInitialSetup {
-                        // Setup header
-                        VStack(spacing: Theme.scaled(8)) {
-                            MiniOrbView(size: Theme.scaled(80), mood: .calm)
-                            Text("Настройка")
-                                .font(.system(size: Theme.scaled(20), weight: .medium))
-                                .foregroundStyle(Theme.textPrimary.opacity(0.8))
-                            Text("Укажите параметры подключения")
+                // Agent section
+                settingsSection(title: "Агент") {
+                    settingsField(icon: "person", label: "Имя") {
+                        TextField("Jarvis", text: $settings.agentName)
+                            .font(.system(size: Theme.fontSubhead))
+                            .foregroundStyle(Theme.textPrimary)
+                            .multilineTextAlignment(.trailing)
+                            .tint(Theme.accent)
+                    }
+                }
+
+                // Connection section
+                settingsSection(title: "Подключение") {
+                    settingsField(icon: "network", label: "Сервер") {
+                        TextField("100.x.x.x:3001", text: $settings.serverURL)
+                            .font(.system(size: Theme.fontSubhead))
+                            .foregroundStyle(Theme.textPrimary)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .multilineTextAlignment(.trailing)
+                            .tint(Theme.accent)
+                    }
+                    settingsDivider()
+                    settingsField(icon: "key", label: "Токен") {
+                        SecureField("Bearer token", text: $settings.bearerToken)
+                            .font(.system(size: Theme.fontSubhead))
+                            .foregroundStyle(Theme.textPrimary)
+                            .multilineTextAlignment(.trailing)
+                            .textContentType(.none)
+                            .tint(Theme.accent)
+                    }
+                }
+
+                // Context section
+                settingsSection(title: "Контекст") {
+                    settingsToggle(icon: "location", label: "Геолокация", isOn: $settings.useLocation)
+                    settingsDivider()
+                    settingsToggle(icon: "heart", label: "Здоровье", isOn: $settings.useHealth)
+                    settingsDivider()
+                    settingsToggle(icon: "calendar", label: "Календарь", isOn: $settings.useCalendar)
+                }
+
+                // Voice section
+                if !isInitialSetup {
+                    settingsSection(title: "Голос") {
+                        settingsToggle(icon: "speaker.wave.2", label: "Озвучивать ответы на голос", isOn: $settings.autoSpeak)
+                        let voices = SpeechSynthesizer.russianVoices()
+                        if voices.isEmpty {
+                            settingsDivider()
+                            Text("Голосовые модули не обнаружены. Установите в Настройках iOS → Универсальный доступ → Устный контент → Голоса.")
+                                .font(.system(size: Theme.fontSmall))
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.horizontal, Theme.hPadding)
+                                .padding(.vertical, Theme.scaled(10))
+                        } else {
+                            ForEach(voices, id: \.identifier) { v in
+                                settingsDivider()
+                                voiceRow(v)
+                            }
+                            settingsDivider()
+                            voiceSlider(icon: "tortoise", label: "Скорость", value: $settings.voiceRate, range: 0.30...0.60)
+                            settingsDivider()
+                            voiceSlider(icon: "waveform.path", label: "Тон", value: $settings.voicePitch, range: 0.70...1.20)
+                        }
+                    }
+                }
+
+                // Input section
+                if !isInitialSetup {
+                    settingsSection(title: "Ввод") {
+                        settingsToggle(icon: "return", label: "Отправка по Enter", isOn: $settings.enterToSend)
+                    }
+                }
+
+                // ID платформы
+                if !isInitialSetup {
+                    settingsSection(title: "Система") {
+                        HStack {
+                            VStack(alignment: .leading, spacing: Theme.scaled(2)) {
+                                Text("ID платформы")
+                                    .font(.system(size: Theme.fontCaption))
+                                    .foregroundStyle(Theme.textSecondary)
+                                Text(settings.platformId)
+                                    .font(.system(size: Theme.fontSmall, design: .monospaced))
+                                    .foregroundStyle(Theme.accentMedium)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Button {
+                                UIPasteboard.general.string = settings.platformId
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: Theme.fontCaption))
+                                    .foregroundStyle(Theme.accentMedium)
+                                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                            }
+                        }
+                        .padding(.horizontal, Theme.hPadding)
+                        .padding(.vertical, Theme.scaled(8))
+                    }
+                }
+                // About
+                if !isInitialSetup {
+                    settingsSection(title: "О приложении") {
+                        HStack {
+                            VStack(alignment: .leading, spacing: Theme.scaled(2)) {
+                                Text("Jarvis")
+                                    .font(.system(size: Theme.fontSubhead, weight: .medium))
+                                    .foregroundStyle(Theme.textPrimary.opacity(0.7))
+                                Text("Версия \(appVersion) (\(buildNumber))")
+                                    .font(.system(size: Theme.fontSmall))
+                                    .foregroundStyle(Theme.accentMedium)
+                            }
+                            Spacer()
+                            Image(systemName: "info.circle")
                                 .font(.system(size: Theme.fontCaption))
                                 .foregroundStyle(Theme.accentMedium)
                         }
-                        .padding(.top, Theme.scaled(24))
-                        .padding(.bottom, Theme.scaled(4))
-                    }
-
-                    // Agent section
-                    settingsSection(title: "Агент") {
-                        settingsField(icon: "person", label: "Имя") {
-                            TextField("Jarvis", text: $settings.agentName)
-                                .font(.system(size: Theme.fontSubhead))
-                                .foregroundStyle(Theme.textPrimary)
-                                .multilineTextAlignment(.trailing)
-                                .tint(Theme.accent)
-                        }
-                    }
-
-                    // Connection section
-                    settingsSection(title: "Подключение") {
-                        settingsField(icon: "network", label: "Сервер") {
-                            TextField("100.x.x.x:3001", text: $settings.serverURL)
-                                .font(.system(size: Theme.fontSubhead))
-                                .foregroundStyle(Theme.textPrimary)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .multilineTextAlignment(.trailing)
-                                .tint(Theme.accent)
-                        }
-                        settingsDivider()
-                        settingsField(icon: "key", label: "Токен") {
-                            SecureField("Bearer token", text: $settings.bearerToken)
-                                .font(.system(size: Theme.fontSubhead))
-                                .foregroundStyle(Theme.textPrimary)
-                                .multilineTextAlignment(.trailing)
-                                .textContentType(.none)
-                                .tint(Theme.accent)
-                        }
-                    }
-
-                    // Context section
-                    settingsSection(title: "Контекст") {
-                        settingsToggle(icon: "location", label: "Геолокация", isOn: $settings.useLocation)
-                        settingsDivider()
-                        settingsToggle(icon: "heart", label: "Здоровье", isOn: $settings.useHealth)
-                        settingsDivider()
-                        settingsToggle(icon: "calendar", label: "Календарь", isOn: $settings.useCalendar)
-                    }
-
-                    // Voice section
-                    if !isInitialSetup {
-                        settingsSection(title: "Голос") {
-                            settingsToggle(icon: "speaker.wave.2", label: "Озвучивать ответы на голос", isOn: $settings.autoSpeak)
-                            let voices = SpeechSynthesizer.russianVoices()
-                            if voices.isEmpty {
-                                settingsDivider()
-                                Text("Голосовые модули не обнаружены. Установите в Настройках iOS → Универсальный доступ → Устный контент → Голоса.")
-                                    .font(.system(size: Theme.fontSmall))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .padding(.horizontal, Theme.hPadding)
-                                    .padding(.vertical, Theme.scaled(10))
-                            } else {
-                                ForEach(voices, id: \.identifier) { v in
-                                    settingsDivider()
-                                    voiceRow(v)
-                                }
-                                settingsDivider()
-                                voiceSlider(icon: "tortoise", label: "Скорость", value: $settings.voiceRate, range: 0.30...0.60)
-                                settingsDivider()
-                                voiceSlider(icon: "waveform.path", label: "Тон", value: $settings.voicePitch, range: 0.70...1.20)
-                            }
-                        }
-                    }
-
-                    // Input section
-                    if !isInitialSetup {
-                        settingsSection(title: "Ввод") {
-                            settingsToggle(icon: "return", label: "Отправка по Enter", isOn: $settings.enterToSend)
-                        }
-                    }
-
-                    // ID платформы
-                    if !isInitialSetup {
-                        settingsSection(title: "Система") {
-                            HStack {
-                                VStack(alignment: .leading, spacing: Theme.scaled(2)) {
-                                    Text("ID платформы")
-                                        .font(.system(size: Theme.fontCaption))
-                                        .foregroundStyle(Theme.textSecondary)
-                                    Text(settings.platformId)
-                                        .font(.system(size: Theme.fontSmall, design: .monospaced))
-                                        .foregroundStyle(Theme.accentMedium)
-                                        .lineLimit(1)
-                                }
-                                Spacer()
-                                Button {
-                                    UIPasteboard.general.string = settings.platformId
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.system(size: Theme.fontCaption))
-                                        .foregroundStyle(Theme.accentMedium)
-                                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                                }
-                            }
-                            .padding(.horizontal, Theme.hPadding)
-                            .padding(.vertical, Theme.scaled(8))
-                        }
-                    }
-                    // About
-                    if !isInitialSetup {
-                        settingsSection(title: "О приложении") {
-                            HStack {
-                                VStack(alignment: .leading, spacing: Theme.scaled(2)) {
-                                    Text("Jarvis")
-                                        .font(.system(size: Theme.fontSubhead, weight: .medium))
-                                        .foregroundStyle(Theme.textPrimary.opacity(0.7))
-                                    Text("Версия \(appVersion) (\(buildNumber))")
-                                        .font(.system(size: Theme.fontSmall))
-                                        .foregroundStyle(Theme.accentMedium)
-                                }
-                                Spacer()
-                                Image(systemName: "info.circle")
-                                    .font(.system(size: Theme.fontCaption))
-                                    .foregroundStyle(Theme.accentMedium)
-                            }
-                            .padding(.horizontal, Theme.hPadding)
-                            .padding(.vertical, Theme.scaled(12))
-                        }
+                        .padding(.horizontal, Theme.hPadding)
+                        .padding(.vertical, Theme.scaled(12))
                     }
                 }
-                .padding(.horizontal, Theme.hPadding)
-                .padding(.top, isInitialSetup ? 0 : Theme.scaled(16))
-                .padding(.bottom, Theme.scaled(32))
             }
+            .padding(.horizontal, Theme.hPadding)
+            .padding(.top, isInitialSetup ? 0 : Theme.scaled(16))
+            .padding(.bottom, Theme.scaled(32))
         }
-        .background(Theme.background.ignoresSafeArea())
-        .preferredColorScheme(.dark)
-        .toolbar(.hidden, for: .navigationBar)
-        } // NavigationStack
     }
 
     // MARK: – Components
@@ -314,5 +286,52 @@ struct SettingsView: View {
         Divider()
             .background(Theme.accent.opacity(0.06))
             .padding(.leading, Theme.scaled(46))
+    }
+}
+
+struct SettingsView: View {
+    let isInitialSetup: Bool
+    var store: ConversationStore? = nil
+    var onConversationAction: ((ConversationAction) -> Void)? = nil
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if !isInitialSetup {
+                    header
+                }
+                SettingsFormBody(
+                    isInitialSetup: isInitialSetup,
+                    store: store,
+                    onConversationAction: onConversationAction
+                )
+            }
+            .background(Theme.background.ignoresSafeArea())
+            .preferredColorScheme(.dark)
+            .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: Theme.fontBody))
+                    .foregroundStyle(Theme.accentMedium)
+                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+            }
+            Spacer()
+            Text("Настройки")
+                .font(.system(size: Theme.fontBody, weight: .medium))
+                .foregroundStyle(Theme.textPrimary.opacity(0.8))
+            Spacer()
+            Color.clear.frame(width: Theme.minTapSize, height: Theme.minTapSize)
+        }
+        .padding(.horizontal, Theme.hPadding)
+        .padding(.vertical, Theme.scaled(10))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.accent.opacity(0.08)).frame(height: 0.5)
+        }
     }
 }
