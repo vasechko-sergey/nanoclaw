@@ -10,12 +10,23 @@ import { createSign, randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { BOT_COMMANDS } from '../commands.js';
 import { readEnvFile } from '../env.js';
+import { log } from '../log.js';
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup } from './adapter.js';
 import { ReadReceiptStore } from './ios-read-receipts.js';
 
-function log(msg: string): void {
-  console.log(`[ios-app] ${msg}`);
+// Wrapper around the central structured logger so existing call sites
+// keep their `logIos(...)` shape but output lands in logs/nanoclaw.log
+// (and logs/nanoclaw.error.log for error-level paths) like every other
+// channel adapter.
+function logIos(msg: string, ctx?: Record<string, unknown>): void {
+  log.info(`[ios-app] ${msg}`, ctx ?? {});
+}
+function logIosWarn(msg: string, ctx?: Record<string, unknown>): void {
+  log.warn(`[ios-app] ${msg}`, ctx ?? {});
+}
+function logIosError(msg: string, ctx?: Record<string, unknown>): void {
+  log.error(`[ios-app] ${msg}`, ctx ?? {});
 }
 
 // Max messages buffered for an offline device before dropping the oldest.
@@ -148,7 +159,7 @@ function persistReadReceipts(): void {
     fs.writeFileSync(tmp, JSON.stringify(readReceiptStore.all()), 'utf8');
     fs.renameSync(tmp, READ_RECEIPTS_FILE);
   } catch (e) {
-    log(`persistReadReceipts failed: ${e instanceof Error ? e.message : String(e)}`);
+    logIosError(`persistReadReceipts failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -680,7 +691,7 @@ function createIOSAdapter(): ChannelAdapter | null {
       if (queue.length > MAX_PENDING_PER_DEVICE) {
         const dropped = queue.length - MAX_PENDING_PER_DEVICE;
         queue.splice(0, dropped);
-        log(`pendingMessages overflow for ${platformId} — dropped ${dropped} oldest`);
+        logIosWarn(`pendingMessages overflow for ${platformId} — dropped ${dropped} oldest`);
       }
       pendingMessages.set(platformId, queue);
       const apnsToken = apnsTokens.get(platformId);
@@ -689,15 +700,17 @@ function createIOSAdapter(): ChannelAdapter | null {
         sendApnsPush(apnsToken, preview, apnsCfg, queued.conversationId)
           .then(({ status, body }) => {
             if (status === 200 || status === 0) return;
-            log(`APNs ${status} for ${platformId}: ${body}`);
+            logIosWarn(`APNs ${status} for ${platformId}: ${body}`);
             // 410 = unregistered, 400 = bad device token → drop it so we stop retrying.
             if (status === 410 || status === 400) {
               apnsTokens.delete(platformId);
               savePersistedTokens(apnsTokens);
-              log(`Dropped dead APNs token for ${platformId}`);
+              logIos(`Dropped dead APNs token for ${platformId}`);
             }
           })
-          .catch((e) => log(`APNs send error for ${platformId}: ${e instanceof Error ? e.message : String(e)}`));
+          .catch((e) =>
+            logIosError(`APNs send error for ${platformId}: ${e instanceof Error ? e.message : String(e)}`),
+          );
       }
     }
     return id;
@@ -758,7 +771,7 @@ function createIOSAdapter(): ChannelAdapter | null {
               const obj = JSON.parse(raw) as { requestId?: string; days?: Array<Record<string, unknown>> };
               const days = Array.isArray(obj.days) ? obj.days : [];
               ingestHealthHistory(healthPaths, days, typeof obj.requestId === 'string' ? obj.requestId : undefined);
-              log(`health_history (http): +${days.length} day(s)${obj.requestId ? ` (req ${obj.requestId})` : ''}`);
+              logIos(`health_history (http): +${days.length} day(s)${obj.requestId ? ` (req ${obj.requestId})` : ''}`);
               res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
             } catch {
               res.writeHead(400).end();
@@ -840,9 +853,9 @@ function createIOSAdapter(): ChannelAdapter | null {
         const live = set ? [...set].filter((ws) => ws.readyState === WebSocket.OPEN) : [];
         if (live.length > 0) {
           live.forEach((ws) => ws.send(payload));
-          log(`context_request ${requestId} → ${platformId} (${live.length} socket)`);
+          logIos(`context_request ${requestId} → ${platformId} (${live.length} socket)`);
         } else {
-          log(`context_request ${requestId} → ${platformId} offline`);
+          logIos(`context_request ${requestId} → ${platformId} offline`);
           await cfg!.onInbound(platformId, threadId, {
             id: randomUUID(),
             kind: 'chat',
