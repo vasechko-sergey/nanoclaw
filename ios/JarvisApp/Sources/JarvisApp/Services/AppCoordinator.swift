@@ -14,6 +14,7 @@ final class AppCoordinator {
     private(set) var calendar: CalendarManager
     private(set) var speech: SpeechSynthesizer
     private(set) var proactiveDispatcher: ProactiveDispatcher!
+    private(set) var watchBridge: WatchConnectivityBridge!
 
     // MARK: – Connection state
     var connectionPhase: ConnectionPhase = .idle
@@ -61,6 +62,13 @@ final class AppCoordinator {
         AppDelegate.dispatchProactive = { [weak self] type, payload in
             Task { @MainActor in
                 self?.proactiveDispatcher?.fire(type: type, payload: payload)
+            }
+        }
+
+        self.watchBridge = WatchConnectivityBridge()
+        watchBridge.onWatchDictation = { [weak self] text in
+            Task { @MainActor in
+                self?.sendMessage(text, viaVoice: true)
             }
         }
 
@@ -190,6 +198,13 @@ final class AppCoordinator {
         // Forward haptic callback when a message arrives from assistant
         ws.onAssistantMessage = { [weak self] in
             self?.onMessageReceived?()
+            guard let self else { return }
+            // Push to watch — for now unconditional (Task 5 adds the settings gate)
+            if let last = self.ws.messages.last,
+               last.role == .assistant,
+               !last.text.isEmpty {
+                self.watchBridge.pushAssistantMessage(id: last.id, text: last.text, timestamp: last.timestamp)
+            }
         }
 
         // Agent pulls device context — gather requested fields on demand.
