@@ -24,6 +24,8 @@
 	<string>Распознавание речи для голосового ввода Jarvis</string>
 	<key>WKApplication</key>
 	<true/>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>com.vasechko.jarvis</string>
 	<key>WKWatchKitApp</key>
 	<false/>
 </dict>

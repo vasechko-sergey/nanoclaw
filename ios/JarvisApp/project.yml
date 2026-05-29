@@ -96,6 +96,7 @@ targets:
       properties:
         WKApplication: true
         WKWatchKitApp: false
+        WKCompanionAppBundleIdentifier: com.vasechko.jarvis
         NSMicrophoneUsageDescription: "Микрофон для голосового ввода Jarvis"
         NSSpeechRecognitionUsageDescription: "Распознавание речи для голосового ввода Jarvis"
     settings:
