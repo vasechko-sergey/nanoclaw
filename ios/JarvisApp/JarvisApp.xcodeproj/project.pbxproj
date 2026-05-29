@@ -15,6 +15,7 @@
 		1893E8E0527760F1BA33302A /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */; };
 		1A1DCE4804FEC3BFCDBA3B05 /* ContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */; };
 		1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B165040849DF187E7D1113C /* OrbInputBar.swift */; };
+		25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */; };
 		298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */; };
 		2B5AD345B9E6DD536F03540D /* UnifiedInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B42F42A5AB27AFC0DD5943 /* UnifiedInputBar.swift */; };
 		323B15E35E629EC77D90958C /* AttachmentBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C635D17DBD6BF940C89E024 /* AttachmentBar.swift */; };
@@ -101,6 +102,7 @@
 		3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilder.swift; sourceTree = "<group>"; };
 		3784B2D589C11B07F162E081 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		3C6A33B378AA0CC36F2DE37A /* ConnectivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectivityMonitor.swift; sourceTree = "<group>"; };
+		3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightDrawerContent.swift; sourceTree = "<group>"; };
 		3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		3DC04EA76CC0F89FF14E7849 /* HealthHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthHistory.swift; sourceTree = "<group>"; };
 		3F4B9D1F796C301C15ED1A3D /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -212,6 +214,7 @@
 				E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */,
 				B254569C52137C9E716B3DCD /* OrbHomeView.swift */,
 				3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */,
+				3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */,
 				2AF10B991F6600D17760B644 /* SettingsView.swift */,
 			);
 			path = Views;
@@ -456,6 +459,7 @@
 				E653E1C200C705930FF7958A /* OrbView.swift in Sources */,
 				E245CC67857A2E7A34987A8E /* OutboxStore.swift in Sources */,
 				98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */,
+				25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */,
 				BF081A3591467809EC839078 /* SettingsView.swift in Sources */,
 				461CEB084ABB3FAFC32124BC /* SpeechManager.swift in Sources */,
 				298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */,
