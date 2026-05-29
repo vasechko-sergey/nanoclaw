@@ -45,3 +45,58 @@ protocol ProactiveSink {
         return sink.send(triggerType: type, payload: payload)
     }
 }
+
+/// Production sink — tries WS first, then POSTs to /ios/proactive over HTTP.
+@MainActor final class WebSocketProactiveSink: ProactiveSink {
+    private let ws: WebSocketClient
+    private let settings: AppSettings
+
+    init(ws: WebSocketClient, settings: AppSettings) {
+        self.ws = ws
+        self.settings = settings
+    }
+
+    nonisolated func send(triggerType: String, payload: [String: Any]) -> Bool {
+        Task { @MainActor [ws, settings] in
+            if ws.sendProactive(triggerType: triggerType, payload: payload) {
+                return  // shipped via WS
+            }
+            await Self.postOverHTTP(triggerType: triggerType, payload: payload, settings: settings)
+        }
+        return true
+    }
+
+    private static func postOverHTTP(triggerType: String,
+                                     payload: [String: Any],
+                                     settings: AppSettings) async {
+        guard let server = serverHost(from: settings.serverURL),
+              let url = URL(string: "\(server)/ios/proactive"),
+              !settings.bearerToken.isEmpty else { return }
+        let body: [String: Any] = [
+            "platformId": settings.platformId,
+            "trigger": triggerType,
+            "payload": payload,
+            "ts": ISO8601DateFormatter().string(from: Date()),
+            "tz": TimeZone.current.identifier,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(settings.bearerToken)", forHTTPHeaderField: "Authorization")
+        req.httpBody = data
+        req.timeoutInterval = 15
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
+    /// Normalise the user-typed serverURL (host:port) into an http(s) origin.
+    private static func serverHost(from raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty else { return nil }
+        if !s.hasPrefix("http://") && !s.hasPrefix("https://") {
+            s = "http://" + s
+        }
+        if s.hasSuffix("/") { s.removeLast() }
+        return s
+    }
+}
