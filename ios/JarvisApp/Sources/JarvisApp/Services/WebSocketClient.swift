@@ -2,6 +2,11 @@ import Foundation
 import UIKit
 import SwiftUI
 
+// MARK: - Protocol Contract
+//
+// The full WebSocket + HTTP protocol shared with the NanoClaw host is documented
+// at docs/ios-protocol.md. Update both this file and that document together.
+
 struct BotCommand: Equatable {
     let command: String
     let description: String

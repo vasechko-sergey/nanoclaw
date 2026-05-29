@@ -1,3 +1,7 @@
+// Protocol contract: docs/ios-protocol.md.
+// Update both this file and that document together when changing any
+// msg.type or HTTP endpoint shape.
+
 import fs from 'node:fs';
 import http from 'node:http';
 import http2 from 'node:http2';
