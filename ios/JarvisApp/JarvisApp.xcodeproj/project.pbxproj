@@ -64,6 +64,7 @@
 		D9D85A8E3CB2F7583D9CCBB7 /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0295CB82FF20C8764842F6 /* CameraPicker.swift */; };
 		E245CC67857A2E7A34987A8E /* OutboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6CA65BDC41BA8B24F8209E5 /* OutboxStore.swift */; };
 		E653E1C200C705930FF7958A /* OrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */; };
+		E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */; };
 		ECABEF30369E237C4C4EFDA1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9143ED9DD7B640862D468B63 /* Assets.xcassets */; };
 		EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */; };
 		F25913DEABB1C45EC25092C1 /* WebSocketClientBusyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C2993F84719DC44B59A9ED /* WebSocketClientBusyTests.swift */; };
@@ -134,6 +135,7 @@
 		9F0295CB82FF20C8764842F6 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		A9E51F90AF529EB74BF8AF13 /* MessageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCache.swift; sourceTree = "<group>"; };
 		ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionEngine.swift; sourceTree = "<group>"; };
+		AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbVoiceView.swift; sourceTree = "<group>"; };
 		ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderStatusDot.swift; sourceTree = "<group>"; };
 		AFAC0AC197B336538A3BB964 /* MessageCacheDeliveryStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCacheDeliveryStatusTests.swift; sourceTree = "<group>"; };
 		B254569C52137C9E716B3DCD /* OrbHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbHomeView.swift; sourceTree = "<group>"; };
@@ -219,6 +221,7 @@
 				150EEF8B8206EF52F1EB8A36 /* ConversationListView.swift */,
 				E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */,
 				B254569C52137C9E716B3DCD /* OrbHomeView.swift */,
+				AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */,
 				3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */,
 				3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */,
 				2AF10B991F6600D17760B644 /* SettingsView.swift */,
@@ -467,6 +470,7 @@
 				88708A700369B47D5472A1C2 /* OrbHomeView.swift in Sources */,
 				1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */,
 				E653E1C200C705930FF7958A /* OrbView.swift in Sources */,
+				E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */,
 				E245CC67857A2E7A34987A8E /* OutboxStore.swift in Sources */,
 				98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */,
 				25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */,
