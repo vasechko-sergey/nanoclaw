@@ -21,10 +21,25 @@ struct AttachmentPickers: ViewModifier {
                           matching: .any(of: [.images, .videos]))
             .onChange(of: photoItems) { loadPhotos() }
             .sheet(isPresented: $showCamera) {
-                CameraPicker { img in
-                    if let d = DraftAttachment.image(img, name: "photo-\(Int(Date().timeIntervalSince1970)).jpg") {
-                        drafts.append(d)
-                        Theme.hapticSend()
+                CameraPicker { capture in
+                    switch capture {
+                    case .image(let img):
+                        if let d = DraftAttachment.image(img, name: "photo-\(Int(Date().timeIntervalSince1970)).jpg") {
+                            drafts.append(d)
+                            Theme.hapticSend()
+                        }
+                    case .video(let url):
+                        Task {
+                            do {
+                                let draft = try await DraftAttachment.video(from: url)
+                                await MainActor.run {
+                                    drafts.append(draft)
+                                    Theme.hapticSend()
+                                }
+                            } catch {
+                                await MainActor.run { surfaceVideoError(error) }
+                            }
+                        }
                     }
                 }
                 .ignoresSafeArea()
