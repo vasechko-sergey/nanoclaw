@@ -104,7 +104,7 @@ struct OutboxEntry: Codable, Equatable {
             let arr = try dec.decode([OutboxEntry].self, from: data)
             entries = arr.sorted { $0.createdAt < $1.createdAt }
         } catch {
-            print("OutboxStore: decode failed — \(error). Quarantining bad file.")
+            Log.warn(.outbox, "decode failed — \(error). Quarantining bad file.")
             let ts = Int(Date().timeIntervalSince1970)
             let bad = url.appendingPathExtension("corrupt-\(ts)")
             _ = try? FileManager.default.moveItem(at: url, to: bad)
@@ -119,7 +119,7 @@ struct OutboxEntry: Codable, Equatable {
         do {
             data = try enc.encode(entries)
         } catch {
-            print("OutboxStore: encode failed — \(error)")
+            Log.error(.outbox, "encode failed — \(error)")
             return
         }
         let tmp = url.appendingPathExtension("tmp")
@@ -127,7 +127,7 @@ struct OutboxEntry: Codable, Equatable {
             try data.write(to: tmp)
             _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
         } catch {
-            print("OutboxStore: save failed — \(error)")
+            Log.error(.outbox, "save failed — \(error)")
             // Clean up orphaned tmp on failure
             try? FileManager.default.removeItem(at: tmp)
         }

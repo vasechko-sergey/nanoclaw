@@ -34,7 +34,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ app: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        print("APNs registration failed: \(error)")
+        Log.error(.app, "APNs registration failed: \(error)")
     }
 
     // Show proactive pushes even while the app is foregrounded.

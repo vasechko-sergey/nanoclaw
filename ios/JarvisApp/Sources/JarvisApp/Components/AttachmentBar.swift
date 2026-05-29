@@ -80,7 +80,7 @@ struct AttachmentPickers: ViewModifier {
     private func surfaceVideoError(_ error: Error) {
         // Toast-style error surface isn't built; for v1 just log. Future:
         // pipe to AppCoordinator.onMessageReceived-equivalent for inline UI.
-        print("[AttachmentBar] video load failed: \(error)")
+        Log.warn(.app, "[AttachmentBar] video load failed: \(error)")
     }
 
     private func handleDocs(_ result: Result<[URL], Error>) {

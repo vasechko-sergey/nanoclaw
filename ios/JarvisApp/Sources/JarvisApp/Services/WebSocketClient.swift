@@ -115,7 +115,7 @@ final class WebSocketClient {
             "conversationId": id.uuidString
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { print("WS send failed: \(e)") } }
+        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
     }
 
     func loadMessages(from store: ConversationStore) {
@@ -261,7 +261,7 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { print("WS send failed: \(e)") } }
+        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
     }
 
     /// Reply to an agent context pull. Technical, not rendered.
@@ -274,7 +274,7 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { print("WS send(context_response) failed: \(e)") } }
+        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send(context_response) failed: \(e)") } }
     }
 
     func sendMessageDelivered(_ messageId: String, conversationId: UUID?) {
@@ -282,7 +282,7 @@ final class WebSocketClient {
         var payload: [String: Any] = ["type": "message_delivered", "messageId": messageId]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { print("WS send(message_delivered) failed: \(e)") } }
+        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send(message_delivered) failed: \(e)") } }
     }
 
     func sendMessageRead(_ messageId: String, conversationId: UUID?) {
@@ -294,7 +294,7 @@ final class WebSocketClient {
         var payload: [String: Any] = ["type": "message_read", "messageId": messageId]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { print("WS send(message_read) failed: \(e)") } }
+        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send(message_read) failed: \(e)") } }
     }
 
     /// Emit a `proactive` envelope on the wire. Returns false when the
@@ -312,7 +312,7 @@ final class WebSocketClient {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: envelope) else { return false }
         ws.send(.data(data)) { error in
-            if let error { print("[WS] sendProactive failed: \(error)") }
+            if let error { Log.warn(.ws, "sendProactive failed: \(error)") }
         }
         return true
     }
@@ -327,7 +327,7 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        ws.send(.data(data)) { if let e = $0 { print("WS send failed: \(e)") } }
+        ws.send(.data(data)) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
 
         // Mark action as answered locally
         if let idx = messages.firstIndex(where: { $0.id == messageId }),
@@ -369,7 +369,7 @@ final class WebSocketClient {
     private func sendApnsToken(_ hex: String) {
         guard let ws = task, isConnected else { return }
         guard let pay = try? JSONSerialization.data(withJSONObject: ["type": "apns_token", "token": hex]) else { return }
-        ws.send(.data(pay)) { if let e = $0 { print("WS send(apns_token) failed: \(e)") } }
+        ws.send(.data(pay)) { if let e = $0 { Log.warn(.ws, "send(apns_token) failed: \(e)") } }
     }
 
     private func startHeartbeat() {
@@ -421,7 +421,7 @@ final class WebSocketClient {
 
     @MainActor
     internal func forceReconnect(reason: String) {
-        print("WS reconnect: \(reason)")
+        Log.info(.ws, "reconnect: \(reason)")
         task?.cancel(with: .goingAway, reason: nil)
         // Clear all transient UI state on reconnect — fresh slate when the socket drops.
         // If doConnect fails to establish (e.g. invalid URL), the receive() failure branch
@@ -484,7 +484,7 @@ final class WebSocketClient {
             "token": authToken,
             "platformId": settings.platformId,
         ] as [String: Any]) else { return }
-        ws.send(.data(auth)) { if let e = $0 { print("WS send(auth) failed: \(e)") } }
+        ws.send(.data(auth)) { if let e = $0 { Log.warn(.ws, "send(auth) failed: \(e)") } }
         receive(ws: ws)
     }
 

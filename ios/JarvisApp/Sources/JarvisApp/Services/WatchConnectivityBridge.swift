@@ -56,7 +56,7 @@ import WatchConnectivity
     nonisolated func session(_ session: WCSession,
                              activationDidCompleteWith activationState: WCSessionActivationState,
                              error: Error?) {
-        if let error { print("[WC] activation error: \(error)") }
+        if let error { Log.warn(.watch, "[WC] activation error: \(error)") }
     }
 
     nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}

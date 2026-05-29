@@ -31,16 +31,16 @@ import Speech
 
     func start() {
         guard !isRecording, !starting else {
-            print("[Speech] start() skipped: isRecording=\(isRecording), starting=\(starting)")
+            Log.debug(.speech, "start() skipped: isRecording=\(isRecording), starting=\(starting)")
             return
         }
         starting = true
-        print("[Speech] Requesting speech authorization…")
+        Log.debug(.speech, "Requesting speech authorization…")
 
         SFSpeechRecognizer.requestAuthorization { status in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                print("[Speech] Speech auth status: \(status.rawValue)")
+                Log.debug(.speech, "Speech auth status: \(status.rawValue)")
                 guard status == .authorized else {
                     self.permissionDenied = true
                     self.isAvailable = false
@@ -56,7 +56,7 @@ import Speech
         AVAudioApplication.requestRecordPermission { granted in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                print("[Speech] Mic permission: \(granted)")
+                Log.debug(.speech, "Mic permission: \(granted)")
                 guard granted else {
                     self.permissionDenied = true
                     self.isAvailable = false
@@ -72,10 +72,10 @@ import Speech
     private func beginRecording() {
         starting = false
         guard let recognizer else {
-            print("[Speech] No recognizer")
+            Log.warn(.speech, "No recognizer")
             return
         }
-        print("[Speech] recognizer.isAvailable=\(recognizer.isAvailable)")
+        Log.debug(.speech, "recognizer.isAvailable=\(recognizer.isAvailable)")
         // Don't check recognizer.isAvailable here — it can lag behind authorization state.
 
         let session = AVAudioSession.sharedInstance()
@@ -83,7 +83,7 @@ import Speech
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            print("[Speech] Audio session error: \(error)")
+            Log.error(.speech, "Audio session error: \(error)")
             return
         }
 
@@ -101,13 +101,13 @@ import Speech
         do {
             try audioEngine.start()
         } catch {
-            print("[Speech] Engine start error: \(error)")
+            Log.error(.speech, "Engine start error: \(error)")
             stop()
             return
         }
 
         isRecording = true
-        print("[Speech] Recording started")
+        Log.debug(.speech, "Recording started")
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
@@ -118,7 +118,7 @@ import Speech
                 }
             }
             if error != nil || (result?.isFinal ?? false) {
-                print("[Speech] Recognition ended, error: \(String(describing: error))")
+                Log.debug(.speech, "Recognition ended, error: \(String(describing: error))")
                 Task { @MainActor in self.stop() }
             }
         }
@@ -134,6 +134,6 @@ import Speech
         recognitionTask = nil
         isRecording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        print("[Speech] Stopped")
+        Log.debug(.speech, "Stopped")
     }
 }

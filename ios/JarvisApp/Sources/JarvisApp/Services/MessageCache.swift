@@ -145,7 +145,7 @@ enum MessageCache {
                 let file = msg.id + ".jpg"
                 if let d = img.jpegData(compressionQuality: 0.85) {
                     do { try d.write(to: dir.appendingPathComponent(file), options: .atomic) }
-                    catch { print("MessageCache: image write failed for \(file): \(error)") }
+                    catch { Log.warn(.cache, "image write failed for \(file): \(error)") }
                 }
                 return CachedMessage(id: msg.id, role: role, kind: "image",
                                      text: nil, imageFile: file, filename: fname, timestamp: msg.timestamp,
@@ -187,7 +187,7 @@ enum MessageCache {
             // Atomic write (temp + rename) so a crash mid-write can't corrupt the
             // whole history index and lose every message.
             do { try data.write(to: indexURL, options: .atomic) }
-            catch { print("MessageCache: index write failed: \(error)") }
+            catch { Log.error(.cache, "index write failed: \(error)") }
         }
 
         pruneOrphanImages(in: dir, keeping: Set(recent.compactMap { msg -> String? in
