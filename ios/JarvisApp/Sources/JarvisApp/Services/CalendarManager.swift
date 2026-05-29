@@ -1,5 +1,6 @@
 import EventKit
 import Foundation
+import UserNotifications
 
 /// Ближайшее событие календаря как контекст для агента. Кэшируется, обновляется при подключении.
 final class CalendarManager: ObservableObject {
@@ -24,5 +25,31 @@ final class CalendarManager: ObservableObject {
         DispatchQueue.main.async {
             self.nextEvent = next.map { ($0.title ?? "Событие", $0.startDate) }
         }
+    }
+
+    /// Schedule a silent local notification 15 minutes before the event start.
+    /// On fire, the UNUserNotificationCenterDelegate routes to the proactive
+    /// dispatcher and suppresses the system banner.
+    func scheduleCalendarWarn(for event: EKEvent) {
+        let fireDate = event.startDate.addingTimeInterval(-15 * 60)
+        guard fireDate > Date() else { return }
+
+        let content = UNMutableNotificationContent()
+        content.userInfo = [
+            "proactive": true,
+            "type": "calendar_warn",
+            "title": event.title ?? "",
+            "start": ISO8601DateFormatter().string(from: event.startDate),
+        ]
+        content.sound = nil
+        content.title = event.title ?? "Event"
+
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: fireDate.timeIntervalSinceNow,
+            repeats: false
+        )
+        let req = UNNotificationRequest(identifier: "calendar-\(event.eventIdentifier ?? UUID().uuidString)",
+                                        content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(req)
     }
 }

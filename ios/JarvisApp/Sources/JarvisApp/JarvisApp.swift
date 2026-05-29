@@ -6,6 +6,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     static weak var wsClient: WebSocketClient?
     /// Set by AppCoordinator — opens the conversation a proactive push refers to.
     static var onOpenConversation: ((String) -> Void)?
+    /// Static hook the coordinator sets at init to receive proactive fires
+    /// from the notification delegate. Production wiring lives in AppCoordinator.
+    static var dispatchProactive: ((String, [String: Any]) -> Void)?
 
     func application(
         _ app: UIApplication,
@@ -40,6 +43,18 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let info = notification.request.content.userInfo
+        if let isProactive = info["proactive"] as? Bool, isProactive,
+           let type = info["type"] as? String {
+            var payload: [String: Any] = [:]
+            for (k, v) in info {
+                guard let key = k as? String, key != "proactive", key != "type" else { continue }
+                payload[key] = v
+            }
+            AppDelegate.dispatchProactive?(type, payload)
+            completionHandler([.list])
+            return
+        }
         completionHandler([.banner, .sound])
     }
 
