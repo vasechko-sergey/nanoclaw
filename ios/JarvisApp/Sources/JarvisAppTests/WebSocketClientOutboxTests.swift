@@ -191,4 +191,52 @@ final class WebSocketClientOutboxTests: XCTestCase {
                        "manual retry returns the entry to .sending so the UI shows the spinner")
         XCTAssertEqual(ws.messages.first?.deliveryStatus, .sending)
     }
+
+    // MARK: - One-shot control queue (sendControl)
+
+    func testSendFeedbackWhileOfflineEnqueuesOneShot() {
+        let outbox = OutboxStore(directory: tempDir)
+        let ws = WebSocketClient(outbox: outbox)
+        XCTAssertFalse(ws.isConnected)
+        XCTAssertEqual(ws.oneShotQueueCountForTesting, 0)
+
+        ws.sendFeedback(conversationId: nil, messageId: "m1", value: true, messageText: "hi")
+
+        XCTAssertEqual(ws.oneShotQueueCountForTesting, 1,
+                       "offline feedback must be queued for replay on reconnect")
+    }
+
+    func testSendActionResponseWhileOfflineEnqueuesOneShot() {
+        let outbox = OutboxStore(directory: tempDir)
+        let ws = WebSocketClient(outbox: outbox)
+        XCTAssertFalse(ws.isConnected)
+
+        ws.sendActionResponse(messageId: "m1", buttonId: "yes", buttonLabel: "Yes")
+
+        XCTAssertEqual(ws.oneShotQueueCountForTesting, 1,
+                       "offline action_response must be queued for replay on reconnect")
+    }
+
+    func testSendNewConversationWhileOfflineEnqueuesOneShot() {
+        let outbox = OutboxStore(directory: tempDir)
+        let ws = WebSocketClient(outbox: outbox)
+        XCTAssertFalse(ws.isConnected)
+
+        ws.sendNewConversation(id: UUID())
+
+        XCTAssertEqual(ws.oneShotQueueCountForTesting, 1,
+                       "offline new_conversation must be queued for replay on reconnect")
+    }
+
+    func testFlushOneShotQueueNoOpWhenDisconnected() {
+        let outbox = OutboxStore(directory: tempDir)
+        let ws = WebSocketClient(outbox: outbox)
+        ws.sendFeedback(conversationId: nil, messageId: "m1", value: true, messageText: "hi")
+        XCTAssertEqual(ws.oneShotQueueCountForTesting, 1)
+
+        ws.flushOneShotQueue()
+
+        XCTAssertEqual(ws.oneShotQueueCountForTesting, 1,
+                       "flushOneShotQueue while offline must not drain the queue")
+    }
 }

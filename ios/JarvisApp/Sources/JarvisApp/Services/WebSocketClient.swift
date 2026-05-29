@@ -41,6 +41,12 @@ final class WebSocketClient {
     @ObservationIgnored private var pendingApnsToken: String?
     @ObservationIgnored private var sentReadIds: Set<String> = []
 
+    /// In-memory replay queue for control envelopes (feedback, actionResponse,
+    /// new_conversation) that need eventual delivery but don't belong in the
+    /// persisted Outbox (which is for chat-message rows with UI state).
+    /// Drained on reconnect via the same flushOutbox callsite.
+    @ObservationIgnored private var oneShotQueue: [Data] = []
+
     @ObservationIgnored let outbox: OutboxStore
 
     init(outbox: OutboxStore? = nil) {
@@ -129,6 +135,7 @@ final class WebSocketClient {
     func notifyConnectedForTesting() {
         transport.notifyConnectedForTesting()
         flushOutbox()
+        flushOneShotQueue()
     }
 
     /// Test seam: stale-pong path without a live URLSessionWebSocketTask.
@@ -189,13 +196,12 @@ final class WebSocketClient {
     // MARK: – Conversations
 
     func sendNewConversation(id: UUID) {
-        guard isConnected else { return }
         let payload: [String: Any] = [
             "type": "new_conversation",
             "conversationId": id.uuidString
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        transport.send(data) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
+        sendControl(data, label: "newConversation")
     }
 
     func loadMessages(from store: ConversationStore) {
@@ -332,7 +338,6 @@ final class WebSocketClient {
     }
 
     func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {
-        guard isConnected else { return }
         var payload: [String: Any] = [
             "type": "feedback",
             "messageId": messageId,
@@ -341,7 +346,7 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        transport.send(data) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
+        sendControl(data, label: "feedback")
     }
 
     /// Reply to an agent context pull. Technical, not rendered.
@@ -398,7 +403,6 @@ final class WebSocketClient {
     }
 
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
-        guard isConnected else { return }
         var payload: [String: Any] = [
             "type": "action_response",
             "messageId": messageId,
@@ -407,7 +411,7 @@ final class WebSocketClient {
         ]
         if let cid = conversationId { payload["conversationId"] = cid.uuidString }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        transport.send(data) { if let e = $0 { Log.warn(.ws, "send failed: \(e)") } }
+        sendControl(data, label: "actionResponse")
 
         // Mark action as answered locally
         if let idx = messages.firstIndex(where: { $0.id == messageId }),
@@ -419,6 +423,50 @@ final class WebSocketClient {
             onMessagesChanged?(messages)
         }
     }
+
+    // MARK: – One-shot control queue
+
+    /// Helper: try to send `data` immediately; queue for replay on reconnect
+    /// if WS is down or the send completion reports an error.
+    @MainActor
+    private func sendControl(_ data: Data, label: String) {
+        guard transport.isConnected else {
+            oneShotQueue.append(data)
+            return
+        }
+        transport.send(data) { [weak self] error in
+            if let error {
+                Log.warn(.ws, "\(label) send failed: \(error)")
+                Task { @MainActor [weak self] in
+                    self?.oneShotQueue.append(data)
+                }
+            }
+        }
+    }
+
+    /// Drain the one-shot queue after a successful reconnect. Called by the
+    /// auth_ok success path alongside flushOutbox().
+    @MainActor
+    func flushOneShotQueue() {
+        guard transport.isConnected else { return }
+        let snapshot = oneShotQueue
+        oneShotQueue.removeAll()
+        for data in snapshot {
+            transport.send(data) { [weak self] error in
+                if let error {
+                    Log.warn(.ws, "one-shot replay failed: \(error)")
+                    Task { @MainActor [weak self] in
+                        self?.oneShotQueue.append(data)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Test seam: lets tests observe / mutate the one-shot queue without
+    /// poking through the production API.
+    @MainActor
+    var oneShotQueueCountForTesting: Int { oneShotQueue.count }
 
     // MARK: – Private
 
@@ -474,6 +522,7 @@ final class WebSocketClient {
             // and run post-auth side effects.
             isConnected = true
             flushOutbox()
+            flushOneShotQueue()
             onFlushForTesting?()
             transport.startHeartbeat()
             if let tok = pendingApnsToken { sendApnsToken(tok) }
