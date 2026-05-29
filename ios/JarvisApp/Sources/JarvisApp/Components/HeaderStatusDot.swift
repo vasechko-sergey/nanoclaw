@@ -11,6 +11,7 @@ struct HeaderStatusDot: View {
     let isConnected: Bool        // meaningful for .left
     let phase: OrbMood           // meaningful for .right
     let action: () -> Void
+    var onLongPress: (() -> Void)? = nil
 
     /// Exposed for unit tests. Production rendering uses the same value via
     /// `fillColor` inside `body`.
@@ -40,5 +41,11 @@ struct HeaderStatusDot: View {
             }
             .frame(width: Theme.minTapSize, height: Theme.minTapSize)
         }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.6)
+                .onEnded { _ in
+                    onLongPress?()
+                }
+        )
     }
 }

@@ -375,6 +375,8 @@ struct ChatView: View {
                     if rightDrawerOpen { rightDrawerOpen = false }
                     drawerOpen = true
                 }
+            } onLongPress: {
+                showVoiceFullscreen = true
             }
             .accessibilityIdentifier("orb-drawer-btn")
             .accessibilityLabel(ws.isConnected ? "Открыть список диалогов. Подключено" : "Открыть список диалогов. Отключено")

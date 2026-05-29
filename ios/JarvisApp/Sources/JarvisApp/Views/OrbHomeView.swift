@@ -211,6 +211,8 @@ struct OrbHomeView: View {
                     if rightDrawerOpen { rightDrawerOpen = false }
                     leftDrawerOpen = true
                 }
+            } onLongPress: {
+                showVoiceFullscreen = true
             }
             .accessibilityLabel(coordinator.ws.isConnected ? "Открыть список диалогов. Подключено" : "Открыть список диалогов. Отключено")
 
