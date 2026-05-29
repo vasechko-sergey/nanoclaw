@@ -34,6 +34,9 @@ final class AppSettings {
     @ObservationIgnored @AppStorage("proactiveHealthWorkout")   var proactiveHealthWorkout   = false
     @ObservationIgnored @AppStorage("proactiveCalendarWarn")    var proactiveCalendarWarn    = false
 
+    // MARK: – Watch companion
+    @ObservationIgnored @AppStorage("watchCompanionEnabled") var watchCompanionEnabled = true
+
     /// Whether a given trigger type is allowed to fire. Used by ProactiveDispatcher.fire.
     func proactiveEnabled(_ triggerType: String) -> Bool {
         switch triggerType {

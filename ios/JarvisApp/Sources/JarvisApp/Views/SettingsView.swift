@@ -148,6 +148,17 @@ struct SettingsFormBody: View {
                     }
                 }
 
+                // Apple Watch section
+                if !isInitialSetup {
+                    settingsSection(title: "Apple Watch") {
+                        settingsToggle(
+                            icon: "applewatch",
+                            label: "Слать ответы Джарвиса на часы",
+                            isOn: $settings.watchCompanionEnabled
+                        )
+                    }
+                }
+
                 // ID платформы
                 if !isInitialSetup {
                     settingsSection(title: "Система") {

@@ -199,8 +199,9 @@ final class AppCoordinator {
         ws.onAssistantMessage = { [weak self] in
             self?.onMessageReceived?()
             guard let self else { return }
-            // Push to watch — for now unconditional (Task 5 adds the settings gate)
-            if let last = self.ws.messages.last,
+            // Push to watch — gated by user setting
+            if self.settings.watchCompanionEnabled,
+               let last = self.ws.messages.last,
                last.role == .assistant,
                !last.text.isEmpty {
                 self.watchBridge.pushAssistantMessage(id: last.id, text: last.text, timestamp: last.timestamp)
