@@ -14,6 +14,11 @@ struct OrbHomeView: View {
     @State private var showSatellites = false
     @State private var showProfile = false
 
+    @State private var leftDrawerOpen = false
+    @State private var leftDrawerDragOffset: CGFloat = 0
+    @State private var rightDrawerOpen = false
+    @State private var rightDrawerDragOffset: CGFloat = 0
+
     // Picker triggers
     @State private var showPhotos = false
     @State private var showCamera = false
@@ -76,49 +81,114 @@ struct OrbHomeView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            header
-
-            // Content — offset upward to align orb with splash position
+        ZStack(alignment: .leading) {
             VStack(spacing: 0) {
-                Spacer()
+                // Header
+                header
 
-                orbCluster
-                    .offset(y: -Theme.headerHeight)
+                // Content — offset upward to align orb with splash position
+                VStack(spacing: 0) {
+                    Spacer()
 
-                Spacer()
-            }
-        }
-        .background {
-            GeometryReader { geo in
-                ZStack {
-                    Theme.background
-                    RadialGradient(
-                        colors: [Theme.accent.opacity(0.04), Color.clear],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: geo.size.height * 0.5
-                    )
+                    orbCluster
+                        .offset(y: -Theme.headerHeight)
+
+                    Spacer()
                 }
             }
-            .ignoresSafeArea()
-        }
-        .preferredColorScheme(.dark)
-        .accessibilityIdentifier("orb-home")
-        // UI-test-only: stable tap target for navigating to text chat, placed
-        // at bottom-leading corner well outside the satellite orbit radius.
-        .overlay(alignment: .bottomLeading) {
-            if JarvisApp.isUITesting {
-                Button(action: { onStartChat(nil) }) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.01))
-                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+            .background {
+                GeometryReader { geo in
+                    ZStack {
+                        Theme.background
+                        RadialGradient(
+                            colors: [Theme.accent.opacity(0.04), Color.clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: geo.size.height * 0.5
+                        )
+                    }
                 }
-                .accessibilityLabel("uitest-start-text-chat")
-                .padding(.bottom, Theme.scaled(4))
+                .ignoresSafeArea()
             }
+            .preferredColorScheme(.dark)
+            .accessibilityIdentifier("orb-home")
+            // UI-test-only: stable tap target for navigating to text chat, placed
+            // at bottom-leading corner well outside the satellite orbit radius.
+            .overlay(alignment: .bottomLeading) {
+                if JarvisApp.isUITesting {
+                    Button(action: { onStartChat(nil) }) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.01))
+                            .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    }
+                    .accessibilityLabel("uitest-start-text-chat")
+                    .padding(.bottom, Theme.scaled(4))
+                }
+            }
+
+            // Shroud
+            if leftDrawerOpen || rightDrawerOpen {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation { leftDrawerOpen = false; rightDrawerOpen = false }
+                    }
+                    .transition(.opacity)
+            }
+
+            // Left drawer (conversations) — new on home; mirrors ChatView's
+            DrawerContent(
+                store: coordinator.store,
+                onAction: { action in
+                    coordinator.handleAction(action)
+                    withAnimation { leftDrawerOpen = false; leftDrawerDragOffset = 0 }
+                },
+                onSettings: {},
+                onProfile: {}
+            )
+            .frame(width: Theme.drawerWidth)
+            .offset(x: {
+                    if leftDrawerOpen {
+                        return max(-Theme.drawerWidth, leftDrawerDragOffset)
+                    } else {
+                        return -Theme.drawerWidth + max(0, min(leftDrawerDragOffset, Theme.drawerWidth))
+                    }
+                }())
+            .gesture(leftDrawerDragToClose)
+            .shadow(color: .black.opacity(leftDrawerOpen ? 0.4 : 0), radius: 12, x: 4)
+            .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: leftDrawerOpen)
+
+            // Right drawer
+            RightDrawerContent(
+                store: coordinator.store,
+                isConnected: coordinator.ws.isConnected,
+                onReconnect: {
+                    coordinator.disconnect()
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(300))
+                        coordinator.connect()
+                    }
+                },
+                onConversationAction: { action in
+                    coordinator.handleAction(action)
+                    withAnimation { rightDrawerOpen = false; rightDrawerDragOffset = 0 }
+                }
+            )
+            .frame(width: Theme.drawerWidth)
+            .offset(x: {
+                    let screenWidth = UIScreen.main.bounds.width
+                    if rightDrawerOpen {
+                        return min(screenWidth, screenWidth - Theme.drawerWidth + rightDrawerDragOffset)
+                    } else {
+                        return screenWidth - max(0, min(-rightDrawerDragOffset, Theme.drawerWidth))
+                    }
+                }())
+            .gesture(rightDrawerDragToClose)
+            .shadow(color: .black.opacity(rightDrawerOpen ? 0.4 : 0), radius: 12, x: -4)
+            .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: rightDrawerOpen)
         }
+        .simultaneousGesture(leftEdgeSwipeGesture)
+        .simultaneousGesture(rightEdgeSwipeGesture)
         .sheet(isPresented: $showProfile) {
             ProfileView(store: coordinator.store, isConnected: coordinator.ws.isConnected, onReconnect: {
                 coordinator.disconnect()
@@ -144,20 +214,15 @@ struct OrbHomeView: View {
 
     private var header: some View {
         HStack {
-            // Status dot → Profile
-            Button { showProfile = true } label: {
-                ZStack {
-                    Circle()
-                        .stroke(coordinator.ws.isConnected ? Theme.online.opacity(0.2) : Theme.offline.opacity(0.15), lineWidth: Theme.lineAccent)
-                        .frame(width: Theme.scaled(22), height: Theme.scaled(22))
-                    Circle()
-                        .fill(coordinator.ws.isConnected ? Theme.online : Theme.offline)
-                        .frame(width: Theme.scaled(8), height: Theme.scaled(8))
-                        .shadow(color: (coordinator.ws.isConnected ? Theme.online : Theme.offline).opacity(0.8), radius: 4)
+            HeaderStatusDot(side: .left,
+                            isConnected: coordinator.ws.isConnected,
+                            phase: .calm) {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    if rightDrawerOpen { rightDrawerOpen = false }
+                    leftDrawerOpen = true
                 }
-                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             }
-            .accessibilityLabel(coordinator.ws.isConnected ? "Статус: подключено. Профиль" : "Статус: отключено. Профиль")
+            .accessibilityLabel(coordinator.ws.isConnected ? "Открыть список диалогов. Подключено" : "Открыть список диалогов. Отключено")
 
             Spacer()
 
@@ -175,14 +240,15 @@ struct OrbHomeView: View {
 
             Spacer()
 
-            // Settings
-            Button { onShowSettings() } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: Theme.scaled(18)))
-                    .foregroundStyle(Theme.accentMedium)
-                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+            HeaderStatusDot(side: .right,
+                            isConnected: coordinator.ws.isConnected,
+                            phase: .calm) {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    if leftDrawerOpen { leftDrawerOpen = false }
+                    rightDrawerOpen = true
+                }
             }
-            .accessibilityLabel("Настройки")
+            .accessibilityLabel("Открыть профиль и настройки")
         }
         .padding(.horizontal, Theme.scaled(8))
         .frame(minHeight: Theme.headerHeight)
@@ -312,6 +378,106 @@ struct OrbHomeView: View {
                 }
             }
         }
+    }
+
+    // MARK: – Drawer gestures
+
+    private static let edgeSwipeZone: CGFloat = 40
+
+    private var leftEdgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 0
+                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
+                    && !leftDrawerOpen
+                    && !rightDrawerOpen {
+                    leftDrawerDragOffset = min(value.translation.width, Theme.drawerWidth)
+                }
+            }
+            .onEnded { value in
+                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
+                if !leftDrawerOpen
+                    && !rightDrawerOpen
+                    && value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 60
+                    && horizontal {
+                    withAnimation(.spring(duration: 0.3)) {
+                        leftDrawerOpen = true
+                        leftDrawerDragOffset = 0
+                    }
+                } else if !leftDrawerOpen {
+                    withAnimation { leftDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var leftDrawerDragToClose: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if leftDrawerOpen && value.translation.width < 0 {
+                    leftDrawerDragOffset = value.translation.width
+                }
+            }
+            .onEnded { value in
+                if leftDrawerOpen && value.translation.width < -60 {
+                    withAnimation(.spring(duration: 0.3)) {
+                        leftDrawerOpen = false
+                        leftDrawerDragOffset = 0
+                    }
+                } else {
+                    withAnimation { leftDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var rightEdgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                let screenWidth = UIScreen.main.bounds.width
+                if value.startLocation.x > screenWidth - Self.edgeSwipeZone
+                    && value.translation.width < 0
+                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
+                    && !rightDrawerOpen
+                    && !leftDrawerOpen {
+                    rightDrawerDragOffset = max(value.translation.width, -Theme.drawerWidth)
+                }
+            }
+            .onEnded { value in
+                let screenWidth = UIScreen.main.bounds.width
+                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
+                if !rightDrawerOpen
+                    && !leftDrawerOpen
+                    && value.startLocation.x > screenWidth - Self.edgeSwipeZone
+                    && value.translation.width < -60
+                    && horizontal {
+                    withAnimation(.spring(duration: 0.3)) {
+                        rightDrawerOpen = true
+                        rightDrawerDragOffset = 0
+                    }
+                } else if !rightDrawerOpen {
+                    withAnimation { rightDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var rightDrawerDragToClose: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if rightDrawerOpen && value.translation.width > 0 {
+                    rightDrawerDragOffset = value.translation.width
+                }
+            }
+            .onEnded { value in
+                if rightDrawerOpen && value.translation.width > 60 {
+                    withAnimation(.spring(duration: 0.3)) {
+                        rightDrawerOpen = false
+                        rightDrawerDragOffset = 0
+                    }
+                } else {
+                    withAnimation { rightDrawerDragOffset = 0 }
+                }
+            }
     }
 
 }
