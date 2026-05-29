@@ -35,6 +35,7 @@ final class WebSocketClient {
     @ObservationIgnored private static let thinkingDetailClearSeconds: TimeInterval = 30    // auto-clear delay
 
     @ObservationIgnored private let transport: WSTransport
+    @ObservationIgnored private let inboundRouter: InboundRouter
     @ObservationIgnored private var settings: AppSettings?
     @ObservationIgnored private var stopped           = false
     @ObservationIgnored private var pendingApnsToken: String?
@@ -45,7 +46,9 @@ final class WebSocketClient {
     init(outbox: OutboxStore? = nil) {
         self.outbox = outbox ?? OutboxStore()
         self.transport = WSTransport()
+        self.inboundRouter = InboundRouter()
         wireTransport()
+        inboundRouter.delegate = self
     }
 
     /// Wire transport callbacks to client behaviour. Called once from init.
@@ -462,13 +465,13 @@ final class WebSocketClient {
     }
 
     private func handleIncoming(_ obj: [String: Any]) {
-        let t = obj["type"] as? String
-
-        // --- Auth ---
-        if t == "auth_ok" {
-            // Transport already flipped isConnected to true when the socket
-            // opened — auth_ok is the server saying "creds accepted". We mirror
-            // it as a no-op state set + run post-auth side effects.
+        // Auth bootstrap is tightly coupled to the transport (heartbeat start,
+        // outbox flush, queued APNs forwarding) so it stays here. Everything
+        // else delegates to InboundRouter.
+        if obj["type"] as? String == "auth_ok" {
+            // Transport flipped isConnected when the socket opened; auth_ok is
+            // the server saying "creds accepted". Mirror as a no-op state set
+            // and run post-auth side effects.
             isConnected = true
             flushOutbox()
             onFlushForTesting?()
@@ -483,122 +486,35 @@ final class WebSocketClient {
             return
         }
 
-        // --- Typing ---
-        if t == "typing_start" {
-            isTyping = true
-            return
-        }
-        if t == "typing_stop" {
-            isTyping = false
-            return
-        }
+        inboundRouter.dispatch(obj)
+    }
+}
 
-        // --- Feedback ack (no UI action needed) ---
-        if t == "feedback_ack" {
-            return
-        }
+// MARK: - InboundRouterDelegate
 
-        // --- Message ack (server confirmed receipt of user message) ---
-        if t == "message_ack",
-           let clientMsgId = obj["clientMessageId"] as? String {
-            handleMessageAck(clientMessageId: clientMsgId)
-            return
-        }
+extension WebSocketClient: InboundRouterDelegate {
+    var activeConversationId: UUID? { conversationId }
 
-        // --- Context request (agent pull) — gather and reply, not rendered ---
-        if t == "context_request" {
-            let fields = obj["fields"] as? [String] ?? []
-            let requestId = obj["requestId"] as? String ?? ""
-            let ctx = onContextRequest?(fields) ?? [:]
-            sendContextResponse(requestId: requestId, context: ctx)
-            return
-        }
+    func setTyping(_ value: Bool) { isTyping = value }
 
-        let convId = (obj["conversationId"] as? String).flatMap(UUID.init(uuidString:))
-
-        // --- Text message ---
-        if t == "message",
-           let text = obj["text"] as? String,
-           let id   = obj["id"]   as? String {
-            route(.text(id, role: .assistant, text: text, timestamp: Date()), convId: convId)
-        }
-
-        // --- Image ---
-        else if t == "image",
-                let b64      = obj["data"]     as? String,
-                let id       = obj["id"]       as? String,
-                let filename = obj["filename"] as? String,
-                let imgData  = Data(base64Encoded: b64),
-                let image    = UIImage(data: imgData) {
-            route(.image(id, role: .assistant, image: image, filename: filename, timestamp: Date()), convId: convId)
-        }
-
-        // --- File ---
-        else if t == "file",
-                let id   = obj["id"]   as? String,
-                let name = obj["name"] as? String {
-            let info = FileInfo(
-                name: name,
-                size: obj["size"] as? Int64 ?? 0,
-                mimeType: obj["mimeType"] as? String ?? "application/octet-stream",
-                url: obj["url"] as? String,
-                thumbnail: nil
-            )
-            route(.file(id, role: .assistant, info: info, timestamp: Date()), convId: convId)
-        }
-
-        // --- Action (question with buttons) ---
-        else if t == "action",
-                let id   = obj["id"]   as? String,
-                let text = obj["text"] as? String,
-                let btns = obj["buttons"] as? [[String: Any]] {
-            let buttons = btns.compactMap { b -> ActionButton? in
-                guard let bid = b["id"] as? String, let label = b["label"] as? String else { return nil }
-                let style = ActionButton.Style(rawValue: b["style"] as? String ?? "primary") ?? .primary
-                return ActionButton(id: bid, label: label, style: style)
-            }
-            route(.action(id, text: text, buttons: buttons, timestamp: Date()), convId: convId)
-        }
-
-        // --- Status ---
-        else if t == "status",
-                let text = obj["text"] as? String {
-            let id = obj["id"] as? String ?? UUID().uuidString
-            let level = StatusInfo.Level(rawValue: obj["level"] as? String ?? "info") ?? .info
-            let kind = obj["kind"] as? String
-            route(.status(id, text: text, level: level, kind: kind, timestamp: Date()), convId: convId)
-        }
+    func gatherContext(fields: [String]) -> [String: Any] {
+        onContextRequest?(fields) ?? [:]
     }
 
-    /// Route an incoming message to the active list or to a background conversation's store.
-    private func route(_ message: ChatMessage, convId: UUID?) {
-        onAssistantMessage?()
-        if convId == nil || convId == conversationId {
-            isTyping = false
-            // Dedup: the host re-flushes queued messages on reconnect, so the same
-            // id can arrive twice. Skip if already present in the active list.
-            if messages.contains(where: { $0.id == message.id }) { return }
-            if message.role == .assistant {
-                sendMessageDelivered(message.id, conversationId: conversationId)
-            }
-            messages.append(message)
-            onMessagesChanged?(messages)
-            if message.role == .assistant {
-                lastAssistantAt = Date()
-                thinkingDetail = nil
-            }
-            if case .status(let info) = message.content, info.kind == "system" {
-                thinkingDetail = info.text
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(Self.thinkingDetailClearSeconds))
-                    if self?.thinkingDetail == info.text { self?.thinkingDetail = nil }
-                }
-            }
-            if message.role == .assistant, case .text(let t) = message.content {
-                onSpeakableText?(t)
-            }
-        } else {
-            onBackgroundMessage?(convId!, message)
+    func notifyAssistantArrival() { onAssistantMessage?() }
+    func notifyMessagesChanged(_ messages: [ChatMessage]) { onMessagesChanged?(messages) }
+    func notifySpeakableText(_ text: String) { onSpeakableText?(text) }
+    func notifyBackgroundMessage(conversationId: UUID, message: ChatMessage) {
+        onBackgroundMessage?(conversationId, message)
+    }
+
+    func recordAssistantTimestamp() { lastAssistantAt = Date() }
+    func setThinkingDetail(_ text: String?) { thinkingDetail = text }
+
+    func scheduleThinkingDetailAutoClear(for text: String) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.thinkingDetailClearSeconds))
+            if self?.thinkingDetail == text { self?.thinkingDetail = nil }
         }
     }
 }
