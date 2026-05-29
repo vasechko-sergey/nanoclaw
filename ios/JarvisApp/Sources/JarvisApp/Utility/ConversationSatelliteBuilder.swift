@@ -27,11 +27,25 @@ enum ConversationSatelliteBuilder {
     ) -> [Satellite] {
         var result: [Satellite] = []
 
-        if let activeId = activeConversationId,
+        // 1. Active satellite — only when fresh assistant reply exists within 24h.
+        var activeId: UUID? = nil
+        if let aid = activeConversationId,
            let lastAt = lastAssistantTimestamp,
            now.timeIntervalSince(lastAt) < freshnessWindow,
-           let active = allConversations.first(where: { $0.id == activeId }) {
+           let active = allConversations.first(where: { $0.id == aid }) {
             result.append(Satellite(id: active.id, title: active.title, kind: .active))
+            activeId = active.id
+        }
+
+        // 2. Up to 2 pinned satellites, sorted by lastMessageAt descending,
+        //    excluding the active one (so it doesn't appear twice).
+        let pinned = allConversations
+            .filter { $0.isPinned && $0.id != activeId }
+            .sorted { $0.lastMessageAt > $1.lastMessageAt }
+            .prefix(2)
+
+        for conv in pinned {
+            result.append(Satellite(id: conv.id, title: conv.title, kind: .pinned))
         }
 
         return Array(result.prefix(maxSatellites))
