@@ -32,6 +32,8 @@ struct ChatView: View {
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
     @State private var drawerOpen = false
     @State private var drawerDragOffset: CGFloat = 0
+    @State private var rightDrawerOpen = false
+    @State private var rightDrawerDragOffset: CGFloat = 0
 
     private var ws: WebSocketClient { coordinator.ws }
     private var store: ConversationStore { coordinator.store }
@@ -250,6 +252,7 @@ struct ChatView: View {
             }
         }
         .simultaneousGesture(edgeSwipeGesture)
+        .simultaneousGesture(rightEdgeSwipeGesture)
 
         // Shroud overlay when drawer open
         if drawerOpen {
@@ -288,6 +291,43 @@ struct ChatView: View {
         .gesture(drawerDragToClose)
         .shadow(color: .black.opacity(drawerOpen ? 0.4 : 0), radius: 12, x: 4)
         .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: drawerOpen)
+
+        // Right drawer — mirror of the left drawer
+        if rightDrawerOpen {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture { withAnimation { rightDrawerOpen = false } }
+                .transition(.opacity)
+        }
+
+        RightDrawerContent(
+            store: store,
+            isConnected: ws.isConnected,
+            onReconnect: {
+                coordinator.disconnect()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    coordinator.connect()
+                }
+            },
+            onConversationAction: { action in
+                coordinator.handleAction(action)
+                inputText = ""
+                withAnimation { rightDrawerOpen = false; rightDrawerDragOffset = 0 }
+            }
+        )
+        .frame(width: Theme.drawerWidth)
+        .offset(x: {
+                let screenWidth = UIScreen.main.bounds.width
+                if rightDrawerOpen {
+                    return min(screenWidth, screenWidth - Theme.drawerWidth + rightDrawerDragOffset)
+                } else {
+                    return screenWidth - max(0, min(-rightDrawerDragOffset, Theme.drawerWidth))
+                }
+            }())
+        .gesture(rightDrawerDragToClose)
+        .shadow(color: .black.opacity(rightDrawerOpen ? 0.4 : 0), radius: 12, x: -4)
+        .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: rightDrawerOpen)
 
         } // ZStack
         .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)
@@ -357,17 +397,11 @@ struct ChatView: View {
 
     private var header: some View {
         HStack {
-            Button {
-                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) { drawerOpen = true }
-            } label: {
-                ZStack(alignment: .bottomTrailing) {
-                    MiniOrbView(size: 28, mood: orbMood)
-                    Circle()
-                        .fill(ws.isConnected ? Theme.online : Theme.offline)
-                        .frame(width: 6, height: 6)
-                        .overlay(Circle().stroke(Theme.background, lineWidth: 1))
+            HeaderStatusDot(side: .left, isConnected: ws.isConnected, phase: orbMood) {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    if rightDrawerOpen { rightDrawerOpen = false }
+                    drawerOpen = true
                 }
-                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             }
             .accessibilityIdentifier("orb-drawer-btn")
             .accessibilityLabel(ws.isConnected ? "Открыть список диалогов. Подключено" : "Открыть список диалогов. Отключено")
@@ -395,13 +429,14 @@ struct ChatView: View {
 
             Spacer()
 
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: Theme.scaled(18)))
-                    .foregroundStyle(Theme.accentMedium)
-                    .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+            HeaderStatusDot(side: .right, isConnected: ws.isConnected, phase: orbMood) {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    if drawerOpen { drawerOpen = false }
+                    rightDrawerOpen = true
+                }
             }
-            .accessibilityLabel("Настройки")
+            .accessibilityIdentifier("right-drawer-btn")
+            .accessibilityLabel("Открыть профиль и настройки")
         }
         .padding(.horizontal, Theme.scaled(8))
         .frame(minHeight: Theme.headerHeight)
@@ -463,13 +498,15 @@ struct ChatView: View {
                 if value.startLocation.x < Self.edgeSwipeZone
                     && value.translation.width > 0
                     && abs(value.translation.width) > abs(value.translation.height) * 1.2
-                    && !drawerOpen {
+                    && !drawerOpen
+                    && !rightDrawerOpen {
                     drawerDragOffset = min(value.translation.width, Theme.drawerWidth)
                 }
             }
             .onEnded { value in
                 let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
                 if !drawerOpen
+                    && !rightDrawerOpen
                     && value.startLocation.x < Self.edgeSwipeZone
                     && value.translation.width > 60
                     && horizontal {
@@ -479,6 +516,55 @@ struct ChatView: View {
                     }
                 } else if !drawerOpen {
                     withAnimation { drawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var rightEdgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                let screenWidth = UIScreen.main.bounds.width
+                if value.startLocation.x > screenWidth - Self.edgeSwipeZone
+                    && value.translation.width < 0
+                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
+                    && !rightDrawerOpen
+                    && !drawerOpen {
+                    rightDrawerDragOffset = max(value.translation.width, -Theme.drawerWidth)
+                }
+            }
+            .onEnded { value in
+                let screenWidth = UIScreen.main.bounds.width
+                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
+                if !rightDrawerOpen
+                    && !drawerOpen
+                    && value.startLocation.x > screenWidth - Self.edgeSwipeZone
+                    && value.translation.width < -60
+                    && horizontal {
+                    withAnimation(.spring(duration: 0.3)) {
+                        rightDrawerOpen = true
+                        rightDrawerDragOffset = 0
+                    }
+                } else if !rightDrawerOpen {
+                    withAnimation { rightDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var rightDrawerDragToClose: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if rightDrawerOpen && value.translation.width > 0 {
+                    rightDrawerDragOffset = value.translation.width
+                }
+            }
+            .onEnded { value in
+                if rightDrawerOpen && value.translation.width > 60 {
+                    withAnimation(.spring(duration: 0.3)) {
+                        rightDrawerOpen = false
+                        rightDrawerDragOffset = 0
+                    }
+                } else {
+                    withAnimation { rightDrawerDragOffset = 0 }
                 }
             }
     }
