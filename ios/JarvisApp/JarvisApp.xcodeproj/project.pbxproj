@@ -61,6 +61,7 @@
 		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
 		AB195528E2E52EF95829AB22 /* DrawerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D41E5046B3DE1B4DDBB58D90 /* DrawerTests.swift */; };
 		B065348C458302F95325E16F /* ThinkingRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AA5A25FF72A993B2BA61E6 /* ThinkingRowTests.swift */; };
+		B274F6D0E73327D5E6CFF8E6 /* V2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B444C288D4DEB267ABF3D02 /* V2.swift */; };
 		B3168E41D417AECBDE8EC56A /* WatchAppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3EB21126CB3C83D223E10A6 /* WatchAppState.swift */; };
 		B53C92F62A47B0340DA0F933 /* ConnectivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6A33B378AA0CC36F2DE37A /* ConnectivityMonitor.swift */; };
 		B5715D361A0394CCB595AA15 /* RightDrawerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A1411D12B13E550ED69744 /* RightDrawerTests.swift */; };
@@ -73,6 +74,7 @@
 		C9CCC846FD80EAC5E168DE96 /* WebSocketClientOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FDCB3DAD06D3F28940A4369 /* WebSocketClientOutboxTests.swift */; };
 		CB6576F08C01F04D5D766774 /* HeartbeatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */; };
 		CEDBAE9FAEC01EA3E2B4D17E /* OutboxStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34055B05F8F79D7466F877DF /* OutboxStoreTests.swift */; };
+		D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
 		D76B99448549A036E84A20B1 /* VoiceFullscreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */; };
 		D8C071DDEDA0C58A157A3EA7 /* ProactiveDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */; };
@@ -137,10 +139,12 @@
 		43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisApp.swift; sourceTree = "<group>"; };
 		44C051ECA1BBC173253E5FF4 /* HeaderStatusDotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderStatusDotTests.swift; sourceTree = "<group>"; };
 		48A9578A316F0AB1F8247B95 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		4B444C288D4DEB267ABF3D02 /* V2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2.swift; sourceTree = "<group>"; };
 		4FB3889146F12123FB99824E /* WebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClient.swift; sourceTree = "<group>"; };
 		5114A888276D0E083FC387EB /* ContextBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilderTests.swift; sourceTree = "<group>"; };
 		554BF5C37C33D1542F61065C /* WatchTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
 		5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityBridgeTests.swift; sourceTree = "<group>"; };
+		5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolFixtureTests.swift; sourceTree = "<group>"; };
 		60C2993F84719DC44B59A9ED /* WebSocketClientBusyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClientBusyTests.swift; sourceTree = "<group>"; };
 		63F99A4953300541E52CE55B /* DraftAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftAttachment.swift; sourceTree = "<group>"; };
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -214,6 +218,7 @@
 				43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */,
 				375599C96F41C85EBA186CDD /* Components */,
 				6A91EB93906C06261AF87B3F /* Models */,
+				2B9CCD148BD8CE870CD77DB9 /* Protocol */,
 				C956B7C72DFE52C7EACA126E /* Services */,
 				40A764E96CD86A05C73ED4D1 /* Utility */,
 				699E1B9953460F6945E81F1F /* Views */,
@@ -231,6 +236,14 @@
 				B89708E4E59AE056D27564C3 /* JarvisWatch.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2B9CCD148BD8CE870CD77DB9 /* Protocol */ = {
+			isa = PBXGroup;
+			children = (
+				4B444C288D4DEB267ABF3D02 /* V2.swift */,
+			);
+			path = Protocol;
 			sourceTree = "<group>";
 		};
 		375599C96F41C85EBA186CDD /* Components */ = {
@@ -321,6 +334,7 @@
 				AFAC0AC197B336538A3BB964 /* MessageCacheDeliveryStatusTests.swift */,
 				34055B05F8F79D7466F877DF /* OutboxStoreTests.swift */,
 				7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */,
+				5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */,
 				2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */,
 				5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */,
 				60C2993F84719DC44B59A9ED /* WebSocketClientBusyTests.swift */,
@@ -604,6 +618,7 @@
 				974A0C8C09364FC532E6BEE1 /* SuggestionEngine.swift in Sources */,
 				40BD7B10477CDAA66330969D /* Theme.swift in Sources */,
 				2B5AD345B9E6DD536F03540D /* UnifiedInputBar.swift in Sources */,
+				B274F6D0E73327D5E6CFF8E6 /* V2.swift in Sources */,
 				7DC25537E427E9625F7151DA /* VoiceLoopController.swift in Sources */,
 				5196474BA782354CD0C5D13D /* WSTransport.swift in Sources */,
 				E0C11524F945712AD1DD5BED /* WatchConnectivityBridge.swift in Sources */,
@@ -625,6 +640,7 @@
 				3C2899CEF9F5FC865E470679 /* MessageCacheDeliveryStatusTests.swift in Sources */,
 				CEDBAE9FAEC01EA3E2B4D17E /* OutboxStoreTests.swift in Sources */,
 				1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */,
+				D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */,
 				2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */,
 				ED86C8462FA285929BB5D83B /* WatchConnectivityBridgeTests.swift in Sources */,
 				F25913DEABB1C45EC25092C1 /* WebSocketClientBusyTests.swift in Sources */,
