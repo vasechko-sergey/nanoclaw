@@ -120,6 +120,45 @@ actor TransportV2 {
         try? await Task.sleep(nanoseconds: UInt64(milliseconds) * 1_000_000)
     }
 
+    // MARK: - Facade helpers (5.2b)
+    //
+    // These let `WebSocketClientV2` emit one-shot control envelopes (new
+    // conversation, feedback, action response) and status batches (read /
+    // delivered) without re-implementing envelope construction. They are
+    // best-effort: send errors are logged by the caller's `nil` swallow.
+    // Unlike `tickDispatcher`, these do not persist anything to the store —
+    // ack/retry semantics for control envelopes are out of scope for the v2
+    // protocol (they're idempotent by `id`).
+
+    /// Send a control envelope built from a literal payload. Used by the
+    /// facade for `new_conversation`, `feedback`, `action_response` etc.
+    func sendControlEnvelope(type: V2.TypeTag, payload: V2.Payload) async {
+        let env = V2.Envelope(
+            v: V2.protocolVersion,
+            kind: .control,
+            type: type,
+            id: UUID().uuidString,
+            seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: payload
+        )
+        try? await sendEnvelope(env)
+    }
+
+    /// Send a `status:delivered` or `status:read` batch.
+    func sendStatusEnvelope(type: V2.TypeTag, ids: [String]) async {
+        let env = V2.Envelope(
+            v: V2.protocolVersion,
+            kind: .status,
+            type: type,
+            id: UUID().uuidString,
+            seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .statusBatch(V2.StatusBatch(ids: ids))
+        )
+        try? await sendEnvelope(env)
+    }
+
     // MARK: - Private
 
     private func routeInboundMessage(envelope: V2.Envelope, message: V2.Message) async throws {
