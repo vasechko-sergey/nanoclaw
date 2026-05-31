@@ -5,6 +5,11 @@ node_modules/
 .pnpm-store/
 # Build output
 dist/
+shared/ios-app-protocol/*.js
+shared/ios-app-protocol/*.d.ts
+shared/ios-app-protocol/*.d.ts.map
+shared/ios-app-protocol/*.js.map
+shared/ios-app-protocol/*.tsbuildinfo
 
 # Local data & auth
 store/
