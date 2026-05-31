@@ -9,3 +9,10 @@
 import './cli.js';
 import './telegram.js';
 import './ios-app.js';
+
+// ios-app v2 transport. Registers under a distinct channel name (`ios-app-v2`)
+// so it coexists with the legacy `ios-app` adapter during the migration
+// window. The factory is a no-op unless IOS_APP_V2_PORT is set, so unset =
+// legacy behavior unchanged.
+import { registerIosAppV2 } from './ios-app/v2/index.js';
+registerIosAppV2();

@@ -31,7 +31,13 @@ import { ContextBridge } from './context-bridge.js';
 import { WsHandler } from './ws-handler.js';
 import type { PlatformId, ContextField } from './types.js';
 
-const CHANNEL_TYPE = 'ios-app';
+// During the transition window the v2 adapter coexists with the legacy
+// `ios-app` adapter. They register under distinct channel names so the
+// registry doesn't collide and so existing messaging_groups (channel_type
+// `ios-app`) keep flowing through the legacy adapter unchanged. Once the iOS
+// app UI is fully on TransportV2, legacy registration is removed and the
+// channel_type for those messaging_groups gets migrated to `ios-app-v2`.
+const CHANNEL_TYPE = 'ios-app-v2';
 
 function logV2(msg: string, ctx?: Record<string, unknown>): void {
   log.info(`[ios-app-v2] ${msg}`, ctx ?? {});
@@ -44,7 +50,7 @@ function logV2Warn(msg: string, ctx?: Record<string, unknown>): void {
  * Resolve `platform_id` → active session id for THIS channel.
  *
  * The plan keeps it scoped to ios-app: look up the messaging_group by
- * (channel_type='ios-app', platform_id), then the active session for that
+ * (channel_type='ios-app-v2', platform_id), then the active session for that
  * mg (DM, thread-less). When the device is wired to multiple agents (fan-out),
  * we return the first active session; multi-agent fan-out for context routing
  * is out of scope for v2.
@@ -72,10 +78,20 @@ function resolvePlatformForSession(sessionId: string): PlatformId | null {
 }
 
 function createV2Adapter(): ChannelAdapter | null {
-  const env = readEnvFile(['IOS_APP_TOKEN', 'IOS_APP_PORT', 'IOS_APP_V2_DB_PATH']);
+  const env = readEnvFile(['IOS_APP_TOKEN', 'IOS_APP_V2_PORT', 'IOS_APP_V2_DB_PATH']);
   const token = env.IOS_APP_TOKEN;
   if (!token) return null;
-  const port = parseInt(env.IOS_APP_PORT ?? '3001', 10);
+  // Transition-window gate: v2 only binds when an explicit port is set. This
+  // keeps the legacy adapter the sole holder of the ios-app surface by default
+  // (legacy listens on IOS_APP_PORT, typically 3001). To run v2 alongside,
+  // operators set IOS_APP_V2_PORT (typical migration: 3002) and rebuild the
+  // iOS app pointing at it.
+  if (!env.IOS_APP_V2_PORT) return null;
+  const port = parseInt(env.IOS_APP_V2_PORT, 10);
+  if (!Number.isFinite(port) || port <= 0) {
+    logV2Warn('IOS_APP_V2_PORT not a valid port, skipping registration', { value: env.IOS_APP_V2_PORT });
+    return null;
+  }
 
   // Default DB path: data/ios-app/transport.db. Override with IOS_APP_V2_DB_PATH
   // (absolute or relative-to-cwd) when running v1 and v2 side-by-side during
@@ -256,7 +272,7 @@ function createV2Adapter(): ChannelAdapter | null {
   });
 
   return {
-    name: 'ios-app',
+    name: 'ios-app-v2',
     channelType: CHANNEL_TYPE,
     supportsThreads: true,
 
@@ -357,11 +373,14 @@ function createV2Adapter(): ChannelAdapter | null {
 /**
  * Register the v2 ios-app adapter with the channel registry.
  *
- * Currently parked behind an explicit call — `src/channels/index.ts` does NOT
- * import this yet. Phase 7.1 of the plan flips the switch.
+ * Registers under the distinct name `ios-app-v2` so the legacy `ios-app`
+ * adapter (still bound to messaging_groups with channel_type='ios-app') can
+ * coexist during the migration window. The factory itself short-circuits to
+ * null unless `IOS_APP_V2_PORT` is set in the env, so the default behavior is
+ * "v2 is a no-op; legacy serves all iOS traffic".
  */
 export function registerIosAppV2(): void {
-  registerChannelAdapter('ios-app', { factory: createV2Adapter });
+  registerChannelAdapter('ios-app-v2', { factory: createV2Adapter });
 }
 
 // Re-export the internals so harness/integration tests can construct a fully
