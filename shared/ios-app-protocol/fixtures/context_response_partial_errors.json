@@ -1,0 +1,13 @@
+{
+  "v": 2,
+  "kind": "control",
+  "type": "context_response",
+  "id": "77777777-7777-4777-8777-777777777777",
+  "seq": 7,
+  "ts": "2026-05-31T12:00:07.000Z",
+  "payload": {
+    "request_id": "55555555-5555-4555-8555-555555555556",
+    "data": { "calendar": [] },
+    "errors": { "health": "denied" }
+  }
+}

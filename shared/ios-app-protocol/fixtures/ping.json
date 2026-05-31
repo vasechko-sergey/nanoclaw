@@ -1,0 +1,9 @@
+{
+  "v": 2,
+  "kind": "control",
+  "type": "ping",
+  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  "seq": null,
+  "ts": "2026-05-31T12:00:14.000Z",
+  "payload": { "nonce": "n-1" }
+}

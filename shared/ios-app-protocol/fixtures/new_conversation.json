@@ -1,0 +1,9 @@
+{
+  "v": 2,
+  "kind": "control",
+  "type": "new_conversation",
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "seq": 4,
+  "ts": "2026-05-31T12:00:11.000Z",
+  "payload": { "thread_id": "thr-2" }
+}

@@ -1,0 +1,12 @@
+{
+  "v": 2,
+  "kind": "control",
+  "type": "feedback",
+  "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  "seq": 9,
+  "ts": "2026-05-31T12:00:13.000Z",
+  "payload": {
+    "message_id": "33333333-3333-4333-8333-333333333333",
+    "kind": "up"
+  }
+}

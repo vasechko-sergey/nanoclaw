@@ -1,0 +1,9 @@
+{
+  "v": 2,
+  "kind": "status",
+  "type": "read",
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "seq": null,
+  "ts": "2026-05-31T12:00:10.000Z",
+  "payload": { "ids": ["33333333-3333-4333-8333-333333333333"] }
+}

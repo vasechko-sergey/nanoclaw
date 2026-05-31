@@ -1,0 +1,17 @@
+{
+  "v": 2,
+  "kind": "control",
+  "type": "context_response",
+  "id": "66666666-6666-4666-8666-666666666666",
+  "seq": 6,
+  "ts": "2026-05-31T12:00:06.000Z",
+  "payload": {
+    "request_id": "55555555-5555-4555-8555-555555555556",
+    "data": {
+      "health": { "steps_today": 4123, "hr_resting": 58 },
+      "calendar": [
+        { "title": "Standup", "start": "2026-06-01T09:00:00.000Z" }
+      ]
+    }
+  }
+}
