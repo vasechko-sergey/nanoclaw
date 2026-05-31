@@ -18,8 +18,13 @@ import type { ChannelAdapter, ChannelSetup } from '../../adapter.js';
 import { registerChannelAdapter } from '../../channel-registry.js';
 import { readEnvFile } from '../../../env.js';
 import { log } from '../../../log.js';
-import { DATA_DIR } from '../../../config.js';
-import { getMessagingGroup, getMessagingGroupByPlatform } from '../../../db/messaging-groups.js';
+import { DATA_DIR, GROUPS_DIR } from '../../../config.js';
+import {
+  getMessagingGroup,
+  getMessagingGroupByPlatform,
+  getMessagingGroupAgents,
+} from '../../../db/messaging-groups.js';
+import { getAgentGroup } from '../../../db/agent-groups.js';
 import { findSession, getSession } from '../../../db/sessions.js';
 import { writeSessionMessage } from '../../../session-manager.js';
 
@@ -29,6 +34,8 @@ import { ReceiptStore } from './receipt-store.js';
 import { InboundDispatcher } from './inbound-dispatch.js';
 import { ContextBridge } from './context-bridge.js';
 import { WsHandler } from './ws-handler.js';
+import { HealthRequestsStore } from './health-requests-store.js';
+import { createIosHttpHandler } from './http-handler.js';
 import type { PlatformId, ContextField } from './types.js';
 
 // During the transition window the v2 adapter coexists with the legacy
@@ -105,6 +112,19 @@ function createV2Adapter(): ChannelAdapter | null {
   const db = openTransportDb(dbPath);
   const queue = new OutboundQueue(db);
   const receipts = new ReceiptStore(db);
+  const healthRequestsStore = new HealthRequestsStore(db);
+
+  // Where health daily aggregates land on disk. Defaults to GROUPS_DIR (so
+  // each device's wired agent group gets its own raw.jsonl); legacy installs
+  // pinned a single shared directory via IOS_HEALTH_HISTORY_DIR — honor that
+  // override for back-compat. Absolute paths supported; relative paths
+  // resolve against cwd.
+  const healthEnv = readEnvFile(['IOS_HEALTH_HISTORY_DIR']);
+  const healthOverrideDir = healthEnv.IOS_HEALTH_HISTORY_DIR
+    ? path.isAbsolute(healthEnv.IOS_HEALTH_HISTORY_DIR)
+      ? healthEnv.IOS_HEALTH_HISTORY_DIR
+      : path.resolve(process.cwd(), healthEnv.IOS_HEALTH_HISTORY_DIR)
+    : null;
 
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
@@ -279,13 +299,29 @@ function createV2Adapter(): ChannelAdapter | null {
     async setup(config: ChannelSetup) {
       cfg = config;
 
-      httpServer = http.createServer((req, res) => {
-        if (req.method === 'GET' && req.url === '/ios/health') {
-          res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
-          return;
-        }
-        res.writeHead(404).end();
+      // Resolve the agent group folder wired to a device's messaging group.
+      // Multi-agent fan-out: take highest-priority wiring (the order
+      // getMessagingGroupAgents returns).
+      const resolveAgentFolderForPlatform = (platformId: PlatformId): string | null => {
+        const mg = getMessagingGroupByPlatform(CHANNEL_TYPE, platformId);
+        if (!mg) return null;
+        const wirings = getMessagingGroupAgents(mg.id);
+        if (wirings.length === 0) return null;
+        const agentGroup = getAgentGroup(wirings[0].agent_group_id);
+        return agentGroup?.folder ?? null;
+      };
+
+      const httpHandler = createIosHttpHandler({
+        token,
+        healthRequestsStore,
+        resolveAgentFolderForPlatform,
+        groupsDir: GROUPS_DIR,
+        healthOverrideDir,
+        getChannelSetup: () => cfg,
+        log: logV2,
+        logWarn: logV2Warn,
       });
+      httpServer = http.createServer(httpHandler);
 
       wss = new WebSocketServer({ server: httpServer });
       handler.attach(wss);
