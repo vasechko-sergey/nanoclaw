@@ -22,6 +22,7 @@
 		2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */; };
 		323B15E35E629EC77D90958C /* AttachmentBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C635D17DBD6BF940C89E024 /* AttachmentBar.swift */; };
 		3502D3234561E8F256B9EAD5 /* JarvisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */; };
+		365191E0FC23319F9CA2C898 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 31E0AB4EF75BC659349C8E0A /* GRDB */; };
 		3B780D772FC0C9C43796F3F8 /* JarvisUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */; };
 		3BC3B261F475A3B3A3E3FF7B /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D3D7941261E832088202BF /* EmptyStateView.swift */; };
 		3C2899CEF9F5FC865E470679 /* MessageCacheDeliveryStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAC0AC197B336538A3BB964 /* MessageCacheDeliveryStatusTests.swift */; };
@@ -194,6 +195,17 @@
 		F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetectorTests.swift; sourceTree = "<group>"; };
 		FE1A573133241875D7269CED /* HealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E3A47A4D98DEA28A574DC7E2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				365191E0FC23319F9CA2C898 /* GRDB in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		08FED5B7DD0903F841695517 /* JarvisApp */ = {
@@ -416,6 +428,7 @@
 			buildPhases = (
 				6E8423563D0FD4F8B7DD421F /* Sources */,
 				029DBF72E1B4032FA292F6EE /* Resources */,
+				E3A47A4D98DEA28A574DC7E2 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -423,6 +436,7 @@
 			);
 			name = JarvisApp;
 			packageProductDependencies = (
+				31E0AB4EF75BC659349C8E0A /* GRDB */,
 			);
 			productName = JarvisApp;
 			productReference = 6931A58F122A71990D09EF46 /* JarvisApp.app */;
@@ -483,6 +497,9 @@
 			);
 			mainGroup = FAB52A8BA94ED53024677170;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A840CE7DDB6B1A6D4427D64B /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 241DC7A9A2CF5BC2D04B1BB2 /* Products */;
 			projectDirPath = "";
@@ -967,6 +984,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A840CE7DDB6B1A6D4427D64B /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.29.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		31E0AB4EF75BC659349C8E0A /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A840CE7DDB6B1A6D4427D64B /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7DB0DAB8DB97C1CD818BB48F /* Project object */;
 }
