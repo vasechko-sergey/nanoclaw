@@ -62,6 +62,90 @@ describe('context timezone header', () => {
   });
 });
 
+describe('iOS context attributes on header', () => {
+  it('lifts timezone/ts/lat/lon/accuracy/locality from ios_context onto <context>', () => {
+    insertMessage('m1', 'chat', {
+      sender: 'Alice',
+      text: 'hello',
+      ios_context: {
+        location: { lat: -8.6485, lon: 115.1315, accuracy: 25 },
+        timestamp: '2026-05-31T13:53:53.000Z',
+        timezone: 'Asia/Makassar',
+        locality: 'Canggu',
+      },
+    });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('timezone="Asia/Makassar"');
+    expect(result).toContain('ts="2026-05-31T13:53:53.000Z"');
+    expect(result).toContain('lat="-8.6485"');
+    expect(result).toContain('lon="115.1315"');
+    expect(result).toContain('accuracy="25"');
+    expect(result).toContain('locality="Canggu"');
+    // Body must be raw text — no [iOS context — ...] prefix anymore.
+    expect(result).not.toContain('[iOS context');
+    expect(result).toContain('>hello</message>');
+  });
+
+  it('omits accuracy and locality when not present', () => {
+    insertMessage('m1', 'chat', {
+      sender: 'Alice',
+      text: 'hi',
+      ios_context: {
+        location: { lat: 1, lon: 2 },
+        timestamp: '2026-05-31T12:00:00.000Z',
+        timezone: 'UTC',
+      },
+    });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('lat="1"');
+    expect(result).toContain('lon="2"');
+    expect(result).not.toContain('accuracy=');
+    expect(result).not.toContain('locality=');
+  });
+
+  it('omits location attrs entirely when ios_context has no location', () => {
+    insertMessage('m1', 'chat', {
+      sender: 'Alice',
+      text: 'hi',
+      ios_context: {
+        timestamp: '2026-05-31T12:00:00.000Z',
+        timezone: 'Asia/Tokyo',
+        locality: 'Shibuya',
+      },
+    });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('timezone="Asia/Tokyo"');
+    expect(result).toContain('ts="2026-05-31T12:00:00.000Z"');
+    expect(result).toContain('locality="Shibuya"');
+    expect(result).not.toContain('lat=');
+    expect(result).not.toContain('lon=');
+    expect(result).not.toContain('accuracy=');
+  });
+
+  it('falls back to container TIMEZONE when no ios_context', () => {
+    insertMessage('m1', 'chat', { sender: 'Alice', text: 'plain' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain(`timezone="${TIMEZONE}"`);
+    expect(result).not.toContain('ts=');
+    expect(result).not.toContain('lat=');
+    expect(result).not.toContain('locality=');
+  });
+
+  it('XML-escapes string attributes from ios_context', () => {
+    insertMessage('m1', 'chat', {
+      sender: 'Alice',
+      text: 'hi',
+      ios_context: {
+        timestamp: '2026-05-31T12:00:00.000Z',
+        timezone: 'UTC',
+        locality: 'A & B <Café>',
+      },
+    });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('locality="A &amp; B &lt;Café&gt;"');
+  });
+});
+
 describe('timestamp formatting', () => {
   it('renders time via formatLocalTime (user TZ)', () => {
     // 2026-06-15T12:00:00Z — timezone-agnostic assertions (year is stable)

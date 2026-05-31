@@ -1,4 +1,3 @@
-import { formatIosInbound } from './channels/ios-app-format.js';
 import { findByRouting } from './destinations.js';
 import type { MessageInRow } from './db/messages-in.js';
 import { TIMEZONE, formatLocalTime } from './timezone.js';
@@ -118,17 +117,19 @@ export function extractRouting(messages: MessageInRow[]): RoutingContext {
 /**
  * Format a batch of messages_in rows into a prompt string.
  *
- * Prepends a `<context timezone="<IANA>" />` header so the agent always knows
- * what timezone it's in — every timestamp it sees in message bodies is the
- * user's local time, and every time it produces (schedules, suggests) should
- * be interpreted as local time in that same zone. This header is v1 behavior
- * (src/v1/router.ts:20-22); dropping it led to misinterpretations where the
- * agent scheduled tasks for the wrong hour.
+ * Prepends a `<context ... />` header so the agent always knows what timezone
+ * it's in and (for iOS) where/when the user sent the message. Every timestamp
+ * the agent sees in message bodies is the user's local time, and every time it
+ * produces (schedules, suggests) should be interpreted as local time in that
+ * same zone. The header always carries `timezone` (falling back to container
+ * `TIMEZONE` env when no message supplies one); iOS-sourced messages also
+ * contribute `ts`, `lat`, `lon`, `accuracy`, `locality` when present. Header
+ * shape is v1 behavior (src/v1/router.ts:20-22) extended with iOS attrs in v2.
  *
  * Strips routing fields — the agent never sees platform_id, channel_type, thread_id.
  */
 export function formatMessages(messages: MessageInRow[]): string {
-  const header = `<context timezone="${escapeXml(TIMEZONE)}" />\n`;
+  const header = buildContextHeader(messages) + '\n';
   if (messages.length === 0) return header;
 
   // Group by kind
@@ -155,6 +156,54 @@ export function formatMessages(messages: MessageInRow[]): string {
   return header + parts.join('\n\n');
 }
 
+/**
+ * Build the `<context ... />` header for a batch of inbound messages.
+ *
+ * Always emits the tag. Walks the batch to find the first message with an
+ * inline `ios_context` (the typical case is one message per turn) and lifts
+ * its attributes — timezone, timestamp→`ts`, lat, lon, accuracy, locality —
+ * onto the tag. Falls back to the container `TIMEZONE` env for the timezone
+ * attribute when no iOS context is present (preserves non-iOS behavior).
+ *
+ * All values are XML-escaped.
+ */
+function buildContextHeader(messages: MessageInRow[]): string {
+  const ctx = findFirstIosContext(messages);
+  const attrs: string[] = [];
+
+  const tz = (ctx && typeof ctx.timezone === 'string' && ctx.timezone) || TIMEZONE;
+  attrs.push(`timezone="${escapeXml(tz)}"`);
+
+  if (ctx) {
+    if (typeof ctx.timestamp === 'string' && ctx.timestamp) {
+      attrs.push(`ts="${escapeXml(ctx.timestamp)}"`);
+    }
+    const loc = ctx.location;
+    if (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number') {
+      attrs.push(`lat="${escapeXml(String(loc.lat))}"`);
+      attrs.push(`lon="${escapeXml(String(loc.lon))}"`);
+      if (typeof loc.accuracy === 'number') {
+        attrs.push(`accuracy="${escapeXml(String(loc.accuracy))}"`);
+      }
+    }
+    if (typeof ctx.locality === 'string' && ctx.locality) {
+      attrs.push(`locality="${escapeXml(ctx.locality)}"`);
+    }
+  }
+
+  return `<context ${attrs.join(' ')} />`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findFirstIosContext(messages: MessageInRow[]): any {
+  for (const msg of messages) {
+    if (msg.kind !== 'chat' && msg.kind !== 'chat-sdk') continue;
+    const content = parseContent(msg.content);
+    if (content && content.ios_context) return content.ios_context;
+  }
+  return null;
+}
+
 function formatChatMessages(messages: MessageInRow[]): string {
   if (messages.length === 1) {
     return formatSingleChat(messages[0]);
@@ -173,10 +222,9 @@ function formatSingleChat(msg: MessageInRow): string {
   const sender = content.sender || content.author?.fullName || content.author?.userName || 'Unknown';
   const time = formatLocalTime(msg.timestamp, TIMEZONE);
   // iOS-app messages carry an inline `ios_context` (location, timezone,
-  // locality). Prepend a one-line header so the agent sees the user's
-  // current device context inline with the message body, matching v1
-  // behavior. Other channels: no ios_context → noop, text unchanged.
-  const text = formatIosInbound(content.text || '', content.ios_context);
+  // locality) that is lifted into the per-turn <context> header by
+  // buildContextHeader(). The message body itself is just the raw text.
+  const text = content.text || '';
   const idAttr = msg.seq != null ? ` id="${msg.seq}"` : '';
   const replyAttr = content.replyTo?.id ? ` reply_to="${escapeXml(String(content.replyTo.id))}"` : '';
   const replyPrefix = formatReplyContext(content.replyTo);
