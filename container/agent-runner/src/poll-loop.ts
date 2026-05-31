@@ -13,6 +13,7 @@ import {
   stripInternalTags,
   type RoutingContext,
 } from './formatter.js';
+import { onContextResponse } from './mcp-tools/request_context.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -24,6 +25,62 @@ function log(msg: string): void {
 
 function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Drain `system` rows that carry MCP-tool replies (currently:
+ * ios-app `context_response`) into their awaiting Promises, mark them
+ * completed, and return the rows that did NOT match — those continue to
+ * the agent turn untouched.
+ *
+ * The host writes `context_response` as a `system` row with content
+ * `{ subtype: 'context_response', request_id, data, errors }`. The
+ * matching pending promise lives in-memory in
+ * `mcp-tools/request_context.ts`; if the request has already timed out
+ * the call is a no-op.
+ *
+ * Important: this consumes the row so the existing
+ * `kind !== 'system'` filter downstream still works for any system row we
+ * don't recognize (e.g. ask_user_question responses) — those fall
+ * through to the original filter unchanged. Non-iOS sessions never see
+ * `subtype === 'context_response'` rows, so this is a no-op there.
+ */
+export function dispatchSystemReplies(rows: MessageInRow[]): MessageInRow[] {
+  const consumed: string[] = [];
+  const survivors: MessageInRow[] = [];
+  for (const row of rows) {
+    if (row.kind !== 'system') {
+      survivors.push(row);
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.content);
+    } catch {
+      survivors.push(row);
+      continue;
+    }
+    const content = parsed as { subtype?: string; request_id?: string; data?: Record<string, unknown>; errors?: Record<string, string> };
+    if (content.subtype === 'context_response' && content.request_id) {
+      try {
+        onContextResponse({
+          request_id: content.request_id,
+          data: content.data ?? {},
+          errors: content.errors,
+        });
+      } catch (err) {
+        log(`onContextResponse threw: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      consumed.push(row.id);
+      continue;
+    }
+    survivors.push(row);
+  }
+  if (consumed.length > 0) {
+    markCompleted(consumed);
+    log(`Dispatched ${consumed.length} system reply row(s) to in-flight MCP tools`);
+  }
+  return survivors;
 }
 
 export interface PollLoopConfig {
@@ -70,7 +127,13 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
   let isFirstPoll = true;
   while (true) {
     // Skip system messages — they're responses for MCP tools (e.g., ask_user_question)
-    const messages = getPendingMessages(isFirstPoll).filter((m) => m.kind !== 'system');
+    const allPending = getPendingMessages(isFirstPoll);
+    // Drain channel-side replies that belong to in-flight MCP tool promises
+    // (currently: ios-app context_response). They MUST NOT join the agent's
+    // turn — they resolve the pending Promise the tool is awaiting. Mark
+    // them completed in the same tick so the host sweep doesn't see stale
+    // claims. Returns the rows that survived dispatch.
+    const messages = dispatchSystemReplies(allPending).filter((m) => m.kind !== 'system');
     isFirstPoll = false;
     pollCount++;
 
@@ -307,7 +370,10 @@ async function processQuery(
         // everything. Filtering on thread_id here caused deadlocks when the
         // initial batch and follow-ups had mismatched thread_ids (e.g. a
         // host-generated welcome trigger with null thread vs a Discord DM reply).
-        const newMessages = pending.filter((m) => m.kind !== 'system');
+        // Same as the outer loop: drain system rows that resolve in-flight
+        // MCP tool promises (ios-app context_response) before filtering, so a
+        // device reply arriving mid-turn unblocks the awaiting tool.
+        const newMessages = dispatchSystemReplies(pending).filter((m) => m.kind !== 'system');
         if (newMessages.length === 0) return;
 
         const newIds = newMessages.map((m) => m.id);

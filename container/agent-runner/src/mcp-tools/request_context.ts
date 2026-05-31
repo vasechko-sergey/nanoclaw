@@ -17,9 +17,18 @@
  * can route `context_response` rows from messages_in back into the
  * pending promise. There is no DB persistence: a container restart loses
  * any in-flight request — the agent will see a timeout rejection.
+ *
+ * `registerRequestContextTool()` adapts this zod-shaped tool into the
+ * registry's JSON-Schema `McpToolDefinition` and is invoked from the
+ * MCP tools barrel only when the session is wired to the ios-app
+ * channel — non-iOS sessions never see this tool.
  */
 import type { ContextField } from '@shared/ios-app-protocol/index.js';
 import { z } from 'zod';
+
+import { writeMessageOut as writeMessageOutRaw } from '../db/messages-out.js';
+import { registerTools } from './server.js';
+import type { McpToolDefinition } from './types.js';
 
 // Re-declare the enum locally rather than reusing the shared zod value.
 // The shared package compiles against a sibling zod copy with a different
@@ -126,4 +135,110 @@ export function onContextResponse(envelope: {
   } else {
     entry.resolve({ data, errors });
   }
+}
+
+/**
+ * Build the MCP registry adapter wrapping `requestContextTool`.
+ *
+ * Two impedance mismatches handled here:
+ *
+ *  1. The registry expects `inputSchema` as a JSON Schema; the tool was
+ *     authored against a zod schema. `z.toJSONSchema` lifts it across.
+ *     The schema is materialized once at registration time; per-call
+ *     parsing still uses the original zod schema.
+ *
+ *  2. The registry hands `handler(args)` raw record args; the tool was
+ *     authored against `(input, ctx)` with a ToolContext-style
+ *     `writeMessageOut(session_id, msg)`. The shim closes over the
+ *     session id and re-shapes the call into the real
+ *     `writeMessageOut({ id, kind, content })` signature, routing the
+ *     envelope as `kind='control'` on the session's ios-app channel.
+ */
+export function buildRequestContextDefinition(opts: {
+  session_id: string;
+  channel_type: string;
+  platform_id: string | null;
+}): McpToolDefinition {
+  const jsonSchema = z.toJSONSchema(InputSchema) as Record<string, unknown>;
+  return {
+    tool: {
+      name: requestContextTool.name,
+      description: requestContextTool.description,
+      // Cast: zod's JSON Schema output is structurally compatible with the
+      // MCP `Tool.inputSchema` type but typed as a generic record.
+      inputSchema: jsonSchema as { type: 'object' } & Record<string, unknown>,
+    },
+    async handler(args) {
+      const parsed = InputSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: invalid request_context input — ${parsed.error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      try {
+        const ctx: ToolContext = {
+          session_id: opts.session_id,
+          // The tool was authored against an abstract `writeMessageOut`
+          // that takes a session_id + {type, payload} envelope. The real
+          // writer is row-oriented; serialize the envelope into the row's
+          // `content` JSON so the host can decode it back to a control
+          // envelope on the wire.
+          writeMessageOut: async (_session_id, msg) => {
+            writeMessageOutRaw({
+              id: `req-${msg.payload.request_id ?? Date.now()}`,
+              kind: 'control',
+              channel_type: opts.channel_type,
+              platform_id: opts.platform_id,
+              thread_id: null,
+              content: JSON.stringify({ type: msg.type, ...msg.payload }),
+            });
+          },
+        };
+        const result = await requestContextTool.handler(parsed.data, ctx);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  };
+}
+
+/**
+ * Register `request_context` for the current session, ONLY when the
+ * session is bound to the ios-app channel. No-op otherwise. Called from
+ * the MCP tools barrel after session routing has been established.
+ *
+ * Channel guard at registration time rather than handler time keeps the
+ * tool off the ListTools response for non-iOS agents — the agent never
+ * even learns the tool exists.
+ */
+export function registerRequestContextTool(opts: {
+  session_id: string;
+  channel_type: string | null;
+  platform_id: string | null;
+}): void {
+  if (opts.channel_type !== 'ios-app') return;
+  registerTools([
+    buildRequestContextDefinition({
+      session_id: opts.session_id,
+      channel_type: opts.channel_type,
+      platform_id: opts.platform_id,
+    }),
+  ]);
 }
