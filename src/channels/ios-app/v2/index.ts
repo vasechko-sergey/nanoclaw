@@ -391,19 +391,31 @@ function createV2Adapter(): ChannelAdapter | null {
         return requestId;
       }
 
-      // Default outbound: enqueue as a chat message envelope. WsHandler
-      // allocates the seq and flushes to the device if the socket is live.
+      // Default outbound: enqueue as a v2 data:message envelope so the iOS
+      // Codable mirror accepts it. WsHandler allocates the seq and flushes
+      // to the device if the socket is live.
       const id = (content.id as string) ?? randomUUID();
-      const kind = message.kind === 'system' || message.kind === 'control' ? message.kind : 'chat';
-      const type = (content.type as string) ?? 'message';
+      const text = typeof content.text === 'string' ? content.text : '';
+      const attachments = Array.isArray(content.files)
+        ? (content.files as Array<Record<string, unknown>>).map((f) => ({
+            id: typeof f.id === 'string' ? f.id : randomUUID(),
+            kind: typeof f.mime_type === 'string' && f.mime_type.startsWith('image/') ? 'image' : 'file',
+            name: typeof f.name === 'string' ? f.name : 'file',
+            mime_type: typeof f.mime_type === 'string' ? f.mime_type : 'application/octet-stream',
+            byte_size: typeof f.byte_size === 'number' ? f.byte_size : 0,
+            bytes_base64: typeof f.bytes_base64 === 'string' ? f.bytes_base64 : undefined,
+            remote_id: typeof f.remote_id === 'string' ? f.remote_id : undefined,
+          }))
+        : undefined;
 
       handler.sendEnvelopeToDevice(platformId, {
         id,
-        kind,
-        type,
+        kind: 'data',
+        type: 'message',
         payload: {
-          ...content,
-          conversation_id: threadId ?? undefined,
+          thread_id: threadId ?? 'default',
+          text,
+          ...(attachments && attachments.length > 0 ? { attachments } : {}),
         },
       });
       return id;
