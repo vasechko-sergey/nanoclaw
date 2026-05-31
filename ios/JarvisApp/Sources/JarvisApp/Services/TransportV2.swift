@@ -35,7 +35,12 @@ actor TransportV2 {
 
     private let ackTimeoutSeconds: Double
     private let dispatcherIntervalMs: Int
-    private let reconnectDelaySeconds: Double
+    private let baseReconnectDelaySeconds: Double
+    private let maxReconnectDelaySeconds: Double
+    /// Count of consecutive `handleSocketClose` invocations since the last
+    /// successful auth. Drives exponential backoff in `handleSocketClose`.
+    /// Resets to 0 in `handleAuthOk` once the server has accepted us.
+    private var reconnectAttempt: Int = 0
 
     init(
         store: ConversationStoreV2,
@@ -44,7 +49,8 @@ actor TransportV2 {
         contextCoordinator: ContextCoordinatorV2? = nil,
         ackTimeoutSeconds: Double = 5.0,
         dispatcherIntervalMs: Int = 200,
-        reconnectDelaySeconds: Double = 2.0
+        baseReconnectDelaySeconds: Double = 1.0,
+        maxReconnectDelaySeconds: Double = 60.0
     ) {
         self.store = store
         self.socket = socket
@@ -52,7 +58,8 @@ actor TransportV2 {
         self.contextCoordinator = contextCoordinator
         self.ackTimeoutSeconds = ackTimeoutSeconds
         self.dispatcherIntervalMs = dispatcherIntervalMs
-        self.reconnectDelaySeconds = reconnectDelaySeconds
+        self.baseReconnectDelaySeconds = baseReconnectDelaySeconds
+        self.maxReconnectDelaySeconds = maxReconnectDelaySeconds
     }
 
     func connect() async throws {
@@ -91,6 +98,9 @@ actor TransportV2 {
         try store.confirmAckedUpTo(maxSeq: lastSeenOutboundSeq)
         try store.resetSendingToQueued(maxSeq: lastSeenOutboundSeq)
         state = .authed
+        // Server accepted us — clear the backoff counter so the next clean
+        // disconnect retries at the base delay rather than the prior peak.
+        reconnectAttempt = 0
         try await tickDispatcher()
     }
 
@@ -139,6 +149,23 @@ actor TransportV2 {
     /// Test-only helper: force-advance the ack retry timer.
     func fastForwardAckTimer(by milliseconds: Int) async {
         try? await Task.sleep(nanoseconds: UInt64(milliseconds) * 1_000_000)
+    }
+
+    /// Test-only: drive a close synchronously without going through the
+    /// socket callback indirection. Cancels any scheduled reconnect Task
+    /// afterward so the test doesn't race a real `connect()`.
+    func simulateSocketClose() async {
+        await handleSocketClose(nil)
+        reconnectTask?.cancel()
+        reconnectTask = nil
+    }
+
+    /// Test-only: pretend the reconnect succeeded *without* clearing the
+    /// `reconnectAttempt` counter. Used by the backoff-growth test to bypass
+    /// the `case .reconnecting` early-return in `handleSocketClose` between
+    /// consecutive simulated closes.
+    func forceStateAuthedPreservingCounter() async {
+        state = .authed
     }
 
     // MARK: - Facade helpers (5.2b)
@@ -266,13 +293,19 @@ actor TransportV2 {
     // MARK: - Reconnect
 
     /// Called from the socket's `onClose` callback. Coalesces overlapping closes:
-    /// if a reconnect is already pending, ignore. Otherwise transition to
-    /// `.reconnecting` and schedule `connect()` after `reconnectDelaySeconds`.
+    /// if a reconnect is already pending, ignore. Otherwise compute the next
+    /// exponential-backoff delay (`base * 2^attempt`, capped at `max`), bump
+    /// the attempt counter, and schedule `connect()` after that delay. The
+    /// counter is reset to 0 in `handleAuthOk` on successful auth.
     private func handleSocketClose(_ error: Error?) async {
         if case .reconnecting = state { return }
-        state = .reconnecting(delaySeconds: reconnectDelaySeconds)
+        let delay = min(
+            maxReconnectDelaySeconds,
+            baseReconnectDelaySeconds * pow(2.0, Double(reconnectAttempt))
+        )
+        reconnectAttempt += 1
+        state = .reconnecting(delaySeconds: delay)
         reconnectTask?.cancel()
-        let delay = reconnectDelaySeconds
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             if Task.isCancelled { return }

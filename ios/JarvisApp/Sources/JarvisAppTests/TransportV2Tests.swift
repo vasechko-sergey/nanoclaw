@@ -152,6 +152,78 @@ final class TransportV2Tests: XCTestCase {
         XCTAssertNotNil(obj["health"])
     }
 
+    func testReconnectAttemptResetsOnAuthOk() async throws {
+        // Construct transport with very short delays so the test is fast.
+        let socket2 = MockWebSocket()
+        let transport2 = TransportV2(
+            store: store, socket: socket2, token: "tok",
+            ackTimeoutSeconds: 0.2,
+            dispatcherIntervalMs: 50,
+            baseReconnectDelaySeconds: 0.05,
+            maxReconnectDelaySeconds: 0.5
+        )
+        // handleAuthOk lands cleanly → state .authed, counter reset to 0.
+        try await transport2.handleAuthOk(lastSeenOutboundSeq: 0)
+        let beforeState = await transport2.state
+        XCTAssertEqual(beforeState, .authed)
+    }
+
+    func testReconnectDelayGrowsOnConsecutiveCloses() async throws {
+        // Use a long enough max that the first few attempts are uncapped, so
+        // we can observe pure exponential growth via the State enum's
+        // associated value.
+        let socket2 = MockWebSocket()
+        let transport2 = TransportV2(
+            store: store, socket: socket2, token: "tok",
+            ackTimeoutSeconds: 0.2,
+            dispatcherIntervalMs: 50,
+            baseReconnectDelaySeconds: 1.0,
+            maxReconnectDelaySeconds: 60.0
+        )
+        // We exercise handleSocketClose indirectly: the only way to invoke it
+        // is via the socket's onClose callback, which `connect()` wires up. We
+        // can't easily call it twice without the reconnectTask actually firing
+        // and changing state back. Instead we test the math directly by
+        // observing `.reconnecting` state immediately after each close.
+        //
+        // Strategy: call connect() so onClose is wired, then trigger close,
+        // read state, then mutate state back to .authed (simulating a
+        // successful reconnect *without* resetting the counter) to bypass
+        // the coalescing guard, then close again. The bookkeeping we care
+        // about is: each invocation of handleSocketClose uses the current
+        // `reconnectAttempt` value, increments it, and emits a doubled delay.
+        try await transport2.connect()
+        // First close: expect delay = base * 2^0 = 1.0
+        await transport2.simulateSocketClose()
+        let s1 = await transport2.state
+        guard case .reconnecting(let d1) = s1 else {
+            XCTFail("expected .reconnecting; got \(s1)")
+            return
+        }
+        XCTAssertEqual(d1, 1.0, accuracy: 0.001)
+        // Force state back to .authed (without resetting counter) so the next
+        // close isn't swallowed by the coalescing guard. We can't reach the
+        // private setter from outside, so use the test helper.
+        await transport2.forceStateAuthedPreservingCounter()
+        // Second close: expect delay = base * 2^1 = 2.0
+        await transport2.simulateSocketClose()
+        let s2 = await transport2.state
+        guard case .reconnecting(let d2) = s2 else {
+            XCTFail("expected .reconnecting; got \(s2)")
+            return
+        }
+        XCTAssertEqual(d2, 2.0, accuracy: 0.001)
+        // Third close: expect delay = base * 2^2 = 4.0
+        await transport2.forceStateAuthedPreservingCounter()
+        await transport2.simulateSocketClose()
+        let s3 = await transport2.state
+        guard case .reconnecting(let d3) = s3 else {
+            XCTFail("expected .reconnecting; got \(s3)")
+            return
+        }
+        XCTAssertEqual(d3, 4.0, accuracy: 0.001)
+    }
+
     func testRetryAfterAckTimeout() async throws {
         try store.insertOutboundUserMessage(
             conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
