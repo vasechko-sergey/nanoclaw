@@ -123,3 +123,37 @@ describe('AnyEnvelope discriminated union', () => {
     expect(parsed.type).toBe('auth');
   });
 });
+
+describe('Stateless envelopes (ack/ping/pong/status)', () => {
+  it('Ack accepts seq=null', () => {
+    expect(() => Envelopes.Ack.parse(baseFor({
+      kind: 'ack', type: 'ack', seq: null,
+      payload: { id: '550e8400-e29b-41d4-a716-446655440000', seq: 5 },
+    }))).not.toThrow();
+  });
+
+  it('Ping accepts non-empty nonce', () => {
+    expect(() => Envelopes.Ping.parse(baseFor({
+      kind: 'control', type: 'ping', seq: null,
+      payload: { nonce: 'abc' },
+    }))).not.toThrow();
+  });
+
+  it('Pong mirrors ping', () => {
+    expect(() => Envelopes.Pong.parse(baseFor({
+      kind: 'control', type: 'pong', seq: null,
+      payload: { nonce: 'abc' },
+    }))).not.toThrow();
+  });
+
+  it('Status delivered/read accept batches of ids', () => {
+    expect(() => Envelopes.StatusDelivered.parse(baseFor({
+      kind: 'status', type: 'delivered', seq: null,
+      payload: { ids: ['550e8400-e29b-41d4-a716-446655440000'] },
+    }))).not.toThrow();
+    expect(() => Envelopes.StatusRead.parse(baseFor({
+      kind: 'status', type: 'read', seq: null,
+      payload: { ids: ['550e8400-e29b-41d4-a716-446655440000'] },
+    }))).not.toThrow();
+  });
+});

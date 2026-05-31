@@ -114,12 +114,46 @@ export const Envelopes = {
       kind: z.enum(['up', 'down']),
     }),
   }),
+  Ack: EnvelopeBase.extend({
+    kind: z.literal('ack'),
+    type: z.literal('ack'),
+    seq: z.null(),
+    payload: z.object({
+      id: z.string().uuid(),
+      seq: z.number().int().nonnegative(),
+    }),
+  }),
+  Ping: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('ping'),
+    seq: z.null(),
+    payload: z.object({ nonce: z.string().min(1) }),
+  }),
+  Pong: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('pong'),
+    seq: z.null(),
+    payload: z.object({ nonce: z.string().min(1) }),
+  }),
+  StatusDelivered: EnvelopeBase.extend({
+    kind: z.literal('status'),
+    type: z.literal('delivered'),
+    seq: z.null(),
+    payload: z.object({ ids: z.array(z.string().uuid()).min(1) }),
+  }),
+  StatusRead: EnvelopeBase.extend({
+    kind: z.literal('status'),
+    type: z.literal('read'),
+    seq: z.null(),
+    payload: z.object({ ids: z.array(z.string().uuid()).min(1) }),
+  }),
 } as const;
 
-// Provisional union — extended in Task 1.4 with ack/ping/pong/status types.
 export const AnyEnvelope = z.discriminatedUnion('type', [
   Envelopes.Auth, Envelopes.AuthOk, Envelopes.AuthFail,
   Envelopes.Message, Envelopes.ContextRequest, Envelopes.ContextResponse,
   Envelopes.NewConversation, Envelopes.ActionResponse, Envelopes.Feedback,
+  Envelopes.Ack, Envelopes.Ping, Envelopes.Pong,
+  Envelopes.StatusDelivered, Envelopes.StatusRead,
 ]);
 export type AnyEnvelope = z.infer<typeof AnyEnvelope>;
