@@ -38,7 +38,6 @@ final class WebSocketClient {
     @ObservationIgnored private let inboundRouter: InboundRouter
     @ObservationIgnored private var settings: AppSettings?
     @ObservationIgnored private var stopped           = false
-    @ObservationIgnored private var pendingApnsToken: String?
     @ObservationIgnored private var sentReadIds: Set<String> = []
 
     /// In-memory replay queue for control envelopes (feedback, actionResponse,
@@ -173,7 +172,6 @@ final class WebSocketClient {
         self.settings = settings
         stopped = false
         AppDelegate.wsClient = self
-        UIApplication.shared.registerForRemoteNotifications()
         ConnectivityMonitor.shared.onSatisfied = { [weak self] in
             Task { @MainActor in
                 guard let self, !self.isConnected, !self.stopped, let s = self.settings else { return }
@@ -186,11 +184,6 @@ final class WebSocketClient {
     func disconnect() {
         stopped = true
         transport.disconnect()
-    }
-
-    func registerApnsToken(_ hex: String) {
-        pendingApnsToken = hex
-        if isConnected { sendApnsToken(hex) }
     }
 
     // MARK: – Conversations
@@ -494,12 +487,6 @@ final class WebSocketClient {
         handleMessageAck(clientMessageId: clientMessageId)
     }
 
-    private func sendApnsToken(_ hex: String) {
-        guard isConnected else { return }
-        guard let pay = try? JSONSerialization.data(withJSONObject: ["type": "apns_token", "token": hex]) else { return }
-        transport.send(pay) { if let e = $0 { Log.warn(.ws, "send(apns_token) failed: \(e)") } }
-    }
-
     @MainActor
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
@@ -525,7 +512,6 @@ final class WebSocketClient {
             flushOneShotQueue()
             onFlushForTesting?()
             transport.startHeartbeat()
-            if let tok = pendingApnsToken { sendApnsToken(tok) }
             if let cmds = obj["commands"] as? [[String: String]] {
                 commands = cmds.compactMap { d in
                     guard let cmd = d["command"], let desc = d["description"] else { return nil }

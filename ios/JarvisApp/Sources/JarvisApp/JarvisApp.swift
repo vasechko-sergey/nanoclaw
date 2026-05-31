@@ -21,22 +21,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
-
-    func application(
-        _ app: UIApplication,
-        didRegisterForRemoteNotificationsWithDeviceToken token: Data
-    ) {
-        let hex = token.map { String(format: "%02x", $0) }.joined()
-        AppDelegate.wsClient?.registerApnsToken(hex)
-    }
-
-    func application(
-        _ app: UIApplication,
-        didFailToRegisterForRemoteNotificationsWithError error: Error
-    ) {
-        Log.error(.app, "APNs registration failed: \(error)")
-    }
-
     // Show proactive pushes even while the app is foregrounded.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
