@@ -201,6 +201,57 @@ final class MigrationV2Tests: XCTestCase {
 
         XCTAssertEqual(try store.countAllMessages(), 1)
         XCTAssertEqual(try store.fetchById("perconv-1")?.conversationId, convId)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: convRoot.path))
+        // The per-conversation subdir is consumed and removed…
+        XCTAssertFalse(FileManager.default.fileExists(atPath: convDir.path))
+        // …but the root `Conversations/` dir is intentionally kept so the v1
+        // `ConversationStore`'s `conversations.json` index file (when present)
+        // survives the migration. See `liftConversationsIndex` for the read.
+    }
+
+    func testLiftsConversationsIndexIntoV2() throws {
+        let convRoot = tmpDir.appendingPathComponent("Conversations", isDirectory: true)
+        try FileManager.default.createDirectory(at: convRoot, withIntermediateDirectories: true)
+        let uuid1 = "22222222-2222-2222-2222-222222222222"
+        let uuid2 = "33333333-3333-3333-3333-333333333333"
+        // Real v1 `conversations.json` shape with isPinned/messageCount/etc.
+        // The migration only consumes id/title/createdAt — extra keys are ignored.
+        let json = """
+        [
+          {
+            "id": "\(uuid1)",
+            "title": "Утренний чат",
+            "createdAt": "2024-05-29T10:00:00Z",
+            "lastMessageAt": "2024-05-29T10:05:00Z",
+            "messageCount": 3,
+            "preview": "hi",
+            "isPinned": false
+          },
+          {
+            "id": "\(uuid2)",
+            "title": "Новый диалог",
+            "createdAt": "2024-05-29T09:00:00Z",
+            "lastMessageAt": "2024-05-29T09:00:00Z",
+            "messageCount": 0,
+            "preview": "",
+            "isPinned": true
+          }
+        ]
+        """
+        try json.write(to: convRoot.appendingPathComponent("conversations.json"),
+                       atomically: true, encoding: .utf8)
+
+        try MigrationV2.runIfNeeded(documentsURL: tmpDir, store: store)
+
+        let summaries = try store.listConversations()
+        let ids = Set(summaries.map(\.id))
+        XCTAssertTrue(ids.contains(uuid1))
+        XCTAssertTrue(ids.contains(uuid2))
+        // Title is preserved when non-empty.
+        XCTAssertEqual(summaries.first(where: { $0.id == uuid1 })?.title, "Утренний чат")
+        // The index file itself is left in place so v1 `ConversationStore`
+        // can still load the drawer during the transition period.
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: convRoot.appendingPathComponent("conversations.json").path
+        ))
     }
 }

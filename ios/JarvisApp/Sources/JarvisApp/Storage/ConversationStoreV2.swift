@@ -8,6 +8,16 @@ enum CursorKey: String {
     case lastSentOutbound = "last_sent_outbound_seq"
 }
 
+/// Lightweight read-model for the drawer/list views. Sourced from the
+/// `conversations` table — does NOT carry preview/message-count (those are
+/// owned by the legacy `ConversationStore` for now and can be folded in later).
+struct ConversationSummary: Equatable, Identifiable {
+    let id: String
+    let title: String?
+    let lastMessageAt: Int
+    let archived: Bool
+}
+
 struct StoredMessage: Equatable {
     var id: String
     var conversationId: String
@@ -263,6 +273,80 @@ final class ConversationStoreV2 {
                   (id, conversation_id, dir, seq, text, status, ts, created_at)
                 VALUES (?, ?, 'in', NULL, ?, 'new', ?, ?)
             """, arguments: [id, conversationId, text, ts, now])
+        }
+    }
+
+    // MARK: - Conversations API (drawer + creation)
+
+    /// Insert a conversation row if not already present. Safe to call
+    /// repeatedly with the same id — `INSERT OR IGNORE` semantics. Used by
+    /// the legacy `ConversationStore` to sync each in-memory conversation
+    /// into the v2 store, and by `AppCoordinator.handleAction(.newChat)`
+    /// when starting a new chat.
+    func createConversation(id: String, title: String? = nil, createdAt: Date = Date()) throws {
+        try writer.write { db in
+            let ts = Int(createdAt.timeIntervalSince1970 * 1000)
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO conversations (id, title, created_at, last_message_at, archived)
+                VALUES (?, ?, ?, ?, 0)
+            """, arguments: [id, title, ts, ts])
+            // If row existed but title was null and we now have one, fill it in.
+            if title != nil {
+                try db.execute(sql: """
+                    UPDATE conversations SET title=? WHERE id=? AND (title IS NULL OR title='')
+                """, arguments: [title, id])
+            }
+        }
+    }
+
+    /// All non-archived conversations, newest first.
+    func listConversations() throws -> [ConversationSummary] {
+        try writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT id, title, last_message_at, archived
+                FROM conversations
+                WHERE archived = 0
+                ORDER BY last_message_at DESC
+            """).map { row in
+                let archivedInt: Int = row["archived"]
+                return ConversationSummary(
+                    id: row["id"],
+                    title: row["title"],
+                    lastMessageAt: row["last_message_at"],
+                    archived: archivedInt != 0
+                )
+            }
+        }
+    }
+
+    /// Soft-delete a conversation (archived=1). Messages remain so the data
+    /// is recoverable; the drawer hides archived rows.
+    func archiveConversation(id: String) throws {
+        try writer.write { db in
+            try db.execute(sql: "UPDATE conversations SET archived=1 WHERE id=?", arguments: [id])
+        }
+    }
+
+    /// GRDB observation source for live drawer updates. Currently unused —
+    /// the drawer reads on-appear via `listConversations()` plus the v1
+    /// `ConversationStore` change signal. Kept for forward use once the
+    /// legacy store is fully retired.
+    func observeConversations() -> ValueObservation<ValueReducers.Fetch<[ConversationSummary]>> {
+        ValueObservation.tracking { db -> [ConversationSummary] in
+            try Row.fetchAll(db, sql: """
+                SELECT id, title, last_message_at, archived
+                FROM conversations
+                WHERE archived = 0
+                ORDER BY last_message_at DESC
+            """).map { row in
+                let archivedInt: Int = row["archived"]
+                return ConversationSummary(
+                    id: row["id"],
+                    title: row["title"],
+                    lastMessageAt: row["last_message_at"],
+                    archived: archivedInt != 0
+                )
+            }
         }
     }
 

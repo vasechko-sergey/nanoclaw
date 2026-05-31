@@ -97,6 +97,14 @@ final class AppCoordinator {
         guard settings.isConfigured else { return }
         connectionPhase = .connecting
         ws.connect(settings: settings)
+        // Once `connect()` returns, `ws.stack` is built (the bootstrap is
+        // synchronous; only the socket open is async). Backfill every v1
+        // conversation into the v2 GRDB `conversations` table so the
+        // observation in `WebSocketClientV2.restartObservation` finds the
+        // row when the user taps a conversation in the drawer. Idempotent.
+        if let v2 = ws.stack?.store {
+            store.attachV2(v2)
+        }
         if settings.useLocation { location.requestAndUpdate() }
         if settings.useHealth   { health.requestAndFetch()    }
         if settings.useCalendar { calendar.requestAndFetch()  }

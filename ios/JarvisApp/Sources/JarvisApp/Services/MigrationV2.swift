@@ -84,11 +84,27 @@ enum MigrationV2 {
             try? fm.removeItem(at: cacheDir)
         }
 
-        // Per-conversation MessageCache dirs under Documents/Conversations/<UUID>/
+        // Per-conversation MessageCache dirs under Documents/Conversations/<UUID>/.
+        // We deliberately do NOT delete the `Conversations/` root afterwards —
+        // it also contains `conversations.json`, the v1 `ConversationStore`'s
+        // index file. The legacy store still drives the drawer (this is the
+        // v1→v2 transition period), so blowing the file away would orphan the
+        // user from their own chat list. We do delete the per-conversation
+        // message subdirs since their data has been imported into GRDB.
         let convRoot = documentsURL.appendingPathComponent("Conversations", isDirectory: true)
         if fm.fileExists(atPath: convRoot.path) {
             try importConversationsRoot(convRoot, store: store)
-            try? fm.removeItem(at: convRoot)
+            try? cleanUpImportedConversationDirs(convRoot)
+        }
+
+        // Lift the v1 conversation metadata (`conversations.json`) into the
+        // v2 `conversations` table so the GRDB observation joining on a
+        // conversation row finds it even for v1 chats that have never been
+        // sent through the v2 transport. Preserves UUIDs so the v1 drawer
+        // can hand the same id to `.open(conv)` and the observation matches.
+        let convIndex = convRoot.appendingPathComponent("conversations.json")
+        if fm.fileExists(atPath: convIndex.path) {
+            try? liftConversationsIndex(convIndex, store: store)
         }
     }
 
@@ -188,6 +204,50 @@ enum MigrationV2 {
                 continue
             }
             try importCachedMessages(entries, conversationId: convId, store: store)
+        }
+    }
+
+    /// Decoder shape matching the v1 `Conversation` struct just enough to
+    /// extract the fields we need (id, title, createdAt). We don't import
+    /// preview / messageCount / isPinned — preview will re-derive from any
+    /// imported messages, count is recomputed on demand, and pin state stays
+    /// owned by the legacy v1 store for now.
+    private struct LegacyConversationIndexEntry: Codable {
+        let id: UUID
+        let title: String?
+        let createdAt: Date
+    }
+
+    private static func liftConversationsIndex(_ url: URL, store: ConversationStoreV2) throws {
+        let data = try Data(contentsOf: url)
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .iso8601
+        // `Conversation` decodes ISO8601 strings via its custom init. The
+        // v1 JSON stores all fields but we only need id/title/createdAt.
+        let entries = (try? dec.decode([LegacyConversationIndexEntry].self, from: data)) ?? []
+        for e in entries {
+            let title: String?
+            if let t = e.title, !t.isEmpty { title = t } else { title = nil }
+            try store.createConversation(id: e.id.uuidString, title: title, createdAt: e.createdAt)
+        }
+    }
+
+    /// Remove only the per-conversation message subdirs (UUID-named), not
+    /// the top-level `conversations.json` index file. Called after
+    /// `importConversationsRoot` has lifted the index files into GRDB.
+    private static func cleanUpImportedConversationDirs(_ root: URL) throws {
+        let fm = FileManager.default
+        guard let children = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
+            return
+        }
+        for child in children {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: child.path, isDirectory: &isDir), isDir.boolValue else { continue }
+            // Only delete directories named like a UUID — never touch other files
+            // (notably `conversations.json` which lives at the root).
+            if UUID(uuidString: child.lastPathComponent) != nil {
+                try? fm.removeItem(at: child)
+            }
         }
     }
 

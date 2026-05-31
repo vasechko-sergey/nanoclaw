@@ -212,6 +212,17 @@ final class ConversationStore {
     var conversations: [Conversation] = []
     var activeConversationId: UUID?
 
+    /// Weak reference to the GRDB-backed v2 store. Wired lazily by
+    /// `AppCoordinator` once `WebSocketClientV2` has built its `AppV2Stack`
+    /// (the v2 store doesn't exist at coordinator-init time). All mutating
+    /// operations on this v1 store forward into the v2 store so the GRDB
+    /// `conversations` table stays in sync with the JSON index that drives
+    /// the drawer. This is what makes "tap conversation → show messages"
+    /// work: `WebSocketClientV2.restartObservation` joins on the v2
+    /// `conversations` row, so the row must exist there for the UUID the
+    /// drawer hands to `.open(conv)`.
+    @ObservationIgnored private weak var v2Store: ConversationStoreV2?
+
     private static let rootDir: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let d = docs.appendingPathComponent("Conversations", isDirectory: true)
@@ -234,6 +245,29 @@ final class ConversationStore {
         }
     }
 
+    /// Wire the GRDB-backed v2 store and backfill every in-memory v1
+    /// conversation into the v2 `conversations` table. Idempotent — uses
+    /// `INSERT OR IGNORE` on the v2 side so repeated calls (e.g. on
+    /// reconnect) are safe. Must be called on the main actor.
+    func attachV2(_ store: ConversationStoreV2) {
+        self.v2Store = store
+        syncAllToV2(store)
+    }
+
+    private func syncAllToV2(_ store: ConversationStoreV2) {
+        for conv in conversations {
+            do {
+                try store.createConversation(
+                    id: conv.id.uuidString,
+                    title: conv.title.isEmpty ? nil : conv.title,
+                    createdAt: conv.createdAt
+                )
+            } catch {
+                Log.warn(.cache, "ConversationStore.syncAllToV2 failed for \(conv.id): \(error)")
+            }
+        }
+    }
+
     // MARK: – Public API
 
     @discardableResult
@@ -242,6 +276,19 @@ final class ConversationStore {
         conversations.insert(conv, at: 0)
         activeConversationId = conv.id
         saveIndex()
+        // Mirror into v2 so the chat-view observation finds a row immediately,
+        // even before the user sends the first message.
+        if let v2 = v2Store {
+            do {
+                try v2.createConversation(
+                    id: conv.id.uuidString,
+                    title: conv.title.isEmpty ? nil : conv.title,
+                    createdAt: conv.createdAt
+                )
+            } catch {
+                Log.warn(.cache, "ConversationStore.createNew v2 sync failed: \(error)")
+            }
+        }
         return conv
     }
 
@@ -276,6 +323,12 @@ final class ConversationStore {
         let dir = Self.conversationDir(id)
         try? FileManager.default.removeItem(at: dir)
         saveIndex()
+        // Mirror the delete as an archive flip in v2 (keeps message history
+        // recoverable on disk while hiding the row from the drawer).
+        if let v2 = v2Store {
+            do { try v2.archiveConversation(id: id.uuidString) }
+            catch { Log.warn(.cache, "ConversationStore.deleteConversation v2 sync failed: \(error)") }
+        }
     }
 
     func togglePin(_ id: UUID) {

@@ -76,6 +76,37 @@ final class ConversationStoreV2Tests: XCTestCase {
         XCTAssertTrue(try store.dedupSeen(id: "x"))
     }
 
+    func testCreateAndListConversations() throws {
+        try store.createConversation(id: "thr-A", title: "Alpha")
+        try store.createConversation(id: "thr-B", title: nil)
+        let list = try store.listConversations()
+        XCTAssertEqual(list.count, 2)
+        // listConversations orders by last_message_at DESC; both were just
+        // created so we just assert both ids are present.
+        let ids = Set(list.map(\.id))
+        XCTAssertEqual(ids, ["thr-A", "thr-B"])
+        XCTAssertEqual(list.first(where: { $0.id == "thr-A" })?.title, "Alpha")
+        XCTAssertNil(list.first(where: { $0.id == "thr-B" })?.title)
+    }
+
+    func testCreateConversationIsIdempotent() throws {
+        try store.createConversation(id: "thr-X", title: "First")
+        try store.createConversation(id: "thr-X", title: "Second")
+        let list = try store.listConversations()
+        XCTAssertEqual(list.count, 1)
+        // INSERT OR IGNORE keeps the first row; the title-update branch
+        // only fills NULL/empty titles.
+        XCTAssertEqual(list.first?.title, "First")
+    }
+
+    func testArchiveConversationHidesFromList() throws {
+        try store.createConversation(id: "thr-1", title: "Visible")
+        try store.createConversation(id: "thr-2", title: "Doomed")
+        try store.archiveConversation(id: "thr-2")
+        let list = try store.listConversations()
+        XCTAssertEqual(list.map(\.id), ["thr-1"])
+    }
+
     func testResetFailedToQueued() throws {
         let id = UUID().uuidString
         try store.insertOutboundUserMessage(conversationId: "thr-1", id: id, text: "hi",
