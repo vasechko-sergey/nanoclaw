@@ -208,6 +208,65 @@ final class MigrationV2Tests: XCTestCase {
         // survives the migration. See `liftConversationsIndex` for the read.
     }
 
+    func testLiftsPerConversationMessageBodiesIntoV2() throws {
+        // End-to-end check that a v1 `Documents/Conversations/<UUID>/index.json`
+        // file containing 3 cached messages lands in GRDB with the same
+        // `conversation_id` — the property that makes "tap migrated conv →
+        // history visible" work in `WebSocketClientV2.restartObservation`.
+        let convRoot = tmpDir.appendingPathComponent("Conversations", isDirectory: true)
+        let convId = "44444444-4444-4444-4444-444444444444"
+        let convDir = convRoot.appendingPathComponent(convId, isDirectory: true)
+        try FileManager.default.createDirectory(at: convDir, withIntermediateDirectories: true)
+        let json = """
+        [
+          {"id":"m-1","role":"user","kind":"text","text":"first","timestamp":"2024-05-29T10:00:00Z"},
+          {"id":"m-2","role":"assistant","kind":"text","text":"reply","timestamp":"2024-05-29T10:00:05Z"},
+          {"id":"m-3","role":"user","kind":"text","text":"third","timestamp":"2024-05-29T10:00:10Z"}
+        ]
+        """
+        try json.write(to: convDir.appendingPathComponent("index.json"),
+                       atomically: true, encoding: .utf8)
+
+        try MigrationV2.runIfNeeded(documentsURL: tmpDir, store: store)
+
+        XCTAssertEqual(try store.countAllMessages(), 3)
+        XCTAssertEqual(try store.fetchById("m-1")?.conversationId, convId)
+        XCTAssertEqual(try store.fetchById("m-1")?.dir, .out)
+        XCTAssertEqual(try store.fetchById("m-2")?.conversationId, convId)
+        XCTAssertEqual(try store.fetchById("m-2")?.dir, .in_)
+        XCTAssertEqual(try store.fetchById("m-3")?.conversationId, convId)
+    }
+
+    func testLiftsConversationsIndexPreservesPinAndLastMessageAt() throws {
+        let convRoot = tmpDir.appendingPathComponent("Conversations", isDirectory: true)
+        try FileManager.default.createDirectory(at: convRoot, withIntermediateDirectories: true)
+        let uuid = "55555555-5555-5555-5555-555555555555"
+        let json = """
+        [
+          {
+            "id": "\(uuid)",
+            "title": "Закреплённый",
+            "createdAt": "2024-05-29T09:00:00Z",
+            "lastMessageAt": "2024-05-29T18:00:00Z",
+            "messageCount": 2,
+            "preview": "x",
+            "isPinned": true
+          }
+        ]
+        """
+        try json.write(to: convRoot.appendingPathComponent("conversations.json"),
+                       atomically: true, encoding: .utf8)
+
+        try MigrationV2.runIfNeeded(documentsURL: tmpDir, store: store)
+
+        let summaries = try store.listConversations()
+        let lifted = summaries.first { $0.id == uuid }
+        XCTAssertNotNil(lifted)
+        XCTAssertEqual(lifted?.isPinned, true)
+        // 2024-05-29T18:00:00Z → 1717005600 s → 1717005600000 ms
+        XCTAssertEqual(lifted?.lastMessageAt, 1717005600000)
+    }
+
     func testLiftsConversationsIndexIntoV2() throws {
         let convRoot = tmpDir.appendingPathComponent("Conversations", isDirectory: true)
         try FileManager.default.createDirectory(at: convRoot, withIntermediateDirectories: true)

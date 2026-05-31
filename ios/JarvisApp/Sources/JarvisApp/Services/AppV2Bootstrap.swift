@@ -16,13 +16,13 @@ struct AppV2Stack {
 /// actor + ContextCoordinator. Pure construction — no network IO happens here.
 /// Callers are responsible for calling `transport.connect()` once they're ready.
 enum AppV2Bootstrap {
-    static func build(
-        serverURL: URL,
-        token: String,
-        location: LocationManager? = nil,
-        health: HealthManager? = nil,
-        calendar: CalendarManager? = nil
-    ) throws -> AppV2Stack {
+    /// Build the storage half of the stack (DB queue + migrated schema +
+    /// legacy-data migration). Separated from `build` so the
+    /// `AppCoordinator` can construct the drawer-facing `ConversationStore`
+    /// shim before the user has finished configuring the WebSocket URL —
+    /// otherwise the splash + home views would have no conversations to
+    /// render until the first successful `connect()`.
+    static func buildStorage() throws -> (dbq: DatabaseQueue, store: ConversationStoreV2) {
         let docs = try FileManager.default.url(
             for: .documentDirectory,
             in: .userDomainMask,
@@ -35,6 +35,17 @@ enum AppV2Bootstrap {
 
         let store = ConversationStoreV2(writer: dbq)
         try MigrationV2.runIfNeeded(documentsURL: docs, store: store)
+        return (dbq, store)
+    }
+
+    static func build(
+        serverURL: URL,
+        token: String,
+        location: LocationManager? = nil,
+        health: HealthManager? = nil,
+        calendar: CalendarManager? = nil
+    ) throws -> AppV2Stack {
+        let (dbq, store) = try buildStorage()
 
         let socket = URLSessionWebSocket(url: serverURL)
         let coordinator = AppContextCoordinator(
@@ -54,6 +65,38 @@ enum AppV2Bootstrap {
             transport: transport,
             coordinator: coordinator,
             dbq: dbq
+        )
+    }
+
+    /// Variant used when the storage half has already been built (e.g. by the
+    /// `AppCoordinator` at init time). Reuses the existing `dbq`/`store`
+    /// instead of re-opening the database, so the drawer shim and the
+    /// transport see the exact same writer.
+    static func build(
+        serverURL: URL,
+        token: String,
+        storage: (dbq: DatabaseQueue, store: ConversationStoreV2),
+        location: LocationManager? = nil,
+        health: HealthManager? = nil,
+        calendar: CalendarManager? = nil
+    ) -> AppV2Stack {
+        let socket = URLSessionWebSocket(url: serverURL)
+        let coordinator = AppContextCoordinator(
+            location: location,
+            health: health,
+            calendar: calendar
+        )
+        let transport = TransportV2(
+            store: storage.store,
+            socket: socket,
+            token: token,
+            contextCoordinator: coordinator
+        )
+        return AppV2Stack(
+            store: storage.store,
+            transport: transport,
+            coordinator: coordinator,
+            dbq: storage.dbq
         )
     }
 }

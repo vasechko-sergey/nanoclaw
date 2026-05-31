@@ -216,19 +216,29 @@ enum MigrationV2 {
         let id: UUID
         let title: String?
         let createdAt: Date
+        let lastMessageAt: Date?
+        let isPinned: Bool?
     }
 
     private static func liftConversationsIndex(_ url: URL, store: ConversationStoreV2) throws {
         let data = try Data(contentsOf: url)
         let dec = JSONDecoder()
         dec.dateDecodingStrategy = .iso8601
-        // `Conversation` decodes ISO8601 strings via its custom init. The
-        // v1 JSON stores all fields but we only need id/title/createdAt.
+        // The v1 JSON stores title/createdAt/lastMessageAt/isPinned etc.
+        // We lift everything the new schema can hold (`messageCount` and
+        // `preview` are derived from the `messages` table at query time so
+        // there's nothing to copy for those).
         let entries = (try? dec.decode([LegacyConversationIndexEntry].self, from: data)) ?? []
         for e in entries {
             let title: String?
             if let t = e.title, !t.isEmpty { title = t } else { title = nil }
-            try store.createConversation(id: e.id.uuidString, title: title, createdAt: e.createdAt)
+            try store.createConversation(
+                id: e.id.uuidString,
+                title: title,
+                createdAt: e.createdAt,
+                lastMessageAt: e.lastMessageAt,
+                isPinned: e.isPinned ?? false
+            )
         }
     }
 

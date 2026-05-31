@@ -50,6 +50,19 @@ enum Schema {
                 );
             """)
         }
+        // v2 retires the legacy `Services/ConversationStore.swift` shim. The
+        // shim used to own `isPinned` (in-memory JSON index) and the active
+        // conversation pointer (in-memory @State). Both now live in GRDB so
+        // the v2 store can be the single source of truth for the drawer.
+        m.registerMigration("v2-conversation-meta") { db in
+            try db.execute(sql: """
+                ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
+                CREATE TABLE kv (
+                  k TEXT PRIMARY KEY,
+                  v TEXT
+                );
+            """)
+        }
         try m.migrate(writer)
     }
 }

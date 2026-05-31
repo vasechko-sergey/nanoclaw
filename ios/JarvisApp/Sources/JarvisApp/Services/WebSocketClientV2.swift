@@ -78,9 +78,7 @@ final class WebSocketClientV2 {
 
     // MARK: - Callbacks (mirror legacy — view consumer wires these)
 
-    @ObservationIgnored var onMessagesChanged: (([ChatMessage]) -> Void)?
     @ObservationIgnored var onAssistantMessage: (() -> Void)?
-    @ObservationIgnored var onBackgroundMessage: ((UUID, ChatMessage) -> Void)?
     @ObservationIgnored var onSpeakableText: ((String) -> Void)?
     @ObservationIgnored var onActionResponse: ((String, String, String) -> Void)?
     @ObservationIgnored var onContextRequest: (([String]) -> [String: Any])?
@@ -101,6 +99,12 @@ final class WebSocketClientV2 {
     @ObservationIgnored private weak var health: HealthManager?
     @ObservationIgnored private weak var calendar: CalendarManager?
 
+    /// Pre-built storage (DB queue + ConversationStoreV2) handed to the
+    /// transport when `connect(settings:)` finally has a URL/token. The
+    /// coordinator builds this at init time so the drawer can render before
+    /// the user has configured the server.
+    @ObservationIgnored private var preBuiltStorage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2)?
+
     @ObservationIgnored private static let busyTimeoutSeconds: TimeInterval = 300 // 5 minutes
 
     // MARK: - Init
@@ -119,12 +123,14 @@ final class WebSocketClientV2 {
     init(
         location: LocationManager? = nil,
         health: HealthManager? = nil,
-        calendar: CalendarManager? = nil
+        calendar: CalendarManager? = nil,
+        storage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2)? = nil
     ) {
         self.stack = nil
         self.location = location
         self.health = health
         self.calendar = calendar
+        self.preBuiltStorage = storage
     }
 
     // MARK: - Lifecycle
@@ -145,13 +151,25 @@ final class WebSocketClientV2 {
                 return
             }
             do {
-                let built = try AppV2Bootstrap.build(
-                    serverURL: url,
-                    token: settings.bearerToken,
-                    location: location,
-                    health: health,
-                    calendar: calendar
-                )
+                let built: AppV2Stack
+                if let storage = preBuiltStorage {
+                    built = AppV2Bootstrap.build(
+                        serverURL: url,
+                        token: settings.bearerToken,
+                        storage: storage,
+                        location: location,
+                        health: health,
+                        calendar: calendar
+                    )
+                } else {
+                    built = try AppV2Bootstrap.build(
+                        serverURL: url,
+                        token: settings.bearerToken,
+                        location: location,
+                        health: health,
+                        calendar: calendar
+                    )
+                }
                 self.stack = built
                 restartObservation()
                 wireAuthOkCallback()
@@ -215,11 +233,10 @@ final class WebSocketClientV2 {
         }
     }
 
-    /// API parity with legacy. The store is the source of truth; we just
-    /// reset the read-dedup cache and re-derive `messages` for the new
-    /// conversation. The `store` parameter is ignored — the legacy
-    /// `ConversationStore` is not the v2 source of truth.
-    func loadMessages(from store: ConversationStore) {
+    /// Reset the read-dedup cache and re-derive `messages` for the current
+    /// `conversationId`. Called by the coordinator on `.open`, on initial
+    /// wireUp, and on deep-link from a proactive push.
+    func reloadActiveConversation() {
         sentReadIds.removeAll()
         restartObservation()
     }
@@ -376,7 +393,6 @@ final class WebSocketClientV2 {
             info.selectedId = buttonId
             messages[idx] = ChatMessage(id: messageId, role: messages[idx].role,
                                         content: .action(info), timestamp: messages[idx].timestamp)
-            onMessagesChanged?(messages)
         }
         _ = buttonLabel
     }
@@ -453,7 +469,6 @@ final class WebSocketClientV2 {
                         self.onSpeakableText?(t)
                     }
                 }
-                self.onMessagesChanged?(mapped)
             }
         )
     }
