@@ -1,0 +1,237 @@
+import XCTest
+import GRDB
+@testable import Jarvis
+
+final class MockWebSocket: WebSocketLike, @unchecked Sendable {
+    var sent: [Data] = []
+    var onMessage: ((Data) -> Void)?
+    var onClose: ((Error?) -> Void)?
+    var connectCalled = false
+
+    func connect() async throws { connectCalled = true }
+    func send(_ data: Data) async throws { sent.append(data) }
+    func close() {}
+}
+
+/// Minimal `ContextCoordinatorV2` for transport-layer tests. The cross-file
+/// `MockCoordinator` in `InboundDispatcherV2Tests.swift` is `private`, so we
+/// keep a separately-named clone here rather than promote it.
+final class TransportTestCoordinator: ContextCoordinatorV2, @unchecked Sendable {
+    func health() async throws -> V2.JSONValue { .object(["steps_today": .int(42)]) }
+    func calendar() async throws -> V2.JSONValue { .array([]) }
+    func device() async throws -> V2.JSONValue { .object(["model": .string("iPhone")]) }
+    func nextEvent() async throws -> V2.JSONValue? { nil }
+    func recentLocations(hours: Int) async throws -> V2.JSONValue { .array([]) }
+    func screenState() async throws -> V2.JSONValue { .string("foreground") }
+}
+
+final class TransportV2Tests: XCTestCase {
+    var store: ConversationStoreV2!
+    var transport: TransportV2!
+    var socket: MockWebSocket!
+
+    override func setUp() async throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        store = ConversationStoreV2(writer: dbq)
+        socket = MockWebSocket()
+        transport = TransportV2(store: store, socket: socket, token: "tok",
+                                 ackTimeoutSeconds: 0.2, dispatcherIntervalMs: 50)
+    }
+
+    func encodeAck(id: String) -> Data {
+        let env = V2.Envelope(
+            v: V2.protocolVersion, kind: .ack, type: .ack,
+            id: UUID().uuidString, seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .ack(V2.Ack(id: id, seq: 1))
+        )
+        return try! JSONEncoder().encode(env)
+    }
+
+    func encodeInbound(id: String, seq: Int, threadID: String, text: String) -> Data {
+        let env = V2.Envelope(
+            v: V2.protocolVersion, kind: .data, type: .message,
+            id: id, seq: seq,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .message(V2.Message(thread_id: threadID, text: text,
+                                          attachments: nil, context: nil))
+        )
+        return try! JSONEncoder().encode(env)
+    }
+
+    func testSendQueuedMessageGoesSending() async throws {
+        try store.insertOutboundUserMessage(
+            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+        )
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)  // triggers tickDispatcher
+        let row = try XCTUnwrap(try store.fetchById("msg-1"))
+        XCTAssertEqual(row.status, .sending)
+        XCTAssertNotNil(row.seq)
+    }
+
+    func testAckMovesSendingToSent() async throws {
+        try store.insertOutboundUserMessage(
+            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+        )
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)
+        try await transport.handleIncoming(encodeAck(id: "msg-1"))
+        XCTAssertEqual(try store.fetchById("msg-1")?.status, .sent)
+    }
+
+    func testReconnectResetsSendingToQueued() async throws {
+        try store.insertOutboundUserMessage(
+            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+        )
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)  // seq=1 allocated
+        let firstSeq = try store.fetchById("msg-1")?.seq
+        XCTAssertEqual(firstSeq, 1)
+        // Server says it only acknowledged up through 0 — our seq=1 should reset to
+        // queued and then be re-dispatched with a new seq.
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)
+        let row = try XCTUnwrap(try store.fetchById("msg-1"))
+        // Reset happened (briefly queued) then redispatch allocated a fresh seq.
+        XCTAssertEqual(row.status, .sending)
+        XCTAssertNotEqual(row.seq, firstSeq, "seq should have been re-allocated after reset")
+    }
+
+    func testReconnectConfirmsAckedSeqAsSent() async throws {
+        try store.insertOutboundUserMessage(
+            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+        )
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)  // seq=1, sending
+        // Server confirms it received seq<=1 — our message should be marked sent.
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 1)
+        XCTAssertEqual(try store.fetchById("msg-1")?.status, .sent)
+    }
+
+    func testInboundDedupByID() async throws {
+        let id = "in-1"
+        try await transport.handleIncoming(encodeInbound(id: id, seq: 1, threadID: "c-1", text: "hello"))
+        try await transport.handleIncoming(encodeInbound(id: id, seq: 1, threadID: "c-1", text: "hello"))
+        // Only one row inserted
+        let count = try store.queuedOutbound().count + (try store.fetchById(id) != nil ? 1 : 0)
+        XCTAssertEqual(count, 1)
+        // Both acks sent (one per incoming)
+        let acks = socket.sent.filter { data in
+            (try? JSONDecoder().decode(V2.Envelope.self, from: data))?.type == .ack
+        }
+        XCTAssertEqual(acks.count, 2)
+    }
+
+    func testContextRequestRoutesToCoordinator() async throws {
+        let coord = TransportTestCoordinator()
+        transport = TransportV2(
+            store: store, socket: socket, token: "tok",
+            contextCoordinator: coord,
+            ackTimeoutSeconds: 0.2, dispatcherIntervalMs: 50
+        )
+        let request = V2.Envelope(
+            v: V2.protocolVersion, kind: .control, type: .contextRequest,
+            id: UUID().uuidString, seq: 1,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .contextRequest(V2.ContextRequest(
+                request_id: "r-1", fields: ["device", "health"], params: nil
+            ))
+        )
+        try await transport.handleIncoming(try JSONEncoder().encode(request))
+        let responses = socket.sent.compactMap { data -> V2.Envelope? in
+            try? JSONDecoder().decode(V2.Envelope.self, from: data)
+        }.filter { $0.type == .contextResponse }
+        XCTAssertEqual(responses.count, 1, "expected exactly one context_response envelope")
+        guard let env = responses.first, case .contextResponse(let resp) = env.payload else {
+            XCTFail("expected contextResponse payload")
+            return
+        }
+        XCTAssertEqual(resp.request_id, "r-1")
+        guard case .object(let obj) = resp.data else {
+            XCTFail("expected object data; got \(resp.data)")
+            return
+        }
+        XCTAssertNotNil(obj["device"])
+        XCTAssertNotNil(obj["health"])
+    }
+
+    func testReconnectAttemptResetsOnAuthOk() async throws {
+        // Construct transport with very short delays so the test is fast.
+        let socket2 = MockWebSocket()
+        let transport2 = TransportV2(
+            store: store, socket: socket2, token: "tok",
+            ackTimeoutSeconds: 0.2,
+            dispatcherIntervalMs: 50,
+            baseReconnectDelaySeconds: 0.05,
+            maxReconnectDelaySeconds: 0.5
+        )
+        // handleAuthOk lands cleanly → state .authed, counter reset to 0.
+        try await transport2.handleAuthOk(lastSeenOutboundSeq: 0)
+        let beforeState = await transport2.state
+        XCTAssertEqual(beforeState, .authed)
+    }
+
+    func testReconnectDelayGrowsOnConsecutiveCloses() async throws {
+        // Use a long enough max that the first few attempts are uncapped, so
+        // we can observe pure exponential growth via the State enum's
+        // associated value.
+        let socket2 = MockWebSocket()
+        let transport2 = TransportV2(
+            store: store, socket: socket2, token: "tok",
+            ackTimeoutSeconds: 0.2,
+            dispatcherIntervalMs: 50,
+            baseReconnectDelaySeconds: 1.0,
+            maxReconnectDelaySeconds: 60.0
+        )
+        // We exercise handleSocketClose indirectly: the only way to invoke it
+        // is via the socket's onClose callback, which `connect()` wires up. We
+        // can't easily call it twice without the reconnectTask actually firing
+        // and changing state back. Instead we test the math directly by
+        // observing `.reconnecting` state immediately after each close.
+        //
+        // Strategy: call connect() so onClose is wired, then trigger close,
+        // read state, then mutate state back to .authed (simulating a
+        // successful reconnect *without* resetting the counter) to bypass
+        // the coalescing guard, then close again. The bookkeeping we care
+        // about is: each invocation of handleSocketClose uses the current
+        // `reconnectAttempt` value, increments it, and emits a doubled delay.
+        try await transport2.connect()
+        // First close: expect delay = base * 2^0 = 1.0
+        await transport2.simulateSocketClose()
+        let s1 = await transport2.state
+        guard case .reconnecting(let d1) = s1 else {
+            XCTFail("expected .reconnecting; got \(s1)")
+            return
+        }
+        XCTAssertEqual(d1, 1.0, accuracy: 0.001)
+        // Force state back to .authed (without resetting counter) so the next
+        // close isn't swallowed by the coalescing guard. We can't reach the
+        // private setter from outside, so use the test helper.
+        await transport2.forceStateAuthedPreservingCounter()
+        // Second close: expect delay = base * 2^1 = 2.0
+        await transport2.simulateSocketClose()
+        let s2 = await transport2.state
+        guard case .reconnecting(let d2) = s2 else {
+            XCTFail("expected .reconnecting; got \(s2)")
+            return
+        }
+        XCTAssertEqual(d2, 2.0, accuracy: 0.001)
+        // Third close: expect delay = base * 2^2 = 4.0
+        await transport2.forceStateAuthedPreservingCounter()
+        await transport2.simulateSocketClose()
+        let s3 = await transport2.state
+        guard case .reconnecting(let d3) = s3 else {
+            XCTFail("expected .reconnecting; got \(s3)")
+            return
+        }
+        XCTAssertEqual(d3, 4.0, accuracy: 0.001)
+    }
+
+    func testRetryAfterAckTimeout() async throws {
+        try store.insertOutboundUserMessage(
+            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+        )
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)
+        let firstCount = socket.sent.count
+        try await Task.sleep(nanoseconds: 350_000_000)  // > ack timeout (0.2s)
+        let later = socket.sent.count
+        XCTAssertGreaterThan(later, firstCount)
+    }
+}

@@ -1,0 +1,18 @@
+{
+  "v": 2,
+  "kind": "data",
+  "type": "message",
+  "id": "33333333-3333-4333-8333-333333333333",
+  "seq": 1,
+  "ts": "2026-05-31T12:00:01.000Z",
+  "payload": {
+    "thread_id": "thr-1",
+    "text": "remind me later",
+    "context": {
+      "location": { "lat": 55.7619, "lon": 37.5957, "accuracy": 25 },
+      "timestamp": "2026-05-31T12:00:01.000Z",
+      "timezone": "Europe/Moscow",
+      "locality": "Patriarch's Ponds"
+    }
+  }
+}

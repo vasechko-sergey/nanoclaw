@@ -1,3 +1,4 @@
+import { formatIosInbound } from './channels/ios-app-format.js';
 import { findByRouting } from './destinations.js';
 import type { MessageInRow } from './db/messages-in.js';
 import { TIMEZONE, formatLocalTime } from './timezone.js';
@@ -171,7 +172,11 @@ function formatSingleChat(msg: MessageInRow): string {
   const content = parseContent(msg.content);
   const sender = content.sender || content.author?.fullName || content.author?.userName || 'Unknown';
   const time = formatLocalTime(msg.timestamp, TIMEZONE);
-  const text = content.text || '';
+  // iOS-app messages carry an inline `ios_context` (location, timezone,
+  // locality). Prepend a one-line header so the agent sees the user's
+  // current device context inline with the message body, matching v1
+  // behavior. Other channels: no ios_context → noop, text unchanged.
+  const text = formatIosInbound(content.text || '', content.ios_context);
   const idAttr = msg.seq != null ? ` id="${msg.seq}"` : '';
   const replyAttr = content.replyTo?.id ? ` reply_to="${escapeXml(String(content.replyTo.id))}"` : '';
   const replyPrefix = formatReplyContext(content.replyTo);

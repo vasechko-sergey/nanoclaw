@@ -8,4 +8,10 @@
 
 import './cli.js';
 import './telegram.js';
-import './ios-app.js';
+
+// ios-app v2 transport. Registers under channel name `ios-app-v2`. The
+// legacy `ios-app` adapter has been removed — operators must migrate any
+// remaining messaging-group rows with `channel_type='ios-app'` to
+// `'ios-app-v2'`. The factory is a no-op unless IOS_APP_V2_PORT is set.
+import { registerIosAppV2 } from './ios-app/v2/index.js';
+registerIosAppV2();

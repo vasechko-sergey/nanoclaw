@@ -1,0 +1,16 @@
+{
+  "v": 2,
+  "kind": "data",
+  "type": "message",
+  "id": "44444444-4444-4444-8444-444444444444",
+  "seq": 3,
+  "ts": "2026-05-31T12:00:03.000Z",
+  "payload": {
+    "thread_id": "thr-1",
+    "text": "see image",
+    "attachments": [
+      { "id": "44444444-4444-4444-8444-444444444445", "kind": "image",
+        "name": "photo.jpg", "mime_type": "image/jpeg", "byte_size": 12345 }
+    ]
+  }
+}

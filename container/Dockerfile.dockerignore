@@ -1,0 +1,11 @@
+# BuildKit-specific dockerignore for container/Dockerfile.
+# The build context is the project root (see container/build.sh) so we trim
+# everything the agent image doesn't need.
+#
+# Keep this minimal — only `container/` and `shared/` are actually COPY'd into
+# the image; everything else just bloats the build context send.
+*
+!container
+!shared
+container/agent-runner/node_modules
+container/agent-runner/dist

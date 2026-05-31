@@ -4,7 +4,9 @@ import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from '
 import { getPendingMessages, markCompleted } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
 import { formatMessages, extractRouting } from './formatter.js';
+import { dispatchSystemReplies } from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
+import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
 
 beforeEach(() => {
   initTestSessionDb();
@@ -373,5 +375,125 @@ describe('end-to-end with mock provider', () => {
     expect(outMessages).toHaveLength(1);
     expect(JSON.parse(outMessages[0].content).text).toBe('The answer is 4');
     expect(outMessages[0].in_reply_to).toBe('m1');
+  });
+});
+
+describe('dispatchSystemReplies (ios-app context_response)', () => {
+  it('consumes context_response rows and resolves the awaiting tool', async () => {
+    // Stage 1: register a pending request via the tool. The tool writes
+    // an envelope synchronously (we mock writeMessageOut to a no-op so
+    // the bun:sqlite path isn't exercised) and returns a Promise we await.
+    let requestId: string | null = null;
+    const ctx = {
+      session_id: 'sess-1',
+      writeMessageOut: async (_sess: string, msg: { type: string; payload: Record<string, unknown> }) => {
+        requestId = msg.payload.request_id as string;
+      },
+    };
+    const pending = requestContextTool.handler({ fields: ['device'], timeout_ms: 5000 }, ctx as any);
+
+    // Wait for the synchronous writeMessageOut microtask to flush.
+    await new Promise((r) => setImmediate(r));
+    expect(requestId).not.toBeNull();
+
+    // Stage 2: simulate the host writing a `system` row carrying the
+    // context_response. dispatchSystemReplies should consume it (returns
+    // empty survivors) and resolve the tool's promise.
+    const row = {
+      id: 'sys-1',
+      seq: 2,
+      kind: 'system',
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      process_after: null,
+      recurrence: null,
+      tries: 0,
+      trigger: 1,
+      platform_id: null,
+      channel_type: null,
+      thread_id: null,
+      content: JSON.stringify({
+        subtype: 'context_response',
+        request_id: requestId,
+        data: { device: { battery: 0.42 } },
+      }),
+    };
+    const survivors = dispatchSystemReplies([row as any]);
+    expect(survivors).toHaveLength(0);
+
+    const result = await pending;
+    expect(result).toEqual({ data: { device: { battery: 0.42 } }, errors: {} });
+  });
+
+  it('passes non-context_response system rows through unchanged', () => {
+    const row = {
+      id: 'sys-2',
+      seq: 4,
+      kind: 'system',
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      process_after: null,
+      recurrence: null,
+      tries: 0,
+      trigger: 1,
+      platform_id: null,
+      channel_type: null,
+      thread_id: null,
+      content: JSON.stringify({ action: 'something_else', status: 'ok', result: null }),
+    };
+    const survivors = dispatchSystemReplies([row as any]);
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0].id).toBe('sys-2');
+  });
+
+  it('passes non-system rows through unchanged', () => {
+    const row = {
+      id: 'm-1',
+      seq: 6,
+      kind: 'chat',
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      process_after: null,
+      recurrence: null,
+      tries: 0,
+      trigger: 1,
+      platform_id: null,
+      channel_type: null,
+      thread_id: null,
+      content: JSON.stringify({ text: 'hi', sender: 'A' }),
+    };
+    const survivors = dispatchSystemReplies([row as any]);
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0].kind).toBe('chat');
+  });
+
+  it('silently drops context_response for unknown request_id (late arrival)', () => {
+    const row = {
+      id: 'sys-3',
+      seq: 8,
+      kind: 'system',
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      process_after: null,
+      recurrence: null,
+      tries: 0,
+      trigger: 1,
+      platform_id: null,
+      channel_type: null,
+      thread_id: null,
+      content: JSON.stringify({
+        subtype: 'context_response',
+        request_id: 'never-existed',
+        data: {},
+      }),
+    };
+    // No exception thrown — onContextResponse is a no-op for unknown ids.
+    const survivors = dispatchSystemReplies([row as any]);
+    expect(survivors).toHaveLength(0);
+  });
+
+  // Reference unused imports so the import survives tree-shaking checks.
+  it('onContextResponse export is callable', () => {
+    expect(typeof onContextResponse).toBe('function');
   });
 });

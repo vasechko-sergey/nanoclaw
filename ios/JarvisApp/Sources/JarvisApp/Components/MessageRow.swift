@@ -266,7 +266,6 @@ struct FileRow: View {
 
     private func iconForMime(_ mime: String) -> String {
         if mime.hasPrefix("audio/") { return "waveform" }
-        if mime.hasPrefix("video/") { return "play.rectangle" }
         if mime.contains("pdf")     { return "doc.richtext" }
         if mime.contains("zip") || mime.contains("tar") { return "doc.zipper" }
         if mime.contains("spreadsheet") || mime.contains("excel") { return "tablecells" }

@@ -75,10 +75,22 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" && \
 # it's provided by the shared RO mount at runtime.
 WORKDIR /app
 
-COPY agent-runner/package.json agent-runner/bun.lock ./
+COPY container/agent-runner/package.json container/agent-runner/bun.lock ./
 
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
+
+# Canonical wire protocol — imported by mcp-tools/request_context.ts and
+# channels/ios-app-format.ts via the @shared/* tsconfig path alias. Baked into
+# the image (rather than mounted) so the protocol module is versioned with the
+# agent-runner code that consumes it.
+COPY shared /app/shared
+
+# tsconfig.json is required at runtime for bun to resolve the @shared/* path
+# alias (bun reads tsconfig.json from the entry-point file's location and
+# walks up). The agent-runner src/ tree is mounted RO at /app/src, so bun
+# walks /app/src → /app and finds this tsconfig.
+COPY container/agent-runner/tsconfig.json /app/tsconfig.json
 
 # ---- pnpm + global Node CLIs -------------------------------------------------
 # Most stable first, most frequently bumped last. Bumping claude-code
@@ -116,7 +128,7 @@ RUN printf '#!/bin/sh\nexec bun /app/src/cli/ncl.ts "$@"\n' > /usr/local/bin/ncl
     chmod +x /usr/local/bin/ncl
 
 # ---- Entrypoint --------------------------------------------------------------
-COPY entrypoint.sh /app/entrypoint.sh
+COPY container/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # ---- Workspace + permissions -------------------------------------------------

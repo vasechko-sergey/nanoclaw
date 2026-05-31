@@ -34,7 +34,7 @@ struct ChatView: View {
     @State private var rightDrawerDragOffset: CGFloat = 0
     @State private var showVoiceFullscreen = false
 
-    private var ws: WebSocketClient { coordinator.ws }
+    private var ws: WebSocketClientV2 { coordinator.ws }
     private var store: ConversationStore { coordinator.store }
 
     /// Only messages that should render in the chat (excludes invisible technical messages).

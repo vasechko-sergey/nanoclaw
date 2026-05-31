@@ -7,8 +7,23 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["bun"]
+    "types": ["bun"],
+    // Canonical wire protocol lives outside this tree. The two entries below
+    // resolve `@shared/*` from both locations:
+    //   dev (this file at container/agent-runner/tsconfig.json): ../../shared/*
+    //     → repo-root shared/
+    //   runtime (Dockerfile copies tsconfig to /app/tsconfig.json + shared
+    //     to /app/shared/): shared/*
+    // TypeScript and Bun both try `paths` entries in order, so this works
+    // in both environments without a build step or symlink.
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["../../shared/*", "shared/*"]
+    }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"],
+  // Reference the composite shared project so its emitted .d.ts is used for
+  // type-checking instead of pulling the .ts sources into this rootDir.
+  "references": [{ "path": "../../shared/ios-app-protocol" }]
 }

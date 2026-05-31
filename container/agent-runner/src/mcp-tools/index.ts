@@ -11,7 +11,22 @@ import './interactive.js';
 import './agents.js';
 import './self-mod.js';
 import './status.js';
+import { getSessionRouting } from '../db/session-routing.js';
+import { registerRequestContextTool } from './request_context.js';
 import { startMcpServer } from './server.js';
+
+// Channel-gated MCP tools: only register `request_context` when the session
+// is wired to the ios-app channel. Non-iOS sessions never see the tool.
+// Session routing is committed by the host on every container wake, so this
+// runs after the routing row exists.
+{
+  const routing = getSessionRouting();
+  registerRequestContextTool({
+    session_id: process.env.NANOCLAW_SESSION_ID ?? '',
+    channel_type: routing.channel_type,
+    platform_id: routing.platform_id,
+  });
+}
 
 function log(msg: string): void {
   console.error(`[mcp-tools] ${msg}`);

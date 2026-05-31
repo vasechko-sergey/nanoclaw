@@ -10,7 +10,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$SCRIPT_DIR"
+# Build context is the project root so we can COPY both container/ and shared/
+# into the image. The Dockerfile path is passed explicitly via -f.
+cd "$PROJECT_ROOT"
 
 # Derive the image name from the project root so two NanoClaw installs on the
 # same host don't overwrite each other's `nanoclaw-agent:latest` tag. Matches
@@ -35,7 +37,7 @@ fi
 echo "Building NanoClaw agent container image..."
 echo "Image: ${IMAGE_NAME}:${TAG}"
 
-${CONTAINER_RUNTIME} build "${BUILD_ARGS[@]}" -t "${IMAGE_NAME}:${TAG}" .
+${CONTAINER_RUNTIME} build "${BUILD_ARGS[@]}" -f "$SCRIPT_DIR/Dockerfile" -t "${IMAGE_NAME}:${TAG}" .
 
 echo ""
 echo "Build complete!"

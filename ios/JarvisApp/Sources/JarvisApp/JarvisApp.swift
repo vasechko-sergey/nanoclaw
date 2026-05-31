@@ -3,7 +3,6 @@ import UIKit
 import UserNotifications
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    static weak var wsClient: WebSocketClient?
     /// Set by AppCoordinator — opens the conversation a proactive push refers to.
     static var onOpenConversation: ((String) -> Void)?
     /// Static hook the coordinator sets at init to receive proactive fires
@@ -19,22 +18,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // Passive background health sync (HealthKit background delivery → HTTP upload).
         HealthSync.start()
         return true
-    }
-
-
-    func application(
-        _ app: UIApplication,
-        didRegisterForRemoteNotificationsWithDeviceToken token: Data
-    ) {
-        let hex = token.map { String(format: "%02x", $0) }.joined()
-        AppDelegate.wsClient?.registerApnsToken(hex)
-    }
-
-    func application(
-        _ app: UIApplication,
-        didFailToRegisterForRemoteNotificationsWithError error: Error
-    ) {
-        Log.error(.app, "APNs registration failed: \(error)")
     }
 
     // Show proactive pushes even while the app is foregrounded.
