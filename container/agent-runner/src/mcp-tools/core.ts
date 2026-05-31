@@ -328,59 +328,9 @@ export const addReaction: McpToolDefinition = {
   },
 };
 
-export const requestContext: McpToolDefinition = {
-  tool: {
-    name: 'request_context',
-    description:
-      'Request live device context (location, health, device, calendar) from the user\'s iOS app. ' +
-      'This is asynchronous: the context does NOT come back as this tool\'s result. ' +
-      'It arrives as a follow-up technical message in a NEW turn — finish the current turn WITHOUT a final ' +
-      'answer to the user, then respond once the context message arrives. ' +
-      'If the device is offline you will instead receive a "context unavailable" follow-up. ' +
-      'Only works for the iOS app channel.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        fields: {
-          type: 'array',
-          description: 'Which context fields to fetch. Defaults to all if omitted.',
-          items: { type: 'string', enum: ['location', 'health', 'device', 'calendar'] },
-        },
-      },
-      required: [],
-    },
-  },
-  async handler(args) {
-    const routing = resolveRouting(undefined);
-    if ('error' in routing) return err(routing.error);
-    if (routing.channel_type !== 'ios-app') {
-      return err('request_context is only supported for the iOS app channel.');
-    }
+// `request_context` lives in ./request_context.ts — it is an async deferred
+// tool with a different shape (zod input schema, ToolContext-style ctx, a
+// Promise that resolves on a matching `context_response`). It is wired into
+// the MCP server separately; this file no longer owns it.
 
-    const rawFields = Array.isArray(args.fields) ? (args.fields as string[]) : [];
-    const allowed = ['location', 'health', 'device', 'calendar'];
-    const fields = rawFields.filter((f) => allowed.includes(f));
-    const requestId = generateId();
-
-    writeMessageOut({
-      id: requestId,
-      kind: 'chat',
-      platform_id: routing.platform_id,
-      channel_type: routing.channel_type,
-      thread_id: routing.thread_id,
-      content: JSON.stringify({
-        type: 'context_request',
-        requestId,
-        fields: fields.length ? fields : allowed,
-      }),
-    });
-
-    log(`request_context: ${requestId} → ${(fields.length ? fields : allowed).join(',')}`);
-    return ok(
-      `Context requested (${(fields.length ? fields : allowed).join(', ')}). ` +
-        'It will arrive as a follow-up message — do not answer the user yet; wait for it.',
-    );
-  },
-};
-
-registerTools([sendMessage, sendFile, sendPhoto, editMessage, addReaction, requestContext]);
+registerTools([sendMessage, sendFile, sendPhoto, editMessage, addReaction]);
