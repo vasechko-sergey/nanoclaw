@@ -37,11 +37,16 @@ enum AppV2Bootstrap {
         try MigrationV2.runIfNeeded(documentsURL: docs, store: store)
 
         let socket = URLSessionWebSocket(url: serverURL)
-        let transport = TransportV2(store: store, socket: socket, token: token)
         let coordinator = AppContextCoordinator(
             location: location,
             health: health,
             calendar: calendar
+        )
+        let transport = TransportV2(
+            store: store,
+            socket: socket,
+            token: token,
+            contextCoordinator: coordinator
         )
 
         return AppV2Stack(

@@ -13,6 +13,18 @@ final class MockWebSocket: WebSocketLike, @unchecked Sendable {
     func close() {}
 }
 
+/// Minimal `ContextCoordinatorV2` for transport-layer tests. The cross-file
+/// `MockCoordinator` in `InboundDispatcherV2Tests.swift` is `private`, so we
+/// keep a separately-named clone here rather than promote it.
+final class TransportTestCoordinator: ContextCoordinatorV2, @unchecked Sendable {
+    func health() async throws -> V2.JSONValue { .object(["steps_today": .int(42)]) }
+    func calendar() async throws -> V2.JSONValue { .array([]) }
+    func device() async throws -> V2.JSONValue { .object(["model": .string("iPhone")]) }
+    func nextEvent() async throws -> V2.JSONValue? { nil }
+    func recentLocations(hours: Int) async throws -> V2.JSONValue { .array([]) }
+    func screenState() async throws -> V2.JSONValue { .string("foreground") }
+}
+
 final class TransportV2Tests: XCTestCase {
     var store: ConversationStoreV2!
     var transport: TransportV2!
@@ -105,6 +117,39 @@ final class TransportV2Tests: XCTestCase {
             (try? JSONDecoder().decode(V2.Envelope.self, from: data))?.type == .ack
         }
         XCTAssertEqual(acks.count, 2)
+    }
+
+    func testContextRequestRoutesToCoordinator() async throws {
+        let coord = TransportTestCoordinator()
+        transport = TransportV2(
+            store: store, socket: socket, token: "tok",
+            contextCoordinator: coord,
+            ackTimeoutSeconds: 0.2, dispatcherIntervalMs: 50
+        )
+        let request = V2.Envelope(
+            v: V2.protocolVersion, kind: .control, type: .contextRequest,
+            id: UUID().uuidString, seq: 1,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .contextRequest(V2.ContextRequest(
+                request_id: "r-1", fields: ["device", "health"], params: nil
+            ))
+        )
+        try await transport.handleIncoming(try JSONEncoder().encode(request))
+        let responses = socket.sent.compactMap { data -> V2.Envelope? in
+            try? JSONDecoder().decode(V2.Envelope.self, from: data)
+        }.filter { $0.type == .contextResponse }
+        XCTAssertEqual(responses.count, 1, "expected exactly one context_response envelope")
+        guard let env = responses.first, case .contextResponse(let resp) = env.payload else {
+            XCTFail("expected contextResponse payload")
+            return
+        }
+        XCTAssertEqual(resp.request_id, "r-1")
+        guard case .object(let obj) = resp.data else {
+            XCTFail("expected object data; got \(resp.data)")
+            return
+        }
+        XCTAssertNotNil(obj["device"])
+        XCTAssertNotNil(obj["health"])
     }
 
     func testRetryAfterAckTimeout() async throws {

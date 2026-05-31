@@ -25,32 +25,54 @@ actor TransportV2 {
     private let store: ConversationStoreV2
     private let socket: WebSocketLike
     private let token: String
+    private let contextCoordinator: ContextCoordinatorV2?
     private(set) var state: State = .idle
     private var ackDeadlines: [String: Date] = [:]
     /// Scheduled retry tasks per envelope id; cancellation on ack.
     private var ackTasks: [String: Task<Void, Never>] = [:]
+    /// In-flight auto-reconnect task; nil while connected or idle.
+    private var reconnectTask: Task<Void, Never>?
 
     private let ackTimeoutSeconds: Double
     private let dispatcherIntervalMs: Int
+    private let reconnectDelaySeconds: Double
 
     init(
         store: ConversationStoreV2,
         socket: WebSocketLike,
         token: String,
+        contextCoordinator: ContextCoordinatorV2? = nil,
         ackTimeoutSeconds: Double = 5.0,
-        dispatcherIntervalMs: Int = 200
+        dispatcherIntervalMs: Int = 200,
+        reconnectDelaySeconds: Double = 2.0
     ) {
         self.store = store
         self.socket = socket
         self.token = token
+        self.contextCoordinator = contextCoordinator
         self.ackTimeoutSeconds = ackTimeoutSeconds
         self.dispatcherIntervalMs = dispatcherIntervalMs
+        self.reconnectDelaySeconds = reconnectDelaySeconds
     }
 
     func connect() async throws {
         state = .connecting
+        // Wire socket callbacks BEFORE opening the socket so the first inbound
+        // frame can't race the assignment. The closures bounce back into the
+        // actor via a detached `Task` — `WebSocketLike` callbacks fire on the
+        // URLSession completion queue (or a Timer block) and must not touch
+        // actor-isolated state directly.
+        socket.onMessage = { [weak self] data in
+            Task { [weak self] in
+                try? await self?.handleIncoming(data)
+            }
+        }
+        socket.onClose = { [weak self] error in
+            Task { [weak self] in
+                await self?.handleSocketClose(error)
+            }
+        }
         try await socket.connect()
-        // wire socket callbacks here in real usage; tests inject incoming via handleIncoming(...)
         let lastSeenInbound = try store.cursor(.lastSeenInbound)
         let authEnv = V2.Envelope(
             v: V2.protocolVersion,
@@ -107,9 +129,8 @@ actor TransportV2 {
                 ts: ISO8601DateFormatter().string(from: Date()),
                 payload: .pong(V2.Pong(nonce: p.nonce))
             ))
-        case .contextRequest:
-            // wired in Task 4.5 (InboundDispatcher with ContextCoordinator). Stub here.
-            break
+        case .contextRequest(let req):
+            await handleContextRequest(req)
         default:
             break
         }
@@ -240,6 +261,47 @@ actor TransportV2 {
         let env = makeMessageEnvelope(row: row, seq: seq)
         try? await sendEnvelope(env)
         scheduleAckRetry(for: id)
+    }
+
+    // MARK: - Reconnect
+
+    /// Called from the socket's `onClose` callback. Coalesces overlapping closes:
+    /// if a reconnect is already pending, ignore. Otherwise transition to
+    /// `.reconnecting` and schedule `connect()` after `reconnectDelaySeconds`.
+    private func handleSocketClose(_ error: Error?) async {
+        if case .reconnecting = state { return }
+        state = .reconnecting(delaySeconds: reconnectDelaySeconds)
+        reconnectTask?.cancel()
+        let delay = reconnectDelaySeconds
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            if Task.isCancelled { return }
+            guard let self else { return }
+            try? await self.connect()
+        }
+    }
+
+    // MARK: - Context requests
+
+    /// Server asked us for device-side context fields. Fan out to the
+    /// dispatcher (which fans out to the coordinator) and reply with a single
+    /// `context_response` envelope. If no coordinator was injected we silently
+    /// drop the request — that's the test/in-memory build configuration.
+    private func handleContextRequest(_ req: V2.ContextRequest) async {
+        guard let coord = contextCoordinator else { return }
+        let dispatcher = InboundDispatcherV2(coordinator: coord)
+        let response = await dispatcher.gather(
+            requestID: req.request_id,
+            fields: req.fields,
+            params: req.params
+        )
+        let env = V2.Envelope(
+            v: V2.protocolVersion, kind: .control, type: .contextResponse,
+            id: UUID().uuidString, seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .contextResponse(response)
+        )
+        try? await sendEnvelope(env)
     }
 
     private func parseTS(_ ts: String) -> Int {

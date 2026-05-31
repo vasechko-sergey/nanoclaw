@@ -13,13 +13,9 @@ import GRDB
 ///     E2E_PORT=8801 E2E_SCENARIO=happy pnpm run e2e:harness &
 ///     xcodebuild test -only-testing:JarvisAppTests/HappyPathE2ETests ...
 ///
-/// **Wiring note.** `AppV2Bootstrap.build` builds the v2 stack but does NOT
-/// wire `socket.onMessage → transport.handleIncoming` — that's a known
-/// production gap (see `TransportV2.connect`, comment: "wire socket
-/// callbacks here in real usage"). To exercise the real round-trip end-to-end,
-/// this test mirrors the bootstrap internals and wires the callback itself.
-/// When the production wiring is fixed we can switch back to plain
-/// `AppV2Bootstrap.build` here.
+/// `TransportV2.connect()` now wires `socket.onMessage` and `socket.onClose`
+/// itself, so this test mirrors the bootstrap internals only to swap in an
+/// in-memory DB. No hand-wiring of callbacks needed.
 final class HappyPathE2ETests: XCTestCase {
     private let harness = E2EHarness()
     private var stack: AppV2Stack?
@@ -62,20 +58,6 @@ final class HappyPathE2ETests: XCTestCase {
             dbq: dbq
         )
         self.stack = stack
-
-        // ---- Hand-wire the inbound callback (see file-level note). ----
-        socket.onMessage = { data in
-            Task {
-                do {
-                    try await transport.handleIncoming(data)
-                } catch {
-                    // Harness shouldn't produce unparseable frames in `happy`,
-                    // but surface anything unexpected via XCTFail on the next
-                    // assertion (the round-trip just won't complete).
-                    NSLog("[e2e-test] handleIncoming threw: \(error)")
-                }
-            }
-        }
 
         await transport.connect_throwing()
         // Wait for auth_ok → authed.
