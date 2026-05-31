@@ -109,6 +109,7 @@ final class WebSocketClientV2 {
     init(stack: AppV2Stack) {
         self.stack = stack
         restartObservation()
+        wireAuthOkCallback()
     }
 
     /// Production init — stack is built lazily on the first `connect(settings:)`
@@ -153,6 +154,7 @@ final class WebSocketClientV2 {
                 )
                 self.stack = built
                 restartObservation()
+                wireAuthOkCallback()
             } catch {
                 Log.warn(.ws, "AppV2Bootstrap.build failed: \(error)")
                 return
@@ -318,15 +320,24 @@ final class WebSocketClientV2 {
         return false
     }
 
-    /// Manual retry of a failed outbound row. The v2 dispatcher owns the retry
-    /// loop end-to-end — there is no equivalent to legacy `OutboxStore`'s
-    /// per-entry attempt counter, and the store API to flip a row back from
-    /// `.failed` to `.queued` is not yet exposed. The UI-side callsite
-    /// (`onRetry` in `ChatView`) currently tap-routes here for parity; the
-    /// dispatcher will pick the row up on the next auth_ok if/when the row
-    /// gets reset by a future store API. TODO(5.x).
+    /// Manual retry of a failed outbound row. Flips the store row back to
+    /// `queued` and nudges the dispatcher so it picks the row up immediately
+    /// when authed (otherwise the next `auth_ok` will drain it). Sync facade
+    /// over async store + transport work — mirrors `send(text:...)`.
     func retrySend(id: String) {
-        _ = id
+        guard let stack else {
+            Log.warn(.ws, "WebSocketClientV2.retrySend: stack not built yet")
+            return
+        }
+        do {
+            try stack.store.resetFailedToQueued(id: id)
+        } catch {
+            Log.warn(.ws, "WebSocketClientV2.retrySend store reset failed: \(error)")
+            return
+        }
+        Task { [weak self] in
+            try? await self?.stack.transport.tickDispatcher()
+        }
     }
 
     /// Called by `JarvisApp` on scene-phase transitions. On `.active` we nudge
@@ -527,6 +538,26 @@ final class WebSocketClientV2 {
             timezone: timezone,
             locality: locality
         )
+    }
+
+    // MARK: - Auth_ok callback wiring
+
+    /// Subscribe to the transport's `auth_ok` payload stream so we can lift the
+    /// (optional) command catalogue onto the `commands` observable. Called from
+    /// both init paths once `stack` is non-nil.
+    private func wireAuthOkCallback() {
+        guard let stack else { return }
+        let transport = stack.transport
+        Task {
+            await transport.setOnAuthOkPayload { [weak self] payload in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.commands = (payload.commands ?? []).map {
+                        BotCommand(command: $0.command, description: $0.description)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Test seams

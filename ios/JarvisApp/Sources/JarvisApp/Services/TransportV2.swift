@@ -42,6 +42,18 @@ actor TransportV2 {
     /// Resets to 0 in `handleAuthOk` once the server has accepted us.
     private var reconnectAttempt: Int = 0
 
+    /// Fired with the decoded `auth_ok` payload every time the server accepts
+    /// the handshake. Wired by `WebSocketClientV2` to publish the optional
+    /// slash-command catalogue. Closure must be `@Sendable` since it's
+    /// invoked from the transport actor.
+    private(set) var onAuthOkPayload: (@Sendable (V2.AuthOk) -> Void)?
+
+    /// Async setter — the property is actor-isolated; callers from outside
+    /// must hop through this. `nil` clears the callback.
+    func setOnAuthOkPayload(_ cb: (@Sendable (V2.AuthOk) -> Void)?) {
+        onAuthOkPayload = cb
+    }
+
     init(
         store: ConversationStoreV2,
         socket: WebSocketLike,
@@ -125,6 +137,7 @@ actor TransportV2 {
             try store.markSent(id: a.id, serverTS: parseTS(env.ts))
         case .authOk(let ok):
             try await handleAuthOk(lastSeenOutboundSeq: ok.last_seen_outbound_seq)
+            onAuthOkPayload?(ok)
         case .message(let m):
             try await routeInboundMessage(envelope: env, message: m)
         case .statusBatch(let s):

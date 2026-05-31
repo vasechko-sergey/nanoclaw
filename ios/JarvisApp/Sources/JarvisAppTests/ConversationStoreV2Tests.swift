@@ -75,4 +75,18 @@ final class ConversationStoreV2Tests: XCTestCase {
         try store.recordDedup(id: "x", seq: 1)
         XCTAssertTrue(try store.dedupSeen(id: "x"))
     }
+
+    func testResetFailedToQueued() throws {
+        let id = UUID().uuidString
+        try store.insertOutboundUserMessage(conversationId: "thr-1", id: id, text: "hi",
+                                            attachments: [], context: nil)
+        try store.markSending(id: id, seq: 5)
+        try store.markFailed(id: id, reason: "network")
+        XCTAssertEqual(try store.fetchById(id)?.status, .failed)
+        try store.resetFailedToQueued(id: id)
+        let row = try XCTUnwrap(try store.fetchById(id))
+        XCTAssertEqual(row.status, .queued)
+        XCTAssertNil(row.seq)
+        XCTAssertNil(row.failureReason)
+    }
 }

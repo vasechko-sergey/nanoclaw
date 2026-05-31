@@ -68,6 +68,12 @@ enum V2 {
     struct AuthOk: Codable, Equatable {
         let last_seen_outbound_seq: Int
         let server_time: String
+        let commands: [Command]?
+    }
+
+    struct Command: Codable, Equatable {
+        let command: String
+        let description: String
     }
 
     struct AuthFail: Codable, Equatable {

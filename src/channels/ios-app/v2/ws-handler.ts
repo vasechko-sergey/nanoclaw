@@ -47,6 +47,12 @@ export interface WsHandlerDeps {
   contextBridge: ContextBridge;
   validateToken: (token: string) => Promise<PlatformId | null>;
   /**
+   * Optional slash-command catalogue published on every `auth_ok`. The iOS
+   * `UnifiedInputBar` consumes this to populate its suggestion popover.
+   * Commands are expected to be `/`-prefixed (matches legacy adapter shape).
+   */
+  commands?: Array<{ command: string; description: string }>;
+  /**
    * Test/escape hatch: how often the retry timer fires. Default 1000ms.
    * Lower values make retry tests faster but should not be used in prod.
    */
@@ -235,6 +241,13 @@ export class WsHandler {
     // upsertDevice above guarantees the row exists.
     const last_seen_outbound_seq = dev?.last_seen_outbound_seq ?? 0;
 
+    const authOkPayload: Record<string, unknown> = {
+      last_seen_outbound_seq,
+      server_time: new Date().toISOString(),
+    };
+    if (this.deps.commands && this.deps.commands.length > 0) {
+      authOkPayload.commands = this.deps.commands;
+    }
     this.sendRaw(ws, {
       v: 2,
       kind: 'control',
@@ -242,10 +255,7 @@ export class WsHandler {
       id: randomUUID(),
       seq: null,
       ts: new Date().toISOString(),
-      payload: {
-        last_seen_outbound_seq,
-        server_time: new Date().toISOString(),
-      },
+      payload: authOkPayload,
     });
 
     // Drain pending queue rows (everything still there post-ackUpTo).

@@ -189,6 +189,80 @@ final class WebSocketClientV2Tests: XCTestCase {
         }
     }
 
+    // MARK: - retrySend
+
+    func testRetrySendFlipsFailedRowBackToQueued() async throws {
+        let cid = UUID()
+        client.conversationId = cid
+        let id = UUID().uuidString
+        try store.insertOutboundUserMessage(conversationId: cid.uuidString, id: id,
+                                            text: "hi", attachments: [], context: nil)
+        try store.markSending(id: id, seq: 7)
+        try store.markFailed(id: id, reason: "network")
+        XCTAssertEqual(try store.fetchById(id)?.status, .failed)
+
+        client.retrySend(id: id)
+        // Synchronous store mutation happens before the Task fires, so the row
+        // should be back to queued immediately.
+        let row = try XCTUnwrap(try store.fetchById(id))
+        XCTAssertEqual(row.status, .queued)
+        XCTAssertNil(row.seq)
+    }
+
+    // MARK: - auth_ok commands
+
+    func testCommandsPopulatedFromAuthOk() async throws {
+        // Wire the callback (init already did, but if the Task hasn't run yet,
+        // give it a moment).
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let env = V2.Envelope(
+            v: V2.protocolVersion, kind: .control, type: .authOk,
+            id: UUID().uuidString, seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .authOk(V2.AuthOk(
+                last_seen_outbound_seq: 0,
+                server_time: ISO8601DateFormatter().string(from: Date()),
+                commands: [
+                    V2.Command(command: "/new", description: "start new"),
+                    V2.Command(command: "/help", description: "show help"),
+                ]
+            ))
+        )
+        try await transport.handleIncoming(JSONEncoder().encode(env))
+        // Hop to MainActor publishes through a nested Task — wait for it.
+        let deadline = Date().addingTimeInterval(2.0)
+        while client.commands.isEmpty && Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(client.commands.count, 2)
+        XCTAssertEqual(client.commands.first?.command, "/new")
+        XCTAssertEqual(client.commands.first?.description, "start new")
+    }
+
+    func testCommandsClearedWhenAuthOkOmitsThem() async throws {
+        try await Task.sleep(nanoseconds: 100_000_000)
+        // Seed with a stale catalogue.
+        client.commands = [BotCommand(command: "/stale", description: "old")]
+
+        let env = V2.Envelope(
+            v: V2.protocolVersion, kind: .control, type: .authOk,
+            id: UUID().uuidString, seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .authOk(V2.AuthOk(
+                last_seen_outbound_seq: 0,
+                server_time: ISO8601DateFormatter().string(from: Date()),
+                commands: nil
+            ))
+        )
+        try await transport.handleIncoming(JSONEncoder().encode(env))
+        let deadline = Date().addingTimeInterval(2.0)
+        while !client.commands.isEmpty && Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(client.commands.isEmpty)
+    }
+
     // MARK: - Connection callback
 
     func testIsConnectedTogglingFiresOnConnectionChanged() {

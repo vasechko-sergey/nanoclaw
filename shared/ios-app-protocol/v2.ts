@@ -53,6 +53,10 @@ export const Envelopes = {
     payload: z.object({
       last_seen_outbound_seq: z.number().int().nonnegative(),
       server_time: z.string().datetime(),
+      commands: z.array(z.object({
+        command: z.string(),
+        description: z.string(),
+      })).optional(),
     }),
   }),
   AuthFail: EnvelopeBase.extend({

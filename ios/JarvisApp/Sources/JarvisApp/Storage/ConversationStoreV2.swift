@@ -139,6 +139,17 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// User-driven retry: flip a failed outbound message back to queued so the
+    /// dispatcher can pick it up on its next tick.
+    func resetFailedToQueued(id: String) throws {
+        try writer.write { db in
+            try db.execute(sql: """
+                UPDATE messages SET status='queued', failure_reason=NULL, seq=NULL
+                WHERE id=? AND dir='out' AND status='failed'
+            """, arguments: [id])
+        }
+    }
+
     func confirmAckedUpTo(maxSeq: Int) throws {
         try writer.write { db in
             try db.execute(sql: "UPDATE messages SET status='sent' WHERE dir='out' AND status='sending' AND seq<=?",

@@ -28,6 +28,7 @@ import { getAgentGroup } from '../../../db/agent-groups.js';
 import { findSession, getSession } from '../../../db/sessions.js';
 import { writeSessionMessage } from '../../../session-manager.js';
 
+import { BOT_COMMANDS } from '../../../commands.js';
 import { openTransportDb } from './transport-db.js';
 import { OutboundQueue } from './outbound-queue.js';
 import { ReceiptStore } from './receipt-store.js';
@@ -270,6 +271,10 @@ function createV2Adapter(): ChannelAdapter | null {
     queue,
     dispatcher,
     contextBridge,
+    commands: BOT_COMMANDS.map((c) => ({
+      command: '/' + c.command,
+      description: c.description,
+    })),
     validateToken: async (clientToken) => {
       // Single shared token model — same as legacy ios-app.ts. The client also
       // sends platform_id alongside the token; we trust it once the token is

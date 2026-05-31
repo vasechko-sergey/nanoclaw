@@ -20,7 +20,7 @@ describe('shared/ios-app-protocol fixtures', () => {
     });
   }
 
-  it('covers all 16 expected fixtures', () => {
-    expect(files).toHaveLength(16);
+  it('covers all 17 expected fixtures', () => {
+    expect(files).toHaveLength(17);
   });
 });
