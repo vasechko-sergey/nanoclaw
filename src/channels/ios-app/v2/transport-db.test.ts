@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { openTransportDb, type TransportDb } from './transport-db';
+import { openTransportDb, type TransportDb } from './transport-db.js';
 
 let db: TransportDb;
 beforeEach(() => {
