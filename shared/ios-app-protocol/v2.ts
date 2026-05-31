@@ -36,3 +36,90 @@ export const ContextFieldEnum = z.enum([
   'health', 'calendar', 'device', 'next_event', 'recent_locations', 'screen_state',
 ]);
 export type ContextField = z.infer<typeof ContextFieldEnum>;
+
+export const Envelopes = {
+  Auth: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('auth'),
+    payload: z.object({
+      token: z.string(),
+      last_seen_inbound_seq: z.number().int().nonnegative(),
+      capabilities: z.array(z.string()),
+    }),
+  }),
+  AuthOk: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('auth_ok'),
+    payload: z.object({
+      last_seen_outbound_seq: z.number().int().nonnegative(),
+      server_time: z.string().datetime(),
+    }),
+  }),
+  AuthFail: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('auth_fail'),
+    payload: z.object({ reason: z.string() }),
+  }),
+  Message: EnvelopeBase.extend({
+    kind: z.literal('data'),
+    type: z.literal('message'),
+    payload: z.object({
+      thread_id: z.string().min(1),
+      text: z.string(),
+      attachments: z.array(z.object({
+        id: z.string().uuid(),
+        kind: z.enum(['image', 'file']),
+        name: z.string(),
+        mime_type: z.string(),
+        byte_size: z.number().int().nonnegative(),
+        bytes_base64: z.string().optional(),
+        remote_id: z.string().optional(),
+      })).optional(),
+      context: InlineContext.optional(),
+    }),
+  }),
+  ContextRequest: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('context_request'),
+    payload: z.object({
+      request_id: z.string().uuid(),
+      fields: z.array(ContextFieldEnum).min(1),
+      params: z.record(z.string(), z.unknown()).optional(),
+    }),
+  }),
+  ContextResponse: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('context_response'),
+    payload: z.object({
+      request_id: z.string().uuid(),
+      data: z.record(z.string(), z.unknown()),
+      errors: z.record(z.string(), z.string()).optional(),
+    }),
+  }),
+  NewConversation: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('new_conversation'),
+    payload: z.object({ thread_id: z.string().min(1) }),
+  }),
+  ActionResponse: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('action_response'),
+    payload: z.object({ action_id: z.string(), choice: z.string() }),
+  }),
+  Feedback: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('feedback'),
+    payload: z.object({
+      message_id: z.string().uuid(),
+      kind: z.enum(['up', 'down']),
+    }),
+  }),
+} as const;
+
+// Provisional union — extended in Task 1.4 with ack/ping/pong/status types.
+export const AnyEnvelope = z.discriminatedUnion('type', [
+  Envelopes.Auth, Envelopes.AuthOk, Envelopes.AuthFail,
+  Envelopes.Message, Envelopes.ContextRequest, Envelopes.ContextResponse,
+  Envelopes.NewConversation, Envelopes.ActionResponse, Envelopes.Feedback,
+]);
+export type AnyEnvelope = z.infer<typeof AnyEnvelope>;

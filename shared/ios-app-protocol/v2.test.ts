@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EnvelopeBase, InlineContext, ContextFieldEnum } from './v2';
+import { EnvelopeBase, InlineContext, ContextFieldEnum, Envelopes, AnyEnvelope } from './v2';
 
 describe('EnvelopeBase', () => {
   const ok = {
@@ -51,5 +51,75 @@ describe('ContextFieldEnum', () => {
     for (const f of ALL) expect(ContextFieldEnum.parse(f)).toBe(f);
     expect(() => ContextFieldEnum.parse('read_receipts')).toThrow();
     expect(() => ContextFieldEnum.parse('dialog_summary')).toThrow();
+  });
+});
+
+const baseFor = (over: Record<string, unknown>) => ({
+  v: 2 as const,
+  kind: 'data',
+  type: 'message',
+  id: '550e8400-e29b-41d4-a716-446655440000',
+  seq: 1,
+  ts: '2026-05-31T12:00:00.000Z',
+  ...over,
+});
+
+describe('Envelopes.Message', () => {
+  it('accepts minimal message', () => {
+    expect(() => Envelopes.Message.parse(baseFor({
+      payload: { thread_id: 't1', text: 'hi' },
+    }))).not.toThrow();
+  });
+  it('accepts message with inline context', () => {
+    expect(() => Envelopes.Message.parse(baseFor({
+      payload: {
+        thread_id: 't1', text: 'hi',
+        context: { timestamp: '2026-05-31T12:00:00.000Z', timezone: 'UTC' },
+      },
+    }))).not.toThrow();
+  });
+  it('rejects missing thread_id', () => {
+    expect(() => Envelopes.Message.parse(baseFor({ payload: { text: 'hi' } }))).toThrow();
+  });
+});
+
+describe('Envelopes.Auth', () => {
+  it('accepts valid auth', () => {
+    expect(() => Envelopes.Auth.parse(baseFor({
+      kind: 'control', type: 'auth',
+      payload: { token: 'abc', last_seen_inbound_seq: 0, capabilities: [] },
+    }))).not.toThrow();
+  });
+});
+
+describe('Envelopes.ContextRequest', () => {
+  it('accepts request_id + non-empty fields', () => {
+    expect(() => Envelopes.ContextRequest.parse(baseFor({
+      kind: 'control', type: 'context_request',
+      payload: {
+        request_id: '550e8400-e29b-41d4-a716-446655440000',
+        fields: ['device', 'next_event'],
+      },
+    }))).not.toThrow();
+  });
+  it('rejects empty fields', () => {
+    expect(() => Envelopes.ContextRequest.parse(baseFor({
+      kind: 'control', type: 'context_request',
+      payload: {
+        request_id: '550e8400-e29b-41d4-a716-446655440000',
+        fields: [],
+      },
+    }))).toThrow();
+  });
+});
+
+describe('AnyEnvelope discriminated union', () => {
+  it('dispatches by type', () => {
+    const env = baseFor({
+      kind: 'control', type: 'auth',
+      payload: { token: 'x', last_seen_inbound_seq: 0, capabilities: [] },
+    });
+    const parsed = AnyEnvelope.parse(env);
+    expect(parsed.type).toBe('auth');
   });
 });
