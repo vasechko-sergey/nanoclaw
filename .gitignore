@@ -45,3 +45,6 @@ agents-sdk-docs
 
 ios/JarvisApp/.build/
 *.xcuserstate
+
+# Local worktrees for in-progress work
+.worktrees/
