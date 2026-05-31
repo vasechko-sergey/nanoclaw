@@ -43,7 +43,6 @@
 		56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */; };
 		5727F5346AE76836985BED3D /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C904740E5DA9FD762F5645C /* WatchContentView.swift */; };
 		57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */; };
-		5EBA19E37A519E0153EF6195 /* DraftAttachmentVideoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B54928D3E8CFAE7DA2889B6C /* DraftAttachmentVideoTests.swift */; };
 		5ED5035D7E3D50CCD815D5C7 /* HeaderStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */; };
 		634AE794B556552200D1D06A /* JarvisWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C75412A22FD477079ABB55 /* JarvisWatchApp.swift */; };
 		66C3EF39ACF49B0F3FB7B00A /* InboundRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D2612FF9631C4C6171FC6E /* InboundRouter.swift */; };
@@ -194,7 +193,6 @@
 		B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProactiveDispatcher.swift; sourceTree = "<group>"; };
 		B3C4FB0DCE7115FB8C5039E7 /* JarvisAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JarvisAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3EB21126CB3C83D223E10A6 /* WatchAppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAppState.swift; sourceTree = "<group>"; };
-		B54928D3E8CFAE7DA2889B6C /* DraftAttachmentVideoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftAttachmentVideoTests.swift; sourceTree = "<group>"; };
 		B6BD1E4ABB502A83CDD29883 /* MiniOrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniOrbView.swift; sourceTree = "<group>"; };
 		B89708E4E59AE056D27564C3 /* JarvisWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JarvisWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD51F238E46BCB805C742CEE /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
@@ -349,7 +347,6 @@
 				0F054467F74B7DF9A10C319D /* ConversationSatelliteBuilderTests.swift */,
 				52BEC438C5A847A83F7BCD24 /* ConversationStoreV2Tests.swift */,
 				24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */,
-				B54928D3E8CFAE7DA2889B6C /* DraftAttachmentVideoTests.swift */,
 				44C051ECA1BBC173253E5FF4 /* HeaderStatusDotTests.swift */,
 				75822B5A2FE1920CA3058B48 /* HeartbeatTests.swift */,
 				F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */,
@@ -678,7 +675,6 @@
 				F9E3859C2A7F69F15BFD3AA0 /* ConversationSatelliteBuilderTests.swift in Sources */,
 				AFB60BF802209ADBE2A4AE72 /* ConversationStoreV2Tests.swift in Sources */,
 				EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */,
-				5EBA19E37A519E0153EF6195 /* DraftAttachmentVideoTests.swift in Sources */,
 				BA63D1A5A6AFDD559D9911A0 /* HeaderStatusDotTests.swift in Sources */,
 				CB6576F08C01F04D5D766774 /* HeartbeatTests.swift in Sources */,
 				57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */,
