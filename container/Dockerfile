@@ -86,6 +86,12 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 # agent-runner code that consumes it.
 COPY shared /app/shared
 
+# tsconfig.json is required at runtime for bun to resolve the @shared/* path
+# alias (bun reads tsconfig.json from the entry-point file's location and
+# walks up). The agent-runner src/ tree is mounted RO at /app/src, so bun
+# walks /app/src → /app and finds this tsconfig.
+COPY container/agent-runner/tsconfig.json /app/tsconfig.json
+
 # ---- pnpm + global Node CLIs -------------------------------------------------
 # Most stable first, most frequently bumped last. Bumping claude-code
 # (the most common change) only invalidates one layer.
