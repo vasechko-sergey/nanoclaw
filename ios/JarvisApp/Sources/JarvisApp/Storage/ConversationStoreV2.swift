@@ -214,6 +214,47 @@ final class ConversationStoreV2 {
         }
     }
 
+    // MARK: - Migration helpers (one-shot v1→v2 import)
+
+    /// Migration-only: insert an outbound row already marked as `sent` (history import).
+    /// Bypasses the queued/sending pipeline — callers must own dedup.
+    func insertOutboundHistoryRow(
+        conversationId: String,
+        id: String,
+        text: String,
+        ts: Int,
+        serverTS: Int?
+    ) throws {
+        try writer.write { db in
+            try ensureConversation(db, id: conversationId)
+            let now = Int(Date().timeIntervalSince1970 * 1000)
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO messages
+                  (id, conversation_id, dir, seq, text, status, ts, server_ts, created_at)
+                VALUES (?, ?, 'out', NULL, ?, 'sent', ?, ?, ?)
+            """, arguments: [id, conversationId, text, ts, serverTS, now])
+        }
+    }
+
+    /// Migration-only: insert an inbound row at `new` status without going through
+    /// the dedup table. Used to import legacy cached history into the v2 store.
+    func insertInboundHistoryRow(
+        conversationId: String,
+        id: String,
+        text: String,
+        ts: Int
+    ) throws {
+        try writer.write { db in
+            try ensureConversation(db, id: conversationId)
+            let now = Int(Date().timeIntervalSince1970 * 1000)
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO messages
+                  (id, conversation_id, dir, seq, text, status, ts, created_at)
+                VALUES (?, ?, 'in', NULL, ?, 'new', ?, ?)
+            """, arguments: [id, conversationId, text, ts, now])
+        }
+    }
+
     func fetchById(_ id: String) throws -> StoredMessage? {
         try writer.read { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM messages WHERE id=?", arguments: [id]) else {
