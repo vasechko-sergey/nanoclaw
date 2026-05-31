@@ -89,19 +89,24 @@ final class MigrationV2Tests: XCTestCase {
         let outboxDir = tmpDir.appendingPathComponent("Outbox", isDirectory: true)
         try FileManager.default.createDirectory(at: outboxDir, withIntermediateDirectories: true)
 
-        let entry = OutboxEntry(
-            id: "legacy-out-1",
-            conversationId: UUID(uuidString: "00000000-0000-0000-0000-000000000001"),
-            createdAt: Date(timeIntervalSince1970: 1_717_000_000),
-            payload: Data("{}".utf8),
-            textPreview: "hi from v1",
-            hasAttachments: false,
-            deliveryStatus: .sent
-        )
-        let enc = JSONEncoder()
-        enc.dateEncodingStrategy = .iso8601
-        let data = try enc.encode([entry])
-        try data.write(to: outboxDir.appendingPathComponent("queue.json"))
+        // The legacy `OutboxEntry` type has been removed alongside the legacy
+        // WebSocketClient (5.2c); reconstruct the on-disk JSON shape by hand so
+        // this test still pins MigrationV2's decode path for the real v1 file.
+        let createdAt = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 1_717_000_000))
+        let legacyJSON = """
+        [{
+          "id": "legacy-out-1",
+          "conversationId": "00000000-0000-0000-0000-000000000001",
+          "createdAt": "\(createdAt)",
+          "attempts": 0,
+          "payload": "e30=",
+          "textPreview": "hi from v1",
+          "hasAttachments": false,
+          "deliveryStatus": "sent"
+        }]
+        """
+        try legacyJSON.write(to: outboxDir.appendingPathComponent("queue.json"),
+                             atomically: true, encoding: .utf8)
 
         try MigrationV2.runIfNeeded(documentsURL: tmpDir, store: store)
 

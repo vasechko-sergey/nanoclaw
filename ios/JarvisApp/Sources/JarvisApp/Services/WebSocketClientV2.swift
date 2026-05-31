@@ -3,6 +3,15 @@ import GRDB
 import SwiftUI
 import UIKit
 
+/// Slash-command suggestion displayed in `UnifiedInputBar`. Used to populate
+/// `WebSocketClientV2.commands` on `auth_ok` — currently unset under v2 since
+/// the new protocol's `auth_ok` envelope doesn't carry a commands list. Kept
+/// here for view-binding parity until the host re-introduces them.
+struct BotCommand: Equatable {
+    let command: String
+    let description: String
+}
+
 // MARK: - WebSocketClientV2
 //
 // API-parity facade over the v2 transport stack. Mirrors the observable
@@ -80,17 +89,41 @@ final class WebSocketClientV2 {
 
     // MARK: - Storage / transport (owned)
 
-    @ObservationIgnored let stack: AppV2Stack
+    /// Production callsites build the stack lazily on first `connect(settings:)`
+    /// because the URL/token isn't known at coordinator-init time. Tests inject
+    /// a fully-built stack via the `init(stack:)` overload.
+    @ObservationIgnored private(set) var stack: AppV2Stack!
     @ObservationIgnored private var observationCancellable: AnyDatabaseCancellable?
     @ObservationIgnored private var sentReadIds: Set<String> = []
+
+    /// Production managers — captured so we can build the stack on first connect.
+    @ObservationIgnored private weak var location: LocationManager?
+    @ObservationIgnored private weak var health: HealthManager?
+    @ObservationIgnored private weak var calendar: CalendarManager?
 
     @ObservationIgnored private static let busyTimeoutSeconds: TimeInterval = 300 // 5 minutes
 
     // MARK: - Init
 
+    /// Test init — stack already constructed.
     init(stack: AppV2Stack) {
         self.stack = stack
         restartObservation()
+    }
+
+    /// Production init — stack is built lazily on the first `connect(settings:)`
+    /// call, since the URL and token live in `AppSettings` and are only known at
+    /// that point. The managers are captured so the eventual stack carries them
+    /// into the `AppContextCoordinator`.
+    init(
+        location: LocationManager? = nil,
+        health: HealthManager? = nil,
+        calendar: CalendarManager? = nil
+    ) {
+        self.stack = nil
+        self.location = location
+        self.health = health
+        self.calendar = calendar
     }
 
     // MARK: - Lifecycle
@@ -100,7 +133,31 @@ final class WebSocketClientV2 {
     /// existing `AppCoordinator.connect()` callsite can swap with minimal
     /// surgery. The transport itself is an actor; we just kick off
     /// `connect()` and update `isConnected` from the result.
+    ///
+    /// On first call (production path) the v2 stack is built lazily from the
+    /// supplied settings — `AppCoordinator` constructs `WebSocketClientV2`
+    /// without knowing the URL/token. Subsequent calls reuse the existing stack.
     func connect(settings: AppSettings) {
+        if stack == nil {
+            guard let url = Self.resolveWebSocketURL(settings: settings) else {
+                Log.warn(.ws, "WebSocketClientV2.connect: no valid URL in settings")
+                return
+            }
+            do {
+                let built = try AppV2Bootstrap.build(
+                    serverURL: url,
+                    token: settings.bearerToken,
+                    location: location,
+                    health: health,
+                    calendar: calendar
+                )
+                self.stack = built
+                restartObservation()
+            } catch {
+                Log.warn(.ws, "AppV2Bootstrap.build failed: \(error)")
+                return
+            }
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -111,6 +168,24 @@ final class WebSocketClientV2 {
                 self.isConnected = false
             }
         }
+    }
+
+    /// Normalise `AppSettings.serverURL` (which is a free-form `host:port` /
+    /// `http://…` / `wss://…` string) into a `URL` with a ws(s) scheme. Mirrors
+    /// the URL-massaging the legacy `WSTransport.doConnect` did.
+    private static func resolveWebSocketURL(settings: AppSettings) -> URL? {
+        let raw: String
+        if JarvisApp.isUITesting {
+            raw = "ws://127.0.0.1:8765"
+        } else {
+            raw = settings.serverURL.trimmingCharacters(in: .whitespaces)
+        }
+        guard !raw.isEmpty else { return nil }
+        var s = raw
+        if      s.hasPrefix("https://") { s = "wss://" + s.dropFirst(8) }
+        else if s.hasPrefix("http://")  { s = "ws://"  + s.dropFirst(7) }
+        else if !s.hasPrefix("ws")      { s = "ws://"  + s }
+        return URL(string: s)
     }
 
     /// Symmetric with legacy: stop and drop transient UI state.
@@ -128,6 +203,7 @@ final class WebSocketClientV2 {
     // MARK: - Conversations
 
     func sendNewConversation(id: UUID) {
+        guard stack != nil else { return }
         let payload = V2.NewConversation(thread_id: id.uuidString)
         Task { [weak self] in
             await self?.stack.transport.sendControlEnvelope(
@@ -164,6 +240,10 @@ final class WebSocketClientV2 {
         attachments: [DraftAttachment] = [],
         context: [String: Any]? = nil
     ) {
+        guard stack != nil else {
+            Log.warn(.ws, "WebSocketClientV2.send: stack not built yet")
+            return
+        }
         let clientMsgId = UUID().uuidString
         let ts = Date()
         lastUserSentAt = ts
@@ -190,6 +270,7 @@ final class WebSocketClientV2 {
     }
 
     func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {
+        guard stack != nil else { return }
         let kind = value ? "up" : "down"
         Task { [weak self] in
             await self?.stack.transport.sendControlEnvelope(
@@ -210,13 +291,14 @@ final class WebSocketClientV2 {
     }
 
     func sendMessageDelivered(_ messageId: String, conversationId: UUID?) {
-        guard isConnected else { return }
+        guard stack != nil, isConnected else { return }
         Task { [weak self] in
             await self?.stack.transport.sendStatusEnvelope(type: .delivered, ids: [messageId])
         }
     }
 
     func sendMessageRead(_ messageId: String, conversationId: UUID?) {
+        guard stack != nil else { return }
         guard sentReadIds.insert(messageId).inserted else { return }
         guard isConnected else {
             sentReadIds.remove(messageId)
@@ -236,7 +318,37 @@ final class WebSocketClientV2 {
         return false
     }
 
+    /// Manual retry of a failed outbound row. The v2 dispatcher owns the retry
+    /// loop end-to-end — there is no equivalent to legacy `OutboxStore`'s
+    /// per-entry attempt counter, and the store API to flip a row back from
+    /// `.failed` to `.queued` is not yet exposed. The UI-side callsite
+    /// (`onRetry` in `ChatView`) currently tap-routes here for parity; the
+    /// dispatcher will pick the row up on the next auth_ok if/when the row
+    /// gets reset by a future store API. TODO(5.x).
+    func retrySend(id: String) {
+        _ = id
+    }
+
+    /// Called by `JarvisApp` on scene-phase transitions. On `.active` we nudge
+    /// the dispatcher to flush anything that queued up while backgrounded. The
+    /// transport handles its own reconnect on socket-close, so there's no
+    /// equivalent to the legacy `handleBecameActive` URL-task lifecycle here.
+    func handleScenePhase(_ phase: ScenePhase) {
+        guard stack != nil else { return }
+        switch phase {
+        case .active:
+            Task { [weak self] in
+                try? await self?.stack.transport.tickDispatcher()
+            }
+        case .background, .inactive:
+            break
+        @unknown default:
+            break
+        }
+    }
+
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
+        guard stack != nil else { return }
         let payload = V2.ActionResponse(action_id: messageId, choice: buttonId)
         Task { [weak self] in
             await self?.stack.transport.sendControlEnvelope(
@@ -265,6 +377,12 @@ final class WebSocketClientV2 {
     private func restartObservation() {
         observationCancellable?.cancel()
         observationCancellable = nil
+
+        // Stack hasn't been built yet (production: pre-`connect`).
+        guard stack != nil else {
+            messages = []
+            return
+        }
 
         guard let cid = conversationId else {
             messages = []
@@ -417,6 +535,7 @@ final class WebSocketClientV2 {
     /// want to wait for the async ValueObservation tick).
     @MainActor
     func refreshMessagesForTesting() {
+        guard stack != nil else { messages = []; return }
         guard let cid = conversationId else {
             messages = []
             return

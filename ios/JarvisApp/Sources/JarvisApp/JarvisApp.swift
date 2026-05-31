@@ -3,7 +3,6 @@ import UIKit
 import UserNotifications
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    static weak var wsClient: WebSocketClient?
     /// Set by AppCoordinator — opens the conversation a proactive push refers to.
     static var onOpenConversation: ((String) -> Void)?
     /// Static hook the coordinator sets at init to receive proactive fires

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Outbound surface the dispatcher pushes events to. Production: WebSocketClient
+/// Outbound surface the dispatcher pushes events to. Production: WebSocketClientV2
 /// (with HTTP fallback inside). Tests: a recording stub.
 protocol ProactiveSink {
     func send(triggerType: String, payload: [String: Any]) -> Bool
@@ -48,10 +48,10 @@ protocol ProactiveSink {
 
 /// Production sink — tries WS first, then POSTs to /ios/proactive over HTTP.
 @MainActor final class WebSocketProactiveSink: ProactiveSink {
-    private let ws: WebSocketClient
+    private let ws: WebSocketClientV2
     private let settings: AppSettings
 
-    init(ws: WebSocketClient, settings: AppSettings) {
+    init(ws: WebSocketClientV2, settings: AppSettings) {
         self.ws = ws
         self.settings = settings
     }
