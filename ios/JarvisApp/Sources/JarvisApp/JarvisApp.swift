@@ -80,6 +80,7 @@ struct JarvisApp: App {
                     if new == .active {
                         Theme.refreshScale()
                         Theme.refreshDrawerWidth()
+                        HealthSync.kickIfStale()
                     }
                     Task { @MainActor in
                         coordinator.ws.handleScenePhase(new)
