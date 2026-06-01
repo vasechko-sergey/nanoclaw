@@ -7,9 +7,9 @@ import HealthKit
 enum HealthHistory {
     private static let store = HKHealthStore()
 
-    /// `from`/`to` are "yyyy-MM-dd" (local). Returns one dict per day:
-    /// { date, steps, activeEnergy, exerciseMinutes, heartRate, restingHeartRate, sleepHours }.
-    static func fetch(from: String, to: String, completion: @escaping ([[String: Any]]) -> Void) {
+    /// `from`/`to` are "yyyy-MM-dd" (local). Returns one `V2.HealthUpload.Day`
+    /// per day — wire shape pinned by shared/ios-app-protocol fixtures.
+    static func fetch(from: String, to: String, completion: @escaping ([V2.HealthUpload.Day]) -> Void) {
         guard HKHealthStore.isHealthDataAvailable() else { completion([]); return }
         let cal = Calendar.current
         let fmt = DateFormatter()
@@ -25,24 +25,33 @@ enum HealthHistory {
             completion([]); return
         }
 
-        var byDay: [String: [String: Any]] = [:]
+        var byDay: [String: V2.HealthUpload.Day] = [:]
         let group = DispatchGroup()
+        let lock = NSLock()
 
         func bucketKey(_ d: Date) -> String { fmt.string(from: cal.startOfDay(for: d)) }
+        func mutate(_ k: String, _ apply: (inout V2.HealthUpload.Day) -> Void) {
+            lock.lock()
+            var row = byDay[k] ?? V2.HealthUpload.Day(date: k)
+            apply(&row)
+            byDay[k] = row
+            lock.unlock()
+        }
 
         // Cumulative sums: steps, active energy, exercise minutes.
-        let sums: [(HKQuantityTypeIdentifier, HKUnit, String)] = [
-            (.stepCount, .count(), "steps"),
-            (.activeEnergyBurned, .kilocalorie(), "activeEnergy"),
-            (.appleExerciseTime, .minute(), "exerciseMinutes"),
+        let sums: [(HKQuantityTypeIdentifier, HKUnit, WritableKeyPath<V2.HealthUpload.Day, Int?>)] = [
+            (.stepCount, .count(), \.steps),
+            (.activeEnergyBurned, .kilocalorie(), \.activeEnergy),
+            (.appleExerciseTime, .minute(), \.exerciseMinutes),
         ]
-        for (id, unit, key) in sums {
+        for (id, unit, kp) in sums {
             group.enter()
             collection(id, start: start, end: end, options: .cumulativeSum) { stats in
                 for s in stats {
                     if let q = s.sumQuantity() {
                         let k = bucketKey(s.startDate)
-                        byDay[k, default: ["date": k]][key] = Int(q.doubleValue(for: unit).rounded())
+                        let v = Int(q.doubleValue(for: unit).rounded())
+                        mutate(k) { $0[keyPath: kp] = v }
                     }
                 }
                 group.leave()
@@ -51,17 +60,18 @@ enum HealthHistory {
 
         // Discrete averages: heart rate, resting heart rate.
         let bpm = HKUnit(from: "count/min")
-        let avgs: [(HKQuantityTypeIdentifier, String)] = [
-            (.heartRate, "heartRate"),
-            (.restingHeartRate, "restingHeartRate"),
+        let avgs: [(HKQuantityTypeIdentifier, WritableKeyPath<V2.HealthUpload.Day, Int?>)] = [
+            (.heartRate, \.heartRate),
+            (.restingHeartRate, \.restingHeartRate),
         ]
-        for (id, key) in avgs {
+        for (id, kp) in avgs {
             group.enter()
             collection(id, start: start, end: end, options: .discreteAverage) { stats in
                 for s in stats {
                     if let q = s.averageQuantity() {
                         let k = bucketKey(s.startDate)
-                        byDay[k, default: ["date": k]][key] = Int(q.doubleValue(for: bpm).rounded())
+                        let v = Int(q.doubleValue(for: bpm).rounded())
+                        mutate(k) { $0[keyPath: kp] = v }
                     }
                 }
                 group.leave()
@@ -75,7 +85,8 @@ enum HealthHistory {
             for s in stats {
                 if let q = s.averageQuantity() {
                     let k = bucketKey(s.startDate)
-                    byDay[k, default: ["date": k]]["hrv"] = Int(q.doubleValue(for: ms).rounded())
+                    let v = Int(q.doubleValue(for: ms).rounded())
+                    mutate(k) { $0.hrv = v }
                 }
             }
             group.leave()
@@ -85,15 +96,14 @@ enum HealthHistory {
         group.enter()
         sleepByDay(start: start, end: end, bucket: bucketKey) { sleep in
             for (k, hours) in sleep {
-                byDay[k, default: ["date": k]]["sleepHours"] = (hours * 10).rounded() / 10
+                let v = (hours * 10).rounded() / 10
+                mutate(k) { $0.sleepHours = v }
             }
             group.leave()
         }
 
         group.notify(queue: .main) {
-            let rows = byDay.values.sorted {
-                ($0["date"] as? String ?? "") < ($1["date"] as? String ?? "")
-            }
+            let rows = byDay.values.sorted { $0.date < $1.date }
             completion(Array(rows))
         }
     }

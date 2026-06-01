@@ -292,3 +292,29 @@ extension V2.Envelope: Codable {
         }
     }
 }
+
+// MARK: - HealthUpload (POST /ios/health/upload body)
+// Schema lives in shared/ios-app-protocol/v2.ts:HealthUploadDay/HealthUploadBody.
+// Pinned by fixtures/health/*.json — the Swift contract test round-trips the
+// same fixture through this Codable mirror.
+
+extension V2 {
+    enum HealthUpload {
+        struct Day: Codable, Equatable {
+            let date: String
+            var steps: Int?
+            var activeEnergy: Int?
+            var exerciseMinutes: Int?
+            var heartRate: Int?
+            var restingHeartRate: Int?
+            var hrv: Int?
+            var sleepHours: Double?
+        }
+
+        struct Body: Codable, Equatable {
+            var platformId: String?
+            var requestId: String?
+            var days: [Day]
+        }
+    }
+}

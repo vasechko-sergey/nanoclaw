@@ -4,8 +4,9 @@ import UIKit
 /// Uploads daily health aggregates to the server over HTTP — used from background
 /// (silent push or HealthKit background delivery) when the WebSocket is offline.
 /// Reads serverURL/token from UserDefaults so it works without the app UI.
+/// Body shape pinned by shared/ios-app-protocol/v2.ts:HealthUploadBody.
 enum HealthUpload {
-    static func upload(requestId: String?, days: [[String: Any]], completion: (() -> Void)? = nil) {
+    static func upload(requestId: String?, days: [V2.HealthUpload.Day], completion: (() -> Void)? = nil) {
         guard !days.isEmpty else { completion?(); return }
         let defaults = UserDefaults.standard
         guard let server = defaults.string(forKey: "serverURL"), !server.isEmpty,
@@ -24,9 +25,11 @@ enum HealthUpload {
             completion?(); return
         }
 
-        var body: [String: Any] = ["days": days, "platformId": platformId]
-        if let requestId { body["requestId"] = requestId }
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else { completion?(); return }
+        let body = V2.HealthUpload.Body(platformId: platformId, requestId: requestId, days: days)
+        let encoder = JSONEncoder()
+        // Omit absent optionals so the JSON exactly matches the canonical
+        // schema (HealthUploadDay uses `.optional()` — absent != null).
+        guard let data = try? encoder.encode(body) else { completion?(); return }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"

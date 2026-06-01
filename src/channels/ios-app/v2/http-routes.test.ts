@@ -193,7 +193,7 @@ describe('POST /ios/health/upload', () => {
       requestId: 'req-1',
       days: [
         { date: '2026-05-29', steps: 8000 },
-        { date: '2026-05-30', steps: 9500, hr_resting: 58 },
+        { date: '2026-05-30', steps: 9500, restingHeartRate: 58 },
       ],
     });
     const r = await fetchJson(`${h.url}/ios/health/upload`, {
@@ -210,7 +210,7 @@ describe('POST /ios/health/upload', () => {
     const lines = readFileSync(jsonl, 'utf8').trim().split('\n');
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0])).toMatchObject({ date: '2026-05-29', steps: 8000 });
-    expect(JSON.parse(lines[1])).toMatchObject({ date: '2026-05-30', steps: 9500, hr_resting: 58 });
+    expect(JSON.parse(lines[1])).toMatchObject({ date: '2026-05-30', steps: 9500, restingHeartRate: 58 });
 
     // Request cleared.
     expect(h.store.listForDevice('ios-app-v2:dev-1')).toHaveLength(0);
@@ -248,7 +248,7 @@ describe('POST /ios/health/upload', () => {
     const body = JSON.stringify({
       days: [
         { date: '2026-05-31', steps: 1234 },
-        { date: '2026-06-01', steps: 5678, hr_resting: 60 },
+        { date: '2026-06-01', steps: 5678, restingHeartRate: 60 },
       ],
     });
     const r = await fetchJson(`${h.url}/ios/health/upload`, {

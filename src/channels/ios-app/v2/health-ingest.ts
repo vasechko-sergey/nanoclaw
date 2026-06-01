@@ -7,16 +7,11 @@
 //
 // Producer: POST /ios/health/upload.
 // Consumer: the analyzer agent inside its container.
+// Day shape: shared/ios-app-protocol/v2.ts:HealthUploadDay.
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-export interface HealthUploadDay {
-  date: string; // 'YYYY-MM-DD'
-  steps?: number;
-  hr_resting?: number;
-  active_energy?: number;
-  sleep_hours?: number;
-}
+import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
 
 export function appendHealthHistory(groupsDir: string, agentGroupFolder: string, days: HealthUploadDay[]): void {
   const path = join(groupsDir, agentGroupFolder, 'health', 'raw.jsonl');

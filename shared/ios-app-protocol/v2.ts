@@ -153,6 +153,36 @@ export const Envelopes = {
   }),
 } as const;
 
+// Health upload — POST /ios/health/upload body. Not an envelope (the WS
+// transport is for chat messages); the schema lives here because every
+// consumer needs the same shape: the iOS HealthSync/HealthHistory producer,
+// the server's http-handler ingest, and Greg's analyze.js downstream reader.
+// Fields are all camelCase; the date string is local-day "YYYY-MM-DD". Daily
+// aggregates only — no per-sample data crosses this boundary.
+export const HealthUploadDay = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  steps: z.number().int().nonnegative().optional(),
+  activeEnergy: z.number().int().nonnegative().optional(),
+  exerciseMinutes: z.number().int().nonnegative().optional(),
+  heartRate: z.number().int().nonnegative().optional(),
+  restingHeartRate: z.number().int().nonnegative().optional(),
+  hrv: z.number().int().nonnegative().optional(),
+  sleepHours: z.number().nonnegative().optional(),
+});
+export type HealthUploadDay = z.infer<typeof HealthUploadDay>;
+
+export const HealthUploadBody = z.object({
+  // platformId is required when the server has no IOS_HEALTH_HISTORY_DIR
+  // override (it picks the wired agent group from the messaging group).
+  // In override mode it's just logged.
+  platformId: z.string().optional(),
+  // Echoed back from /ios/health/requests so the server can clear the
+  // serviced request row.
+  requestId: z.string().optional(),
+  days: z.array(HealthUploadDay),
+});
+export type HealthUploadBody = z.infer<typeof HealthUploadBody>;
+
 export const AnyEnvelope = z.discriminatedUnion('type', [
   Envelopes.Auth, Envelopes.AuthOk, Envelopes.AuthFail,
   Envelopes.Message, Envelopes.ContextRequest, Envelopes.ContextResponse,

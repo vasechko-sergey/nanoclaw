@@ -19,7 +19,8 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 
 import type { ChannelSetup } from '../../adapter.js';
-import { appendHealthHistory, type HealthUploadDay } from './health-ingest.js';
+import { HealthUploadBody } from '../../../../shared/ios-app-protocol/index.js';
+import { appendHealthHistory } from './health-ingest.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
 import type { PlatformId } from './types.js';
 
@@ -109,14 +110,16 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
       if (!requireToken(req, res)) return;
       readBody(req)
         .then((body) => {
-          const obj = JSON.parse(body) as {
-            platformId?: string;
-            requestId?: string;
-            days?: HealthUploadDay[];
-          };
-          const pid = obj.platformId;
-          const requestId = obj.requestId;
-          const days = Array.isArray(obj.days) ? obj.days : [];
+          const parsed = HealthUploadBody.safeParse(JSON.parse(body));
+          if (!parsed.success) {
+            res
+              .writeHead(400, { 'Content-Type': 'application/json' })
+              .end(JSON.stringify({ error: 'invalid body', issues: parsed.error.issues }));
+            return;
+          }
+          const pid = parsed.data.platformId;
+          const requestId = parsed.data.requestId;
+          const days = parsed.data.days;
           if (!pid && !healthOverrideDir) {
             res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"platformId required"}');
             return;

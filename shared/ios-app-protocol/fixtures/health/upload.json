@@ -1,0 +1,24 @@
+{
+  "platformId": "ios-app-v2:default",
+  "requestId": "req-2026-06-01-a",
+  "days": [
+    {
+      "date": "2026-05-31",
+      "steps": 6843,
+      "activeEnergy": 875,
+      "exerciseMinutes": 126,
+      "heartRate": 79,
+      "restingHeartRate": 64,
+      "hrv": 53,
+      "sleepHours": 6.1
+    },
+    {
+      "date": "2026-06-01",
+      "steps": 412,
+      "activeEnergy": 38,
+      "heartRate": 58,
+      "hrv": 64,
+      "sleepHours": 7.4
+    }
+  ]
+}

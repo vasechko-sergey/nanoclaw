@@ -31,7 +31,7 @@ final class ProtocolFixtureTests: XCTestCase {
             .filter { $0.pathExtension == "json" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
-        XCTAssertEqual(urls.count, 17, "fixture count mismatch — expected 17, got \(urls.count) at \(dir.path)")
+        XCTAssertEqual(urls.count, 17, "envelope fixture count mismatch — expected 17, got \(urls.count) at \(dir.path)")
 
         let decoder = JSONDecoder()
         let encoder = JSONEncoder()
@@ -61,6 +61,28 @@ final class ProtocolFixtureTests: XCTestCase {
                 continue
             }
             XCTAssertEqual(env, reDecoded, "\(url.lastPathComponent) round-trip mismatch")
+        }
+    }
+
+    func testHealthUploadFixturesRoundTrip() throws {
+        let dir = try fixturesDir().appendingPathComponent("health")
+        let urls = try FileManager.default
+            .contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        XCTAssertGreaterThan(urls.count, 0, "no health fixtures found at \(dir.path)")
+
+        let decoder = JSONDecoder()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        for url in urls {
+            let data = try Data(contentsOf: url)
+            let body = try decoder.decode(V2.HealthUpload.Body.self, from: data)
+            let re = try encoder.encode(body)
+            let reDecoded = try decoder.decode(V2.HealthUpload.Body.self, from: re)
+            XCTAssertEqual(body, reDecoded, "\(url.lastPathComponent) round-trip mismatch")
         }
     }
 }
