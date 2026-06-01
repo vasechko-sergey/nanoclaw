@@ -23,7 +23,7 @@ import path from 'path';
 
 import { isSafeAttachmentName } from '../../attachment-safety.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
-import { getInboundSourceSessionId, getMostRecentPeerSourceSessionId } from '../../db/session-db.js';
+import { getInboundA2aHops, getInboundSourceSessionId, getMostRecentPeerSourceSessionId } from '../../db/session-db.js';
 import { getSession } from '../../db/sessions.js';
 import { wakeContainer } from '../../container-runner.js';
 import { log } from '../../log.js';
@@ -32,6 +32,15 @@ import type { Session } from '../../types.js';
 import { hasDestination } from './db/agent-destinations.js';
 
 export { isSafeAttachmentName };
+
+/**
+ * Maximum a2a forwards in a single chain. Anything past this is dropped with
+ * a warning instead of forwarded — a guardrail against runaway agent-pair
+ * loops (Greg→Jarvis→Greg→…). The number is deliberately small: ordinary
+ * delegations are 1–2 hops (user → A → B, optional B → A reply). Anything
+ * past 5 is a loop in practice.
+ */
+export const MAX_A2A_HOPS = 5;
 
 export interface ForwardedAttachment {
   name: string;
@@ -178,6 +187,34 @@ export async function routeAgentMessage(msg: RoutableAgentMessage, session: Sess
   const targetSession = resolveTargetSession(msg, session, targetAgentGroupId);
   const a2aMsgId = `a2a-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Compute and enforce hop cap. The source-side inbound row the outbound
+  // is replying to (`in_reply_to`) carries the chain's current depth; the
+  // new a2a inbound row is depth+1. If we'd exceed MAX_A2A_HOPS, drop the
+  // message and log — better to break the chain than to let two agents
+  // ping-pong forever burning tokens. First-hop reply from a channel-side
+  // message has source_hops=0, so newHops=1: well under the cap.
+  let sourceHops = 0;
+  if (msg.in_reply_to) {
+    const srcDb = openInboundDb(session.agent_group_id, session.id);
+    try {
+      sourceHops = getInboundA2aHops(srcDb, msg.in_reply_to);
+    } finally {
+      srcDb.close();
+    }
+  }
+  const newHops = sourceHops + 1;
+  if (newHops > MAX_A2A_HOPS) {
+    log.warn('Agent message dropped: a2a hop cap exceeded', {
+      from: session.agent_group_id,
+      to: targetAgentGroupId,
+      fromSession: session.id,
+      sourceMsgId: msg.id,
+      hops: newHops,
+      cap: MAX_A2A_HOPS,
+    });
+    return;
+  }
+
   // If the source message references files (via `send_file`), forward the
   // bytes from the source's outbox into the target's inbox so the target
   // agent can actually see and re-send them. Without this, agent-to-agent
@@ -194,12 +231,14 @@ export async function routeAgentMessage(msg: RoutableAgentMessage, session: Sess
     threadId: null,
     content: forwardedContent,
     sourceSessionId: session.id,
+    a2aHops: newHops,
   });
   log.info('Agent message routed', {
     from: session.agent_group_id,
     to: targetAgentGroupId,
     targetSession: targetSession.id,
     a2aMsgId,
+    hops: newHops,
     forwardedFileCount: countForwardedFiles(forwardedContent),
   });
   const fresh = getSession(targetSession.id);

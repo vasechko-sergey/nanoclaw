@@ -415,6 +415,52 @@ describe('routeAgentMessage return-path', () => {
     expect(s1Rows.length + s2Rows.length).toBe(20);
   });
 
+  it('hop cap: drops a forward whose chain depth would exceed MAX_A2A_HOPS', async () => {
+    // Walk a chain A.S1 → B.SB → A.S1 → B.SB → ... each link using the
+    // PREVIOUS link's stamped inbound id as in_reply_to. With MAX_A2A_HOPS=5
+    // the 6th forward must be refused — no row appears at the target.
+    let lastIdAtA: string | null = null;
+    let lastIdAtB: string | null = null;
+    // Hop 1: A → B (sourceHops=0 → newHops=1)
+    await routeAgentMessage(
+      { id: 'h-1', platform_id: B, content: JSON.stringify({ text: '1' }), in_reply_to: null },
+      S1,
+    );
+    lastIdAtB = readInbound(B, SB.id).slice(-1)[0]!.id;
+    // Hops 2..5
+    for (let n = 2; n <= 5; n++) {
+      if (n % 2 === 0) {
+        // B → A
+        await routeAgentMessage(
+          { id: `h-${n}`, platform_id: A, content: JSON.stringify({ text: String(n) }), in_reply_to: lastIdAtB },
+          SB,
+        );
+        // Reply lands in S1 via peer-affinity / source-session-id chain.
+        lastIdAtA = readInbound(A, S1.id).slice(-1)[0]!.id;
+      } else {
+        // A → B
+        await routeAgentMessage(
+          { id: `h-${n}`, platform_id: B, content: JSON.stringify({ text: String(n) }), in_reply_to: lastIdAtA },
+          S1,
+        );
+        lastIdAtB = readInbound(B, SB.id).slice(-1)[0]!.id;
+      }
+    }
+    expect(readInbound(B, SB.id).length + readInbound(A, S1.id).length).toBe(5);
+
+    // Hop 6 — B → A replying to the just-stamped hops=5 row at B. The
+    // sourceHops lookup must return 5; newHops=6 trips the cap and the
+    // forward is dropped. No new inbound row appears on either side.
+    const beforeB = readInbound(B, SB.id).length;
+    const beforeAS1 = readInbound(A, S1.id).length;
+    await routeAgentMessage(
+      { id: 'h-6', platform_id: A, content: JSON.stringify({ text: '6' }), in_reply_to: lastIdAtB },
+      SB,
+    );
+    expect(readInbound(B, SB.id).length).toBe(beforeB);
+    expect(readInbound(A, S1.id).length).toBe(beforeAS1);
+  });
+
   it('file forwarding: copies bytes from source outbox to target inbox', async () => {
     // Place a file in S1's outbox for the message.
     const outboxDir = path.join(sessionDir(A, S1.id), 'outbox', 'msg-with-file');

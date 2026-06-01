@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from './db/connection.js';
-import { getPendingMessages, markCompleted } from './db/messages-in.js';
+import { getPendingMessages, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
 import { formatMessages, extractRouting } from './formatter.js';
-import { dispatchSystemReplies } from './poll-loop.js';
+import { dispatchSystemReplies, partitionMessagesBySource } from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
 
@@ -495,5 +495,74 @@ describe('dispatchSystemReplies (ios-app context_response)', () => {
   // Reference unused imports so the import survives tree-shaking checks.
   it('onContextResponse export is callable', () => {
     expect(typeof onContextResponse).toBe('function');
+  });
+});
+
+describe('partitionMessagesBySource', () => {
+  function makeRow(over: Partial<MessageInRow>): MessageInRow {
+    return {
+      id: 'm',
+      seq: 1,
+      kind: 'chat',
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      process_after: null,
+      recurrence: null,
+      tries: 0,
+      trigger: 1,
+      platform_id: null,
+      channel_type: null,
+      thread_id: null,
+      content: '',
+      source_session_id: null,
+      ...over,
+    };
+  }
+
+  it('keeps a homogeneous channel-side batch in one partition', () => {
+    const rows = [
+      makeRow({ id: 'a', channel_type: 'telegram', platform_id: 'telegram:1' }),
+      makeRow({ id: 'b', channel_type: 'telegram', platform_id: 'telegram:1' }),
+    ];
+    const parts = partitionMessagesBySource(rows);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].map((m) => m.id)).toEqual(['a', 'b']);
+  });
+
+  it('splits two a2a inbound rows that come from different source sessions', () => {
+    // The Greg-loop case: Jarvis-iOS a2a (older) + Jarvis-Tg a2a (newer)
+    // both landed before the agent woke. Each must be its own provider call.
+    const rows = [
+      makeRow({
+        id: 'a2a-ios',
+        channel_type: 'agent',
+        platform_id: 'ag-jarvis',
+        source_session_id: 'sess-jarvis-ios',
+      }),
+      makeRow({
+        id: 'a2a-tg',
+        channel_type: 'agent',
+        platform_id: 'ag-jarvis',
+        source_session_id: 'sess-jarvis-tg',
+      }),
+    ];
+    const parts = partitionMessagesBySource(rows);
+    expect(parts).toHaveLength(2);
+    // Order preserved — oldest source first, so the iOS group leads.
+    expect(parts[0][0].id).toBe('a2a-ios');
+    expect(parts[1][0].id).toBe('a2a-tg');
+  });
+
+  it('separates two telegram threads on the same channel', () => {
+    const rows = [
+      makeRow({ id: 'a', channel_type: 'telegram', platform_id: 'telegram:1', thread_id: 't1' }),
+      makeRow({ id: 'b', channel_type: 'telegram', platform_id: 'telegram:1', thread_id: 't2' }),
+    ];
+    const parts = partitionMessagesBySource(rows);
+    expect(parts).toHaveLength(2);
+  });
+
+  it('returns the empty list for an empty input', () => {
+    expect(partitionMessagesBySource([])).toEqual([]);
   });
 });

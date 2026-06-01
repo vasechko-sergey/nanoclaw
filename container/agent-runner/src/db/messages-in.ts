@@ -38,6 +38,10 @@ export interface MessageInRow {
   channel_type: string | null;
   thread_id: string | null;
   content: string;
+  /** Source session id for a2a inbound rows; null on channel inbound. */
+  source_session_id: string | null;
+  /** a2a chain depth; 0 on channel inbound. May be undefined on legacy rows. */
+  a2a_hops?: number;
 }
 
 // Cap on how many messages reach the agent in one prompt. Read from

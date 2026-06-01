@@ -179,13 +179,13 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     }
 
     const ids = messages.map((m) => m.id);
-    markProcessing(ids);
-
-    const routing = extractRouting(messages);
 
     // Command handling: the host router gates filtered and unauthorized
     // admin commands before they reach the container. The only command
-    // the runner handles directly is /clear (session reset).
+    // the runner handles directly is /clear (session reset). The /clear
+    // ack echoes back through the same channel/thread the command came
+    // from — never the batch-wide routing, since a mixed-source batch
+    // could otherwise misdirect the ack.
     const normalMessages: MessageInRow[] = [];
     const commandIds: string[] = [];
 
@@ -197,9 +197,9 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
         writeMessageOut({
           id: generateId(),
           kind: 'chat',
-          platform_id: routing.platformId,
-          channel_type: routing.channelType,
-          thread_id: routing.threadId,
+          platform_id: msg.platform_id,
+          channel_type: msg.channel_type,
+          thread_id: msg.thread_id,
           content: JSON.stringify({ text: 'Session cleared.' }),
         });
         commandIds.push(msg.id);
@@ -242,6 +242,25 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       continue;
     }
 
+    // Source partition: when the batch mixes messages from different
+    // routing sources (e.g. an a2a from Jarvis-iOS AND an a2a from
+    // Jarvis-Tg landed before the agent woke), process only the OLDEST
+    // source's group this iteration. The rest stay pending and get
+    // picked up on the next poll. Otherwise `extractRouting` would pin
+    // all outbound rows to the first message's source, mis-routing
+    // replies to the other group(s). See `partitionMessagesBySource`.
+    const partitions = partitionMessagesBySource(keep);
+    if (partitions.length > 1) {
+      log(`Batch spans ${partitions.length} sources — processing oldest, deferring rest`);
+    }
+    keep = partitions[0];
+    const keepIds = new Set(keep.map((m) => m.id));
+
+    // Routing is derived from the partition we actually run, not the full
+    // batch — `extractRouting` keys off `messages[0]`, which after a
+    // multi-source batch would point at a peer we're not replying to.
+    const routing = extractRouting(keep);
+
     // Format messages: passthrough commands get raw text (only if the
     // provider natively handles slash commands), others get XML.
     const prompt = formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands);
@@ -255,9 +274,17 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       systemContext: config.systemContext,
     });
 
-    // Process the query while concurrently polling for new messages
+    // Process the query while concurrently polling for new messages.
+    // Deferred partitions stay `pending` (we never include them here) so
+    // the next poll iteration picks them up with their own routing.
+    // markProcessing happens here — after partition + script gating — so
+    // deferred messages never enter `processing_ack` and remain visible
+    // to the next `getPendingMessages` call.
     const skippedSet = new Set(skipped);
-    const processingIds = ids.filter((id) => !commandIds.includes(id) && !skippedSet.has(id));
+    const processingIds = ids.filter(
+      (id) => !commandIds.includes(id) && !skippedSet.has(id) && keepIds.has(id),
+    );
+    markProcessing(processingIds);
     // Publish the batch's in_reply_to so MCP tools (send_message, send_file)
     // can stamp it on outbound rows — needed for a2a return-path routing.
     setCurrentInReplyTo(routing.inReplyTo);
@@ -298,6 +325,36 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     markCompleted(processingIds);
     log(`Completed ${ids.length} message(s)`);
   }
+}
+
+/**
+ * Group messages by routing source so each provider call replies into one
+ * consistent destination. Two messages share a partition iff they share
+ * `(channel_type, platform_id, thread_id, source_session_id)` — anything
+ * else means a reply formed from one would mis-route the other. Partition
+ * order follows the first appearance of each key in the input, so the
+ * oldest source's group comes first (and that's what poll-loop runs this
+ * iteration; later groups stay pending for next iteration).
+ *
+ * Exported for testing.
+ */
+export function partitionMessagesBySource(messages: MessageInRow[]): MessageInRow[][] {
+  const order: string[] = [];
+  const groups = new Map<string, MessageInRow[]>();
+  for (const m of messages) {
+    const key = JSON.stringify([
+      m.channel_type ?? '',
+      m.platform_id ?? '',
+      m.thread_id ?? '',
+      m.source_session_id ?? '',
+    ]);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      order.push(key);
+    }
+    groups.get(key)!.push(m);
+  }
+  return order.map((k) => groups.get(k)!);
 }
 
 /**

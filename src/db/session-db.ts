@@ -119,16 +119,23 @@ export function insertMessage(
      * Dying containers (past first poll) skip these rows.
      */
     onWake?: 0 | 1;
+    /**
+     * For a2a forwards: the hop number this row sits at. The router computes
+     * it from the source's inbound `a2a_hops`. Defaults to 0 (channel-side
+     * inbound or the originating end of a chain).
+     */
+    a2aHops?: number;
   },
 ): void {
   db.prepare(
-    `INSERT INTO messages_in (id, seq, kind, timestamp, status, platform_id, channel_type, thread_id, content, process_after, recurrence, series_id, trigger, source_session_id, on_wake)
-     VALUES (@id, @seq, @kind, @timestamp, 'pending', @platformId, @channelType, @threadId, @content, @processAfter, @recurrence, @id, @trigger, @sourceSessionId, @onWake)`,
+    `INSERT INTO messages_in (id, seq, kind, timestamp, status, platform_id, channel_type, thread_id, content, process_after, recurrence, series_id, trigger, source_session_id, on_wake, a2a_hops)
+     VALUES (@id, @seq, @kind, @timestamp, 'pending', @platformId, @channelType, @threadId, @content, @processAfter, @recurrence, @id, @trigger, @sourceSessionId, @onWake, @a2aHops)`,
   ).run({
     ...message,
     trigger: message.trigger ?? 1,
     onWake: message.onWake ?? 0,
     sourceSessionId: message.sourceSessionId ?? null,
+    a2aHops: message.a2aHops ?? 0,
     seq: nextEvenSeq(db),
   });
 }
@@ -329,6 +336,13 @@ export function migrateMessagesInTable(db: Database.Database): void {
     // All existing rows are normal messages, so default 0.
     db.prepare('ALTER TABLE messages_in ADD COLUMN on_wake INTEGER NOT NULL DEFAULT 0').run();
   }
+  if (!cols.has('a2a_hops')) {
+    // Per-message a2a hop count. Channel inbound = 0; first a2a forward = 1;
+    // each further forward increments. Caps loops between agents. Existing
+    // rows default to 0 — safe because the cap is only enforced on writes
+    // from `agent-route.ts`, which fills the right value on each new forward.
+    db.prepare('ALTER TABLE messages_in ADD COLUMN a2a_hops INTEGER NOT NULL DEFAULT 0').run();
+  }
 }
 
 /**
@@ -342,6 +356,19 @@ export function getInboundSourceSessionId(db: Database.Database, messageId: stri
     | { source_session_id: string | null }
     | undefined;
   return row?.source_session_id ?? null;
+}
+
+/**
+ * Read the a2a hop count of an inbound row. Returns 0 when the row is
+ * missing or the column hasn't been migrated yet (treat unknown as fresh).
+ */
+export function getInboundA2aHops(db: Database.Database, messageId: string): number {
+  const cols = (db.prepare("PRAGMA table_info('messages_in')").all() as Array<{ name: string }>).map((c) => c.name);
+  if (!cols.includes('a2a_hops')) return 0;
+  const row = db.prepare('SELECT a2a_hops FROM messages_in WHERE id = ?').get(messageId) as
+    | { a2a_hops: number | null }
+    | undefined;
+  return row?.a2a_hops ?? 0;
 }
 
 /**

@@ -177,9 +177,15 @@ CREATE TABLE IF NOT EXISTS messages_in (
   -- group's "newest" session. NULL on channel-side inbound and on a2a rows
   -- written before this column existed.
   source_session_id TEXT,
-  on_wake        INTEGER NOT NULL DEFAULT 0
+  on_wake        INTEGER NOT NULL DEFAULT 0,
                -- 1 = only deliver on the container's first poll (fresh start).
                -- Dying containers (past first poll) skip these rows.
+  -- Number of agent-to-agent forwards this message has been through. 0 for
+  -- channel-side inbound and for the first hop of any a2a chain. The router
+  -- increments on each forward; if it would exceed MAX_A2A_HOPS the message
+  -- is dropped with a warning so a misbehaving agent pair can't ping-pong
+  -- forever. Stored on inbound so the next hop can read it cheaply.
+  a2a_hops       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_messages_in_series ON messages_in(series_id);
 

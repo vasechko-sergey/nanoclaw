@@ -221,6 +221,12 @@ export function writeSessionMessage(
      * Dying containers (past first poll) skip these rows.
      */
     onWake?: 0 | 1;
+    /**
+     * For a2a forwards: the chain depth this row sits at (source_hops + 1).
+     * Channel-side rows leave this 0. The router fills it on each forward
+     * and refuses to write past MAX_A2A_HOPS.
+     */
+    a2aHops?: number;
   },
 ): void {
   // Extract base64 attachment data, save to inbox, replace with file paths
@@ -241,6 +247,7 @@ export function writeSessionMessage(
       trigger: message.trigger ?? 1,
       sourceSessionId: message.sourceSessionId ?? null,
       onWake: message.onWake ?? 0,
+      a2aHops: message.a2aHops ?? 0,
     });
   } finally {
     db.close();
