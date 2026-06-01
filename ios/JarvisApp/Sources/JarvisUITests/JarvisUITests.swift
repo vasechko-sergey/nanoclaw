@@ -37,34 +37,23 @@ final class JarvisUITests: XCTestCase {
         XCTAssertTrue(startChatBtn.waitForExistence(timeout: 3), "uitest-start-text-chat button not found")
         startChatBtn.tap()
 
-        // Wait for the ChatView empty-state pill ("Текстом") or input bar to
-        // render. Match by label/placeholderValue, not identifier (see comment
-        // at top of helpers section).
-        let startText = emptyStartTextButton()
+        // Wait for the ChatView input bar to render. Match by placeholderValue
+        // since the chat-view parent identifier shadows explicit ones.
+        // Note: the legacy empty-state "Текстом" pill was removed when
+        // EmptyStateView was rebuilt to match OrbHomeView style — InputBar is
+        // now always visible in the empty state.
         let messageInput = resolveMessageInput()
-        let deadline = Date().addingTimeInterval(10)
-        while Date() < deadline {
-            if startText.exists || messageInput.exists { return }
-            Thread.sleep(forTimeInterval: 0.2)
-        }
-        XCTFail("ChatView did not render either empty-state pill or message-input within 10s after navigation")
+        XCTAssertTrue(
+            messageInput.waitForExistence(timeout: 10),
+            "ChatView message-input did not render within 10s after navigation"
+        )
     }
 
-    /// Open input bar from empty state by tapping the "Текстом" pill.
+    /// No-op: InputBar is always visible in the empty state now (EmptyStateView
+    /// rebuilt to match OrbHomeView — no more "Текстом" pill to tap).
+    /// Kept for call-site compatibility.
     private func openInputBar() {
-        if resolveMessageInput().waitForExistence(timeout: 1) { return }
-        let startText = emptyStartTextButton()
-        XCTAssertTrue(startText.waitForExistence(timeout: 8), "'Текстом' pill not found in empty state")
-        startText.tap()
-    }
-
-    /// Empty-state "Текстом" pill (the right of two pills under "О чём поговорим?").
-    /// Matched by label because the chat-view parent identifier shadows the
-    /// `.accessibilityIdentifier("empty-start-text")` set on the button.
-    private func emptyStartTextButton() -> XCUIElement {
-        return app.buttons.matching(
-            NSPredicate(format: "label == 'Текстом'")
-        ).firstMatch
+        _ = resolveMessageInput().waitForExistence(timeout: 3)
     }
 
     /// Resolve the input TextField by placeholderValue ("Спросить Jarvis...").
