@@ -47,4 +47,36 @@ enum HealthSync {
             HealthUpload.upload(requestId: nil, days: days) { done() }
         }
     }
+
+    /// Public production entrypoint. Called from scenePhase == .active.
+    /// If `lastHealthUploadAt` is missing or not in today's calendar day,
+    /// kicks `pushRecent` and stamps the date afterward. Otherwise no-op.
+    static func kickIfStale() {
+        _ = kickIfStaleForTesting(
+            now: Date(),
+            calendar: Calendar.current,
+            defaults: UserDefaults.standard,
+            push: { done in pushRecent(done) }
+        )
+    }
+
+    /// Pure decision + side-effect seam for tests. Returns the number of times
+    /// `push` was invoked (0 or 1).
+    @discardableResult
+    static func kickIfStaleForTesting(
+        now: Date,
+        calendar: Calendar,
+        defaults: UserDefaults,
+        push: (@escaping () -> Void) -> Void
+    ) -> Int {
+        let last = defaults.object(forKey: "lastHealthUploadAt") as? Date
+        let today = calendar.startOfDay(for: now)
+        if let last, calendar.startOfDay(for: last) >= today {
+            return 0
+        }
+        push {
+            defaults.set(Date(), forKey: "lastHealthUploadAt")
+        }
+        return 1
+    }
 }
