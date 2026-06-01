@@ -18,6 +18,24 @@ import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
+/**
+ * Per-turn SDK idle ceiling. If the underlying provider stream goes this
+ * long without yielding ANY event (including the `activity` liveness
+ * signal), the poll-loop assumes the stream is wedged, aborts the query,
+ * notifies the user, and lets the next message wake a fresh turn.
+ *
+ * Two minutes is generous for a real tool call (Bash, Edit, MCP) but
+ * far below the host-side 30-minute container ceiling — fires first, so
+ * the user gets a fallback message instead of 30 minutes of silence.
+ *
+ * Symptom this prevents: model emits an assistant text block followed by
+ * a tool_use, the tool completes, and the SDK never returns control —
+ * the streaming dispatch already sent any complete <message> blocks, but
+ * if the model produced text only via the terminal `result` event it
+ * was lost. With this watchdog the user at least gets a "[stream stalled]"
+ * fallback within 2 minutes.
+ */
+const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 function log(msg: string): void {
   console.error(`[poll-loop] ${msg}`);
@@ -421,8 +439,77 @@ async function processQuery(
     })();
   }, ACTIVE_POLL_INTERVAL_MS);
 
+  // Tracks (toName, body) pairs already sent to outbound during the
+  // CURRENT TURN — both via the streaming assistant_text path and via the
+  // terminal result.text path that closes it. The aggregated result.text
+  // contains the same blocks the stream already emitted, so without this
+  // set we would deliver each user-facing message twice.
+  //
+  // Reset on every `result` event: the next turn (push() follow-up inside
+  // the same query) is allowed to repeat any block — e.g. consecutive
+  // status pings, "done" confirmations, or a follow-up that happens to
+  // produce identical text. Cross-turn dedupe would silently drop those.
+  let dispatchedKeys = new Set<string>();
+  // Buffer for partial <message> blocks that span multiple assistant_text
+  // events. Closed blocks are dispatched immediately; the trailing remainder
+  // (text after the last </message>, including unclosed <message...) is kept
+  // here until more text arrives or the turn ends.
+  let streamBuffer = '';
+
+  const iter = query.events[Symbol.asyncIterator]();
+  let watchdogFired = false;
+
   try {
-    for await (const event of query.events) {
+    while (true) {
+      let idleHandle: ReturnType<typeof setTimeout> | undefined;
+      const idleP = new Promise<{ idle: true }>((resolve) => {
+        idleHandle = setTimeout(() => resolve({ idle: true }), STREAM_IDLE_TIMEOUT_MS);
+        // Don't let the watchdog timer hold the event loop alive after the
+        // poll-loop is abandoned (e.g. tests aborting via signal, host
+        // shutdown). Without this, an orphaned 120s timer per iteration
+        // prevents the process from exiting cleanly until it fires.
+        (idleHandle as { unref?: () => void }).unref?.();
+      });
+      const nextP = iter.next();
+      const winner = await Promise.race<{ idle: true } | IteratorResult<ProviderEvent>>([nextP, idleP]);
+      if (idleHandle) clearTimeout(idleHandle);
+
+      if ('idle' in winner) {
+        // SDK stream went silent for STREAM_IDLE_TIMEOUT_MS without yielding
+        // even an `activity` tick. Assume wedged: flush any remainder, tell
+        // the user something stalled, abort, and let the next inbound
+        // message wake a fresh turn. Without this, the host's 30-minute
+        // ceiling fires later and the user sees half an hour of silence
+        // for what was actually a dead stream.
+        log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms — aborting turn`);
+        watchdogFired = true;
+        if (streamBuffer.length > 0) {
+          const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+          streamBuffer = remainder;
+        }
+        markCompleted(initialBatchIds);
+        writeMessageOut({
+          id: generateId(),
+          kind: 'chat',
+          platform_id: routing.platformId,
+          channel_type: routing.channelType,
+          thread_id: routing.threadId,
+          content: JSON.stringify({
+            text: '[stream stalled — response cut short. Please retry or rephrase.]',
+          }),
+        });
+        try {
+          query.abort();
+        } catch (err) {
+          log(`query.abort() threw: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        break;
+      }
+
+      const next = winner;
+      if (next.done) break;
+      const event = next.value;
+
       handleEvent(event, routing);
       touchHeartbeat();
 
@@ -444,6 +531,16 @@ async function processQuery(
           thread_id: routing.threadId,
           content: JSON.stringify({ type: 'status', text: event.text, level: event.level, kind: event.kind }),
         });
+      } else if (event.type === 'assistant_text') {
+        // Stream-side dispatch: peel complete <message> blocks out of the
+        // running buffer and send them NOW. Anything past the last
+        // </message> (including an unclosed <message ... ) stays in the
+        // buffer for the next text event or the final `result` flush.
+        // Closed blocks recorded in `dispatchedKeys` so the result-side
+        // pass below skips them — no duplicate user-facing messages.
+        streamBuffer += event.text;
+        const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+        streamBuffer = remainder;
       } else if (event.type === 'result') {
         // A result — with or without text — means the turn is done. Mark
         // the initial batch completed now so the host sweep doesn't see
@@ -453,7 +550,15 @@ async function processQuery(
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
         if (event.text) {
-          const { hasUnwrapped } = dispatchResultText(event.text, routing);
+          // Stream buffer may still hold tail scratchpad. Reset it — the
+          // result.text below covers the full turn and is the canonical
+          // scratchpad source.
+          streamBuffer = '';
+          const { hasUnwrapped } = dispatchResultText(event.text, routing, dispatchedKeys);
+          // Per-turn dedupe — drop the set now that the turn is fully
+          // closed so any follow-up push() can re-send identical content
+          // without being silently suppressed.
+          dispatchedKeys = new Set<string>();
           if (hasUnwrapped && !unwrappedNudged) {
             unwrappedNudged = true;
             const destinations = getAllDestinations();
@@ -471,6 +576,17 @@ async function processQuery(
   } finally {
     done = true;
     clearInterval(pollHandle);
+    if (watchdogFired) {
+      // Drain the iterator's return() so the underlying SDK subprocess (if
+      // any) gets a chance to clean up. Swallow errors — we're already in
+      // the abort path and any further failure is logged for debugging
+      // only.
+      try {
+        await iter.return?.(undefined);
+      } catch (err) {
+        log(`iterator return after watchdog threw: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   return { continuation: queryContinuation };
@@ -480,6 +596,9 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
   switch (event.type) {
     case 'init':
       log(`Session: ${event.continuation}`);
+      break;
+    case 'assistant_text':
+      log(`Assistant text (${event.text.length} chars): ${event.text.slice(0, 200)}`);
       break;
     case 'result':
       log(`Result: ${event.text ? event.text.slice(0, 200) : '(empty)'}`);
@@ -498,38 +617,107 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
   }
 }
 
+const MESSAGE_BLOCK_RE = /<message\s+to="([^"]+)"\s*>([\s\S]*?)<\/message>/g;
+
 /**
- * Parse the agent's final text for <message to="name">...</message> blocks
- * and dispatch each one to its resolved destination. Text outside of blocks
- * (including <internal>...</internal>) is scratchpad — logged but not sent.
+ * Build a dedupe key for a (toName, body) pair. NUL byte separator so a
+ * name containing the body (or vice versa) can't collide. Body is trimmed
+ * to match the final-result path — the same block sent mid-stream and
+ * later returned by the aggregated `result.text` should produce the same
+ * key regardless of incidental whitespace differences.
+ */
+function blockKey(toName: string, body: string): string {
+  return `${toName} ${body.trim()}`;
+}
+
+/**
+ * Streaming dispatch: scan the running buffer for COMPLETE <message>
+ * blocks (`<message to="…">…</message>`), send each new one to its
+ * destination, and return the unconsumed tail. Trailing text (after the
+ * last </message>, including a half-open `<message …` with no close yet)
+ * stays in the returned remainder for the caller to re-feed on the next
+ * assistant_text event.
  *
- * The agent must always wrap output in <message to="name">...</message>
+ * Already-dispatched blocks (by `blockKey`) are skipped — this function
+ * shares `dispatched` with `dispatchResultText` so the final-result pass
+ * does not re-send anything already streamed out.
+ *
+ * Scratchpad/unwrapped-text handling is intentionally NOT done here —
+ * the buffer may contain a partial block we shouldn't log as scratchpad
+ * yet. Scratchpad logging + the no-wrap nudge are decided once at
+ * `result` time off the aggregated `result.text`.
+ */
+function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatched: Set<string>): string {
+  MESSAGE_BLOCK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let lastIndex = 0;
+  while ((match = MESSAGE_BLOCK_RE.exec(text)) !== null) {
+    const toName = match[1];
+    const body = match[2].trim();
+    lastIndex = MESSAGE_BLOCK_RE.lastIndex;
+    const key = blockKey(toName, body);
+    if (dispatched.has(key)) continue;
+    const dest = findByName(toName);
+    if (!dest) {
+      log(`Unknown destination in <message to="${toName}">, dropping block`);
+      dispatched.add(key);
+      continue;
+    }
+    sendToDestination(dest, body, routing);
+    dispatched.add(key);
+  }
+  return text.slice(lastIndex);
+}
+
+/**
+ * Parse the agent's final aggregated `result.text` for <message to="…">…
+ * </message> blocks and dispatch any not already sent via the streaming
+ * path. Text outside of blocks (including <internal>…</internal>) is
+ * scratchpad — logged but not sent.
+ *
+ * `hasUnwrapped` is true only when the WHOLE turn produced no `<message>`
+ * blocks at all (block count zero across the aggregated text) AND there
+ * is residual scratchpad. The streaming path may have already dispatched
+ * every block in `text`; that is NOT "unwrapped" — `blockCount > 0` and
+ * the nudge stays silent.
+ *
+ * The agent must always wrap output in <message to="name">…</message>
  * blocks, even with a single destination. Bare text is scratchpad only.
  */
-function dispatchResultText(text: string, routing: RoutingContext): { sent: number; hasUnwrapped: boolean } {
-  const MESSAGE_RE = /<message\s+to="([^"]+)"\s*>([\s\S]*?)<\/message>/g;
-
+function dispatchResultText(
+  text: string,
+  routing: RoutingContext,
+  dispatched: Set<string>,
+): { newlySent: number; hasUnwrapped: boolean } {
+  MESSAGE_BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  let sent = 0;
+  let newlySent = 0;
+  let blockCount = 0;
   let lastIndex = 0;
   const scratchpadParts: string[] = [];
 
-  while ((match = MESSAGE_RE.exec(text)) !== null) {
+  while ((match = MESSAGE_BLOCK_RE.exec(text)) !== null) {
+    blockCount++;
     if (match.index > lastIndex) {
       scratchpadParts.push(text.slice(lastIndex, match.index));
     }
     const toName = match[1];
     const body = match[2].trim();
-    lastIndex = MESSAGE_RE.lastIndex;
+    lastIndex = MESSAGE_BLOCK_RE.lastIndex;
+
+    const key = blockKey(toName, body);
+    if (dispatched.has(key)) continue;
 
     const dest = findByName(toName);
     if (!dest) {
       log(`Unknown destination in <message to="${toName}">, dropping block`);
       scratchpadParts.push(`[dropped: unknown destination "${toName}"] ${body}`);
+      dispatched.add(key);
       continue;
     }
     sendToDestination(dest, body, routing);
-    sent++;
+    dispatched.add(key);
+    newlySent++;
   }
   if (lastIndex < text.length) {
     scratchpadParts.push(text.slice(lastIndex));
@@ -541,11 +729,11 @@ function dispatchResultText(text: string, routing: RoutingContext): { sent: numb
     log(`[scratchpad] ${scratchpad.slice(0, 500)}${scratchpad.length > 500 ? '…' : ''}`);
   }
 
-  const hasUnwrapped = sent === 0 && !!scratchpad;
+  const hasUnwrapped = blockCount === 0 && !!scratchpad;
   if (hasUnwrapped) {
     log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
   }
-  return { sent, hasUnwrapped };
+  return { newlySent, hasUnwrapped };
 }
 
 function sendToDestination(dest: DestinationEntry, body: string, routing: RoutingContext): void {

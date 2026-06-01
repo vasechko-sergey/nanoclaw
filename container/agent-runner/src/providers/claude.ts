@@ -326,6 +326,25 @@ export class ClaudeProvider implements AgentProvider {
 
         if (message.type === 'system' && message.subtype === 'init') {
           yield { type: 'init', continuation: message.session_id };
+        } else if (message.type === 'assistant') {
+          // Stream per-block assistant text so the poll-loop can dispatch
+          // <message to="..."> blocks immediately, before the SDK reaches
+          // its final `result` event. The SDK's `assistant` message carries
+          // one or more content parts; we yield only text parts (tool_use
+          // parts are observed via subsequent tool_result messages and the
+          // umbrella `activity` event yielded above). Without this, a
+          // turn that emits text then a tool call (Read, Edit, etc.) loses
+          // the text if the stream stalls before `result` — the agent
+          // believes it answered, but the user sees nothing.
+          const content = (message as { message?: { content?: unknown[] } }).message?.content;
+          if (Array.isArray(content)) {
+            for (const part of content) {
+              const p = part as { type?: string; text?: string };
+              if (p.type === 'text' && typeof p.text === 'string' && p.text.length > 0) {
+                yield { type: 'assistant_text', text: p.text };
+              }
+            }
+          }
         } else if (message.type === 'result') {
           const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
           yield { type: 'result', text };

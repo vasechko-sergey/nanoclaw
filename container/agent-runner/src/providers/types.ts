@@ -86,6 +86,20 @@ export type ProviderEvent =
   | { type: 'progress'; message: string }
   | { type: 'status_msg'; text: string; level: 'info' | 'warning' | 'error'; kind?: string }
   /**
+   * Streaming assistant text. Yielded per text content-block as the model
+   * produces it, BEFORE the final `result` event. Lets the poll-loop
+   * dispatch <message to="..."> blocks immediately instead of waiting for
+   * the turn to complete — if the stream hangs or the container dies
+   * mid-turn, already-emitted messages still reach the user.
+   *
+   * Providers MAY emit text in chunks; the poll-loop buffers across
+   * events and only dispatches blocks that are fully closed (<message>…
+   * </message>). Providers that can't stream MAY skip this and rely on
+   * the final `result.text` path — both routes are deduped against each
+   * other by exact (toName, body) match.
+   */
+  | { type: 'assistant_text'; text: string }
+  /**
    * Liveness signal. Providers MUST yield this on every underlying SDK
    * event (tool call, thinking, partial message, anything) so the
    * poll-loop's idle timer stays honest during long tool runs.
