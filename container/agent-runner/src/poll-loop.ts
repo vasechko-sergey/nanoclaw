@@ -481,6 +481,9 @@ async function processQuery(
         const prompt = formatMessages(keep);
         log(`Pushing ${keep.length} follow-up message(s) into active query`);
         unwrappedNudged = false;
+        // Fresh turn — clear the post-result idle bypass so the watchdog
+        // can still surface a real stall in this new turn.
+        resultReceived = false;
         query.push(prompt);
         markCompleted(keptIds);
       } catch (err) {
@@ -515,6 +518,14 @@ async function processQuery(
 
   const iter = query.events[Symbol.asyncIterator]();
   let watchdogFired = false;
+  // Tracks whether the SDK has emitted a `result` for the in-flight turn.
+  // After `result` the turn is logically done; the iterator stays open only
+  // to receive push()-driven follow-ups. If the watchdog fires in that
+  // window the right thing is to break out silently — emitting the
+  // "[stream stalled]" fallback would clutter the user transcript with
+  // a misleading error after a perfectly fine answer. Reset to false on
+  // every push() so a genuinely stalled follow-up still gets the fallback.
+  let resultReceived = false;
 
   try {
     while (true) {
@@ -533,11 +544,27 @@ async function processQuery(
 
       if ('idle' in winner) {
         // SDK stream went silent for STREAM_IDLE_TIMEOUT_MS without yielding
-        // even an `activity` tick. Assume wedged: flush any remainder, tell
-        // the user something stalled, abort, and let the next inbound
-        // message wake a fresh turn. Without this, the host's 30-minute
-        // ceiling fires later and the user sees half an hour of silence
-        // for what was actually a dead stream.
+        // even an `activity` tick. Two cases:
+        //   - Before `result`: the turn never completed. Tell the user
+        //     something stalled, abort, let the next inbound message wake
+        //     a fresh turn. Without this, the host's 30-minute ceiling
+        //     fires later and the user sees half an hour of silence for
+        //     what was actually a dead stream.
+        //   - After `result`: the turn finished cleanly; we're only
+        //     iterating to catch push() follow-ups. SDK sometimes keeps
+        //     the stream open with no further events. Break silently —
+        //     the user already has the agent's full answer, the fallback
+        //     message would just confuse them.
+        if (resultReceived) {
+          log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms after result — ending turn cleanly`);
+          watchdogFired = true;
+          try {
+            query.abort();
+          } catch (err) {
+            log(`query.abort() threw: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          break;
+        }
         log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms — aborting turn`);
         watchdogFired = true;
         if (streamBuffer.length > 0) {
@@ -606,6 +633,7 @@ async function processQuery(
         // (send_message) mid-turn, or the message may not need a response
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
+        resultReceived = true;
         if (event.text) {
           // Stream buffer may still hold tail scratchpad. Reset it — the
           // result.text below covers the full turn and is the canonical
@@ -620,6 +648,9 @@ async function processQuery(
             unwrappedNudged = true;
             const destinations = getAllDestinations();
             const names = destinations.map((d) => d.name).join(', ');
+            // Same reset as the channel-push path: the nudge starts a
+            // fresh turn, so the post-result fast-exit must re-arm.
+            resultReceived = false;
             query.push(
               `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
                 `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
