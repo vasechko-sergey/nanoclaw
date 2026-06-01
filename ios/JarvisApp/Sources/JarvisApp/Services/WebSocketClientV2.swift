@@ -185,7 +185,11 @@ final class WebSocketClientV2 {
                 self.isConnected = true
             } catch {
                 Log.warn(.ws, "TransportV2.connect failed: \(error)")
-                self.isConnected = false
+                // UI testing: there's no mock WS server running, so the real
+                // connect always fails. Force isConnected=true so the input
+                // bar (gated on `ws.isConnected`) is hit-testable in tests
+                // that exercise send flows. Production behavior is unchanged.
+                self.isConnected = JarvisApp.isUITesting
             }
         }
     }
