@@ -76,11 +76,6 @@ struct ChatView: View {
                             emptyInputActive = true
                         }
                         autoStartVoice = true
-                    },
-                    onStartText: {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            emptyInputActive = true
-                        }
                     }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -240,16 +235,14 @@ struct ChatView: View {
                 .accessibilityLabel("Остановить")
             }
 
-            // MARK: – Input (hidden in empty state until user initiates)
-            if !visibleMessages.isEmpty || ws.isBusy || emptyInputActive {
-                UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
-                                commands: ws.commands, isDisabled: !ws.isConnected,
-                                enterToSend: settings.enterToSend,
-                                autoStartVoice: $autoStartVoice,
-                                onSend: sendCurrent,
-                                onPinchOut: { showVoiceFullscreen = true })
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            // MARK: – Input (always visible — empty state shows orb+satellites above)
+            UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
+                            commands: ws.commands, isDisabled: !ws.isConnected,
+                            enterToSend: settings.enterToSend,
+                            autoStartVoice: $autoStartVoice,
+                            onSend: sendCurrent,
+                            onPinchOut: { showVoiceFullscreen = true })
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         .simultaneousGesture(edgeSwipeGesture)
         .simultaneousGesture(rightEdgeSwipeGesture)
