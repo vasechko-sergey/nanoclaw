@@ -72,6 +72,15 @@ struct ContentView: View {
                 showSetupOnSplash = true
             }
         }
+        // Flip home → chat when drawer/other path selects a conversation.
+        // Drawer tap mutates coordinator.store.activeConversationId directly without
+        // routing through OrbHomeView's onContinueChat, so observe the id here.
+        .onChange(of: coordinator.store?.activeConversationId) { newId in
+            guard newId != nil, appPhase == .home else { return }
+            withAnimation(.easeOut(duration: 0.4)) {
+                appPhase = .chat
+            }
+        }
     }
 
     private func goHome() {
