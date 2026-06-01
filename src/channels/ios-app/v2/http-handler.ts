@@ -117,7 +117,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
           const pid = obj.platformId;
           const requestId = obj.requestId;
           const days = Array.isArray(obj.days) ? obj.days : [];
-          if (!pid) {
+          if (!pid && !healthOverrideDir) {
             res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"platformId required"}');
             return;
           }
@@ -140,7 +140,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
               writeRoot = idx2 > 0 ? writeRoot.slice(0, idx2) : '.';
             }
           } else {
-            const agentFolder = resolveAgentFolderForPlatform(pid);
+            const agentFolder = resolveAgentFolderForPlatform(pid!);
             if (!agentFolder) {
               res.writeHead(404, { 'Content-Type': 'application/json' }).end('{"error":"no agent group"}');
               return;

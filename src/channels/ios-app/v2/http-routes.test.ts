@@ -30,6 +30,7 @@ const TOKEN = 'test-token';
 async function bootHarness(
   opts: {
     resolveAgentFolderForPlatform?: (pid: string) => string | null;
+    healthOverrideDir?: string | null;
   } = {},
 ): Promise<Harness> {
   const db = openTransportDb(':memory:');
@@ -51,7 +52,7 @@ async function bootHarness(
     resolveAgentFolderForPlatform:
       opts.resolveAgentFolderForPlatform ?? ((pid) => (pid === 'ios-app-v2:dev-1' ? 'jarvis' : null)),
     groupsDir,
-    healthOverrideDir: null,
+    healthOverrideDir: opts.healthOverrideDir ?? null,
     getChannelSetup: () => cfg.current,
     log: () => {},
     logWarn: () => {},
@@ -229,13 +230,41 @@ describe('POST /ios/health/upload', () => {
     expect(r.status).toBe(404);
   });
 
-  it('returns 400 when platformId is missing', async () => {
+  it('returns 400 when platformId is missing and no override is configured', async () => {
     const r = await fetchJson(`${h.url}/ios/health/upload`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ days: [] }),
     });
     expect(r.status).toBe(400);
+  });
+
+  it('accepts missing platformId when healthOverrideDir is set and writes to the override folder', async () => {
+    await h.close();
+    const overrideRoot = mkdtempSync(join(tmpdir(), 'ios-app-v2-override-'));
+    const overrideDir = join(overrideRoot, 'health-analyzer', 'health');
+    h = await bootHarness({ healthOverrideDir: overrideDir });
+
+    const body = JSON.stringify({
+      days: [
+        { date: '2026-05-31', steps: 1234 },
+        { date: '2026-06-01', steps: 5678, hr_resting: 60 },
+      ],
+    });
+    const r = await fetchJson(`${h.url}/ios/health/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body,
+    });
+    expect(r.status).toBe(200);
+
+    const jsonl = join(overrideDir, 'raw.jsonl');
+    expect(existsSync(jsonl)).toBe(true);
+    const lines = readFileSync(jsonl, 'utf8').trim().split('\n');
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0])).toMatchObject({ date: '2026-05-31', steps: 1234 });
+
+    rmSync(overrideRoot, { recursive: true, force: true });
   });
 });
 

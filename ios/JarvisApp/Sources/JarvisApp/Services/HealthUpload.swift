@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// Uploads daily health aggregates to the server over HTTP — used from background
 /// (silent push or HealthKit background delivery) when the WebSocket is offline.
@@ -11,6 +12,8 @@ enum HealthUpload {
               let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
             completion?(); return
         }
+        let platformId = defaults.string(forKey: "platformId")
+            ?? ("ios:" + (UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString))
 
         // serverURL is a ws/host string; normalize to http(s) base + /ios/health/upload.
         var base = server
@@ -21,7 +24,7 @@ enum HealthUpload {
             completion?(); return
         }
 
-        var body: [String: Any] = ["days": days]
+        var body: [String: Any] = ["days": days, "platformId": platformId]
         if let requestId { body["requestId"] = requestId }
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { completion?(); return }
 
