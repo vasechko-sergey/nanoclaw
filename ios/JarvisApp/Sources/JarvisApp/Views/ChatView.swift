@@ -182,8 +182,14 @@ struct ChatView: View {
                         }
                         .onChange(of: ws.isBusy) {
                             if ws.isBusy && !isScrolledUp {
-                                withAnimation(.spring(duration: 0.3)) {
-                                    proxy.scrollTo("thinking", anchor: .bottom)
+                                // Defer one tick so SwiftUI renders the ThinkingRow before we scroll
+                                // to it. Otherwise the "thinking" id isn't yet in the scroll-view's
+                                // registry and the scroll is a no-op, leaving the orb below the fold.
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(50))
+                                    withAnimation(.spring(duration: 0.3)) {
+                                        proxy.scrollTo("bottom", anchor: .bottom)
+                                    }
                                 }
                             }
                         }
@@ -191,7 +197,7 @@ struct ChatView: View {
                             Task { @MainActor in
                                 try? await Task.sleep(for: .milliseconds(50))
                                 if ws.isBusy {
-                                    withAnimation { proxy.scrollTo("thinking", anchor: .bottom) }
+                                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
                                 } else if let last = ws.messages.last {
                                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                                 }
