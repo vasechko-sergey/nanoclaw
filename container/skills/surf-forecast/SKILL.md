@@ -62,31 +62,54 @@ Sanity: high обычно >1.5 м, low <1.0 м. Если метки кажутс
 
 **Лучшее окно:** часы с оффшор ветром + средний/растущий прилив.
 
-## 3. Сгенерировать canvas-скрипт
+## 3. Собрать JSON-параметры для рендера
 
-Файл: `/workspace/agent/surf_<slug>_<DDmon>.js` (slug — короткое имя локации, `DDmon` — `01jun`).
+Renderer уже ship-аится со skill: `/app/skills/surf-forecast/render.js`. Скрипт **не** редактируется — все данные передаются через JSON. Никаких per-call `surf_DDmon.js` копий больше не нужно.
 
-Шаблон: скопировать последний `surf_*.js` из `/workspace/agent/` и обновить:
+Сформируй JSON со следующей структурой и сохрани его во временный файл (например `/workspace/agent/surf_params.json` — перезаписывается каждый раз, не плодим артефакты):
 
-- Заголовок: `'<ЛОКАЦИЯ ВЕРХНЕМ РЕГИСТРЕ> · D МЕСЯЦ · УТРО'`
-- `tidePoints[]`: данные приливов + 2 экстраполированные точки по краям для гладкого сплайна
-- `waveH[]`: Open-Meteo wave_height часы окна
-- `windSpeed[]`: Open-Meteo wind_speed_10m часы окна
-- `windDir[]`: метки направления из wind_direction_10m
-- `spots[]`: `{name, hm, t, color, note}` для каждого break
-- Строка периода в footer секции волны
-- Строка лучшего окна в footer картинки
-- Выход: `/workspace/agent/surf_<slug>_<DDmon>.jpg`
-
-Если в `/workspace/agent/` ещё нет surf-скрипта — собрать с нуля (canvas + node-canvas, 1200×1800 px, секции: header, tide curve, wind bars, wave bars, spot rating cards).
-
-Масштаб `ty()`: подобрать margin/range под амплитуду прилива, кривая ~80% высоты графика.
-
-## 4. Сгенерировать и отправить
-
-```bash
-node /workspace/agent/surf_<slug>_<DDmon>.js
+```json
+{
+  "title":        "<ЛОКАЦИЯ ВЕРХНЕМ РЕГИСТРЕ> · D МЕСЯЦ · УТРО",
+  "byline":       "by Jarvis",
+  "tidePoints":   [{ "h": -7.5, "v": 0.2 }, { "h": 4.05, "v": 0.82 }, ...],
+  "tideRange":    [-0.1, 2.7],
+  "tideMarkers":  [{ "h": 4.05, "v": 0.82, "t": "04:03", "val": "0.8 м", "above": false }, ...],
+  "bestWindow":   { "startH": 6.0, "endH": 7.5, "label": "лучшее окно" },
+  "waveHours":    [5, 6, 7, 8, 9],
+  "waveH":        [0.98, 0.98, 0.98, 0.98, 0.96],
+  "windSpeed":    [10.6, 10.7, 11.3, 10.3, 10.0],
+  "windDir":      ["NE", "NE", "NE", "NE", "NE"],
+  "windOffshore": [true, true, true, true, true],
+  "waveFooter":   "период: 11 с  ·  NE кросс-оффшор всё утро",
+  "spots": [
+    { "name": "Batu Bolong", "rating": "green",  "h": "1.0 м", "p": "11 с", "hm": 0.98, "t": 11, "note": "..." }
+  ],
+  "footer":  "лучшее окно  06:00 – 07:30  ·  BB/Per до 08:30",
+  "sources": "Open-Meteo · surf-forecast.com"
+}
 ```
+
+**Поля:**
+- `tidePoints[]` — данные приливов в часах дня + 1–2 экстраполированные точки за пределы `[0, 24]` для гладкого сплайна по краям
+- `tideRange` — `[min, max]` для вертикальной оси приливов. Подбери под амплитуду; если пропустишь — авто из данных
+- `windOffshore[]` — рассчитан **тобой** по `shore_facing_deg` из параметров локации (см. §2). Renderer не пересчитывает направление, он только красит.
+- `rating` спота: `green` | `yellow` | `red`
+- `hm`, `t` в spot — для расчёта энергии (H²×T → 1–5 точек)
+
+## 4. Отрендерить и отправить
+
+Renderer требует `@napi-rs/canvas` в `node_modules` агентского workspace. У большинства агентов оно уже стоит (Jarvis — да). Если нет — однократно: `cd /workspace/agent && npm install @napi-rs/canvas`.
+
+Запуск:
+```bash
+NODE_PATH=/workspace/agent/node_modules \
+  node /app/skills/surf-forecast/render.js \
+  /workspace/agent/surf_params.json \
+  /workspace/agent/surf_<slug>_<DDmon>.jpg
+```
+
+`NODE_PATH` нужен потому что `render.js` живёт в RO-mount `/app/skills/` где нет своих `node_modules` — без него `require('@napi-rs/canvas')` не разрешится.
 
 Затем: `mcp__nanoclaw__send_photo({ path: "/workspace/agent/surf_<slug>_<DDmon>.jpg" })`
 
