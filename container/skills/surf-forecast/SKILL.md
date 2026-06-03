@@ -64,7 +64,7 @@ Sanity: high обычно >1.5 м, low <1.0 м. Если метки кажутс
 
 ## 3. Собрать JSON-параметры для рендера
 
-Renderer уже ship-аится со skill: `/app/skills/surf-forecast/render.js`. Скрипт **не** редактируется — все данные передаются через JSON. Никаких per-call `surf_DDmon.js` копий больше не нужно.
+Renderer уже ship-аится со skill: `/app/skills/surf-forecast/render.cjs`. Скрипт **не** редактируется — все данные передаются через JSON. Никаких per-call `surf_DDmon.js` копий больше не нужно. Расширение `.cjs` обязательно — host-репо имеет `"type": "module"` в `package.json`, и `.js` будет трактоваться как ESM.
 
 Сформируй JSON со следующей структурой и сохрани его во временный файл (например `/workspace/agent/surf_params.json` — перезаписывается каждый раз, не плодим артефакты):
 
@@ -104,12 +104,12 @@ Renderer требует `@napi-rs/canvas` в `node_modules` агентского
 Запуск:
 ```bash
 NODE_PATH=/workspace/agent/node_modules \
-  node /app/skills/surf-forecast/render.js \
+  node /app/skills/surf-forecast/render.cjs \
   /workspace/agent/surf_params.json \
   /workspace/agent/surf_<slug>_<DDmon>.jpg
 ```
 
-`NODE_PATH` нужен потому что `render.js` живёт в RO-mount `/app/skills/` где нет своих `node_modules` — без него `require('@napi-rs/canvas')` не разрешится.
+`NODE_PATH` нужен потому что `render.cjs` живёт в RO-mount `/app/skills/` где нет своих `node_modules` — без него `require('@napi-rs/canvas')` не разрешится.
 
 Затем: `mcp__nanoclaw__send_photo({ path: "/workspace/agent/surf_<slug>_<DDmon>.jpg" })`
 
