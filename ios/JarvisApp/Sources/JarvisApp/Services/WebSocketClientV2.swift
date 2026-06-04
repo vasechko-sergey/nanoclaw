@@ -71,11 +71,6 @@ final class WebSocketClientV2 {
         return Date().timeIntervalSince(sent) < Self.busyTimeoutSeconds
     }
 
-    /// Current conversation, set by coordinator. Mirrors legacy.
-    var conversationId: UUID? {
-        didSet { Task { @MainActor in self.restartObservation() } }
-    }
-
     // MARK: - Callbacks (mirror legacy — view consumer wires these)
 
     @ObservationIgnored var onAssistantMessage: (() -> Void)?
@@ -224,27 +219,6 @@ final class WebSocketClientV2 {
         // until 5.x grows a teardown path.
     }
 
-    // MARK: - Conversations
-
-    func sendNewConversation(id: UUID) {
-        guard stack != nil else { return }
-        let payload = V2.NewConversation(thread_id: id.uuidString)
-        Task { [weak self] in
-            await self?.stack.transport.sendControlEnvelope(
-                type: .newConversation,
-                payload: .newConversation(payload)
-            )
-        }
-    }
-
-    /// Reset the read-dedup cache and re-derive `messages` for the current
-    /// `conversationId`. Called by the coordinator on `.open`, on initial
-    /// wireUp, and on deep-link from a proactive push.
-    func reloadActiveConversation() {
-        sentReadIds.removeAll()
-        restartObservation()
-    }
-
     // MARK: - Send methods
 
     /// Mirrors legacy `send(text:timezone:status:attachments:context:)`. The
@@ -274,11 +248,8 @@ final class WebSocketClientV2 {
         let inline = makeInlineContext(timezone: timezone, status: status, raw: context)
         let v2Attachments = attachments.compactMap { Self.toV2Attachment($0) }
 
-        let convoString = (conversationId ?? UUID()).uuidString
-
         do {
             try stack.store.insertOutboundUserMessage(
-                conversationId: convoString,
                 id: clientMsgId,
                 text: text,
                 attachments: v2Attachments,
@@ -292,7 +263,7 @@ final class WebSocketClientV2 {
         }
     }
 
-    func sendFeedback(conversationId: UUID?, messageId: String, value: Bool, messageText: String) {
+    func sendFeedback(messageId: String, value: Bool, messageText: String) {
         guard stack != nil else { return }
         let kind = value ? "up" : "down"
         Task { [weak self] in
@@ -313,14 +284,14 @@ final class WebSocketClientV2 {
         _ = context
     }
 
-    func sendMessageDelivered(_ messageId: String, conversationId: UUID?) {
+    func sendMessageDelivered(_ messageId: String) {
         guard stack != nil, isConnected else { return }
         Task { [weak self] in
             await self?.stack.transport.sendStatusEnvelope(type: .delivered, ids: [messageId])
         }
     }
 
-    func sendMessageRead(_ messageId: String, conversationId: UUID?) {
+    func sendMessageRead(_ messageId: String) {
         guard stack != nil else { return }
         guard sentReadIds.insert(messageId).inserted else { return }
         guard isConnected else {
@@ -403,47 +374,19 @@ final class WebSocketClientV2 {
 
     // MARK: - Observation
 
-    /// Re-subscribe `messages` to the v2 store, filtered to the current
-    /// conversation. Called on init and whenever `conversationId` changes.
+    /// Re-subscribe `messages` to the v2 store's single timeline. Called on
+    /// init and after the stack is built lazily on first `connect(settings:)`.
     private func restartObservation() {
         observationCancellable?.cancel()
         observationCancellable = nil
 
         // Stack hasn't been built yet (production: pre-`connect`).
-        guard stack != nil else {
+        guard let stack else {
             messages = []
             return
         }
 
-        guard let cid = conversationId else {
-            messages = []
-            return
-        }
-        let cidString = cid.uuidString
-
-        let observation = ValueObservation.tracking { db -> [StoredMessage] in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT * FROM messages
-                WHERE conversation_id=?
-                ORDER BY ts ASC
-            """, arguments: [cidString])
-            return rows.map { row in
-                StoredMessage(
-                    id: row["id"],
-                    conversationId: row["conversation_id"],
-                    dir: MessageDir(rawValue: row["dir"]) ?? .out,
-                    seq: row["seq"],
-                    text: row["text"],
-                    attachmentsJSON: row["attachments_json"],
-                    contextJSON: row["context_json"],
-                    status: MessageStatus(rawValue: row["status"]) ?? .queued,
-                    failureReason: row["failure_reason"],
-                    ts: row["ts"],
-                    serverTS: row["server_ts"],
-                    createdAt: row["created_at"]
-                )
-            }
-        }
+        let observation = stack.store.observeMessages()
 
         observationCancellable = observation.start(
             in: stack.dbq,
@@ -585,22 +528,17 @@ final class WebSocketClientV2 {
     /// want to wait for the async ValueObservation tick).
     @MainActor
     func refreshMessagesForTesting() {
-        guard stack != nil else { messages = []; return }
-        guard let cid = conversationId else {
-            messages = []
-            return
-        }
-        let cidString = cid.uuidString
+        guard let stack else { messages = []; return }
         do {
             let rows = try stack.dbq.read { db -> [StoredMessage] in
-                try Row.fetchAll(db, sql: """
+                let rs = try Row.fetchAll(db, sql: """
                     SELECT * FROM messages
-                    WHERE conversation_id=?
-                    ORDER BY ts ASC
-                """, arguments: [cidString]).map { row in
+                    ORDER BY ts DESC
+                    LIMIT 500
+                """)
+                return rs.reversed().map { row in
                     StoredMessage(
                         id: row["id"],
-                        conversationId: row["conversation_id"],
                         dir: MessageDir(rawValue: row["dir"]) ?? .out,
                         seq: row["seq"],
                         text: row["text"],
