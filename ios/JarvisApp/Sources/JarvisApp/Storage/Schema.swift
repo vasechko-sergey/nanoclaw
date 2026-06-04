@@ -63,6 +63,50 @@ enum Schema {
                 );
             """)
         }
+        m.registerMigration("v3-single-chat") { db in
+            // Destructive: single timeline replaces grouped conversations.
+            try db.execute(sql: """
+                DROP TABLE IF EXISTS inbound_dedup;
+                DROP TABLE IF EXISTS attachments;
+                DROP TABLE IF EXISTS messages;
+                DROP TABLE IF EXISTS conversations;
+                DROP TABLE IF EXISTS kv;
+
+                CREATE TABLE messages (
+                  id            TEXT PRIMARY KEY,
+                  dir           TEXT NOT NULL CHECK (dir IN ('out','in')),
+                  seq           INTEGER,
+                  text          TEXT NOT NULL,
+                  attachments_json TEXT,
+                  context_json  TEXT,
+                  status        TEXT NOT NULL,
+                  failure_reason TEXT,
+                  ts            INTEGER NOT NULL,
+                  server_ts     INTEGER,
+                  created_at    INTEGER NOT NULL
+                );
+                CREATE INDEX idx_msg_ts ON messages (ts);
+                CREATE INDEX idx_msg_status ON messages (status);
+
+                CREATE TABLE attachments (
+                  id           TEXT PRIMARY KEY,
+                  message_id   TEXT NOT NULL REFERENCES messages(id),
+                  kind         TEXT NOT NULL CHECK (kind IN ('image','file')),
+                  name         TEXT NOT NULL,
+                  mime_type    TEXT NOT NULL,
+                  byte_size    INTEGER NOT NULL,
+                  local_path   TEXT,
+                  remote_id    TEXT
+                );
+
+                CREATE TABLE inbound_dedup (
+                  id          TEXT PRIMARY KEY,
+                  seq         INTEGER NOT NULL,
+                  received_at INTEGER NOT NULL
+                );
+            """)
+            // cursors table from v1 stays; it doesn't reference conversations.
+        }
         try m.migrate(writer)
     }
 }
