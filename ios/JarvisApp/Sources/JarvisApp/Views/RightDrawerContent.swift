@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// Single-`ScrollView` right drawer with three sections: Profile, Context,
-/// Settings. Mirrors the structure of `DrawerContent` (left drawer) so the
-/// language of the app is symmetric: every top-level navigation lives in a
-/// side drawer.
+/// Settings. The left drawer (conversation list) was removed when Jarvis
+/// became a single-chat assistant; this is now the only side drawer.
 struct RightDrawerContent: View {
     @Environment(AppSettings.self) var settings
     let isConnected: Bool

@@ -15,7 +15,6 @@ final class AppV2BootstrapTests: XCTestCase {
         let dbq = try DatabaseQueue()
         try Schema.migrate(dbq)
         let store = ConversationStoreV2(writer: dbq)
-        _ = store // silence unused
 
         // Production WebSocket isn't connected — just instantiable.
         let url = URL(string: "ws://localhost:1")!

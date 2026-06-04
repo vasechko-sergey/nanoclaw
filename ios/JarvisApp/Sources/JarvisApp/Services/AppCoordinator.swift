@@ -118,8 +118,8 @@ final class AppCoordinator {
         guard settings.isConfigured else { return }
         connectionPhase = .connecting
         ws.connect(settings: settings)
-        // Drawer state is already wired to GRDB via the `ConversationStore`
-        // shim built at init time — no post-connect backfill needed.
+        // `timeline` observation was started at init time — no post-connect
+        // backfill needed; views already see the GRDB-backed message stream.
         if settings.useLocation { location.requestAndUpdate() }
         if settings.useHealth   { health.requestAndFetch()    }
         if settings.useCalendar { calendar.requestAndFetch()  }
