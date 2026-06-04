@@ -31,6 +31,8 @@ struct ChatView: View {
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
     @State private var showVoiceFullscreen = false
+    @AppStorage("v3MigrationShown") private var v3MigrationShown = false
+    @State private var showingV3Toast = false
 
     private var ws: WebSocketClientV2 { coordinator.ws }
 
@@ -320,6 +322,18 @@ struct ChatView: View {
         }
         .onDisappear {
             coordinator.disconnect()
+        }
+        .onAppear {
+            if !v3MigrationShown && !JarvisApp.isUITesting {
+                showingV3Toast = true
+                v3MigrationShown = true
+            }
+        }
+        .alert("История чата обновлена",
+               isPresented: $showingV3Toast) {
+            Button("ОК", role: .cancel) {}
+        } message: {
+            Text("Jarvis теперь один непрерывный чат. Локальная история диалогов до обновления была удалена. Контекст агента сохранён на сервере.")
         }
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("chat-view")
