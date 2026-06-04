@@ -3,8 +3,6 @@ import UIKit
 import UserNotifications
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    /// Set by AppCoordinator — opens the conversation a proactive push refers to.
-    static var onOpenConversation: ((String) -> Void)?
     /// Static hook the coordinator sets at init to receive proactive fires
     /// from the notification delegate. Production wiring lives in AppCoordinator.
     static var dispatchProactive: ((String, [String: Any]) -> Void)?
@@ -41,15 +39,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         completionHandler([.banner, .sound])
     }
 
-    // Tap on a proactive push → deep-link into the referenced conversation.
+    // Tap on a proactive push — single-chat mode has no per-conversation
+    // deep-link, so we just dismiss the notification.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let cid = response.notification.request.content.userInfo["conversationId"] as? String {
-            AppDelegate.onOpenConversation?(cid)
-        }
         completionHandler()
     }
 }

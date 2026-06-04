@@ -5,25 +5,10 @@ import SwiftUI
 /// header chrome.
 struct ProfileFormBody: View {
     @Environment(AppSettings.self) var settings
-    var store: ConversationStore
     let isConnected: Bool
     var onReconnect: (() -> Void)? = nil
 
     @State private var showEmojiPicker = false
-
-    private var totalMessages: Int {
-        store.conversations.reduce(0) { $0 + $1.messageCount }
-    }
-
-    private var memberSince: String {
-        guard let oldest = store.conversations.map(\.createdAt).min() else {
-            return "сегодня"
-        }
-        let days = Calendar.current.dateComponents([.day], from: oldest, to: Date()).day ?? 0
-        if days == 0 { return "сегодня" }
-        if days == 1 { return "вчера" }
-        return "\(days) дн. назад"
-    }
 
     var body: some View {
         @Bindable var settings = settings
@@ -92,26 +77,6 @@ struct ProfileFormBody: View {
                 }
                 .padding(.top, Theme.scaled(20))
 
-                // Stats grid
-                HStack(spacing: Theme.scaled(12)) {
-                    statCard(
-                        value: "\(store.conversations.count)",
-                        label: "Диалогов",
-                        icon: "bubble.left.and.bubble.right"
-                    )
-                    statCard(
-                        value: "\(totalMessages)",
-                        label: "Сообщений",
-                        icon: "text.bubble"
-                    )
-                    statCard(
-                        value: memberSince,
-                        label: "Первый чат",
-                        icon: "calendar"
-                    )
-                }
-                .padding(.horizontal, Theme.hPadding)
-
                 // Connection info
                 VStack(alignment: .leading, spacing: 0) {
                     Text("ПОДКЛЮЧЕНИЕ")
@@ -146,40 +111,6 @@ struct ProfileFormBody: View {
 
     // MARK: – Components
 
-    private func statCard(value: String, label: String, icon: String) -> some View {
-        VStack(spacing: Theme.scaled(6)) {
-            Image(systemName: icon)
-                .font(.system(size: Theme.fontCaption))
-                .foregroundStyle(Theme.accentMedium)
-
-            Text(value)
-                .font(.system(size: Theme.fontBody, weight: .semibold, design: .rounded))
-                .foregroundStyle(Theme.textPrimary.opacity(0.8))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .contentTransition(.numericText())
-
-            Text(label)
-                .font(.system(size: Theme.fontSmall))
-                .foregroundStyle(Theme.accentMedium)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Theme.scaled(14))
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.cardRadius)
-                .stroke(
-                    LinearGradient(
-                        colors: [Theme.accent.opacity(0.12), Theme.surfaceBorder],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.5
-                )
-        )
-    }
-
     private func infoRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: Theme.scaled(10)) {
             Image(systemName: icon)
@@ -209,7 +140,6 @@ struct ProfileFormBody: View {
 
 struct ProfileView: View {
     @Environment(AppSettings.self) var settings
-    var store: ConversationStore
     let isConnected: Bool
     var onReconnect: (() -> Void)? = nil
 
@@ -218,7 +148,7 @@ struct ProfileView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            ProfileFormBody(store: store, isConnected: isConnected, onReconnect: onReconnect)
+            ProfileFormBody(isConnected: isConnected, onReconnect: onReconnect)
         }
         .background(Theme.background.ignoresSafeArea())
         .preferredColorScheme(.dark)

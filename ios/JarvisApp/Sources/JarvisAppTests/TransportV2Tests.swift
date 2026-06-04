@@ -62,7 +62,7 @@ final class TransportV2Tests: XCTestCase {
 
     func testSendQueuedMessageGoesSending() async throws {
         try store.insertOutboundUserMessage(
-            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+            id: "msg-1", text: "hi", attachments: [], context: nil
         )
         try await transport.handleAuthOk(lastSeenOutboundSeq: 0)  // triggers tickDispatcher
         let row = try XCTUnwrap(try store.fetchById("msg-1"))
@@ -72,7 +72,7 @@ final class TransportV2Tests: XCTestCase {
 
     func testAckMovesSendingToSent() async throws {
         try store.insertOutboundUserMessage(
-            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+            id: "msg-1", text: "hi", attachments: [], context: nil
         )
         try await transport.handleAuthOk(lastSeenOutboundSeq: 0)
         try await transport.handleIncoming(encodeAck(id: "msg-1"))
@@ -81,7 +81,7 @@ final class TransportV2Tests: XCTestCase {
 
     func testReconnectResetsSendingToQueued() async throws {
         try store.insertOutboundUserMessage(
-            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+            id: "msg-1", text: "hi", attachments: [], context: nil
         )
         try await transport.handleAuthOk(lastSeenOutboundSeq: 0)  // seq=1 allocated
         let firstSeq = try store.fetchById("msg-1")?.seq
@@ -97,7 +97,7 @@ final class TransportV2Tests: XCTestCase {
 
     func testReconnectConfirmsAckedSeqAsSent() async throws {
         try store.insertOutboundUserMessage(
-            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+            id: "msg-1", text: "hi", attachments: [], context: nil
         )
         try await transport.handleAuthOk(lastSeenOutboundSeq: 0)  // seq=1, sending
         // Server confirms it received seq<=1 — our message should be marked sent.
@@ -226,7 +226,7 @@ final class TransportV2Tests: XCTestCase {
 
     func testRetryAfterAckTimeout() async throws {
         try store.insertOutboundUserMessage(
-            conversationId: "c-1", id: "msg-1", text: "hi", attachments: [], context: nil
+            id: "msg-1", text: "hi", attachments: [], context: nil
         )
         try await transport.handleAuthOk(lastSeenOutboundSeq: 0)
         let firstCount = socket.sent.count

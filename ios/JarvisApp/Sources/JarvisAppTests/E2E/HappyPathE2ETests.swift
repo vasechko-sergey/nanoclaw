@@ -64,10 +64,10 @@ final class HappyPathE2ETests: XCTestCase {
         try await waitForAuthed(transport: transport, timeout: 3.0)
 
         // Enqueue an outbound user message and kick the dispatcher.
-        let conversationId = "thr-e2e"
+        // Single-chat: no conversation_id; the wire thread_id is pinned to
+        // `ios:default` inside TransportV2.
         let messageId = UUID().uuidString
         try store.insertOutboundUserMessage(
-            conversationId: conversationId,
             id: messageId,
             text: "ping",
             attachments: [],
@@ -76,14 +76,14 @@ final class HappyPathE2ETests: XCTestCase {
         try await transport.tickDispatcher()
 
         // Wait for the harness echo to arrive and persist as an inbound row.
-        try await waitForInbound(dbq: dbq, conversationId: conversationId, timeout: 5.0)
+        try await waitForInbound(dbq: dbq, timeout: 5.0)
 
         // Final inspection: outbound + inbound both present.
         let messages = try await dbq.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT dir, text, status FROM messages
-                WHERE conversation_id = ? ORDER BY ts ASC
-            """, arguments: [conversationId])
+                ORDER BY ts ASC
+            """)
         }
         XCTAssertGreaterThanOrEqual(messages.count, 2,
             "expected outbound + inbound rows; got \(messages.count): \(messages)")
@@ -109,14 +109,13 @@ final class HappyPathE2ETests: XCTestCase {
         XCTFail("transport did not reach .authed within \(timeout)s; final state=\(await transport.state)")
     }
 
-    private func waitForInbound(dbq: DatabaseQueue, conversationId: String, timeout: Double) async throws {
+    private func waitForInbound(dbq: DatabaseQueue, timeout: Double) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             let count = try await dbq.read { db -> Int in
                 try Int.fetchOne(db, sql: """
-                    SELECT COUNT(*) FROM messages
-                    WHERE conversation_id = ? AND dir = 'in'
-                """, arguments: [conversationId]) ?? 0
+                    SELECT COUNT(*) FROM messages WHERE dir = 'in'
+                """) ?? 0
             }
             if count > 0 { return }
             try await Task.sleep(nanoseconds: 100_000_000)

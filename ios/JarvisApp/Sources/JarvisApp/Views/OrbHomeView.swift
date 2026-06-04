@@ -13,8 +13,6 @@ struct OrbHomeView: View {
     @State private var showSatellites = false
     @State private var showVoiceFullscreen = false
 
-    @State private var leftDrawerOpen = false
-    @State private var leftDrawerDragOffset: CGFloat = 0
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
 
@@ -25,7 +23,7 @@ struct OrbHomeView: View {
     @State private var drafts: [DraftAttachment] = []
 
     private var hasActiveChat: Bool {
-        coordinator.store.activeConversationId != nil && !coordinator.ws.messages.isEmpty
+        !coordinator.ws.messages.isEmpty
     }
 
     private var greeting: String {
@@ -62,34 +60,7 @@ struct OrbHomeView: View {
         return items
     }
 
-    private var conversationSatellites: [(icon: String, label: String, isChat: Bool, action: () -> Void)] {
-        let lastAssistantAt = coordinator.ws.messages.last(where: { $0.role == .assistant })?.timestamp
-        let satellites = ConversationSatelliteBuilder.build(
-            activeConversationId: coordinator.store.activeConversationId,
-            lastAssistantTimestamp: lastAssistantAt,
-            allConversations: coordinator.store.conversations,
-            now: Date()
-        )
-
-        return satellites.map { sat in
-            let truncated = truncateTitle(sat.title, max: 14)
-            let icon = sat.kind == .active ? "bubble.left.fill" : "pin.fill"
-            let isActiveKind = sat.kind == .active
-            return (icon, truncated, isActiveKind, {
-                if !isActiveKind, let conv = coordinator.store.conversations.first(where: { $0.id == sat.id }) {
-                    coordinator.handleAction(.open(conv))
-                }
-                onContinueChat()
-            })
-        }
-    }
-
-    private func truncateTitle(_ title: String, max: Int) -> String {
-        guard title.count > max else { return title }
-        return String(title.prefix(max)) + "…"
-    }
-
-    // Default satellites (suggestions + optional dialog) — always visible
+    // Default satellites — always visible. Continues active chat when one exists.
     private var defaultSatellites: [(icon: String, label: String, isChat: Bool, action: () -> Void)] {
         var items: [(String, String, Bool, () -> Void)] = contextualSuggestions.map { text in
             (SuggestionEngine.icon(for: text), text, false, {
@@ -98,7 +69,11 @@ struct OrbHomeView: View {
                 onStartChat(text)
             })
         }
-        items.append(contentsOf: conversationSatellites)
+        if hasActiveChat {
+            items.append(("bubble.left.fill", "Продолжить", true, {
+                onContinueChat()
+            }))
+        }
         return items
     }
 
@@ -149,38 +124,17 @@ struct OrbHomeView: View {
             }
 
             // Shroud
-            if leftDrawerOpen || rightDrawerOpen {
+            if rightDrawerOpen {
                 Color.black.opacity(0.5)
                     .ignoresSafeArea()
                     .onTapGesture {
-                        withAnimation { leftDrawerOpen = false; rightDrawerOpen = false }
+                        withAnimation { rightDrawerOpen = false }
                     }
                     .transition(.opacity)
             }
 
-            // Left drawer (conversations) — new on home; mirrors ChatView's
-            DrawerContent(
-                store: coordinator.store,
-                onAction: { action in
-                    coordinator.handleAction(action)
-                    withAnimation { leftDrawerOpen = false; leftDrawerDragOffset = 0 }
-                }
-            )
-            .frame(width: Theme.drawerWidth)
-            .offset(x: {
-                    if leftDrawerOpen {
-                        return max(-Theme.drawerWidth, leftDrawerDragOffset)
-                    } else {
-                        return -Theme.drawerWidth + max(0, min(leftDrawerDragOffset, Theme.drawerWidth))
-                    }
-                }())
-            .gesture(leftDrawerDragToClose)
-            .shadow(color: .black.opacity(leftDrawerOpen ? 0.4 : 0), radius: 12, x: 4)
-            .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: leftDrawerOpen)
-
             // Right drawer
             RightDrawerContent(
-                store: coordinator.store,
                 isConnected: coordinator.ws.isConnected,
                 onReconnect: {
                     coordinator.disconnect()
@@ -188,10 +142,6 @@ struct OrbHomeView: View {
                         try? await Task.sleep(for: .milliseconds(300))
                         coordinator.connect()
                     }
-                },
-                onConversationAction: { action in
-                    coordinator.handleAction(action)
-                    withAnimation { rightDrawerOpen = false; rightDrawerDragOffset = 0 }
                 }
             )
             .frame(width: Theme.drawerWidth)
@@ -207,7 +157,6 @@ struct OrbHomeView: View {
             .shadow(color: .black.opacity(rightDrawerOpen ? 0.4 : 0), radius: 12, x: -4)
             .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: rightDrawerOpen)
         }
-        .simultaneousGesture(leftEdgeSwipeGesture)
         .simultaneousGesture(rightEdgeSwipeGesture)
         .attachmentPickers(drafts: $drafts, showPhotos: $showPhotos, showCamera: $showCamera, showDoc: $showDoc)
         .onChange(of: drafts) {
@@ -230,14 +179,11 @@ struct OrbHomeView: View {
             HeaderStatusDot(side: .left,
                             isConnected: coordinator.ws.isConnected,
                             phase: .calm) {
-                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
-                    if rightDrawerOpen { rightDrawerOpen = false }
-                    leftDrawerOpen = true
-                }
+                showVoiceFullscreen = true
             } onLongPress: {
                 showVoiceFullscreen = true
             }
-            .accessibilityLabel(coordinator.ws.isConnected ? "Открыть список диалогов. Подключено" : "Открыть список диалогов. Отключено")
+            .accessibilityLabel(coordinator.ws.isConnected ? "Голосовой режим. Подключено" : "Голосовой режим. Отключено")
 
             Spacer()
 
@@ -259,7 +205,6 @@ struct OrbHomeView: View {
                             isConnected: coordinator.ws.isConnected,
                             phase: .calm) {
                 withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
-                    if leftDrawerOpen { leftDrawerOpen = false }
                     rightDrawerOpen = true
                 }
             }
@@ -421,53 +366,6 @@ struct OrbHomeView: View {
 
     private static let edgeSwipeZone: CGFloat = 40
 
-    private var leftEdgeSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onChanged { value in
-                if value.startLocation.x < Self.edgeSwipeZone
-                    && value.translation.width > 0
-                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
-                    && !leftDrawerOpen
-                    && !rightDrawerOpen {
-                    leftDrawerDragOffset = min(value.translation.width, Theme.drawerWidth)
-                }
-            }
-            .onEnded { value in
-                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
-                if !leftDrawerOpen
-                    && !rightDrawerOpen
-                    && value.startLocation.x < Self.edgeSwipeZone
-                    && value.translation.width > 60
-                    && horizontal {
-                    withAnimation(.spring(duration: 0.3)) {
-                        leftDrawerOpen = true
-                        leftDrawerDragOffset = 0
-                    }
-                } else if !leftDrawerOpen {
-                    withAnimation { leftDrawerDragOffset = 0 }
-                }
-            }
-    }
-
-    private var leftDrawerDragToClose: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                if leftDrawerOpen && value.translation.width < 0 {
-                    leftDrawerDragOffset = value.translation.width
-                }
-            }
-            .onEnded { value in
-                if leftDrawerOpen && value.translation.width < -60 {
-                    withAnimation(.spring(duration: 0.3)) {
-                        leftDrawerOpen = false
-                        leftDrawerDragOffset = 0
-                    }
-                } else {
-                    withAnimation { leftDrawerDragOffset = 0 }
-                }
-            }
-    }
-
     private var rightEdgeSwipeGesture: some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
@@ -475,8 +373,7 @@ struct OrbHomeView: View {
                 if value.startLocation.x > screenWidth - Self.edgeSwipeZone
                     && value.translation.width < 0
                     && abs(value.translation.width) > abs(value.translation.height) * 1.2
-                    && !rightDrawerOpen
-                    && !leftDrawerOpen {
+                    && !rightDrawerOpen {
                     rightDrawerDragOffset = max(value.translation.width, -Theme.drawerWidth)
                 }
             }
@@ -484,7 +381,6 @@ struct OrbHomeView: View {
                 let screenWidth = UIScreen.main.bounds.width
                 let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
                 if !rightDrawerOpen
-                    && !leftDrawerOpen
                     && value.startLocation.x > screenWidth - Self.edgeSwipeZone
                     && value.translation.width < -60
                     && horizontal {

@@ -6,20 +6,18 @@ import SwiftUI
 /// side drawer.
 struct RightDrawerContent: View {
     @Environment(AppSettings.self) var settings
-    var store: ConversationStore
     let isConnected: Bool
     var onReconnect: () -> Void
-    var onConversationAction: ((ConversationAction) -> Void)? = nil
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                // Header with title — symmetry with left drawer's "Диалоги"
+                // Header with title
                 header
 
                 // PROFILE
                 sectionHeader("Профиль")
-                ProfileFormBody(store: store, isConnected: isConnected, onReconnect: onReconnect)
+                ProfileFormBody(isConnected: isConnected, onReconnect: onReconnect)
                     .padding(.bottom, Theme.scaled(12))
 
                 // CONTEXT — proactive triggers
@@ -39,7 +37,7 @@ struct RightDrawerContent: View {
 
                 // SETTINGS
                 sectionHeader("Настройки")
-                SettingsFormBody(store: store, onConversationAction: onConversationAction)
+                SettingsFormBody()
                     .padding(.bottom, Theme.scaled(20))
             }
         }

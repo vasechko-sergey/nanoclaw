@@ -42,13 +42,6 @@ final class RightDrawerTests: XCTestCase {
         ).firstMatch
     }
 
-    /// The left HeaderStatusDot button — matches both connection states.
-    private func leftDot(_ app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH 'Открыть список диалогов.'")
-        ).firstMatch
-    }
-
     func testRightDrawerOpensViaDotTap() {
         let app = launchApp()
         navigateToChat(app)
@@ -87,32 +80,4 @@ final class RightDrawerTests: XCTestCase {
                        "right drawer did not close after shroud tap")
     }
 
-    func testLeftAndRightDoNotOpenTogether() {
-        let app = launchApp()
-        navigateToChat(app)
-
-        let left = leftDot(app)
-        XCTAssertTrue(left.waitForExistence(timeout: 5))
-        left.tap()
-
-        // Left drawer's header text "Диалоги" confirms it's on-screen.
-        let leftHeader = app.staticTexts["Диалоги"]
-        XCTAssertTrue(leftHeader.waitForExistence(timeout: 2), "left drawer did not open")
-        XCTAssertTrue(leftHeader.isHittable, "left drawer header should be hittable when open")
-
-        let right = rightDot(app)
-        right.tap()
-
-        let rightHeader = app.staticTexts["Профиль и настройки"]
-        XCTAssertTrue(rightHeader.waitForExistence(timeout: 2),
-                      "right drawer did not open after left was open")
-
-        // Left drawer slides off — its header is no longer hittable.
-        // Drawers are mounted permanently, so `exists` stays true; `hittable` is the
-        // accurate signal for "currently on screen."
-        let predicate = NSPredicate(format: "hittable == false")
-        let exp = XCTNSPredicateExpectation(predicate: predicate, object: leftHeader)
-        XCTAssertEqual(XCTWaiter.wait(for: [exp], timeout: 2), .completed,
-                       "left drawer must close when right opens")
-    }
 }

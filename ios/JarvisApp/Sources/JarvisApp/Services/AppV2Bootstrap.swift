@@ -22,7 +22,8 @@ enum AppV2Bootstrap {
     /// shim before the user has finished configuring the WebSocket URL —
     /// otherwise the splash + home views would have no conversations to
     /// render until the first successful `connect()`.
-    static func buildStorage() throws -> (dbq: DatabaseQueue, store: ConversationStoreV2) {
+    @MainActor
+    static func buildStorage() throws -> (dbq: DatabaseQueue, store: ConversationStoreV2, timeline: MessageTimeline) {
         let docs = try FileManager.default.url(
             for: .documentDirectory,
             in: .userDomainMask,
@@ -34,10 +35,11 @@ enum AppV2Bootstrap {
         try Schema.migrate(dbq)
 
         let store = ConversationStoreV2(writer: dbq)
-        try MigrationV2.runIfNeeded(documentsURL: docs, store: store)
-        return (dbq, store)
+        let timeline = MessageTimeline(store: store, dbq: dbq)
+        return (dbq, store, timeline)
     }
 
+    @MainActor
     static func build(
         serverURL: URL,
         token: String,
@@ -45,7 +47,7 @@ enum AppV2Bootstrap {
         health: HealthManager? = nil,
         calendar: CalendarManager? = nil
     ) throws -> AppV2Stack {
-        let (dbq, store) = try buildStorage()
+        let (dbq, store, _) = try buildStorage()
 
         let socket = URLSessionWebSocket(url: serverURL)
         let coordinator = AppContextCoordinator(
@@ -75,7 +77,7 @@ enum AppV2Bootstrap {
     static func build(
         serverURL: URL,
         token: String,
-        storage: (dbq: DatabaseQueue, store: ConversationStoreV2),
+        storage: (dbq: DatabaseQueue, store: ConversationStoreV2, timeline: MessageTimeline),
         location: LocationManager? = nil,
         health: HealthManager? = nil,
         calendar: CalendarManager? = nil

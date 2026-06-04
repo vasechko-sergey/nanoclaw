@@ -28,14 +28,11 @@ struct ChatView: View {
     @State private var lastSeenCount = 0
     @State private var scrollToBottomAction: (() -> Void)?
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
-    @State private var drawerOpen = false
-    @State private var drawerDragOffset: CGFloat = 0
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
     @State private var showVoiceFullscreen = false
 
     private var ws: WebSocketClientV2 { coordinator.ws }
-    private var store: ConversationStore { coordinator.store }
 
     /// Only messages that should render in the chat (excludes invisible technical messages).
     private var visibleMessages: [ChatMessage] {
@@ -106,7 +103,7 @@ struct ChatView: View {
                                     .id(msg.id)
                                     .onAppear {
                                         if msg.role == .assistant {
-                                            ws.sendMessageRead(msg.id, conversationId: ws.conversationId)
+                                            ws.sendMessageRead(msg.id)
                                         }
                                     }
                                     .transition(
@@ -250,40 +247,9 @@ struct ChatView: View {
                             onPinchOut: { showVoiceFullscreen = true })
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        .simultaneousGesture(edgeSwipeGesture)
         .simultaneousGesture(rightEdgeSwipeGesture)
 
-        // Shroud overlay when drawer open
-        if drawerOpen {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture { withAnimation { drawerOpen = false } }
-                .transition(.opacity)
-        }
-
-        // Drawer slides in from left
-        DrawerContent(
-            store: store,
-            onAction: { action in
-                coordinator.handleAction(action)
-                withAnimation { drawerOpen = false; drawerDragOffset = 0 }
-            }
-        )
-        .frame(width: Theme.drawerWidth)
-        .offset(x: {
-                if drawerOpen {
-                    // open: drawerDragOffset is negative (drag left to close) or 0
-                    return max(-Theme.drawerWidth, drawerDragOffset)
-                } else {
-                    // closed: drawerDragOffset is positive (edge-swipe in progress) or 0
-                    return -Theme.drawerWidth + max(0, min(drawerDragOffset, Theme.drawerWidth))
-                }
-            }())
-        .gesture(drawerDragToClose)
-        .shadow(color: .black.opacity(drawerOpen ? 0.4 : 0), radius: 12, x: 4)
-        .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: drawerOpen)
-
-        // Right drawer — mirror of the left drawer
+        // Right drawer
         if rightDrawerOpen {
             Color.black.opacity(0.5)
                 .ignoresSafeArea()
@@ -292,7 +258,6 @@ struct ChatView: View {
         }
 
         RightDrawerContent(
-            store: store,
             isConnected: ws.isConnected,
             onReconnect: {
                 coordinator.disconnect()
@@ -300,11 +265,6 @@ struct ChatView: View {
                     try? await Task.sleep(for: .milliseconds(300))
                     coordinator.connect()
                 }
-            },
-            onConversationAction: { action in
-                coordinator.handleAction(action)
-                inputText = ""
-                withAnimation { rightDrawerOpen = false; rightDrawerDragOffset = 0 }
             }
         )
         .frame(width: Theme.drawerWidth)
@@ -370,15 +330,12 @@ struct ChatView: View {
     private var header: some View {
         HStack {
             HeaderStatusDot(side: .left, isConnected: ws.isConnected, phase: orbMood) {
-                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
-                    if rightDrawerOpen { rightDrawerOpen = false }
-                    drawerOpen = true
-                }
+                showVoiceFullscreen = true
             } onLongPress: {
                 showVoiceFullscreen = true
             }
             .accessibilityIdentifier("orb-drawer-btn")
-            .accessibilityLabel(ws.isConnected ? "Открыть список диалогов. Подключено" : "Открыть список диалогов. Отключено")
+            .accessibilityLabel(ws.isConnected ? "Голосовой режим. Подключено" : "Голосовой режим. Отключено")
 
             Spacer()
 
@@ -405,7 +362,6 @@ struct ChatView: View {
 
             HeaderStatusDot(side: .right, isConnected: ws.isConnected, phase: orbMood) {
                 withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
-                    if drawerOpen { drawerOpen = false }
                     rightDrawerOpen = true
                 }
             }
@@ -466,34 +422,6 @@ struct ChatView: View {
     /// some devices, so a narrow 24pt zone misses many real attempts.
     private static let edgeSwipeZone: CGFloat = 40
 
-    private var edgeSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onChanged { value in
-                if value.startLocation.x < Self.edgeSwipeZone
-                    && value.translation.width > 0
-                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
-                    && !drawerOpen
-                    && !rightDrawerOpen {
-                    drawerDragOffset = min(value.translation.width, Theme.drawerWidth)
-                }
-            }
-            .onEnded { value in
-                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
-                if !drawerOpen
-                    && !rightDrawerOpen
-                    && value.startLocation.x < Self.edgeSwipeZone
-                    && value.translation.width > 60
-                    && horizontal {
-                    withAnimation(.spring(duration: 0.3)) {
-                        drawerOpen = true
-                        drawerDragOffset = 0
-                    }
-                } else if !drawerOpen {
-                    withAnimation { drawerDragOffset = 0 }
-                }
-            }
-    }
-
     private var rightEdgeSwipeGesture: some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
@@ -501,8 +429,7 @@ struct ChatView: View {
                 if value.startLocation.x > screenWidth - Self.edgeSwipeZone
                     && value.translation.width < 0
                     && abs(value.translation.width) > abs(value.translation.height) * 1.2
-                    && !rightDrawerOpen
-                    && !drawerOpen {
+                    && !rightDrawerOpen {
                     rightDrawerDragOffset = max(value.translation.width, -Theme.drawerWidth)
                 }
             }
@@ -510,7 +437,6 @@ struct ChatView: View {
                 let screenWidth = UIScreen.main.bounds.width
                 let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
                 if !rightDrawerOpen
-                    && !drawerOpen
                     && value.startLocation.x > screenWidth - Self.edgeSwipeZone
                     && value.translation.width < -60
                     && horizontal {
@@ -539,25 +465,6 @@ struct ChatView: View {
                     }
                 } else {
                     withAnimation { rightDrawerDragOffset = 0 }
-                }
-            }
-    }
-
-    private var drawerDragToClose: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                if drawerOpen && value.translation.width < 0 {
-                    drawerDragOffset = value.translation.width
-                }
-            }
-            .onEnded { value in
-                if drawerOpen && value.translation.width < -60 {
-                    withAnimation(.spring(duration: 0.3)) {
-                        drawerOpen = false
-                        drawerDragOffset = 0
-                    }
-                } else {
-                    withAnimation { drawerDragOffset = 0 }
                 }
             }
     }

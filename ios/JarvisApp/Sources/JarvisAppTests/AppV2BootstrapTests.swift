@@ -4,9 +4,9 @@ import GRDB
 
 /// Light-touch coverage for the v2 production glue. The bootstrap itself
 /// writes to `Documents/` and isn't easily redirectable without changing its
-/// signature, so we exercise the inner pieces (Schema, MigrationV2,
-/// ConversationStoreV2, TransportV2, AppContextCoordinator) here and rely on
-/// Phase 6.4 E2E for the full disk-side `build()` path.
+/// signature, so we exercise the inner pieces (Schema, ConversationStoreV2,
+/// TransportV2, AppContextCoordinator) here and rely on Phase 6.4 E2E for
+/// the full disk-side `build()` path.
 final class AppV2BootstrapTests: XCTestCase {
 
     func testInnerComponentsWireTogether() throws {
@@ -15,14 +15,7 @@ final class AppV2BootstrapTests: XCTestCase {
         let dbq = try DatabaseQueue()
         try Schema.migrate(dbq)
         let store = ConversationStoreV2(writer: dbq)
-
-        // No legacy files → no-op migration. This is the happy path on every
-        // fresh install or on second-and-later launches.
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("bootstrap-test-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        try MigrationV2.runIfNeeded(documentsURL: tmp, store: store)
+        _ = store // silence unused
 
         // Production WebSocket isn't connected — just instantiable.
         let url = URL(string: "ws://localhost:1")!

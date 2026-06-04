@@ -2,10 +2,11 @@ import XCTest
 import GRDB
 @testable import Jarvis
 
-/// 5.2b coverage: the facade preserves the legacy `WebSocketClient` observable
-/// surface while internally driving `TransportV2` + `ConversationStoreV2`.
-/// Tests here pin the public API shape — call sites will be swapped in 5.2c
-/// without re-running these.
+/// Single-chat coverage: the facade preserves the observable surface needed
+/// by views while internally driving `TransportV2` + `ConversationStoreV2`.
+/// Conversation-aware tests (per-thread filtering, `sendNewConversation`,
+/// conversation switching) were retired in v3-single-chat alongside the
+/// `conversation_id` column.
 @MainActor
 final class WebSocketClientV2Tests: XCTestCase {
     var dbq: DatabaseQueue!
@@ -30,7 +31,6 @@ final class WebSocketClientV2Tests: XCTestCase {
     // MARK: - Outbound
 
     func testSendEnqueuesQueuedRowAndTicksDispatcher() async throws {
-        client.conversationId = UUID()
         client.send(text: "hello world", timezone: "UTC", status: nil)
 
         // Authed → tickDispatcher drains the queued row to sending.
@@ -50,15 +50,12 @@ final class WebSocketClientV2Tests: XCTestCase {
     }
 
     func testSendUpdatesLastUserSentAt() {
-        client.conversationId = UUID()
         XCTAssertNil(client.lastUserSentAt)
         client.send(text: "hi", timezone: "UTC", status: nil)
         XCTAssertNotNil(client.lastUserSentAt)
     }
 
     func testIsBusyTrueAfterSendFalseAfterAssistantReply() async throws {
-        let cid = UUID()
-        client.conversationId = cid
         client.send(text: "hi", timezone: "UTC", status: nil)
         XCTAssertTrue(client.isBusy, "should be busy right after sending")
 
@@ -67,7 +64,7 @@ final class WebSocketClientV2Tests: XCTestCase {
             v: V2.protocolVersion, kind: .data, type: .message,
             id: "asst-1", seq: 1,
             ts: ISO8601DateFormatter().string(from: Date()),
-            payload: .message(V2.Message(thread_id: cid.uuidString, text: "yo",
+            payload: .message(V2.Message(thread_id: "ios:default", text: "yo",
                                           attachments: nil, context: nil))
         )
         let data = try JSONEncoder().encode(inbound)
@@ -84,15 +81,8 @@ final class WebSocketClientV2Tests: XCTestCase {
 
     // MARK: - Control envelopes
 
-    func testSendNewConversationEmitsControlEnvelope() async throws {
-        client.sendNewConversation(id: UUID())
-        try await Task.sleep(nanoseconds: 100_000_000)
-        let envelopes = socket.sent.compactMap { try? JSONDecoder().decode(V2.Envelope.self, from: $0) }
-        XCTAssertTrue(envelopes.contains(where: { $0.type == .newConversation && $0.kind == .control }))
-    }
-
     func testSendFeedbackEmitsControlEnvelope() async throws {
-        client.sendFeedback(conversationId: nil, messageId: "m-1", value: true, messageText: "any")
+        client.sendFeedback(messageId: "m-1", value: true, messageText: "any")
         try await Task.sleep(nanoseconds: 100_000_000)
         let envelopes = socket.sent.compactMap { try? JSONDecoder().decode(V2.Envelope.self, from: $0) }
         guard let env = envelopes.first(where: { $0.type == .feedback }) else {
@@ -125,8 +115,8 @@ final class WebSocketClientV2Tests: XCTestCase {
 
     func testSendMessageReadEmitsStatusEnvelopeOnceWhenConnected() async throws {
         client.isConnected = true
-        client.sendMessageRead("m-1", conversationId: nil)
-        client.sendMessageRead("m-1", conversationId: nil) // dedup
+        client.sendMessageRead("m-1")
+        client.sendMessageRead("m-1") // dedup
         try await Task.sleep(nanoseconds: 100_000_000)
         let statusReads = socket.sent.compactMap { try? JSONDecoder().decode(V2.Envelope.self, from: $0) }
             .filter { $0.type == .read && $0.kind == .status }
@@ -135,7 +125,7 @@ final class WebSocketClientV2Tests: XCTestCase {
 
     func testSendMessageReadSkippedWhenOffline() async throws {
         client.isConnected = false
-        client.sendMessageRead("m-1", conversationId: nil)
+        client.sendMessageRead("m-1")
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertFalse(
             socket.sent.contains(where: { (try? JSONDecoder().decode(V2.Envelope.self, from: $0))?.type == .read }),
@@ -145,7 +135,7 @@ final class WebSocketClientV2Tests: XCTestCase {
 
     func testSendMessageDeliveredEmitsStatusEnvelopeWhenConnected() async throws {
         client.isConnected = true
-        client.sendMessageDelivered("m-9", conversationId: nil)
+        client.sendMessageDelivered("m-9")
         try await Task.sleep(nanoseconds: 100_000_000)
         let statusDelivered = socket.sent.compactMap { try? JSONDecoder().decode(V2.Envelope.self, from: $0) }
             .filter { $0.type == .delivered && $0.kind == .status }
@@ -155,26 +145,11 @@ final class WebSocketClientV2Tests: XCTestCase {
     // MARK: - Observation
 
     func testMessagesPopulatedFromStoreAfterSend() async throws {
-        let cid = UUID()
-        client.conversationId = cid
         client.send(text: "first", timezone: "UTC", status: nil)
         try await waitUntil { self.client.messages.count == 1 }
         XCTAssertEqual(client.messages.count, 1)
         XCTAssertEqual(client.messages.first?.role, .user)
         XCTAssertEqual(client.messages.first?.text, "first")
-    }
-
-    func testConversationIdChangeReplacesMessagesView() async throws {
-        let a = UUID()
-        let b = UUID()
-        client.conversationId = a
-        client.send(text: "in-a", timezone: "UTC", status: nil)
-        try await waitUntil { self.client.messages.count == 1 }
-        XCTAssertEqual(client.messages.count, 1)
-
-        client.conversationId = b
-        try await waitUntil { self.client.messages.isEmpty }
-        XCTAssertEqual(client.messages.count, 0, "switching conversation should drop the view")
     }
 
     // MARK: - Helpers
@@ -192,10 +167,8 @@ final class WebSocketClientV2Tests: XCTestCase {
     // MARK: - retrySend
 
     func testRetrySendFlipsFailedRowBackToQueued() async throws {
-        let cid = UUID()
-        client.conversationId = cid
         let id = UUID().uuidString
-        try store.insertOutboundUserMessage(conversationId: cid.uuidString, id: id,
+        try store.insertOutboundUserMessage(id: id,
                                             text: "hi", attachments: [], context: nil)
         try store.markSending(id: id, seq: 7)
         try store.markFailed(id: id, reason: "network")

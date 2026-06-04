@@ -6,8 +6,6 @@ import SwiftUI
 /// Renders only the rows, no header or NavigationStack chrome.
 struct SettingsFormBody: View {
     var isInitialSetup: Bool = false
-    var store: ConversationStore? = nil
-    var onConversationAction: ((ConversationAction) -> Void)? = nil
     @Environment(AppSettings.self) var settings
     @State private var previewSynth = SpeechSynthesizer()
 
@@ -339,8 +337,6 @@ struct SettingsFormBody: View {
 
 struct SettingsView: View {
     let isInitialSetup: Bool
-    var store: ConversationStore? = nil
-    var onConversationAction: ((ConversationAction) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -349,11 +345,7 @@ struct SettingsView: View {
                 if !isInitialSetup {
                     header
                 }
-                SettingsFormBody(
-                    isInitialSetup: isInitialSetup,
-                    store: store,
-                    onConversationAction: onConversationAction
-                )
+                SettingsFormBody(isInitialSetup: isInitialSetup)
             }
             .background(Theme.background.ignoresSafeArea())
             .preferredColorScheme(.dark)

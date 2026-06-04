@@ -8,13 +8,13 @@ final class AppCoordinator {
 
     // MARK: – Services (owned)
     private(set) var ws: WebSocketClientV2
-    /// Drawer-facing shim over the GRDB-backed `ConversationStoreV2`. Owns
-    /// the live in-memory `conversations` array + active id. Optional because
-    /// the storage half of the v2 stack is built best-effort at init time —
-    /// if the DB can't be opened (rare), the app still runs but the drawer
-    /// stays empty. All view sites that read `coordinator.store` handle the
-    /// nil case by rendering empty state.
-    private(set) var store: ConversationStore!
+    /// `@Observable` UI wrapper over the GRDB-backed `ConversationStoreV2`.
+    /// Single source of truth for the chat timeline. Optional because the
+    /// storage half of the v2 stack is built best-effort at init time — if
+    /// the DB can't be opened (rare), the app still runs but the timeline
+    /// stays empty. All view sites that read `coordinator.timeline` handle
+    /// the nil case by rendering empty state.
+    private(set) var timeline: MessageTimeline!
     private(set) var location: LocationManager
     private(set) var health: HealthManager
     private(set) var calendar: CalendarManager
@@ -55,7 +55,7 @@ final class AppCoordinator {
         // built lazily on first `connect(settings:)` (URL/token aren't known
         // at coordinator-init time). Failure leaves `store` nil — views read
         // it as empty state.
-        let storage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2)?
+        let storage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2, timeline: MessageTimeline)?
         do {
             storage = try AppV2Bootstrap.buildStorage()
         } catch {
@@ -63,14 +63,19 @@ final class AppCoordinator {
             storage = nil
         }
         if let storage {
-            self.store = ConversationStore(v2: storage.store)
+            self.timeline = storage.timeline
         }
         self.ws = WebSocketClientV2(
             location: location,
             health: health,
             calendar: calendar,
-            storage: storage
+            storage: storage.map { ($0.dbq, $0.store) }
         )
+        if storage != nil {
+            Task { @MainActor [weak self] in
+                try? await self?.timeline.start()
+            }
+        }
 
         let sink = WebSocketProactiveSink(ws: ws, settings: settings)
         self.proactiveDispatcher = ProactiveDispatcher(settings: settings, sink: sink)
@@ -99,10 +104,6 @@ final class AppCoordinator {
         }
 
         wireUp()
-
-        AppDelegate.onOpenConversation = { [weak self] id in
-            self?.openConversation(id: id)
-        }
     }
 
     /// Replace settings reference (needed because ContentView gets @Environment after init).
@@ -135,12 +136,6 @@ final class AppCoordinator {
 
     func sendMessage(_ text: String, viaVoice: Bool = false, attachments: [DraftAttachment] = []) {
         lastSendWasVoice = viaVoice
-        // Update conversation metadata (auto-title + last_message_at) so the
-        // drawer reflects the send immediately. The actual message row goes
-        // into GRDB via `ws.send` → `ConversationStoreV2.insertOutboundUserMessage`.
-        if let store, let cid = store.activeConversationId {
-            store.recordUserSend(conversationId: cid, text: text)
-        }
         // Push a light inline context snapshot (location/health/calendar per the user's
         // privacy toggles) so the agent always has timezone + location + next event +
         // status in-band. The pull model still works on top: the agent can fire
@@ -172,47 +167,11 @@ final class AppCoordinator {
     }
 
     func sendFeedback(messageId: String, value: Bool, messageText: String) {
-        ws.sendFeedback(conversationId: ws.conversationId, messageId: messageId, value: value, messageText: messageText)
+        ws.sendFeedback(messageId: messageId, value: value, messageText: messageText)
     }
 
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
         ws.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
-    }
-
-    func handleAction(_ action: ConversationAction) {
-        switch action {
-        case .newChat:
-            guard let store else { return }
-            let conv = store.createNew()
-            ws.conversationId = conv.id
-            ws.sendNewConversation(id: conv.id)
-            ws.messages = []
-
-        case .newChatWithContext(let context):
-            guard let store else { return }
-            let conv = store.createNew()
-            ws.conversationId = conv.id
-            ws.sendNewConversation(id: conv.id)
-            ws.messages = []
-            // Small delay so the new conversation is established
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(300))
-                self?.sendMessage("/context Контекст предыдущего диалога: \(context)")
-            }
-
-        case .open(let conversation):
-            store?.activeConversationId = conversation.id
-            ws.conversationId = conversation.id
-            ws.reloadActiveConversation()
-        }
-    }
-
-    /// Open a conversation by id (used by proactive-push deep-link).
-    func openConversation(id: String) {
-        guard let uuid = UUID(uuidString: id) else { return }
-        store?.activeConversationId = uuid
-        ws.conversationId = uuid
-        ws.reloadActiveConversation()
     }
 
     // MARK: – Wiring
@@ -221,20 +180,10 @@ final class AppCoordinator {
         // With @Observable, nested objects are tracked automatically —
         // no manual objectWillChange forwarding needed.
 
-        // Set initial conversation
-        ws.conversationId = store?.activeConversationId
-        ws.reloadActiveConversation()
-
         // Forward haptic callback when a message arrives from assistant
         ws.onAssistantMessage = { [weak self] in
             self?.onMessageReceived?()
             guard let self else { return }
-            // Bump conversation row's last_message_at so the drawer floats the
-            // chat up; the inbound message body is already persisted in GRDB
-            // by `WebSocketClientV2.restartObservation`.
-            if let store = self.store, let cid = self.ws.conversationId {
-                store.recordIncoming(conversationId: cid)
-            }
             // Push to watch — gated by user setting
             if self.settings.watchCompanionEnabled,
                let last = self.ws.messages.last,

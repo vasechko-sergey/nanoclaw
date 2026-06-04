@@ -148,10 +148,15 @@ final class WebSocketClientV2 {
             do {
                 let built: AppV2Stack
                 if let storage = preBuiltStorage {
+                    // `build(storage:)` takes a 3-tuple post-single-chat refactor.
+                    // The timeline is owned by `AppCoordinator`; here we construct
+                    // a throwaway reference to satisfy the signature — `build` does
+                    // not retain it (timeline doesn't flow into `AppV2Stack`).
+                    let throwawayTimeline = MessageTimeline(store: storage.store, dbq: storage.dbq)
                     built = AppV2Bootstrap.build(
                         serverURL: url,
                         token: settings.bearerToken,
-                        storage: storage,
+                        storage: (storage.dbq, storage.store, throwawayTimeline),
                         location: location,
                         health: health,
                         calendar: calendar
