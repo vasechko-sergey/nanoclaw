@@ -96,8 +96,9 @@ final class WebSocketClientV2 {
 
     /// Pre-built storage (DB queue + ConversationStoreV2) handed to the
     /// transport when `connect(settings:)` finally has a URL/token. The
-    /// coordinator builds this at init time so the drawer can render before
-    /// the user has configured the server.
+    /// coordinator builds this at init time so the chat view can render
+    /// from the GRDB-backed `MessageTimeline` before the user has configured
+    /// the server.
     @ObservationIgnored private var preBuiltStorage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2)?
 
     @ObservationIgnored private static let busyTimeoutSeconds: TimeInterval = 300 // 5 minutes

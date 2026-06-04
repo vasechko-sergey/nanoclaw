@@ -50,11 +50,11 @@ final class AppCoordinator {
         self.health = health
         self.calendar = calendar
         self.speech = SpeechSynthesizer()
-        // Build the storage half of the v2 stack now so the drawer shim is
-        // populated before splash/home renders. The transport half is still
+        // Build the storage half of the v2 stack now so the MessageTimeline
+        // can start observing before splash/home renders. Transport half is
         // built lazily on first `connect(settings:)` (URL/token aren't known
-        // at coordinator-init time). Failure leaves `store` nil — views read
-        // it as empty state.
+        // at coordinator-init time). Failure leaves `timeline` nil — views
+        // read it as empty state.
         let storage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2, timeline: MessageTimeline)?
         do {
             storage = try AppV2Bootstrap.buildStorage()
