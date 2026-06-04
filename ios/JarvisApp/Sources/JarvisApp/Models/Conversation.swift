@@ -45,18 +45,8 @@ struct Conversation: Identifiable, Equatable {
     }
 }
 
-extension Conversation {
-    /// Convert a GRDB summary row into the view-facing model. Falls back to a
-    /// fresh UUID if the row's id isn't a valid UUID string — should never
-    /// happen post-migration (all ids are UUIDs) but keeps the call total.
-    init?(summary: ConversationSummary) {
-        guard let uuid = UUID(uuidString: summary.id) else { return nil }
-        self.id = uuid
-        self.title = summary.title ?? "Новый диалог"
-        self.createdAt = Date(timeIntervalSince1970: TimeInterval(summary.createdAt) / 1000)
-        self.lastMessageAt = Date(timeIntervalSince1970: TimeInterval(summary.lastMessageAt) / 1000)
-        self.messageCount = summary.messageCount
-        self.preview = summary.preview
-        self.isPinned = summary.isPinned
-    }
-}
+// NOTE: `init?(summary: ConversationSummary)` was removed alongside the
+// `ConversationSummary` type when v3-single-chat dropped grouped conversations.
+// The whole `Conversation` model is scheduled for deletion in the next task of
+// the single-chat plan; this struct stays only long enough to keep the
+// remaining drawer-related view files compiling during the transition.
