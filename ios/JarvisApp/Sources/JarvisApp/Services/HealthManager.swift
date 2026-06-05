@@ -21,6 +21,12 @@ import HealthKit
             HKQuantityType(.restingHeartRate),
             HKQuantityType(.appleExerciseTime),
             HKQuantityType(.heartRateVariabilitySDNN),
+            // New in 2026-06-05 spec.
+            HKQuantityType(.appleSleepingWristTemperature),
+            HKQuantityType(.respiratoryRate),
+            HKQuantityType(.walkingHeartRateAverage),
+            HKQuantityType(.vo2Max),
+            HKWorkoutType.workoutType(),
         ]
         store.requestAuthorization(toShare: nil, read: types) { [weak self] ok, _ in
             guard ok else { return }

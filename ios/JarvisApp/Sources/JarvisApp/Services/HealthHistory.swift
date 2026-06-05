@@ -102,6 +102,100 @@ enum HealthHistory {
             group.leave()
         }
 
+        // New in 2026-06-05 spec: scalar metrics for sick-day detection + differential.
+
+        // Wrist temperature deviation — °C, signed. Daily average of HK's per-night
+        // deviation reading. Apple Watch S8+ only; older devices simply return no data.
+        group.enter()
+        collection(.appleSleepingWristTemperature, start: start, end: end, options: .discreteAverage) { stats in
+            let degC = HKUnit.degreeCelsius()
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: degC) * 100).rounded() / 100   // 2-decimal precision
+                    mutate(k) { $0.wristTempDeviation = v }
+                }
+            }
+            group.leave()
+        }
+
+        // Respiratory rate — breaths/min, sleep-window aggregate.
+        group.enter()
+        collection(.respiratoryRate, start: start, end: end, options: .discreteAverage) { stats in
+            let rate = HKUnit(from: "count/min")
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: rate) * 10).rounded() / 10
+                    mutate(k) { $0.respiratoryRate = v }
+                }
+            }
+            group.leave()
+        }
+
+        // Walking heart rate average — bpm. Early indicator of cardio drift.
+        group.enter()
+        collection(.walkingHeartRateAverage, start: start, end: end, options: .discreteAverage) { stats in
+            let bpm2 = HKUnit(from: "count/min")
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = Int(q.doubleValue(for: bpm2).rounded())
+                    mutate(k) { $0.walkingHeartRateAverage = v }
+                }
+            }
+            group.leave()
+        }
+
+        // VO2max — mL/kg/min. Slow-moving fitness indicator; HK emits sporadically.
+        group.enter()
+        collection(.vo2Max, start: start, end: end, options: .discreteAverage) { stats in
+            let vo2Unit = HKUnit(from: "ml/(kg*min)")
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: vo2Unit) * 10).rounded() / 10
+                    mutate(k) { $0.vo2max = v }
+                }
+            }
+            group.leave()
+        }
+
+        // Workouts — array per day. Differential mode uses accumulated load as evidence.
+        group.enter()
+        let workoutQuery = HKSampleQuery(
+            sampleType: HKWorkoutType.workoutType(),
+            predicate: HKQuery.predicateForSamples(withStart: start, end: end),
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+        ) { _, samples, _ in
+            let workouts = (samples as? [HKWorkout]) ?? []
+            let isoFormatter = ISO8601DateFormatter()
+            for w in workouts {
+                let k = bucketKey(w.startDate)
+                let energy = w.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+                let bpm3 = HKUnit(from: "count/min")
+                let hrStats = w.statistics(for: HKQuantityType(.heartRate))
+                let avg = hrStats?.averageQuantity()?.doubleValue(for: bpm3)
+                let max = hrStats?.maximumQuantity()?.doubleValue(for: bpm3)
+                let entry = V2.HealthUpload.Workout(
+                    type: String(describing: w.workoutActivityType),
+                    startISO: isoFormatter.string(from: w.startDate),
+                    durationMin: (w.duration / 60 * 10).rounded() / 10,
+                    energyKcal: energy.map { ($0 * 10).rounded() / 10 },
+                    avgHR: avg.map { Int($0.rounded()) },
+                    maxHR: max.map { Int($0.rounded()) }
+                )
+                mutate(k) {
+                    var list = $0.workouts ?? []
+                    list.append(entry)
+                    $0.workouts = list
+                }
+            }
+            group.leave()
+        }
+        store.execute(workoutQuery)
+
         group.notify(queue: .main) {
             let rows = byDay.values.sorted { $0.date < $1.date }
             completion(Array(rows))
