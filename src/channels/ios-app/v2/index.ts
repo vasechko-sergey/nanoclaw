@@ -47,6 +47,35 @@ import type { PlatformId, ContextField } from './types.js';
 // channel_type for those messaging_groups gets migrated to `ios-app-v2`.
 const CHANNEL_TYPE = 'ios-app-v2';
 
+function mimeFromFilename(name: string): string {
+  const ext = path.extname(name).toLowerCase();
+  switch (ext) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.png':
+      return 'image/png';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    case '.heic':
+      return 'image/heic';
+    case '.heif':
+      return 'image/heif';
+    case '.pdf':
+      return 'application/pdf';
+    case '.txt':
+      return 'text/plain';
+    case '.md':
+      return 'text/markdown';
+    case '.json':
+      return 'application/json';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
 function logV2(msg: string, ctx?: Record<string, unknown>): void {
   log.info(`[ios-app-v2] ${msg}`, ctx ?? {});
 }
@@ -395,18 +424,31 @@ function createV2Adapter(): ChannelAdapter | null {
       // Codable mirror accepts it. WsHandler allocates the seq and flushes
       // to the device if the socket is live.
       const id = (content.id as string) ?? randomUUID();
-      const text = typeof content.text === 'string' ? content.text : '';
-      const attachments = Array.isArray(content.files)
-        ? (content.files as Array<Record<string, unknown>>).map((f) => ({
-            id: typeof f.id === 'string' ? f.id : randomUUID(),
-            kind: typeof f.mime_type === 'string' && f.mime_type.startsWith('image/') ? 'image' : 'file',
-            name: typeof f.name === 'string' ? f.name : 'file',
-            mime_type: typeof f.mime_type === 'string' ? f.mime_type : 'application/octet-stream',
-            byte_size: typeof f.byte_size === 'number' ? f.byte_size : 0,
-            bytes_base64: typeof f.bytes_base64 === 'string' ? f.bytes_base64 : undefined,
-            remote_id: typeof f.remote_id === 'string' ? f.remote_id : undefined,
-          }))
-        : undefined;
+      const text =
+        typeof content.text === 'string' && content.text.length > 0
+          ? content.text
+          : typeof content.caption === 'string'
+            ? content.caption
+            : '';
+      // File buffers are loaded from the session outbox by delivery.ts and
+      // arrive on `message.files` as OutboundFile[]. The agent's raw
+      // `content.files` is just a list of filename strings — those are not
+      // useful to the device. Encode the buffers as base64 attachments here.
+      const attachments =
+        Array.isArray(message.files) && message.files.length > 0
+          ? message.files.map((f) => {
+              const mime = mimeFromFilename(f.filename);
+              return {
+                id: randomUUID(),
+                kind: mime.startsWith('image/') ? 'image' : 'file',
+                name: f.filename,
+                mime_type: mime,
+                byte_size: f.data.length,
+                bytes_base64: f.data.toString('base64'),
+                remote_id: undefined as string | undefined,
+              };
+            })
+          : undefined;
 
       handler.sendEnvelopeToDevice(platformId, {
         id,
