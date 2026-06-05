@@ -24,6 +24,7 @@ import type { ChannelSetup } from '../../adapter.js';
 import { HealthUploadBody } from '../../../../shared/ios-app-protocol/index.js';
 import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
 import { sickDayCheck } from '../../../modules/health-trigger/sick-day.js';
+import { readEnvFile } from '../../../env.js';
 import { appendHealthHistory } from './health-ingest.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
 import type { PlatformId } from './types.js';
@@ -188,8 +189,14 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
           // Unset = trigger is a no-op, safe default.
           try {
             const allRows = loadAllHealthRows(writeRoot, writeFolder);
+            // Read from .env (process.env fallback for tests / explicit exports).
+            // The host doesn't auto-load .env into process.env, so reading the
+            // file directly is the canonical pattern (see src/env.ts).
+            const targetAgentGroupId =
+              process.env.SICK_DAY_TARGET_AGENT_GROUP_ID ||
+              readEnvFile(['SICK_DAY_TARGET_AGENT_GROUP_ID']).SICK_DAY_TARGET_AGENT_GROUP_ID;
             void sickDayCheck({
-              agentGroupId: process.env.SICK_DAY_TARGET_AGENT_GROUP_ID,
+              agentGroupId: targetAgentGroupId,
               allRows,
             }).catch((err) => {
               logWarn('sick-day trigger failed', { err: err instanceof Error ? err.message : String(err) });
