@@ -80,6 +80,25 @@ describe('sickDayCheck', () => {
     expect(wakeContainer).toHaveBeenCalledOnce();
   });
 
+  it('baseline missing temp + today has RHR + HRV → fires via 2 of 3 (temp branch null)', async () => {
+    const rows = fourteenDays().map(({ wristTempDeviation, ...r }) => r as HealthUploadDay);
+    rows[13] = { ...rows[13], restingHeartRate: 70, hrv: 40 };
+    await sickDayCheck({ agentGroupId: 'greg', allRows: rows });
+    expect(writeSessionMessage).toHaveBeenCalledOnce();
+    const callArg = writeSessionMessage.mock.calls[0] as [string, string, { kind: string; content: string }];
+    const content = JSON.parse(callArg[2].content);
+    expect(content.signal.temp_delta_c).toBeNull();
+    expect(wakeContainer).toHaveBeenCalledOnce();
+  });
+
+  it('baseline missing temp + today only has temp=0.6 → does NOT fire (1 of 3)', async () => {
+    const rows = fourteenDays().map(({ wristTempDeviation, ...r }) => r as HealthUploadDay);
+    rows[13] = { ...rows[13], wristTempDeviation: 0.6 };
+    await sickDayCheck({ agentGroupId: 'greg', allRows: rows });
+    expect(writeSessionMessage).not.toHaveBeenCalled();
+    expect(wakeContainer).not.toHaveBeenCalled();
+  });
+
   it('does not fire when agentGroupId has no active session', async () => {
     getSession.mockReturnValue(undefined);
     const rows = fourteenDays();

@@ -64,7 +64,7 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
 
   const rhrDelta = rhrMed !== null && todayRhr !== null ? ((todayRhr - rhrMed) / rhrMed) * 100 : null;
   const hrvDelta = hrvMed !== null && todayHrv !== null ? ((todayHrv - hrvMed) / hrvMed) * 100 : null;
-  const tempDelta = tempMed !== null && todayTemp !== null ? todayTemp - tempMed : todayTemp;
+  const tempDelta = tempMed !== null && todayTemp !== null ? todayTemp - tempMed : null;
 
   const rhrFires = rhrDelta !== null && rhrDelta >= thresholds.rhrPct;
   const hrvFires = hrvDelta !== null && hrvDelta <= -thresholds.hrvPct;
