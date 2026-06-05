@@ -300,6 +300,15 @@ extension V2.Envelope: Codable {
 
 extension V2 {
     enum HealthUpload {
+        struct Workout: Codable, Equatable {
+            let type: String
+            let startISO: String
+            let durationMin: Double
+            var energyKcal: Double?
+            var avgHR: Int?
+            var maxHR: Int?
+        }
+
         struct Day: Codable, Equatable {
             let date: String
             var steps: Int?
@@ -309,6 +318,12 @@ extension V2 {
             var restingHeartRate: Int?
             var hrv: Int?
             var sleepHours: Double?
+            // New in 2026-06-05 spec.
+            var wristTempDeviation: Double?     // signed: ±°C from user baseline
+            var respiratoryRate: Double?        // breaths/min
+            var walkingHeartRateAverage: Int?   // bpm
+            var vo2max: Double?                 // mL/kg/min
+            var workouts: [Workout]?
         }
 
         struct Body: Codable, Equatable {
