@@ -17,12 +17,34 @@
 // vars + a live ws server).
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { ChannelSetup } from '../../adapter.js';
 import { HealthUploadBody } from '../../../../shared/ios-app-protocol/index.js';
+import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
+import { sickDayCheck } from '../../../modules/health-trigger/sick-day.js';
 import { appendHealthHistory } from './health-ingest.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
 import type { PlatformId } from './types.js';
+
+function loadAllHealthRows(groupsDir: string, agentFolder: string): HealthUploadDay[] {
+  const path = join(groupsDir, agentFolder, 'health', 'raw.jsonl');
+  if (!existsSync(path)) return [];
+  const text = readFileSync(path, 'utf8');
+  const byDate = new Map<string, HealthUploadDay>();
+  for (const line of text.split('\n')) {
+    const s = line.trim();
+    if (!s) continue;
+    try {
+      const row = JSON.parse(s) as HealthUploadDay;
+      if (row && row.date) byDate.set(row.date, row);
+    } catch {
+      /* skip malformed line */
+    }
+  }
+  return [...byDate.keys()].sort().map((d) => byDate.get(d)!);
+}
 
 export interface HttpHandlerDeps {
   token: string;
@@ -158,6 +180,23 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
             count: days.length,
             requestId: requestId ?? null,
           });
+          // Fire-and-forget sick-day trigger. Failures here must not block the upload
+          // response — we log and move on. The trigger reads the full raw.jsonl
+          // (cheap, ~14 lines typical) and only does work if the rule fires.
+          // Install-specific: SICK_DAY_TARGET_AGENT_GROUP_ID must be set to the
+          // agent-group id (NOT folder name) of the health-analyzer agent (e.g. "greg").
+          // Unset = trigger is a no-op, safe default.
+          try {
+            const allRows = loadAllHealthRows(writeRoot, writeFolder);
+            void sickDayCheck({
+              agentGroupId: process.env.SICK_DAY_TARGET_AGENT_GROUP_ID,
+              allRows,
+            }).catch((err) => {
+              logWarn('sick-day trigger failed', { err: err instanceof Error ? err.message : String(err) });
+            });
+          } catch (err) {
+            logWarn('sick-day trigger setup failed', { err: err instanceof Error ? err.message : String(err) });
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
         })
         .catch((err) => {
