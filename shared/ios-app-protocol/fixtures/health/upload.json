@@ -10,7 +10,21 @@
       "heartRate": 79,
       "restingHeartRate": 64,
       "hrv": 53,
-      "sleepHours": 6.1
+      "sleepHours": 6.1,
+      "wristTempDeviation": 0.2,
+      "respiratoryRate": 15,
+      "walkingHeartRateAverage": 92,
+      "vo2max": 41,
+      "workouts": [
+        {
+          "type": "running",
+          "startISO": "2026-05-31T07:15:00Z",
+          "durationMin": 32,
+          "energyKcal": 310,
+          "avgHR": 148,
+          "maxHR": 172
+        }
+      ]
     },
     {
       "date": "2026-06-01",
@@ -18,7 +32,9 @@
       "activeEnergy": 38,
       "heartRate": 58,
       "hrv": 64,
-      "sleepHours": 7.4
+      "sleepHours": 7.4,
+      "wristTempDeviation": -0.1,
+      "respiratoryRate": 14
     }
   ]
 }

@@ -159,6 +159,16 @@ export const Envelopes = {
 // the server's http-handler ingest, and Greg's analyze.js downstream reader.
 // Fields are all camelCase; the date string is local-day "YYYY-MM-DD". Daily
 // aggregates only — no per-sample data crosses this boundary.
+export const Workout = z.object({
+  type: z.string(),
+  startISO: z.string(),
+  durationMin: z.number().nonnegative(),
+  energyKcal: z.number().nonnegative().optional(),
+  avgHR: z.number().int().nonnegative().optional(),
+  maxHR: z.number().int().nonnegative().optional(),
+});
+export type Workout = z.infer<typeof Workout>;
+
 export const HealthUploadDay = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   steps: z.number().int().nonnegative().optional(),
@@ -168,6 +178,14 @@ export const HealthUploadDay = z.object({
   restingHeartRate: z.number().int().nonnegative().optional(),
   hrv: z.number().int().nonnegative().optional(),
   sleepHours: z.number().nonnegative().optional(),
+  // New in 2026-06-05 spec: sick-day + differential support.
+  // wristTempDeviation is signed — HealthKit reports as ±°C around the
+  // user's own sleeping baseline, so it can legitimately be negative.
+  wristTempDeviation: z.number().optional(),
+  respiratoryRate: z.number().nonnegative().optional(),
+  walkingHeartRateAverage: z.number().int().nonnegative().optional(),
+  vo2max: z.number().nonnegative().optional(),
+  workouts: z.array(Workout).optional(),
 });
 export type HealthUploadDay = z.infer<typeof HealthUploadDay>;
 
