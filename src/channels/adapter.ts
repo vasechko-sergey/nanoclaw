@@ -98,6 +98,14 @@ export interface OutboundMessage {
   kind: string;
   content: unknown; // parsed JSON from messages_out
   files?: OutboundFile[]; // file attachments from the session outbox
+  /**
+   * ID of the agent_group that emitted this message. Optional — only set on
+   * adapters that multiplex multiple agents over a single transport (e.g.
+   * ios-app v2, which stamps the agent's folder slug onto the outbound
+   * envelope so the device can route the reply into the right per-agent UI
+   * thread). Other adapters ignore the field.
+   */
+  agentGroupId?: string;
 }
 
 /** Discovered conversation info (from syncConversations). */

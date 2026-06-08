@@ -57,6 +57,10 @@ export interface ChannelDeliveryAdapter {
     kind: string,
     content: string,
     files?: OutboundFile[],
+    /** ID of the agent_group emitting this message. Plumbed through so
+     *  multi-agent transports (ios-app v2) can stamp the agent slug onto the
+     *  envelope; other adapters ignore it. */
+    agentGroupId?: string,
   ): Promise<string | undefined>;
   setTyping?(channelType: string, platformId: string, threadId: string | null): Promise<void>;
 }
@@ -360,6 +364,7 @@ async function deliverMessage(
     msg.kind,
     msg.content,
     files,
+    session.agent_group_id,
   );
   log.info('Message delivered', {
     id: msg.id,

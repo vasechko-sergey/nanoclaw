@@ -480,6 +480,24 @@ function createV2Adapter(): ChannelAdapter | null {
             })
           : undefined;
 
+      // If the caller (delivery.ts) supplied the originating agent_group_id,
+      // resolve it to the canonical folder slug and stamp it on the envelope
+      // so the iOS app can route the reply into the per-agent thread. If the
+      // lookup fails — group deleted, missing folder — log and omit the field
+      // (device falls back to its default-agent behavior).
+      const agentGroupId = message.agentGroupId;
+      let agentFolder: string | undefined;
+      if (agentGroupId) {
+        const group = getAgentGroup(agentGroupId);
+        if (group?.folder) {
+          agentFolder = group.folder;
+        } else {
+          logV2Warn('outbound agent_group not found, omitting agent_id', {
+            agent_group_id: agentGroupId,
+          });
+        }
+      }
+
       handler.sendEnvelopeToDevice(platformId, {
         id,
         kind: 'data',
@@ -488,6 +506,7 @@ function createV2Adapter(): ChannelAdapter | null {
           thread_id: threadId ?? 'default',
           text,
           ...(attachments && attachments.length > 0 ? { attachments } : {}),
+          ...(agentFolder ? { agent_id: agentFolder } : {}),
         },
       });
       return id;
