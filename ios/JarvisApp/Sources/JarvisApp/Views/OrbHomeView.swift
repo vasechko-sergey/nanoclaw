@@ -101,11 +101,6 @@ struct OrbHomeView: View {
                 // Header
                 header
 
-                // Agent switcher picker — sits under header so it's reachable
-                // before the user taps the orb.
-                AgentPickerInline(unreadCounts: unreadByAgent)
-                    .padding(.top, Theme.scaled(8))
-
                 // Content — offset upward to align orb with splash position
                 VStack(spacing: 0) {
                     Spacer()
@@ -210,17 +205,8 @@ struct OrbHomeView: View {
 
             Spacer()
 
-            // Title (decorative on home)
-            VStack(spacing: 3) {
-                Text("J A R V I S")
-                    .font(.system(size: Theme.fontTitle, weight: .light))
-                    .tracking(Theme.titleTracking)
-                    .foregroundStyle(Theme.accentMedium)
-                RoundedRectangle(cornerRadius: 0.5)
-                    .fill(Theme.accentSubtle.opacity(0.2))
-                    .frame(width: Theme.minTapSize, height: 1)
-            }
-            .frame(minHeight: Theme.minTapSize)
+            // Agent picker — same component as ChatView header, in app style.
+            AgentPickerInline(unreadCounts: unreadByAgent)
 
             Spacer()
 

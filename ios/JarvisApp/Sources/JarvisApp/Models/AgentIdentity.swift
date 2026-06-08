@@ -11,11 +11,15 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
+    /// Compact English title used in the navbar picker so letter-spaced
+    /// uppercase fits one line (`J A R V I S`, `M A J .   P A Y N E`,
+    /// `D R .   H O U S E`). Greetings + agent personas still respond in
+    /// Russian — this is only the navbar identity.
     var displayName: String {
         switch self {
-        case .jarvis: return "Джарвис"
-        case .payne:  return "Майор Пейн"
-        case .greg:   return "Доктор Хаус"
+        case .jarvis: return "Jarvis"
+        case .payne:  return "Maj. Payne"
+        case .greg:   return "Dr. House"
         }
     }
 
