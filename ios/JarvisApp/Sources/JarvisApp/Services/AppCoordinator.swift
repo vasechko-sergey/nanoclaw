@@ -134,7 +134,7 @@ final class AppCoordinator {
 
     // MARK: – Chat actions
 
-    func sendMessage(_ text: String, viaVoice: Bool = false, attachments: [DraftAttachment] = []) {
+    func sendMessage(_ text: String, viaVoice: Bool = false, attachments: [DraftAttachment] = [], agentId: String = "jarvis") {
         lastSendWasVoice = viaVoice
         // Push a light inline context snapshot (location/health/calendar per the user's
         // privacy toggles) so the agent always has timezone + location + next event +
@@ -157,7 +157,8 @@ final class AppCoordinator {
             timezone: TimeZone.current.identifier,
             status: emoji.isEmpty ? nil : emoji,
             attachments: attachments,
-            context: ctx
+            context: ctx,
+            agentId: agentId
         )
     }
 

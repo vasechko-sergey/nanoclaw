@@ -74,7 +74,7 @@ struct ChatView: View {
     private func sendCurrent() {
         let trimmed = inputText.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty || !drafts.isEmpty else { return }
-        coordinator.sendMessage(trimmed, viaVoice: inputViaVoice, attachments: drafts)
+        coordinator.sendMessage(trimmed, viaVoice: inputViaVoice, attachments: drafts, agentId: active.active.rawValue)
         inputText = ""
         inputViaVoice = false
         drafts = []
@@ -94,7 +94,7 @@ struct ChatView: View {
             if visibleMessages.isEmpty && !ws.isBusy && !emptyInputActive {
                 EmptyStateView(
                     onSuggestion: { suggestion in
-                        coordinator.sendMessage(suggestion)
+                        coordinator.sendMessage(suggestion, agentId: active.active.rawValue)
                     },
                     onStartVoice: {
                         withAnimation(.easeOut(duration: 0.25)) {

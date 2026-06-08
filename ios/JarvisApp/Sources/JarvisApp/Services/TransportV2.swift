@@ -269,7 +269,8 @@ actor TransportV2 {
             id: row.id, seq: seq,
             ts: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval(row.ts) / 1000)),
             payload: .message(V2.Message(thread_id: "ios:default", text: row.text,
-                                          attachments: attachments, context: context))
+                                          attachments: attachments, context: context,
+                                          agent_id: row.agentId))
         )
     }
 

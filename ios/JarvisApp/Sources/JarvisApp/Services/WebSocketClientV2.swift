@@ -236,7 +236,8 @@ final class WebSocketClientV2 {
         timezone: String,
         status: String?,
         attachments: [DraftAttachment] = [],
-        context: [String: Any]? = nil
+        context: [String: Any]? = nil,
+        agentId: String = "jarvis"
     ) {
         guard stack != nil else {
             Log.warn(.ws, "WebSocketClientV2.send: stack not built yet")
@@ -254,7 +255,8 @@ final class WebSocketClientV2 {
                 id: clientMsgId,
                 text: text,
                 attachments: v2Attachments,
-                context: inline
+                context: inline,
+                agentId: agentId
             )
             Task { [weak self] in
                 try? await self?.stack.transport.tickDispatcher()

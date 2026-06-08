@@ -224,6 +224,27 @@ final class TransportV2Tests: XCTestCase {
         XCTAssertEqual(d3, 4.0, accuracy: 0.001)
     }
 
+    func testOutboundMessageCarriesAgentIdFromStoredRow() async throws {
+        // Default agentId "jarvis" is what TransportV2.tickDispatcher currently
+        // drains (T11 scope: stamp the envelope; T12/T13 will fan out to other
+        // agents). Verify the envelope's agent_id mirrors the stored row.
+        try store.insertOutboundUserMessage(
+            id: "msg-agent-1", text: "hi", attachments: [], context: nil,
+            agentId: "jarvis"
+        )
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)  // triggers tickDispatcher
+        let messageEnvelopes = socket.sent.compactMap { data -> V2.Envelope? in
+            guard let env = try? JSONDecoder().decode(V2.Envelope.self, from: data),
+                  env.type == .message else { return nil }
+            return env
+        }
+        let sent = try XCTUnwrap(messageEnvelopes.first)
+        guard case let .message(msg) = sent.payload else {
+            XCTFail("expected .message payload, got \(sent.payload)"); return
+        }
+        XCTAssertEqual(msg.agent_id, "jarvis")
+    }
+
     func testRetryAfterAckTimeout() async throws {
         try store.insertOutboundUserMessage(
             id: "msg-1", text: "hi", attachments: [], context: nil
