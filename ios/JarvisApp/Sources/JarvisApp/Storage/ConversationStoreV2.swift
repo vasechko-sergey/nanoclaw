@@ -279,16 +279,19 @@ final class ConversationStoreV2 {
         }
     }
 
-    /// Hard-cap retention. Deletes messages beyond `keep` newest, and any
-    /// orphaned attachments rows. Called by `MessageTimeline` after each insert.
-    func prune(keep: Int = 500) throws {
+    /// Hard-cap retention, per agent. Deletes messages in this agent's bucket
+    /// beyond `keep` newest, and any orphaned attachments rows. Called by
+    /// `MessageTimeline` after each insert.
+    func prune(agentId: String = "jarvis", keep: Int = 500) throws {
         try writer.write { db in
             try db.execute(sql: """
                 DELETE FROM messages
-                WHERE id NOT IN (
-                  SELECT id FROM messages ORDER BY ts DESC LIMIT ?
-                )
-            """, arguments: [keep])
+                WHERE agent_id = ?
+                  AND id NOT IN (
+                    SELECT id FROM messages WHERE agent_id = ?
+                    ORDER BY ts DESC LIMIT ?
+                  )
+            """, arguments: [agentId, agentId, keep])
             try db.execute(sql: """
                 DELETE FROM attachments
                 WHERE message_id NOT IN (SELECT id FROM messages)

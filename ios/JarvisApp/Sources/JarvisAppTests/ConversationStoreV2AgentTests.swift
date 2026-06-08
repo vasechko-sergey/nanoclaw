@@ -70,6 +70,27 @@ final class ConversationStoreV2AgentTests: XCTestCase {
         XCTAssertTrue(payneQueue.isEmpty)
     }
 
+    func test_prune_isPerAgent_doesNotEvictOtherAgentsMessages() throws {
+        let store = try makeStore()
+        // Insert 5 jarvis messages and 2 payne messages.
+        for i in 0..<5 {
+            try store.insertOutboundUserMessage(
+                id: "j-\(i)", text: "j\(i)", attachments: [], context: nil, agentId: "jarvis"
+            )
+        }
+        for i in 0..<2 {
+            try store.insertOutboundUserMessage(
+                id: "p-\(i)", text: "p\(i)", attachments: [], context: nil, agentId: "payne"
+            )
+        }
+        // Prune jarvis to keep=2 — should only affect jarvis bucket.
+        try store.prune(agentId: "jarvis", keep: 2)
+        let jarvisQueue = try store.queuedOutbound(agentId: "jarvis", limit: 100)
+        let payneQueue  = try store.queuedOutbound(agentId: "payne", limit: 100)
+        XCTAssertEqual(jarvisQueue.count, 2, "jarvis bucket trimmed to 2")
+        XCTAssertEqual(payneQueue.count, 2, "payne bucket untouched by jarvis prune")
+    }
+
     func test_v4Migration_addsAgentIdColumn_andIndex() throws {
         let queue = try DatabaseQueue()
         try Schema.migrate(queue)
