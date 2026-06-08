@@ -49,13 +49,14 @@ final class TransportV2Tests: XCTestCase {
         return try! JSONEncoder().encode(env)
     }
 
-    func encodeInbound(id: String, seq: Int, threadID: String, text: String) -> Data {
+    func encodeInbound(id: String, seq: Int, threadID: String, text: String, agentID: String? = nil) -> Data {
         let env = V2.Envelope(
             v: V2.protocolVersion, kind: .data, type: .message,
             id: id, seq: seq,
             ts: ISO8601DateFormatter().string(from: Date()),
             payload: .message(V2.Message(thread_id: threadID, text: text,
-                                          attachments: nil, context: nil))
+                                          attachments: nil, context: nil,
+                                          agent_id: agentID))
         )
         return try! JSONEncoder().encode(env)
     }
@@ -243,6 +244,26 @@ final class TransportV2Tests: XCTestCase {
             XCTFail("expected .message payload, got \(sent.payload)"); return
         }
         XCTAssertEqual(msg.agent_id, "jarvis")
+    }
+
+    func testInboundMessage_persistedWithAgentIdFromEnvelope() async throws {
+        let id = "in-agent-1"
+        try await transport.handleIncoming(
+            encodeInbound(id: id, seq: 42, threadID: "ios:default",
+                          text: "Здорово, солдат.", agentID: "payne")
+        )
+        let stored = try XCTUnwrap(try store.fetchById(id))
+        XCTAssertEqual(stored.agentId, "payne")
+    }
+
+    func testInboundMessage_defaultsToJarvisWhenAgentIdMissing() async throws {
+        let id = "in-agent-2"
+        try await transport.handleIncoming(
+            encodeInbound(id: id, seq: 43, threadID: "ios:default",
+                          text: "legacy server", agentID: nil)
+        )
+        let stored = try XCTUnwrap(try store.fetchById(id))
+        XCTAssertEqual(stored.agentId, "jarvis")
     }
 
     func testRetryAfterAckTimeout() async throws {

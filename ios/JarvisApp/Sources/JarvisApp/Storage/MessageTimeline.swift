@@ -83,7 +83,7 @@ final class MessageTimeline {
     func insertInboundIfNew(envelope: V2.Envelope, message: V2.Message) throws {
         if try store.dedupSeen(id: envelope.id) { return }
         try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
-        try store.insertInbound(envelope: envelope, message: message)
+        try store.insertInbound(envelope: envelope, message: message, agentId: message.agent_id ?? "jarvis")
         try store.prune(keep: retention)
     }
 }

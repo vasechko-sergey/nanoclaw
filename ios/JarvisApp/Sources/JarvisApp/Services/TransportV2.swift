@@ -228,7 +228,8 @@ actor TransportV2 {
             return
         }
         try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
-        try store.insertInbound(envelope: envelope, message: message)
+        let agentId = message.agent_id ?? "jarvis"
+        try store.insertInbound(envelope: envelope, message: message, agentId: agentId)
         try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
         try await sendStatus(.delivered, ids: [envelope.id])
         if let seq = envelope.seq {
