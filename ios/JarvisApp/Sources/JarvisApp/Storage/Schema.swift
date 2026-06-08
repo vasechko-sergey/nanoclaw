@@ -106,6 +106,14 @@ enum Schema {
             """)
             // cursors table from v1 stays; it doesn't reference conversations.
         }
+        m.registerMigration("v4-agent-id") { db in
+            // Per-agent grouping for the single timeline. Existing rows default
+            // to 'jarvis' for back-compat with the pre-multi-agent app state.
+            try db.execute(sql: """
+                ALTER TABLE messages ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'jarvis';
+                CREATE INDEX idx_msg_agent_ts ON messages (agent_id, ts);
+            """)
+        }
         try m.migrate(writer)
     }
 }

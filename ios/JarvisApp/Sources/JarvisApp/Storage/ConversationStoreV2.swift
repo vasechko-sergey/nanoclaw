@@ -20,6 +20,7 @@ struct StoredMessage: Equatable {
     var ts: Int
     var serverTS: Int?
     var createdAt: Int
+    var agentId: String = "jarvis"
 }
 
 final class ConversationStoreV2 {
@@ -30,7 +31,8 @@ final class ConversationStoreV2 {
         id: String,
         text: String,
         attachments: [V2.Attachment],
-        context: V2.InlineContext?
+        context: V2.InlineContext?,
+        agentId: String = "jarvis"
     ) throws {
         try writer.write { db in
             let now = Int(Date().timeIntervalSince1970 * 1000)
@@ -49,19 +51,19 @@ final class ConversationStoreV2 {
             }
             try db.execute(sql: """
                 INSERT INTO messages
-                  (id, dir, seq, text, attachments_json, context_json, status, ts, created_at)
-                VALUES (?, 'out', NULL, ?, ?, ?, 'queued', ?, ?)
-            """, arguments: [id, text, attachmentsJSON, contextJSON, now, now])
+                  (id, dir, seq, text, attachments_json, context_json, status, ts, created_at, agent_id)
+                VALUES (?, 'out', NULL, ?, ?, ?, 'queued', ?, ?, ?)
+            """, arguments: [id, text, attachmentsJSON, contextJSON, now, now, agentId])
         }
     }
 
-    func queuedOutbound(limit: Int = 10) throws -> [StoredMessage] {
+    func queuedOutbound(agentId: String = "jarvis", limit: Int = 10) throws -> [StoredMessage] {
         try writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT * FROM messages
-                WHERE dir='out' AND status='queued'
+                WHERE dir='out' AND status='queued' AND agent_id=?
                 ORDER BY ts ASC LIMIT ?
-            """, arguments: [limit])
+            """, arguments: [agentId, limit])
             return rows.map { row in
                 StoredMessage(
                     id: row["id"],
@@ -74,7 +76,8 @@ final class ConversationStoreV2 {
                     failureReason: row["failure_reason"],
                     ts: row["ts"],
                     serverTS: row["server_ts"],
-                    createdAt: row["created_at"]
+                    createdAt: row["created_at"],
+                    agentId: row["agent_id"] ?? "jarvis"
                 )
             }
         }
@@ -159,7 +162,7 @@ final class ConversationStoreV2 {
         }
     }
 
-    func insertInbound(envelope: V2.Envelope, message: V2.Message) throws {
+    func insertInbound(envelope: V2.Envelope, message: V2.Message, agentId: String = "jarvis") throws {
         try writer.write { db in
             let now = Int(Date().timeIntervalSince1970 * 1000)
             let encoder = JSONEncoder()
@@ -171,9 +174,9 @@ final class ConversationStoreV2 {
             }
             try db.execute(sql: """
                 INSERT INTO messages
-                  (id, dir, seq, text, attachments_json, status, ts, created_at)
-                VALUES (?, 'in', ?, ?, ?, 'new', ?, ?)
-            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, now, now])
+                  (id, dir, seq, text, attachments_json, status, ts, created_at, agent_id)
+                VALUES (?, 'in', ?, ?, ?, 'new', ?, ?, ?)
+            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, now, now, agentId])
         }
     }
 
@@ -210,6 +213,17 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Count messages for a specific agent. Useful for per-agent badges/stats.
+    func countMessages(agentId: String) throws -> Int {
+        try writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM messages WHERE agent_id=?",
+                             arguments: [agentId]) ?? 0
+        }
+    }
+
+    /// Fetch by primary key. `id` is globally unique across agents, so this is
+    /// not agent-scoped; the returned row carries its `agentId` for the caller
+    /// to verify if it cares about isolation.
     func fetchById(_ id: String) throws -> StoredMessage? {
         try writer.read { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM messages WHERE id=?", arguments: [id]) else {
@@ -226,24 +240,26 @@ final class ConversationStoreV2 {
                 failureReason: row["failure_reason"],
                 ts: row["ts"],
                 serverTS: row["server_ts"],
-                createdAt: row["created_at"]
+                createdAt: row["created_at"],
+                agentId: row["agent_id"] ?? "jarvis"
             )
         }
     }
 
     // MARK: - Single-timeline observation + retention
 
-    /// Live view of the last `limit` messages, ordered ascending by `ts`.
-    /// Drives the chat list UI via the `MessageTimeline` wrapper.
-    func observeMessages(limit: Int = 500)
+    /// Live view of the last `limit` messages for a specific agent, ordered
+    /// ascending by `ts`. Drives the chat list UI via `MessageTimeline`.
+    func observeMessages(agentId: String = "jarvis", limit: Int = 500)
         -> ValueObservation<ValueReducers.Fetch<[StoredMessage]>>
     {
         ValueObservation.tracking { db -> [StoredMessage] in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT * FROM messages
+                WHERE agent_id=?
                 ORDER BY ts DESC
                 LIMIT ?
-            """, arguments: [limit])
+            """, arguments: [agentId, limit])
             return rows.reversed().map { row in
                 StoredMessage(
                     id: row["id"],
@@ -256,7 +272,8 @@ final class ConversationStoreV2 {
                     failureReason: row["failure_reason"],
                     ts: row["ts"],
                     serverTS: row["server_ts"],
-                    createdAt: row["created_at"]
+                    createdAt: row["created_at"],
+                    agentId: row["agent_id"] ?? "jarvis"
                 )
             }
         }
