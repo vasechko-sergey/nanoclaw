@@ -33,6 +33,7 @@
 		448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */; };
 		461CEB084ABB3FAFC32124BC /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */; };
 		496C7C87D93A74983F21EF54 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B48F479168B41727E62B105 /* InputBar.swift */; };
+		4BF4C88458642156C18BD71E /* RestTimerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */; };
 		4C81E915D4CA0441EEA698DF /* HealthHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC04EA76CC0F89FF14E7849 /* HealthHistory.swift */; };
 		4E3C2BC7DEE98EE4B972F929 /* StatusV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08ADF5C053B4AD89D3CD44E /* StatusV2.swift */; };
 		4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114A888276D0E083FC387EB /* ContextBuilderTests.swift */; };
@@ -85,6 +86,7 @@
 		BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */; };
 		C00FE8906E1739C80BA7568D /* HealthSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */; };
 		C1360BFA240455586946FC50 /* WorkoutModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA42D336E93B35827195BBBB /* WorkoutModelsTests.swift */; };
+		C209817F4DB4B298ACFD7237 /* RestTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B288DE4478FD534ADB9C861 /* RestTimer.swift */; };
 		C26C3D044EC984039953DA2B /* WatchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 554BF5C37C33D1542F61065C /* WatchTheme.swift */; };
 		D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
@@ -143,6 +145,7 @@
 		2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoopControllerTests.swift; sourceTree = "<group>"; };
 		2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetector.swift; sourceTree = "<group>"; };
 		30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTimelineTests.swift; sourceTree = "<group>"; };
+		32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerTests.swift; sourceTree = "<group>"; };
 		3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilder.swift; sourceTree = "<group>"; };
 		3784B2D589C11B07F162E081 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundDispatcherV2Tests.swift; sourceTree = "<group>"; };
@@ -177,6 +180,7 @@
 		7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisUITests.swift; sourceTree = "<group>"; };
 		83BBF8E04395E33F04CDE186 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
 		83D3D7941261E832088202BF /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		8B288DE4478FD534ADB9C861 /* RestTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimer.swift; sourceTree = "<group>"; };
 		8C9EB1688DB74A7280A71824 /* ConversationStoreV2AgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2AgentTests.swift; sourceTree = "<group>"; };
 		8F8D87E938816ECB8B161DBD /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewSmokeTests.swift; sourceTree = "<group>"; };
@@ -370,6 +374,7 @@
 				30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */,
 				7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */,
 				5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */,
+				32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */,
 				BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */,
 				BC64D6340917C38B04005455 /* SetLogQueueTests.swift */,
 				0056A55985BB7DB31F765116 /* TransportV2Tests.swift */,
@@ -435,6 +440,7 @@
 				C7F32FF80D3E90C60D06FDC3 /* InboundDispatcherV2.swift */,
 				BD51F238E46BCB805C742CEE /* LocationManager.swift */,
 				B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */,
+				8B288DE4478FD534ADB9C861 /* RestTimer.swift */,
 				E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */,
 				1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */,
 				B08ADF5C053B4AD89D3CD44E /* StatusV2.swift */,
@@ -673,6 +679,7 @@
 				E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */,
 				D8C071DDEDA0C58A157A3EA7 /* ProactiveDispatcher.swift in Sources */,
 				98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */,
+				C209817F4DB4B298ACFD7237 /* RestTimer.swift in Sources */,
 				25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */,
 				9B25460C1039295CFA4B156D /* Schema.swift in Sources */,
 				8FD8CF0ADA1C202FEDA828D9 /* SetLogQueue.swift in Sources */,
@@ -714,6 +721,7 @@
 				BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */,
 				1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */,
 				D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */,
+				4BF4C88458642156C18BD71E /* RestTimerTests.swift in Sources */,
 				448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */,
 				59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */,
 				E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */,
