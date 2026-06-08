@@ -57,13 +57,22 @@ final class ConversationStoreV2 {
         }
     }
 
-    func queuedOutbound(agentId: String = "jarvis", limit: Int = 10) throws -> [StoredMessage] {
+    func queuedOutbound(agentId: String? = nil, limit: Int = 10) throws -> [StoredMessage] {
         try writer.read { db in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT * FROM messages
-                WHERE dir='out' AND status='queued' AND agent_id=?
-                ORDER BY ts ASC LIMIT ?
-            """, arguments: [agentId, limit])
+            let rows: [Row]
+            if let agentId {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT * FROM messages
+                    WHERE dir='out' AND status='queued' AND agent_id=?
+                    ORDER BY ts ASC LIMIT ?
+                """, arguments: [agentId, limit])
+            } else {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT * FROM messages
+                    WHERE dir='out' AND status='queued'
+                    ORDER BY ts ASC LIMIT ?
+                """, arguments: [limit])
+            }
             return rows.map { row in
                 StoredMessage(
                     id: row["id"],

@@ -91,6 +91,21 @@ final class ConversationStoreV2AgentTests: XCTestCase {
         XCTAssertEqual(payneQueue.count, 2, "payne bucket untouched by jarvis prune")
     }
 
+    func test_queuedOutbound_nilAgentId_returnsAllAgents() throws {
+        let store = try makeStore()
+        try store.insertOutboundUserMessage(
+            id: "j-1", text: "j", attachments: [], context: nil, agentId: "jarvis"
+        )
+        try store.insertOutboundUserMessage(
+            id: "p-1", text: "p", attachments: [], context: nil, agentId: "payne"
+        )
+        try store.insertOutboundUserMessage(
+            id: "g-1", text: "g", attachments: [], context: nil, agentId: "greg"
+        )
+        let all = try store.queuedOutbound(limit: 100)
+        XCTAssertEqual(Set(all.map(\.id)), Set(["j-1", "p-1", "g-1"]))
+    }
+
     func test_v4Migration_addsAgentIdColumn_andIndex() throws {
         let queue = try DatabaseQueue()
         try Schema.migrate(queue)
