@@ -223,7 +223,7 @@ struct ChatView: View {
                                 try? await Task.sleep(for: .milliseconds(50))
                                 if ws.isBusy {
                                     withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-                                } else if let last = ws.messages.last {
+                                } else if let last = visibleMessages.last {
                                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                                 }
                             }
