@@ -101,6 +101,16 @@ function resolveSessionForPlatform(platformId: PlatformId, agentId: string | und
     if (ag) {
       const sess = findSessionForAgent(ag.id, mg.id, null);
       if (sess) return sess.id;
+      logV2Warn('agent_id provided but no per-agent session found, falling back to mg default', {
+        platform_id: platformId,
+        agent_id: agentId,
+        messaging_group_id: mg.id,
+      });
+    } else {
+      logV2Warn('agent_id provided but no matching agent_group found, falling back to mg default', {
+        platform_id: platformId,
+        agent_id: agentId,
+      });
     }
     // Fall through to default mg session if no agent-scoped session exists.
   }

@@ -69,11 +69,7 @@ export class InboundDispatcher {
       // messaging_group. Stateless types (already short-circuited above)
       // never reach this branch.
       const inferredAgent =
-        env.type === 'message' ||
-        env.type === 'context_response' ||
-        env.type === 'new_conversation' ||
-        env.type === 'action_response' ||
-        env.type === 'feedback'
+        env.type === 'message' || env.type === 'context_response' || env.type === 'new_conversation'
           ? ((env.payload as { agent_id?: string }).agent_id ?? this.deps.defaultAgentSlug)
           : this.deps.defaultAgentSlug;
       const session_id = this.deps.resolveSessionForPlatform(platform_id, inferredAgent);
