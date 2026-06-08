@@ -330,18 +330,36 @@ export class ClaudeProvider implements AgentProvider {
           // Stream per-block assistant text so the poll-loop can dispatch
           // <message to="..."> blocks immediately, before the SDK reaches
           // its final `result` event. The SDK's `assistant` message carries
-          // one or more content parts; we yield only text parts (tool_use
-          // parts are observed via subsequent tool_result messages and the
-          // umbrella `activity` event yielded above). Without this, a
-          // turn that emits text then a tool call (Read, Edit, etc.) loses
-          // the text if the stream stalls before `result` — the agent
-          // believes it answered, but the user sees nothing.
+          // one or more content parts; we yield text parts as
+          // `assistant_text` and tool_use parts as `tool_use_start` so the
+          // poll-loop knows a tool is in flight and can suppress its idle
+          // watchdog while it runs. Without that, a turn that emits text
+          // then a long tool call (Bash, MCP, etc.) would either lose the
+          // text on stall or get killed by the 2-min watchdog while the
+          // tool was still doing real work.
           const content = (message as { message?: { content?: unknown[] } }).message?.content;
           if (Array.isArray(content)) {
             for (const part of content) {
-              const p = part as { type?: string; text?: string };
+              const p = part as { type?: string; text?: string; id?: string };
               if (p.type === 'text' && typeof p.text === 'string' && p.text.length > 0) {
                 yield { type: 'assistant_text', text: p.text };
+              } else if (p.type === 'tool_use' && typeof p.id === 'string' && p.id.length > 0) {
+                yield { type: 'tool_use_start', id: p.id };
+              }
+            }
+          }
+        } else if (message.type === 'user') {
+          // The SDK reports tool_result parts inside `user` messages — when
+          // a tool returns, its result is fed back as user input for the
+          // next model turn. Emit `tool_use_end` so the poll-loop can
+          // remove the id from its in-flight set and let the idle watchdog
+          // resume policing genuine SDK stalls.
+          const content = (message as { message?: { content?: unknown[] } }).message?.content;
+          if (Array.isArray(content)) {
+            for (const part of content) {
+              const p = part as { type?: string; tool_use_id?: string };
+              if (p.type === 'tool_result' && typeof p.tool_use_id === 'string' && p.tool_use_id.length > 0) {
+                yield { type: 'tool_use_end', id: p.tool_use_id };
               }
             }
           }

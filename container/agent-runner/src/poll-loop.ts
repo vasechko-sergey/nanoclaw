@@ -526,9 +526,23 @@ async function processQuery(
   // a misleading error after a perfectly fine answer. Reset to false on
   // every push() so a genuinely stalled follow-up still gets the fallback.
   let resultReceived = false;
+  // Tool-use ids that started but haven't reported back. While this set is
+  // non-empty, the idle watchdog is in "tool-tolerant" mode: an idle
+  // window means a long-running Bash/MCP call, not a wedged stream. The
+  // 30-min host absolute-ceiling still backstops a genuinely hung tool.
+  const inFlightTools = new Set<string>();
+  // The provider's iterator-next() Promise is hoisted out of the loop so
+  // a watchdog-driven `continue` (tools in flight) does NOT drop a still-
+  // pending event. Without this we would call iter.next() again on the
+  // next iteration; many async iterators reject or behave undefined when
+  // .next() is called while a prior call is outstanding. Holding the
+  // Promise and only clearing it once consumed keeps the read in lock-step
+  // with the producer.
+  let pendingNext: Promise<IteratorResult<ProviderEvent>> | null = null;
 
   try {
     while (true) {
+      if (!pendingNext) pendingNext = iter.next();
       let idleHandle: ReturnType<typeof setTimeout> | undefined;
       const idleP = new Promise<{ idle: true }>((resolve) => {
         idleHandle = setTimeout(() => resolve({ idle: true }), STREAM_IDLE_TIMEOUT_MS);
@@ -538,11 +552,23 @@ async function processQuery(
         // prevents the process from exiting cleanly until it fires.
         (idleHandle as { unref?: () => void }).unref?.();
       });
-      const nextP = iter.next();
-      const winner = await Promise.race<{ idle: true } | IteratorResult<ProviderEvent>>([nextP, idleP]);
+      const winner = await Promise.race<{ idle: true } | IteratorResult<ProviderEvent>>([pendingNext, idleP]);
       if (idleHandle) clearTimeout(idleHandle);
 
       if ('idle' in winner) {
+        // Tool-tolerant mode: at least one tool_use is still pending its
+        // tool_result. Long Bash/MCP calls emit no SDK events between
+        // start and end; treating that as a stall would kill perfectly
+        // healthy turns. Keep waiting on the same `pendingNext`; the
+        // host's 30-minute absolute-ceiling is the real backstop for a
+        // hung tool.
+        if (inFlightTools.size > 0) {
+          log(
+            `Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms with ${inFlightTools.size} tool(s) in flight — extending watchdog`,
+          );
+          continue;
+        }
+
         // SDK stream went silent for STREAM_IDLE_TIMEOUT_MS without yielding
         // even an `activity` tick. Two cases:
         //   - Before `result`: the turn never completed. Tell the user
@@ -591,11 +617,20 @@ async function processQuery(
       }
 
       const next = winner;
+      // The pending iter.next() Promise has resolved — clear so the next
+      // loop iteration requests the following event.
+      pendingNext = null;
       if (next.done) break;
       const event = next.value;
 
       handleEvent(event, routing);
       touchHeartbeat();
+
+      if (event.type === 'tool_use_start') {
+        inFlightTools.add(event.id);
+      } else if (event.type === 'tool_use_end') {
+        inFlightTools.delete(event.id);
+      }
 
       if (event.type === 'init') {
         queryContinuation = event.continuation;
@@ -634,6 +669,11 @@ async function processQuery(
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
         resultReceived = true;
+        // Each `result` ends a turn. Clear any orphan tool ids — the SDK
+        // should always pair tool_use with tool_result before result, but
+        // a misbehaving provider that drops the end event would otherwise
+        // leave the watchdog permanently suppressed for this query.
+        inFlightTools.clear();
         if (event.text) {
           // Stream buffer may still hold tail scratchpad. Reset it — the
           // result.text below covers the full turn and is the canonical
@@ -687,6 +727,12 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
       break;
     case 'assistant_text':
       log(`Assistant text (${event.text.length} chars): ${event.text.slice(0, 200)}`);
+      break;
+    case 'tool_use_start':
+      log(`Tool start: ${event.id}`);
+      break;
+    case 'tool_use_end':
+      log(`Tool end: ${event.id}`);
       break;
     case 'result':
       log(`Result: ${event.text ? event.text.slice(0, 200) : '(empty)'}`);

@@ -100,6 +100,23 @@ export type ProviderEvent =
    */
   | { type: 'assistant_text'; text: string }
   /**
+   * Tool call started. Providers SHOULD emit this when the model issues a
+   * tool_use and SHOULD pair it with a `tool_use_end` for the same `id`
+   * when the tool returns. The poll-loop uses the in-flight tool set to
+   * suppress the per-turn idle watchdog while at least one tool is
+   * running — long Bash/MCP calls produce no SDK events between
+   * `tool_use` and `tool_result`, and the 30-min host ceiling still
+   * backstops a genuinely wedged tool.
+   *
+   * `id` is the SDK's tool_use_id; the same value MUST appear on the
+   * paired `tool_use_end`. Providers that can't observe tool boundaries
+   * MAY skip both events — the watchdog then falls back to the plain
+   * idle timer.
+   */
+  | { type: 'tool_use_start'; id: string }
+  /** Pair of `tool_use_start`. See that event's docs. */
+  | { type: 'tool_use_end'; id: string }
+  /**
    * Liveness signal. Providers MUST yield this on every underlying SDK
    * event (tool call, thinking, partial message, anything) so the
    * poll-loop's idle timer stays honest during long tool runs.
