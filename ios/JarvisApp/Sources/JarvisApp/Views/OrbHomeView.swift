@@ -44,12 +44,14 @@ struct OrbHomeView: View {
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
+        let slot: TimeSlot
         switch hour {
-        case 5..<12:  return "Доброе утро"
-        case 12..<17: return "Добрый день"
-        case 17..<22: return "Добрый вечер"
-        default:      return "Доброй ночи"
+        case 5..<12:  slot = .morning
+        case 12..<17: slot = .day
+        case 17..<22: slot = .evening
+        default:      slot = .night
         }
+        return GreetingBank.pick(agent: active.active, slot: slot)
     }
 
     private var contextualSuggestions: [String] {

@@ -43,6 +43,7 @@
 		56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */; };
 		5727F5346AE76836985BED3D /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C904740E5DA9FD762F5645C /* WatchContentView.swift */; };
 		57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */; };
+		5D14A252DCD5E3C28D7E12A4 /* GreetingBank.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */; };
 		5ED5035D7E3D50CCD815D5C7 /* HeaderStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */; };
 		5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0FFCD560E41761030820EB /* MessageTimeline.swift */; };
 		634AE794B556552200D1D06A /* JarvisWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C75412A22FD477079ABB55 /* JarvisWatchApp.swift */; };
@@ -213,6 +214,7 @@
 		F5A055AF8989128A047D605C /* HealthSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSync.swift; sourceTree = "<group>"; };
 		F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextCoordinator.swift; sourceTree = "<group>"; };
 		F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetectorTests.swift; sourceTree = "<group>"; };
+		FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreetingBank.swift; sourceTree = "<group>"; };
 		FE1A573133241875D7269CED /* HealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -288,6 +290,7 @@
 			isa = PBXGroup;
 			children = (
 				3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */,
+				FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */,
 				D79D4272E5619C20A18D50D9 /* Log.swift */,
 				ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */,
 				48A9578A316F0AB1F8247B95 /* Theme.swift */,
@@ -627,6 +630,7 @@
 				87AD40BFC10B1D04342B5E9D /* EmojiPickerView.swift in Sources */,
 				3BC3B261F475A3B3A3E3FF7B /* EmptyStateView.swift in Sources */,
 				3EB9B81E598895106D47F1DB /* FullScreenImageView.swift in Sources */,
+				5D14A252DCD5E3C28D7E12A4 /* GreetingBank.swift in Sources */,
 				5ED5035D7E3D50CCD815D5C7 /* HeaderStatusDot.swift in Sources */,
 				4C81E915D4CA0441EEA698DF /* HealthHistory.swift in Sources */,
 				91941E7469BF57E69F4C9DE2 /* HealthManager.swift in Sources */,
