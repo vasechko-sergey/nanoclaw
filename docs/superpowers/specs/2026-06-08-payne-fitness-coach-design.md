@@ -197,7 +197,8 @@ Extends `src/channels/ios-app.ts` with hidden message types (same pattern as `co
 
 - iOS holds a local disk cache keyed `exercises/<slug>_<sha256>.jpg`
 - `workout_plan` includes `image_manifest` (slug + sha256 only — no bytes)
-- iOS reconciles against the cache. Misses → `image_request` → Payne reads from disk and sends `image_blob` (base64). One transport (WS), one auth (Tailscale), no separate HTTP route.
+- **Eager prefetch on plan receipt:** as soon as iOS receives `workout_plan`, it diffs the manifest against the local cache and fires `image_request` for every miss **in parallel** (no waiting for the user to scroll to the exercise). By the time the user taps "Начать тренировку", everything is local. On a fresh device this is N parallel WS round-trips on plan receipt — acceptable because (a) `workout_plan` is computed seconds before the user enters WorkoutView, (b) WS multiplexing handles parallel requests, (c) Payne reads files from disk synchronously.
+- One transport (WS), one auth (Tailscale), no separate HTTP route.
 
 ### 4.4 Reliability queue
 
@@ -409,7 +410,6 @@ A new full-screen modal launched from:
 
 1. **Synthetic baseline session schema** — `sessions/baseline.json` shape is a slim variant of §3.3 (no streamed timestamps, no `workout_id`). Will be finalized in the plan.
 2. **Muscle-groups vocabulary file** — exact list of canonical group slugs (`chest_upper`, `delts_front`, ...) and the overlap-percentage threshold for swap acceptance. Default is 50%; the plan will commit a starter vocabulary and the rule.
-3. **Manifest-only image policy edge case** — what happens when the user signs in on a fresh device with zero local image cache and the first `workout_plan` carries 8 exercises. Naïve flow = 8 sequential `image_request`/`image_blob` round-trips. The plan should decide between batch fetch and serial-on-render.
 
 ## 12. Acceptance criteria
 
