@@ -80,6 +80,7 @@ export const Envelopes = {
         remote_id: z.string().optional(),
       })).optional(),
       context: InlineContext.optional(),
+      agent_id: z.string().min(1).optional(),
     }),
   }),
   ContextRequest: EnvelopeBase.extend({
@@ -89,6 +90,7 @@ export const Envelopes = {
       request_id: z.string().uuid(),
       fields: z.array(ContextFieldEnum).min(1),
       params: z.record(z.string(), z.unknown()).optional(),
+      agent_id: z.string().min(1).optional(),
     }),
   }),
   ContextResponse: EnvelopeBase.extend({
@@ -98,12 +100,16 @@ export const Envelopes = {
       request_id: z.string().uuid(),
       data: z.record(z.string(), z.unknown()),
       errors: z.record(z.string(), z.string()).optional(),
+      agent_id: z.string().min(1).optional(),
     }),
   }),
   NewConversation: EnvelopeBase.extend({
     kind: z.literal('control'),
     type: z.literal('new_conversation'),
-    payload: z.object({ thread_id: z.string().min(1) }),
+    payload: z.object({
+      thread_id: z.string().min(1),
+      agent_id: z.string().min(1).optional(),
+    }),
   }),
   ActionResponse: EnvelopeBase.extend({
     kind: z.literal('control'),

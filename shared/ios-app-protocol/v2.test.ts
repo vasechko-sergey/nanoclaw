@@ -157,3 +157,35 @@ describe('Stateless envelopes (ack/ping/pong/status)', () => {
     }))).not.toThrow();
   });
 });
+
+describe('agent_id field', () => {
+  it('accepts a Message envelope without agent_id (backward compat)', () => {
+    const parsed = Envelopes.Message.parse({
+      v: 2, kind: 'data', type: 'message',
+      id: '00000000-0000-4000-8000-000000000001',
+      seq: 0, ts: '2026-06-08T12:00:00.000Z',
+      payload: { thread_id: 't1', text: 'hi' },
+    });
+    expect(parsed.payload.agent_id).toBeUndefined();
+  });
+
+  it('accepts a Message envelope with agent_id', () => {
+    const parsed = Envelopes.Message.parse({
+      v: 2, kind: 'data', type: 'message',
+      id: '00000000-0000-4000-8000-000000000002',
+      seq: 1, ts: '2026-06-08T12:00:00.000Z',
+      payload: { thread_id: 't1', text: 'hi', agent_id: 'payne' },
+    });
+    expect(parsed.payload.agent_id).toBe('payne');
+  });
+
+  it('accepts NewConversation with agent_id', () => {
+    const parsed = Envelopes.NewConversation.parse({
+      v: 2, kind: 'control', type: 'new_conversation',
+      id: '00000000-0000-4000-8000-000000000003',
+      seq: 2, ts: '2026-06-08T12:00:00.000Z',
+      payload: { thread_id: 't1', agent_id: 'greg' },
+    });
+    expect(parsed.payload.agent_id).toBe('greg');
+  });
+});
