@@ -15,7 +15,16 @@ export interface DispatcherDeps {
   db: TransportDb;
   queue: OutboundQueue;
   receipts: ReceiptStore;
-  resolveSessionForPlatform: (platform_id: string) => string | null;
+  /**
+   * Resolve `(platform_id, agent_id)` → session id. When `agent_id` is
+   * provided we look for the per-agent session under the device's
+   * messaging_group; when omitted (or no per-agent session exists) we fall
+   * back to whichever session the messaging_group has for the default
+   * agent. See `resolveSessionForPlatform` in `./index.ts`.
+   */
+  resolveSessionForPlatform: (platform_id: string, agent_id: string | undefined) => string | null;
+  /** Slug used when an inbound envelope omits `agent_id`. */
+  defaultAgentSlug: string;
   onUserMessage: (input: { platform_id: string; session_id: string; envelope: UserMessageEnvelope }) => void;
   onContextResponse: (input: { platform_id: string; envelope: ContextResponseEnvelope }) => void;
   onAction: (input: { platform_id: string; envelope: ActionResponseEnvelope }) => void;
@@ -55,7 +64,19 @@ export class InboundDispatcher {
         .run(platform_id, env.id, env.seq ?? 0, Date.now());
       if (env.seq != null) this.deps.db.advanceLastSeenOutbound(platform_id, env.seq);
 
-      const session_id = this.deps.resolveSessionForPlatform(platform_id);
+      // Payload-bearing envelope types may carry an optional `agent_id` slug
+      // so the device can target a specific agent on a fanned-out
+      // messaging_group. Stateless types (already short-circuited above)
+      // never reach this branch.
+      const inferredAgent =
+        env.type === 'message' ||
+        env.type === 'context_response' ||
+        env.type === 'new_conversation' ||
+        env.type === 'action_response' ||
+        env.type === 'feedback'
+          ? ((env.payload as { agent_id?: string }).agent_id ?? this.deps.defaultAgentSlug)
+          : this.deps.defaultAgentSlug;
+      const session_id = this.deps.resolveSessionForPlatform(platform_id, inferredAgent);
 
       switch (env.type) {
         case 'message':

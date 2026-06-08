@@ -26,7 +26,8 @@ beforeEach(() => {
     db,
     queue: q,
     receipts,
-    resolveSessionForPlatform: () => 'sess-1',
+    resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
+    defaultAgentSlug: 'jarvis',
     onUserMessage: onInbound,
     onContextResponse,
     onAction,
@@ -97,6 +98,48 @@ describe('InboundDispatcher', () => {
     if (action.kind === 'pong') expect(action.nonce).toBe('n1');
     expect(db.raw.prepare(`SELECT COUNT(*) AS n FROM inbound_dedup`).get()).toEqual({ n: 0 });
     expect(db.getDevice(pid)!.last_seen_outbound_seq).toBe(0);
+  });
+
+  it('passes inferred agent_id to resolver when present on envelope payload', () => {
+    const calls: Array<{ pid: string; agent_id: string | undefined }> = [];
+    const dispatcher = new InboundDispatcher({
+      db,
+      queue: q,
+      receipts,
+      resolveSessionForPlatform: (pid, agent_id) => {
+        calls.push({ pid, agent_id });
+        return 'sess-x';
+      },
+      defaultAgentSlug: 'jarvis',
+      onUserMessage: onInbound,
+      onContextResponse,
+      onAction,
+      onNewConversation,
+      onFeedback,
+    });
+    dispatcher.dispatch(pid, env({ payload: { thread_id: 'thr', text: 'go', agent_id: 'payne' } }));
+    expect(calls).toEqual([{ pid, agent_id: 'payne' }]);
+  });
+
+  it('falls back to defaultAgentSlug when envelope omits agent_id', () => {
+    const calls: Array<{ pid: string; agent_id: string | undefined }> = [];
+    const dispatcher = new InboundDispatcher({
+      db,
+      queue: q,
+      receipts,
+      resolveSessionForPlatform: (pid, agent_id) => {
+        calls.push({ pid, agent_id });
+        return 'sess-x';
+      },
+      defaultAgentSlug: 'greg',
+      onUserMessage: onInbound,
+      onContextResponse,
+      onAction,
+      onNewConversation,
+      onFeedback,
+    });
+    dispatcher.dispatch(pid, env({ payload: { thread_id: 'thr', text: 'no agent' } }));
+    expect(calls).toEqual([{ pid, agent_id: 'greg' }]);
   });
 
   it('context_response calls onContextResponse', () => {

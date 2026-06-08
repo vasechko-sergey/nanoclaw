@@ -24,8 +24,8 @@ import {
   getMessagingGroupByPlatform,
   getMessagingGroupAgents,
 } from '../../../db/messaging-groups.js';
-import { getAgentGroup } from '../../../db/agent-groups.js';
-import { findSession, getSession } from '../../../db/sessions.js';
+import { getAgentGroup, getAgentGroupByFolder } from '../../../db/agent-groups.js';
+import { findSession, findSessionForAgent, getSession } from '../../../db/sessions.js';
 import { writeSessionMessage } from '../../../session-manager.js';
 
 import { BOT_COMMANDS } from '../../../commands.js';
@@ -84,17 +84,26 @@ function logV2Warn(msg: string, ctx?: Record<string, unknown>): void {
 }
 
 /**
- * Resolve `platform_id` → active session id for THIS channel.
+ * Resolve `(platform_id, agent_id)` → active session id for THIS channel.
  *
- * The plan keeps it scoped to ios-app: look up the messaging_group by
- * (channel_type='ios-app-v2', platform_id), then the active session for that
- * mg (DM, thread-less). When the device is wired to multiple agents (fan-out),
- * we return the first active session; multi-agent fan-out for context routing
- * is out of scope for v2.
+ * Look up the messaging_group by (channel_type='ios-app-v2', platform_id).
+ * When the device tags an inbound envelope with `agent_id` (a slug equal
+ * to the agent group's folder), pick the session belonging to that agent
+ * via `findSessionForAgent`. If no such per-agent session exists yet —
+ * e.g. agent slug typo, agent not wired, session not yet created — fall
+ * back to the default session for the mg.
  */
-function resolveSessionForPlatform(platformId: PlatformId): string | null {
+function resolveSessionForPlatform(platformId: PlatformId, agentId: string | undefined): string | null {
   const mg = getMessagingGroupByPlatform(CHANNEL_TYPE, platformId);
   if (!mg) return null;
+  if (agentId) {
+    const ag = getAgentGroupByFolder(agentId);
+    if (ag) {
+      const sess = findSessionForAgent(ag.id, mg.id, null);
+      if (sess) return sess.id;
+    }
+    // Fall through to default mg session if no agent-scoped session exists.
+  }
   const sess = findSession(mg.id, null);
   return sess?.id ?? null;
 }
@@ -115,7 +124,7 @@ function resolvePlatformForSession(sessionId: string): PlatformId | null {
 }
 
 function createV2Adapter(): ChannelAdapter | null {
-  const env = readEnvFile(['IOS_APP_TOKEN', 'IOS_APP_V2_PORT', 'IOS_APP_V2_DB_PATH']);
+  const env = readEnvFile(['IOS_APP_TOKEN', 'IOS_APP_V2_PORT', 'IOS_APP_V2_DB_PATH', 'IOS_APP_DEFAULT_AGENT_SLUG']);
   const token = env.IOS_APP_TOKEN;
   if (!token) return null;
   // Transition-window gate: v2 only binds when an explicit port is set. This
@@ -138,6 +147,12 @@ function createV2Adapter(): ChannelAdapter | null {
       ? env.IOS_APP_V2_DB_PATH
       : path.resolve(process.cwd(), env.IOS_APP_V2_DB_PATH)
     : path.join(DATA_DIR, 'ios-app', 'transport.db');
+
+  // Slug used when an inbound envelope omits `agent_id`. Devices that don't
+  // yet send `agent_id` (older iOS builds) and the legacy single-agent
+  // install both fall through to this name. `jarvis` is the conventional
+  // default for this codebase.
+  const defaultAgentSlug = env.IOS_APP_DEFAULT_AGENT_SLUG ?? 'jarvis';
 
   const db = openTransportDb(dbPath);
   const queue = new OutboundQueue(db);
@@ -170,6 +185,7 @@ function createV2Adapter(): ChannelAdapter | null {
     queue,
     receipts,
     resolveSessionForPlatform,
+    defaultAgentSlug,
     onUserMessage: ({ platform_id, envelope }) => {
       if (!cfg) return;
       const ios_context = envelope.payload.context ?? null;
@@ -402,7 +418,11 @@ function createV2Adapter(): ChannelAdapter | null {
         const requestId = (content.requestId as string) ?? randomUUID();
         // Find the session that emitted this — we infer it from the platform_id
         // since (channel, platform_id) → mg → session is unique for DMs.
-        const sessionId = resolveSessionForPlatform(platformId);
+        // For agent-initiated context pulls we don't know which agent slug
+        // the agent's session belongs to from this side — but every context
+        // request originates from a session that's already tied to one
+        // messaging_group, so the default-mg session resolution is correct.
+        const sessionId = resolveSessionForPlatform(platformId, undefined);
         if (!sessionId) {
           logV2Warn('context_request with no active session', { platformId });
           return requestId;

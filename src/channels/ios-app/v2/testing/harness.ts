@@ -95,7 +95,8 @@ export async function startTestServer(): Promise<Harness> {
     db,
     queue,
     receipts,
-    resolveSessionForPlatform: () => 'sess-1',
+    resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
+    defaultAgentSlug: 'jarvis',
     onUserMessage: (input) => {
       agent.received.push({ kind: 'user_message', ...input });
     },
