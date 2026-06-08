@@ -28,6 +28,20 @@ enum V2 {
         case pong
         case delivered
         case read
+        case workoutStartRequest = "workout_start_request"
+        case workoutPlan = "workout_plan"
+        case setLog = "set_log"
+        case exerciseDone = "exercise_done"
+        case workoutComplete = "workout_complete"
+        case workoutAbort = "workout_abort"
+        case imageRequest = "image_request"
+        case imageBlob = "image_blob"
+        case exerciseSwapRequest = "exercise_swap_request"
+        case exerciseSwapConfirm = "exercise_swap_confirm"
+        case exerciseSwapOptions = "exercise_swap_options"
+        case programUpdate = "program_update"
+        case coachMessage = "coach_message"
+        case introRequest = "intro_request"
     }
 
     // Discriminated payload union driven by the outer `type` field.
@@ -45,6 +59,20 @@ enum V2 {
         case ping(Ping)
         case pong(Pong)
         case statusBatch(StatusBatch) // covers both delivered and read
+        case workoutStartRequest(WorkoutStartRequest)
+        case workoutPlan(WorkoutPlan)
+        case setLog(SetLog)
+        case exerciseDone(ExerciseDone)
+        case workoutComplete(WorkoutComplete)
+        case workoutAbort(WorkoutAbort)
+        case imageRequest(ImageRequest)
+        case imageBlob(ImageBlob)
+        case exerciseSwapRequest(ExerciseSwapRequest)
+        case exerciseSwapConfirm(ExerciseSwapConfirm)
+        case exerciseSwapOptions(ExerciseSwapOptions)
+        case programUpdate(ProgramUpdate)
+        case coachMessage(CoachMessage)
+        case introRequest(IntroRequest)
     }
 
     struct Envelope: Equatable {
@@ -177,6 +205,165 @@ enum V2 {
         let ids: [String]
     }
 
+    // MARK: - Workout payload bodies
+
+    struct WorkoutStartRequest: Codable, Equatable {
+        let date: String
+        var agent_id: String?
+        init(date: String, agent_id: String? = nil) {
+            self.date = date; self.agent_id = agent_id
+        }
+    }
+
+    struct ImageManifestEntry: Codable, Equatable {
+        let slug: String
+        let sha256: String
+        var url: String?
+        init(slug: String, sha256: String, url: String? = nil) {
+            self.slug = slug; self.sha256 = sha256; self.url = url
+        }
+    }
+
+    struct WorkoutPlan: Codable, Equatable {
+        let workout_id: String
+        let plan_json: JSONValue
+        let image_manifest: [ImageManifestEntry]
+        var agent_id: String?
+        init(workout_id: String, plan_json: JSONValue, image_manifest: [ImageManifestEntry], agent_id: String? = nil) {
+            self.workout_id = workout_id; self.plan_json = plan_json
+            self.image_manifest = image_manifest; self.agent_id = agent_id
+        }
+    }
+
+    struct SetLog: Codable, Equatable {
+        let workout_id: String
+        let exercise_slug: String
+        let set_idx: Int
+        let reps: Int
+        let weight: Double
+        let reps_in_reserve: Int
+        let ts: String
+        var agent_id: String?
+        init(workout_id: String, exercise_slug: String, set_idx: Int, reps: Int, weight: Double, reps_in_reserve: Int, ts: String, agent_id: String? = nil) {
+            self.workout_id = workout_id; self.exercise_slug = exercise_slug
+            self.set_idx = set_idx; self.reps = reps; self.weight = weight
+            self.reps_in_reserve = reps_in_reserve; self.ts = ts; self.agent_id = agent_id
+        }
+    }
+
+    struct ExerciseDone: Codable, Equatable {
+        let workout_id: String
+        let exercise_slug: String
+        var comment: String?
+        var agent_id: String?
+        init(workout_id: String, exercise_slug: String, comment: String? = nil, agent_id: String? = nil) {
+            self.workout_id = workout_id; self.exercise_slug = exercise_slug
+            self.comment = comment; self.agent_id = agent_id
+        }
+    }
+
+    struct WorkoutComplete: Codable, Equatable {
+        let workout_id: String
+        let full_session_json: JSONValue
+        var agent_id: String?
+        init(workout_id: String, full_session_json: JSONValue, agent_id: String? = nil) {
+            self.workout_id = workout_id; self.full_session_json = full_session_json
+            self.agent_id = agent_id
+        }
+    }
+
+    struct WorkoutAbort: Codable, Equatable {
+        let workout_id: String
+        var reason: String?
+        var agent_id: String?
+        init(workout_id: String, reason: String? = nil, agent_id: String? = nil) {
+            self.workout_id = workout_id; self.reason = reason; self.agent_id = agent_id
+        }
+    }
+
+    struct ImageRequest: Codable, Equatable {
+        let slug: String
+        var agent_id: String?
+        init(slug: String, agent_id: String? = nil) {
+            self.slug = slug; self.agent_id = agent_id
+        }
+    }
+
+    struct ImageBlob: Codable, Equatable {
+        let slug: String
+        let sha256: String
+        let base64: String
+        var agent_id: String?
+        init(slug: String, sha256: String, base64: String, agent_id: String? = nil) {
+            self.slug = slug; self.sha256 = sha256; self.base64 = base64; self.agent_id = agent_id
+        }
+    }
+
+    struct ExerciseSwapRequest: Codable, Equatable {
+        let workout_id: String
+        let exercise_slug: String
+        var proposed: String?
+        var agent_id: String?
+        init(workout_id: String, exercise_slug: String, proposed: String? = nil, agent_id: String? = nil) {
+            self.workout_id = workout_id; self.exercise_slug = exercise_slug
+            self.proposed = proposed; self.agent_id = agent_id
+        }
+    }
+
+    struct ExerciseSwapConfirm: Codable, Equatable {
+        let workout_id: String
+        let original_slug: String
+        let new_slug: String
+        var persist: Bool?
+        var agent_id: String?
+        init(workout_id: String, original_slug: String, new_slug: String, persist: Bool? = nil, agent_id: String? = nil) {
+            self.workout_id = workout_id; self.original_slug = original_slug
+            self.new_slug = new_slug; self.persist = persist; self.agent_id = agent_id
+        }
+    }
+
+    struct ExerciseSwapAccepted: Codable, Equatable { let slug: String }
+    struct ExerciseSwapRejected: Codable, Equatable { let slug: String; let reason: String }
+    struct ExerciseSwapAlternative: Codable, Equatable { let slug: String; let why: String }
+
+    struct ExerciseSwapOptions: Codable, Equatable {
+        let workout_id: String
+        let original_slug: String
+        var accepted: ExerciseSwapAccepted?
+        var rejected: ExerciseSwapRejected?
+        let alternatives: [ExerciseSwapAlternative]
+        var agent_id: String?
+        init(workout_id: String, original_slug: String, accepted: ExerciseSwapAccepted? = nil, rejected: ExerciseSwapRejected? = nil, alternatives: [ExerciseSwapAlternative], agent_id: String? = nil) {
+            self.workout_id = workout_id; self.original_slug = original_slug
+            self.accepted = accepted; self.rejected = rejected
+            self.alternatives = alternatives; self.agent_id = agent_id
+        }
+    }
+
+    struct ProgramUpdate: Codable, Equatable {
+        let program_json: JSONValue
+        var agent_id: String?
+        init(program_json: JSONValue, agent_id: String? = nil) {
+            self.program_json = program_json; self.agent_id = agent_id
+        }
+    }
+
+    struct CoachMessage: Codable, Equatable {
+        let text: String
+        var workout_id: String?
+        var agent_id: String?
+        init(text: String, workout_id: String? = nil, agent_id: String? = nil) {
+            self.text = text; self.workout_id = workout_id; self.agent_id = agent_id
+        }
+    }
+
+    struct IntroRequest: Codable, Equatable {
+        var agent_id: String?
+        init(agent_id: String? = nil) {
+            self.agent_id = agent_id
+        }
+    }
+
     // MARK: - Type-erased JSON value
     //
     // Used for ContextRequest.params and ContextResponse.data, which the
@@ -287,6 +474,34 @@ extension V2.Envelope: Codable {
             payload = .pong(try V2.Pong(from: payloadDecoder))
         case .delivered, .read:
             payload = .statusBatch(try V2.StatusBatch(from: payloadDecoder))
+        case .workoutStartRequest:
+            payload = .workoutStartRequest(try V2.WorkoutStartRequest(from: payloadDecoder))
+        case .workoutPlan:
+            payload = .workoutPlan(try V2.WorkoutPlan(from: payloadDecoder))
+        case .setLog:
+            payload = .setLog(try V2.SetLog(from: payloadDecoder))
+        case .exerciseDone:
+            payload = .exerciseDone(try V2.ExerciseDone(from: payloadDecoder))
+        case .workoutComplete:
+            payload = .workoutComplete(try V2.WorkoutComplete(from: payloadDecoder))
+        case .workoutAbort:
+            payload = .workoutAbort(try V2.WorkoutAbort(from: payloadDecoder))
+        case .imageRequest:
+            payload = .imageRequest(try V2.ImageRequest(from: payloadDecoder))
+        case .imageBlob:
+            payload = .imageBlob(try V2.ImageBlob(from: payloadDecoder))
+        case .exerciseSwapRequest:
+            payload = .exerciseSwapRequest(try V2.ExerciseSwapRequest(from: payloadDecoder))
+        case .exerciseSwapConfirm:
+            payload = .exerciseSwapConfirm(try V2.ExerciseSwapConfirm(from: payloadDecoder))
+        case .exerciseSwapOptions:
+            payload = .exerciseSwapOptions(try V2.ExerciseSwapOptions(from: payloadDecoder))
+        case .programUpdate:
+            payload = .programUpdate(try V2.ProgramUpdate(from: payloadDecoder))
+        case .coachMessage:
+            payload = .coachMessage(try V2.CoachMessage(from: payloadDecoder))
+        case .introRequest:
+            payload = .introRequest(try V2.IntroRequest(from: payloadDecoder))
         }
     }
 
@@ -316,6 +531,20 @@ extension V2.Envelope: Codable {
         case .ping(let p): try p.encode(to: payloadEncoder)
         case .pong(let p): try p.encode(to: payloadEncoder)
         case .statusBatch(let p): try p.encode(to: payloadEncoder)
+        case .workoutStartRequest(let p): try p.encode(to: payloadEncoder)
+        case .workoutPlan(let p): try p.encode(to: payloadEncoder)
+        case .setLog(let p): try p.encode(to: payloadEncoder)
+        case .exerciseDone(let p): try p.encode(to: payloadEncoder)
+        case .workoutComplete(let p): try p.encode(to: payloadEncoder)
+        case .workoutAbort(let p): try p.encode(to: payloadEncoder)
+        case .imageRequest(let p): try p.encode(to: payloadEncoder)
+        case .imageBlob(let p): try p.encode(to: payloadEncoder)
+        case .exerciseSwapRequest(let p): try p.encode(to: payloadEncoder)
+        case .exerciseSwapConfirm(let p): try p.encode(to: payloadEncoder)
+        case .exerciseSwapOptions(let p): try p.encode(to: payloadEncoder)
+        case .programUpdate(let p): try p.encode(to: payloadEncoder)
+        case .coachMessage(let p): try p.encode(to: payloadEncoder)
+        case .introRequest(let p): try p.encode(to: payloadEncoder)
         }
     }
 }
