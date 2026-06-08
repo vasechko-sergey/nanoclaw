@@ -9,6 +9,11 @@ struct AppV2Stack {
     let transport: TransportV2
     let coordinator: AppContextCoordinator
     let dbq: DatabaseQueue
+    /// Canonical persistent queue of un-delivered `set_log` events. The
+    /// `WorkoutCoordinator` writes here on each logged set; on WS connect
+    /// the transport drains it. UI layers must build their `WorkoutCoordinator`
+    /// from this reference so the producer and the drain share one GRDB writer.
+    let setLogQueue: SetLogQueue
 }
 
 /// Builds the v2 stack: opens (and migrates) the on-disk SQLite and
@@ -61,12 +66,14 @@ enum AppV2Bootstrap {
             token: token,
             contextCoordinator: coordinator
         )
+        let setLogQueue = SetLogQueue(writer: dbq)
 
         return AppV2Stack(
             store: store,
             transport: transport,
             coordinator: coordinator,
-            dbq: dbq
+            dbq: dbq,
+            setLogQueue: setLogQueue
         )
     }
 
@@ -95,11 +102,13 @@ enum AppV2Bootstrap {
             token: token,
             contextCoordinator: coordinator
         )
+        let setLogQueue = SetLogQueue(writer: storage.dbq)
         return AppV2Stack(
             store: storage.store,
             transport: transport,
             coordinator: coordinator,
-            dbq: storage.dbq
+            dbq: storage.dbq,
+            setLogQueue: setLogQueue
         )
     }
 }

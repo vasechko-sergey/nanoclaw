@@ -517,6 +517,7 @@ final class WebSocketClientV2 {
     private func wireAuthOkCallback() {
         guard let stack else { return }
         let transport = stack.transport
+        let queue = stack.setLogQueue
         Task {
             await transport.setOnAuthOkPayload { [weak self] payload in
                 Task { @MainActor [weak self] in
@@ -524,6 +525,12 @@ final class WebSocketClientV2 {
                     self.commands = (payload.commands ?? []).map {
                         BotCommand(command: $0.command, description: $0.description)
                     }
+                }
+                // Drain any persisted set_log events that accumulated while
+                // offline. Fire-and-forget — failures are logged inside the
+                // transport and retried on the next connect.
+                Task {
+                    await transport.drainSetLogQueue(queue)
                 }
             }
         }

@@ -426,6 +426,39 @@ enum V2 {
             case .object(let v): try c.encode(v)
             }
         }
+
+        /// Convert an `Any` value produced by `JSONSerialization` (or a
+        /// Swift literal of the same shape) into the strongly-typed JSONValue
+        /// enum. Used by outbound builders that need to package a Codable
+        /// model into a `JSONValue` field (e.g. `WorkoutComplete.full_session_json`).
+        static func from(_ any: Any) throws -> JSONValue {
+            if any is NSNull { return .null }
+            // CFBoolean bridges to NSNumber — check Bool first.
+            if let b = any as? Bool, type(of: any) == Bool.self || CFGetTypeID(any as CFTypeRef) == CFBooleanGetTypeID() {
+                return .bool(b)
+            }
+            if let n = any as? NSNumber {
+                let t = String(cString: n.objCType)
+                // c=char, s=short, i=int, l=long, q=longlong, B=bool
+                if t == "B" { return .bool(n.boolValue) }
+                if t == "q" || t == "i" || t == "l" || t == "s" || t == "c" {
+                    return .int(n.intValue)
+                }
+                return .double(n.doubleValue)
+            }
+            if let s = any as? String { return .string(s) }
+            if let arr = any as? [Any] {
+                return .array(try arr.map(from))
+            }
+            if let dict = any as? [String: Any] {
+                var out: [String: JSONValue] = [:]
+                for (k, v) in dict { out[k] = try from(v) }
+                return .object(out)
+            }
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(codingPath: [], debugDescription: "Unsupported JSON value: \(type(of: any))")
+            )
+        }
     }
 }
 

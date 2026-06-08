@@ -24,7 +24,8 @@ final class WebSocketClientV2Tests: XCTestCase {
         transport = TransportV2(store: store, socket: socket, token: "tok",
                                  ackTimeoutSeconds: 0.2, dispatcherIntervalMs: 50)
         let coord = AppContextCoordinator()
-        stack = AppV2Stack(store: store, transport: transport, coordinator: coord, dbq: dbq)
+        stack = AppV2Stack(store: store, transport: transport, coordinator: coord, dbq: dbq,
+                            setLogQueue: SetLogQueue(writer: dbq))
         client = WebSocketClientV2(stack: stack)
     }
 

@@ -55,7 +55,8 @@ final class HappyPathE2ETests: XCTestCase {
             store: store,
             transport: transport,
             coordinator: coordinator,
-            dbq: dbq
+            dbq: dbq,
+            setLogQueue: SetLogQueue(writer: dbq)
         )
         self.stack = stack
 

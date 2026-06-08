@@ -358,4 +358,177 @@ actor TransportV2 {
         let date = f.date(from: ts) ?? ISO8601DateFormatter().date(from: ts) ?? Date()
         return Int(date.timeIntervalSince1970 * 1000)
     }
+
+    // MARK: - Workout outbound builders (P3.T16)
+    //
+    // Typed convenience methods for the workout-specific envelope family. All
+    // stamp `agent_id: "payne"` since these messages are always targeted at
+    // the workout agent. They go through the same `sendEnvelope(_:)` writer
+    // as everything else — no store side-effect, no ack tracking (workout
+    // envelopes are at-least-once via their own queues, not the dispatcher).
+
+    /// Send a workout_start_request envelope to Payne.
+    func sendWorkoutStartRequest(date: String) async throws {
+        let env = workoutEnvelope(
+            .workoutStartRequest,
+            payload: .workoutStartRequest(
+                V2.WorkoutStartRequest(date: date, agent_id: "payne")
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    /// Send a set_log envelope built from a queued `SetLogEvent`.
+    func sendSetLog(_ event: SetLogEvent) async throws {
+        let env = workoutEnvelope(
+            .setLog,
+            kind: .data,
+            payload: .setLog(
+                V2.SetLog(
+                    workout_id: event.workoutId,
+                    exercise_slug: event.exerciseSlug,
+                    set_idx: event.setIdx,
+                    reps: event.reps,
+                    weight: event.weight,
+                    reps_in_reserve: event.repsInReserve,
+                    ts: Self.workoutISOFormatter.string(from: event.ts),
+                    agent_id: "payne"
+                )
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    func sendExerciseDone(workoutId: String, slug: String, comment: String?) async throws {
+        let env = workoutEnvelope(
+            .exerciseDone,
+            payload: .exerciseDone(
+                V2.ExerciseDone(workout_id: workoutId, exercise_slug: slug, comment: comment, agent_id: "payne")
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    /// Serialize the `WorkoutSession` model into a `JSONValue` and ship it.
+    func sendWorkoutComplete(_ session: WorkoutSession) async throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(session)
+        let any = try JSONSerialization.jsonObject(with: data)
+        let json = try V2.JSONValue.from(any)
+
+        let env = workoutEnvelope(
+            .workoutComplete,
+            kind: .data,
+            payload: .workoutComplete(
+                V2.WorkoutComplete(
+                    workout_id: session.workoutId,
+                    full_session_json: json,
+                    agent_id: "payne"
+                )
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    func sendWorkoutAbort(workoutId: String, reason: String?) async throws {
+        let env = workoutEnvelope(
+            .workoutAbort,
+            payload: .workoutAbort(
+                V2.WorkoutAbort(workout_id: workoutId, reason: reason, agent_id: "payne")
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    func sendImageRequest(slug: String) async throws {
+        let env = workoutEnvelope(
+            .imageRequest,
+            payload: .imageRequest(
+                V2.ImageRequest(slug: slug, agent_id: "payne")
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    func sendExerciseSwapRequest(workoutId: String, slug: String, proposed: String?) async throws {
+        let env = workoutEnvelope(
+            .exerciseSwapRequest,
+            payload: .exerciseSwapRequest(
+                V2.ExerciseSwapRequest(
+                    workout_id: workoutId,
+                    exercise_slug: slug,
+                    proposed: proposed,
+                    agent_id: "payne"
+                )
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    func sendExerciseSwapConfirm(workoutId: String, original: String, new: String, persist: Bool) async throws {
+        let env = workoutEnvelope(
+            .exerciseSwapConfirm,
+            payload: .exerciseSwapConfirm(
+                V2.ExerciseSwapConfirm(
+                    workout_id: workoutId,
+                    original_slug: original,
+                    new_slug: new,
+                    persist: persist,
+                    agent_id: "payne"
+                )
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    func sendIntroRequest() async throws {
+        let env = workoutEnvelope(
+            .introRequest,
+            payload: .introRequest(
+                V2.IntroRequest(agent_id: "payne")
+            )
+        )
+        try await sendEnvelope(env)
+    }
+
+    /// Drain the persistent `SetLogQueue` of any pending events and re-send
+    /// each as a `set_log` envelope. Called on successful auth/reconnect by
+    /// `WebSocketClientV2`. Stops on the first send failure so the next
+    /// connect cycle can retry; runs a housekeeping prune on success.
+    func drainSetLogQueue(_ queue: SetLogQueue) async {
+        do {
+            let pending = try queue.pending()
+            for row in pending {
+                do {
+                    try await sendSetLog(row.event)
+                    try queue.markDelivered(localId: row.localId)
+                } catch {
+                    Log.warn(.ws, "set_log drain failed at row \(row.localId): \(error)")
+                    return
+                }
+            }
+            try? queue.pruneDelivered(olderThan: Date().addingTimeInterval(-86_400))
+        } catch {
+            Log.warn(.ws, "set_log drain enumerate failed: \(error)")
+        }
+    }
+
+    private func workoutEnvelope(_ type: V2.TypeTag, kind: V2.Kind = .control, payload: V2.Payload) -> V2.Envelope {
+        V2.Envelope(
+            v: V2.protocolVersion,
+            kind: kind,
+            type: type,
+            id: UUID().uuidString,
+            seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: payload
+        )
+    }
+
+    private static let workoutISOFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 }
