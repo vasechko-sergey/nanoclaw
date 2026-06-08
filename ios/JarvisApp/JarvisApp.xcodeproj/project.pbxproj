@@ -65,6 +65,7 @@
 		9B25460C1039295CFA4B156D /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCBEC9BA80E9EC8768D5A6B /* Schema.swift */; };
 		A19C0788C26EB264554E9F0B /* HomeViewSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */; };
 		A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */; };
+		A597C30D1F2D51A19E67F984 /* AgentSwitcherStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CBD672E4D8AC54C75D604FD /* AgentSwitcherStrip.swift */; };
 		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
 		AB14A705BBEB71BA032EC292 /* AppV2Bootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */; };
 		AFFBB9A3F440BF8A16D6FDCB /* AppV2BootstrapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */; };
@@ -159,6 +160,7 @@
 		6B165040849DF187E7D1113C /* OrbInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInputBar.swift; sourceTree = "<group>"; };
 		6C18FEBC87883D1730806373 /* ActiveAgentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAgentState.swift; sourceTree = "<group>"; };
 		6C904740E5DA9FD762F5645C /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
+		6CBD672E4D8AC54C75D604FD /* AgentSwitcherStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSwitcherStrip.swift; sourceTree = "<group>"; };
 		6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClientV2.swift; sourceTree = "<group>"; };
 		79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
@@ -307,6 +309,7 @@
 		699E1B9953460F6945E81F1F /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				6CBD672E4D8AC54C75D604FD /* AgentSwitcherStrip.swift */,
 				3784B2D589C11B07F162E081 /* ChatView.swift */,
 				8F8D87E938816ECB8B161DBD /* ContentView.swift */,
 				E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */,
@@ -602,6 +605,7 @@
 			files = (
 				7D71BB9752F92386B2FE07AA /* ActiveAgentState.swift in Sources */,
 				50C5C4BB9518C430E4CC3188 /* AgentIdentity.swift in Sources */,
+				A597C30D1F2D51A19E67F984 /* AgentSwitcherStrip.swift in Sources */,
 				1091D28461A2EBCE460F25DD /* AppContextCoordinator.swift in Sources */,
 				F41988AFB951764121A3B9D6 /* AppCoordinator.swift in Sources */,
 				6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */,
