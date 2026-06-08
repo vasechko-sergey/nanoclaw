@@ -2,6 +2,7 @@ import type { TransportDb } from './transport-db.js';
 import type { OutboundQueue } from './outbound-queue.js';
 import type { ReceiptStore } from './receipt-store.js';
 import type { AnyEnvelope } from '../../../../shared/ios-app-protocol/index.js';
+import type { WorkoutBridge } from './workout-bridge.js';
 
 export type DispatchAction = { kind: 'ack' } | { kind: 'pong'; nonce: string } | { kind: 'noop' };
 
@@ -30,6 +31,9 @@ export interface DispatcherDeps {
   onAction: (input: { platform_id: string; envelope: ActionResponseEnvelope }) => void;
   onNewConversation: (input: { platform_id: string; envelope: NewConversationEnvelope }) => void;
   onFeedback: (input: { platform_id: string; envelope: FeedbackEnvelope }) => void;
+  /** Optional bridge for workout-mode envelopes. When provided, types it
+   *  claims via handlesInbound short-circuit ahead of the standard handlers. */
+  workoutBridge?: WorkoutBridge;
 }
 
 export class InboundDispatcher {
@@ -73,6 +77,16 @@ export class InboundDispatcher {
           ? ((env.payload as { agent_id?: string }).agent_id ?? this.deps.defaultAgentSlug)
           : this.deps.defaultAgentSlug;
       const session_id = this.deps.resolveSessionForPlatform(platform_id, inferredAgent);
+
+      // Workout bridge claims set_log / exercise_done / etc. — write to the
+      // session as a structured system message and stop here so the standard
+      // onUserMessage / onAction etc. flow doesn't double-handle.
+      if (this.deps.workoutBridge?.handlesInbound(env.type)) {
+        if (session_id) {
+          this.deps.workoutBridge.handleInbound(session_id, env);
+        }
+        return { kind: 'ack' as const };
+      }
 
       switch (env.type) {
         case 'message':

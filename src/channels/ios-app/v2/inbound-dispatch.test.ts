@@ -142,6 +142,48 @@ describe('InboundDispatcher', () => {
     expect(calls).toEqual([{ pid, agent_id: 'greg' }]);
   });
 
+  it('routes set_log envelope through workout bridge instead of onUserMessage', () => {
+    const bridgeCalls: Array<{ sid: string; type: string }> = [];
+
+    const dispatcher = new InboundDispatcher({
+      db,
+      queue: q,
+      receipts,
+      resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
+      defaultAgentSlug: 'jarvis',
+      onUserMessage: onInbound,
+      onContextResponse,
+      onAction,
+      onNewConversation,
+      onFeedback,
+      workoutBridge: {
+        handlesInbound: (t: string) => t === 'set_log',
+        handleInbound: (sid: string, e: any) => bridgeCalls.push({ sid, type: e.type }),
+      } as any,
+    });
+
+    dispatcher.dispatch(
+      pid,
+      env({
+        type: 'set_log',
+        kind: 'data',
+        payload: {
+          workout_id: 'w1',
+          exercise_slug: 'incline-db-press',
+          set_idx: 0,
+          reps: 10,
+          weight: 22.5,
+          reps_in_reserve: 3,
+          ts: '2026-06-09T19:05:00.000Z',
+          agent_id: 'payne',
+        },
+      }),
+    );
+
+    expect(onInbound).not.toHaveBeenCalled();
+    expect(bridgeCalls).toEqual([{ sid: 'sess-1', type: 'set_log' }]);
+  });
+
   it('context_response calls onContextResponse', () => {
     d.dispatch(
       pid,

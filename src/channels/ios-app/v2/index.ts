@@ -34,6 +34,7 @@ import { OutboundQueue } from './outbound-queue.js';
 import { ReceiptStore } from './receipt-store.js';
 import { InboundDispatcher } from './inbound-dispatch.js';
 import { ContextBridge } from './context-bridge.js';
+import { WorkoutBridge } from './workout-bridge.js';
 import { WsHandler } from './ws-handler.js';
 import { HealthRequestsStore } from './health-requests-store.js';
 import { createIosHttpHandler } from './http-handler.js';
@@ -186,6 +187,44 @@ function createV2Adapter(): ChannelAdapter | null {
   let wss: WebSocketServer | null = null;
   let sweepInterval: NodeJS.Timeout | null = null;
 
+  // Forward-declare so the bridges below can close over `handler` before it's
+  // instantiated. Both ContextBridge and WorkoutBridge need to push envelopes
+  // via the WS handler; the handler in turn needs the dispatcher (and the
+  // dispatcher needs WorkoutBridge), so the only way to break the cycle is
+  // via a captured `let`-binding.
+  let handler: WsHandler;
+
+  const workoutBridge = new WorkoutBridge({
+    writeInboundSystemMessage: (input) => {
+      const sess = getSession(input.session_id);
+      if (!sess) {
+        logV2Warn('workout event for unknown session', { session_id: input.session_id });
+        return;
+      }
+      // Bridge body is JSON-encoded `{ event, payload }`; wrap it with
+      // `subtype: 'workout_event'` and propagate `tag` so the agent's
+      // inbound parser sees a stable envelope (mirrors `context_response`).
+      const parsed = JSON.parse(input.text) as { event: string; payload: unknown };
+      writeSessionMessage(sess.agent_group_id, sess.id, {
+        id: randomUUID(),
+        kind: 'system',
+        timestamp: new Date().toISOString(),
+        platformId: null,
+        channelType: null,
+        threadId: null,
+        content: JSON.stringify({
+          subtype: 'workout_event',
+          event: parsed.event,
+          payload: parsed.payload,
+          tag: input.tag,
+        }),
+        trigger: 1,
+      });
+    },
+    resolvePlatformForSession,
+    sendEnvelopeToDevice: (pid, envelope) => handler.sendEnvelopeToDevice(pid, envelope),
+  });
+
   // Build dispatcher with callbacks that bridge to the host's ChannelSetup
   // (onInbound / onAction). For context responses we bypass routeInbound and
   // write straight into the session's inbound.db — the response carries the
@@ -278,6 +317,7 @@ function createV2Adapter(): ChannelAdapter | null {
         timestamp: envelope.ts ?? new Date().toISOString(),
       });
     },
+    workoutBridge,
   });
 
   // ContextBridge writes inbound `context_response` rows the same way the
@@ -311,9 +351,6 @@ function createV2Adapter(): ChannelAdapter | null {
     });
   };
 
-  // Forward declarations so the bridge / dispatcher can close over `handler`
-  // before it's instantiated.
-  let handler: WsHandler;
   const contextBridge = new ContextBridge({
     db,
     resolvePlatformForSession,
@@ -448,6 +485,19 @@ function createV2Adapter(): ChannelAdapter | null {
           expires_at_ms: Date.now() + ttlMs,
         });
         return requestId;
+      }
+
+      // Workout-bridge outbound — agent emits content like
+      //   { type: 'workout_plan', payload: { ... } }
+      // We hand it straight to the bridge which constructs the v2 envelope.
+      if (contentType && workoutBridge.handlesOutbound(contentType)) {
+        const sessionId = resolveSessionForPlatform(platformId, undefined);
+        if (!sessionId) {
+          logV2Warn('workout outbound with no active session', { platformId, type: contentType });
+          return undefined;
+        }
+        workoutBridge.handleAgentRequest({ session_id: sessionId, content });
+        return undefined;
       }
 
       // Default outbound: enqueue as a v2 data:message envelope so the iOS
