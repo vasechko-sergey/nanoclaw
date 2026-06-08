@@ -1,0 +1,29 @@
+{
+  "v": 2,
+  "kind": "control",
+  "type": "workout_plan",
+  "id": "22222222-2222-4222-8222-222222222221",
+  "seq": 10,
+  "ts": "2026-06-09T18:55:00.000Z",
+  "payload": {
+    "workout_id": "01J6Z8W3K2N5A7B9C1D3E5F7G9",
+    "plan_json": {
+      "day_name": "Верх A",
+      "week": 2,
+      "intensity_label": "тяжёлая",
+      "exercises": [
+        {
+          "exercise_slug": "incline-db-press",
+          "target_sets": 4,
+          "target_reps": "8-10",
+          "target_rir": 2,
+          "rest_sec": 120
+        }
+      ]
+    },
+    "image_manifest": [
+      { "slug": "incline-db-press", "sha256": "deadbeefcafebabe" }
+    ],
+    "agent_id": "payne"
+  }
+}
