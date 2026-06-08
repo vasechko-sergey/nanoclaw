@@ -54,6 +54,16 @@ actor TransportV2 {
         onAuthOkPayload = cb
     }
 
+    /// Fired with the raw inbound envelope for any workout-family type
+    /// (`workout_plan`, `image_blob`, `coach_message`, `exercise_swap_options`,
+    /// `program_update`). Decode + UI routing happens in `WebSocketClientV2`,
+    /// keeping the transport actor free of protocol-specific decode logic.
+    private(set) var onWorkoutEnvelope: (@Sendable (V2.Envelope) -> Void)?
+
+    func setOnWorkoutEnvelope(_ cb: (@Sendable (V2.Envelope) -> Void)?) {
+        onWorkoutEnvelope = cb
+    }
+
     init(
         store: ConversationStoreV2,
         socket: WebSocketLike,
@@ -154,6 +164,12 @@ actor TransportV2 {
             ))
         case .contextRequest(let req):
             await handleContextRequest(req)
+        case .workoutPlan, .imageBlob, .coachMessage, .exerciseSwapOptions, .programUpdate:
+            // Forward to the facade for typed decode + UI bus publication.
+            // We deliberately do NOT ack here — workout envelopes are control
+            // kind (or data for plan) and their delivery semantics live above
+            // the dispatcher.
+            onWorkoutEnvelope?(env)
         default:
             break
         }

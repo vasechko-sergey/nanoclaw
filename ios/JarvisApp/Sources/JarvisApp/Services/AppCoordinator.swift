@@ -22,6 +22,15 @@ final class AppCoordinator {
     private(set) var proactiveDispatcher: ProactiveDispatcher!
     private(set) var watchBridge: WatchConnectivityBridge!
 
+    /// Combine hub for inbound workout envelopes. WorkoutView / SwapSheet /
+    /// ChatView subscribe via `.onReceive(coordinator.workoutBus.events)`.
+    @ObservationIgnored let workoutBus = WorkoutInboundBus()
+
+    /// Shared disk-backed image cache. Inbound dispatcher writes blobs into
+    /// it; views read paths from it. `imageRequestSender` round-trips through
+    /// the v2 transport so misses turn into `image_request` envelopes.
+    @ObservationIgnored private(set) var imageCache: ExerciseImageCache!
+
     // MARK: – Connection state
     var connectionPhase: ConnectionPhase = .idle
 
@@ -70,6 +79,17 @@ final class AppCoordinator {
             health: health,
             calendar: calendar,
             storage: storage.map { ($0.dbq, $0.store) }
+        )
+        // Build the shared image cache after `ws` is set so the request sender
+        // can read the lazily-built transport once it exists.
+        self.imageCache = ExerciseImageCache(
+            baseURL: ExerciseImageCache.defaultBaseURL(),
+            imageRequestSender: { [weak self] slug in
+                Task { @MainActor [weak self] in
+                    guard let stack = self?.ws.stack else { return }
+                    try? await stack.transport.sendImageRequest(slug: slug)
+                }
+            }
         )
         if storage != nil {
             Task { @MainActor [weak self] in
@@ -225,5 +245,93 @@ final class AppCoordinator {
                 self.connectionPhase = .failed
             }
         }
+
+        // Bridge inbound workout-family envelopes to the Combine bus.
+        ws.onWorkoutEnvelope = { [weak self] env in
+            self?.handleWorkoutEnvelope(env)
+        }
+    }
+
+    // MARK: – Workout inbound routing (P3.T17)
+
+    /// Translate a raw V2 envelope into a `WorkoutInboundEvent` and publish it
+    /// on `workoutBus`. Also runs side effects that can't be done by a passive
+    /// subscriber (image prefetch, blob writes — both go through the
+    /// shared `imageCache`).
+    private func handleWorkoutEnvelope(_ env: V2.Envelope) {
+        switch env.payload {
+        case .workoutPlan(let p):
+            // 1. Eagerly prefetch every image referenced by the plan so by the
+            //    time WorkoutView opens, the cache is already filling up.
+            let manifest = p.image_manifest.map {
+                WorkoutPlan.ImageManifestEntry(slug: $0.slug, sha256: $0.sha256)
+            }
+            imageCache.prefetch(manifest: manifest)
+
+            // 2. Decode the wire shape (workout_id + image_manifest at envelope
+            //    level + plan_json carrying day_name/week/intensity/exercises)
+            //    into our top-level `WorkoutPlan` model. We splice the two
+            //    halves together in a Dictionary, then run JSONDecoder.
+            do {
+                let plan = try Self.decodeWorkoutPlan(payload: p)
+                workoutBus.events.send(.planReceived(plan))
+            } catch {
+                Log.warn(.ws, "workout_plan decode failed: \(error)")
+            }
+
+        case .imageBlob(let b):
+            do {
+                try imageCache.write(slug: b.slug, sha256: b.sha256, base64: b.base64)
+            } catch {
+                Log.warn(.ws, "image_blob write failed for slug=\(b.slug): \(error)")
+            }
+
+        case .coachMessage(let c):
+            // Surface on the bus so a visible WorkoutView can banner it.
+            // Persisting into the chat thread as a regular assistant message
+            // is deferred — the chat surface already gets coach guidance via
+            // the normal message channel from Payne.
+            workoutBus.events.send(.coachMessage(text: c.text, workoutId: c.workout_id))
+
+        case .exerciseSwapOptions(let s):
+            let resp = SwapResponse(
+                accepted: s.accepted.map { .init(slug: $0.slug) },
+                rejected: s.rejected.map { .init(slug: $0.slug, reason: $0.reason) },
+                alternatives: s.alternatives.map { .init(slug: $0.slug, why: $0.why) }
+            )
+            workoutBus.events.send(
+                .swapOptions(resp, originalSlug: s.original_slug, workoutId: s.workout_id)
+            )
+
+        case .programUpdate:
+            // Program lives on Payne side today — iOS just notes the update.
+            Log.warn(.ws, "program_update received (no-op on iOS in P3)")
+            workoutBus.events.send(.programUpdated)
+
+        default:
+            // TransportV2 only forwards workout-family envelopes here, but the
+            // switch is exhaustive over `V2.Payload`; everything else is a no-op.
+            break
+        }
+    }
+
+    /// Splice envelope-level workout_id + image_manifest with the plan_json
+    /// blob (which carries day_name / week / intensity_label / exercises) into
+    /// the canonical iOS `WorkoutPlan` shape, then decode.
+    private static func decodeWorkoutPlan(payload p: V2.WorkoutPlan) throws -> WorkoutPlan {
+        var wrapper: [String: Any] = [:]
+        wrapper["workout_id"] = p.workout_id
+        wrapper["image_manifest"] = p.image_manifest.map { [
+            "slug": $0.slug,
+            "sha256": $0.sha256
+        ] }
+        if case .object = p.plan_json {
+            let planAny = p.plan_json.toAny()
+            if let planDict = planAny as? [String: Any] {
+                for (k, v) in planDict { wrapper[k] = v }
+            }
+        }
+        let data = try JSONSerialization.data(withJSONObject: wrapper)
+        return try JSONDecoder().decode(WorkoutPlan.self, from: data)
     }
 }

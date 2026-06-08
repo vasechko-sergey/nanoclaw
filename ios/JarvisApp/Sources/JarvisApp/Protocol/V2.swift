@@ -431,6 +431,22 @@ enum V2 {
         /// Swift literal of the same shape) into the strongly-typed JSONValue
         /// enum. Used by outbound builders that need to package a Codable
         /// model into a `JSONValue` field (e.g. `WorkoutComplete.full_session_json`).
+        /// Inverse of `from(_:)` — convert back to plain Swift values suitable
+        /// for `JSONSerialization` re-encoding. Used by the inbound dispatcher
+        /// when decoding a typed model (e.g. `WorkoutPlan`) out of an envelope
+        /// payload field declared as raw JSON.
+        func toAny() -> Any {
+            switch self {
+            case .null: return NSNull()
+            case .bool(let b): return b
+            case .int(let i): return i
+            case .double(let d): return d
+            case .string(let s): return s
+            case .array(let a): return a.map { $0.toAny() }
+            case .object(let o): return o.mapValues { $0.toAny() }
+            }
+        }
+
         static func from(_ any: Any) throws -> JSONValue {
             if any is NSNull { return .null }
             // CFBoolean bridges to NSNumber — check Bool first.

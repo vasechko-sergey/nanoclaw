@@ -6,6 +6,14 @@ private struct IdentifiableImage: Identifiable {
     let image: UIImage
 }
 
+/// Identifiable wrapper for `fullScreenCover(item:)` so SwiftUI can track
+/// the current workout session by workoutId.
+private struct WorkoutPresentation: Identifiable {
+    let plan: WorkoutPlan
+    let coord: WorkoutCoordinator
+    var id: String { plan.workoutId }
+}
+
 private struct ScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -34,6 +42,10 @@ struct ChatView: View {
     @State private var showVoiceFullscreen = false
     @AppStorage("v3MigrationShown") private var v3MigrationShown = false
     @State private var showingV3Toast = false
+
+    // P3.T17 — workout flow presentation. `activeWorkout` is set when an
+    // inbound `workout_plan` envelope arrives on `coordinator.workoutBus`.
+    @State private var activeWorkout: WorkoutPresentation? = nil
 
     private var ws: WebSocketClientV2 { coordinator.ws }
 
@@ -329,6 +341,53 @@ struct ChatView: View {
         }
         .fullScreenCover(isPresented: $showVoiceFullscreen) {
             OrbVoiceView(coordinator: coordinator, onHandoffToChat: nil)
+        }
+        .fullScreenCover(item: $activeWorkout) { presentation in
+            WorkoutView(
+                coordinator: presentation.coord,
+                imageResolver: { slug in
+                    guard let entry = presentation.plan.imageManifest.first(where: { $0.slug == slug })
+                    else { return nil }
+                    return coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256)
+                        ? coordinator.imageCache.path(forSlug: entry.slug, sha256: entry.sha256)
+                        : nil
+                },
+                onClose: { session in
+                    let workoutId = presentation.plan.workoutId
+                    if let session {
+                        Task {
+                            try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session)
+                        }
+                    } else {
+                        Task {
+                            try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
+                                workoutId: workoutId, reason: "user cancelled"
+                            )
+                        }
+                    }
+                    activeWorkout = nil
+                },
+                onSwap: { _ in
+                    // T17.5: open SwapSheet — deferred. Bus is in place; the
+                    // sheet wiring (binding the SwapResponse from
+                    // `workoutBus.events.swapOptions`) lands in a follow-up.
+                }
+            )
+        }
+        .onReceive(coordinator.workoutBus.events) { event in
+            switch event {
+            case .planReceived(let plan):
+                guard let queue = coordinator.ws.stack?.setLogQueue else {
+                    Log.warn(.ws, "workout_plan arrived but stack not built — dropping")
+                    return
+                }
+                let wc = WorkoutCoordinator(plan: plan, queue: queue)
+                activeWorkout = WorkoutPresentation(plan: plan, coord: wc)
+            case .coachMessage, .swapOptions, .programUpdated:
+                // Banner + sheet wiring lives in WorkoutView itself once it
+                // subscribes to the bus directly (T17 follow-up).
+                break
+            }
         }
         .onAppear {
             // Wire haptics in UI layer

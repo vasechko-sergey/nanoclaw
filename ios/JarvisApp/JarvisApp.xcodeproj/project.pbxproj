@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294C253860B67EF3201B2370 /* WorkoutInbound.swift */; };
 		04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */; };
 		08FB138313D1EC3412C3F20E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3784B2D589C11B07F162E081 /* ChatView.swift */; };
 		1091D28461A2EBCE460F25DD /* AppContextCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */; };
@@ -149,6 +150,7 @@
 		1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppV2Bootstrap.swift; sourceTree = "<group>"; };
 		24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryChecksTests.swift; sourceTree = "<group>"; };
 		2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingScenariosE2ETests.swift; sourceTree = "<group>"; };
+		294C253860B67EF3201B2370 /* WorkoutInbound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInbound.swift; sourceTree = "<group>"; };
 		2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HappyPathE2ETests.swift; sourceTree = "<group>"; };
 		2AF10B991F6600D17760B644 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2C635D17DBD6BF940C89E024 /* AttachmentBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentBar.swift; sourceTree = "<group>"; };
@@ -487,6 +489,7 @@
 				B17C0619207CE65994BF0385 /* WatchConnectivityBridge.swift */,
 				703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */,
 				FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */,
+				294C253860B67EF3201B2370 /* WorkoutInbound.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -741,6 +744,7 @@
 				04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */,
 				EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */,
 				63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */,
+				001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */,
 				81782C95746BFB6B3D396FF9 /* WorkoutView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

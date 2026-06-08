@@ -80,6 +80,12 @@ final class WebSocketClientV2 {
     @ObservationIgnored var onConnectionChanged: ((Bool) -> Void)?
     @ObservationIgnored var onFlushForTesting: (() -> Void)?
 
+    /// Inbound workout-family envelope (`workout_plan`, `image_blob`,
+    /// `coach_message`, `exercise_swap_options`, `program_update`).
+    /// AppCoordinator subscribes to translate raw payloads into typed
+    /// `WorkoutInboundEvent`s on `workoutBus`.
+    @ObservationIgnored var onWorkoutEnvelope: ((V2.Envelope) -> Void)?
+
     // MARK: - Storage / transport (owned)
 
     /// Production callsites build the stack lazily on first `connect(settings:)`
@@ -531,6 +537,11 @@ final class WebSocketClientV2 {
                 // transport and retried on the next connect.
                 Task {
                     await transport.drainSetLogQueue(queue)
+                }
+            }
+            await transport.setOnWorkoutEnvelope { [weak self] env in
+                Task { @MainActor [weak self] in
+                    self?.onWorkoutEnvelope?(env)
                 }
             }
         }
