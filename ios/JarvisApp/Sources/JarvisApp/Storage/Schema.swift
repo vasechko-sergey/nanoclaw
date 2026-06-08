@@ -114,6 +114,21 @@ enum Schema {
                 CREATE INDEX idx_msg_agent_ts ON messages (agent_id, ts);
             """)
         }
+        m.registerMigration("v5-set-log-queue") { db in
+            try db.execute(sql: """
+                CREATE TABLE set_log_queue (
+                  workout_id      TEXT NOT NULL,
+                  exercise_slug   TEXT NOT NULL,
+                  set_idx         INTEGER NOT NULL,
+                  reps            INTEGER NOT NULL,
+                  weight          REAL NOT NULL,
+                  reps_in_reserve INTEGER NOT NULL,
+                  ts_iso          TEXT NOT NULL,
+                  delivered       INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX idx_set_log_pending ON set_log_queue (delivered, workout_id, set_idx);
+            """)
+        }
         try m.migrate(writer)
     }
 }

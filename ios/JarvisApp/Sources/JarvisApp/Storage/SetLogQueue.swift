@@ -1,0 +1,102 @@
+import Foundation
+import GRDB
+
+/// In-flight set_log event before delivery to Payne. Carries the same fields
+/// the WS envelope expects, plus a stable `localId` (GRDB rowid) so the
+/// transport can mark each row delivered after ack.
+struct SetLogEvent: Equatable {
+    let workoutId: String
+    let exerciseSlug: String
+    let setIdx: Int
+    let reps: Int
+    let weight: Double
+    let repsInReserve: Int
+    let ts: Date
+}
+
+struct PendingSetLog: Equatable {
+    let localId: Int64
+    let event: SetLogEvent
+}
+
+/// Durable, ordered queue of set_log events backed by GRDB. The transport
+/// layer drains `pending()` and calls `markDelivered(_:)` after the server
+/// ack lands. Ordering by `(workout_id ASC, set_idx ASC, rowid ASC)` so
+/// reconnect re-sends preserve in-workout order.
+final class SetLogQueue {
+    private let writer: any DatabaseWriter
+
+    init(writer: any DatabaseWriter) {
+        self.writer = writer
+    }
+
+    func enqueue(_ event: SetLogEvent) throws {
+        try writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO set_log_queue
+                  (workout_id, exercise_slug, set_idx, reps, weight, reps_in_reserve, ts_iso, delivered)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            """, arguments: [
+                event.workoutId,
+                event.exerciseSlug,
+                event.setIdx,
+                event.reps,
+                event.weight,
+                event.repsInReserve,
+                Self.isoFormatter.string(from: event.ts),
+            ])
+        }
+    }
+
+    /// All un-delivered events in deterministic order.
+    func pending() throws -> [PendingSetLog] {
+        try writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT rowid AS local_id, workout_id, exercise_slug, set_idx,
+                       reps, weight, reps_in_reserve, ts_iso
+                FROM set_log_queue
+                WHERE delivered = 0
+                ORDER BY workout_id ASC, set_idx ASC, rowid ASC
+            """).map { row in
+                PendingSetLog(
+                    localId: row["local_id"],
+                    event: SetLogEvent(
+                        workoutId: row["workout_id"],
+                        exerciseSlug: row["exercise_slug"],
+                        setIdx: row["set_idx"],
+                        reps: row["reps"],
+                        weight: row["weight"],
+                        repsInReserve: row["reps_in_reserve"],
+                        ts: Self.isoFormatter.date(from: row["ts_iso"]) ?? Date()
+                    )
+                )
+            }
+        }
+    }
+
+    func markDelivered(localId: Int64) throws {
+        try writer.write { db in
+            try db.execute(sql:
+                "UPDATE set_log_queue SET delivered = 1 WHERE rowid = ?",
+                arguments: [localId]
+            )
+        }
+    }
+
+    /// Drop already-delivered rows older than the retention horizon (so the
+    /// table doesn't grow unbounded). Caller picks the policy.
+    func pruneDelivered(olderThan cutoff: Date) throws {
+        try writer.write { db in
+            try db.execute(sql: """
+                DELETE FROM set_log_queue
+                WHERE delivered = 1 AND ts_iso < ?
+            """, arguments: [Self.isoFormatter.string(from: cutoff)])
+        }
+    }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+}
