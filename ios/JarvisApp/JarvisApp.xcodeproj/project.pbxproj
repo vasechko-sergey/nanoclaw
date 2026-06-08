@@ -14,6 +14,7 @@
 		16F08295FEABD86492DF119B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8D87E938816ECB8B161DBD /* ContentView.swift */; };
 		1893E8E0527760F1BA33302A /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */; };
 		1A1DCE4804FEC3BFCDBA3B05 /* ContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */; };
+		1D26F1F3F0A2B7924261909D /* WorkoutCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */; };
 		1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B165040849DF187E7D1113C /* OrbInputBar.swift */; };
 		1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */; };
 		25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */; };
@@ -49,6 +50,7 @@
 		5ED5035D7E3D50CCD815D5C7 /* HeaderStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */; };
 		5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0FFCD560E41761030820EB /* MessageTimeline.swift */; };
 		634AE794B556552200D1D06A /* JarvisWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C75412A22FD477079ABB55 /* JarvisWatchApp.swift */; };
+		63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */; };
 		6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F4B9D1F796C301C15ED1A3D /* AppSettings.swift */; };
 		71563F3FE9AB291D623066B4 /* HappyPathE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */; };
 		73B70554FE102A25FBBF7E6B /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79D4272E5619C20A18D50D9 /* Log.swift */; };
@@ -223,6 +225,7 @@
 		E5DD83E71D9C3008ACBE81F2 /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
 		E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFullscreenTests.swift; sourceTree = "<group>"; };
 		E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
+		F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinatorTests.swift; sourceTree = "<group>"; };
 		F0C84294434D6D5A3845BD5D /* HealthUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthUpload.swift; sourceTree = "<group>"; };
 		F38E1835A732AD75F82D9CEF /* AgentIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIdentity.swift; sourceTree = "<group>"; };
 		F4800B2F3554B52EE041BEAD /* VoiceLoopController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoopController.swift; sourceTree = "<group>"; };
@@ -230,6 +233,7 @@
 		F5A055AF8989128A047D605C /* HealthSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSync.swift; sourceTree = "<group>"; };
 		F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextCoordinator.swift; sourceTree = "<group>"; };
 		F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetectorTests.swift; sourceTree = "<group>"; };
+		FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinator.swift; sourceTree = "<group>"; };
 		FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreetingBank.swift; sourceTree = "<group>"; };
 		FE1A573133241875D7269CED /* HealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -381,6 +385,7 @@
 				2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */,
 				5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */,
 				B7AD4257FEF8E2B0DDBFA065 /* WebSocketClientV2Tests.swift */,
+				F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */,
 				AA42D336E93B35827195BBBB /* WorkoutModelsTests.swift */,
 				A91EE1529D439338A641F961 /* E2E */,
 			);
@@ -449,6 +454,7 @@
 				F4800B2F3554B52EE041BEAD /* VoiceLoopController.swift */,
 				B17C0619207CE65994BF0385 /* WatchConnectivityBridge.swift */,
 				703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */,
+				FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -697,6 +703,7 @@
 				E0C11524F945712AD1DD5BED /* WatchConnectivityBridge.swift in Sources */,
 				04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */,
 				EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */,
+				63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -728,6 +735,7 @@
 				2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */,
 				ED86C8462FA285929BB5D83B /* WatchConnectivityBridgeTests.swift in Sources */,
 				3F96CFAAAC9E74E605B6D4B4 /* WebSocketClientV2Tests.swift in Sources */,
+				1D26F1F3F0A2B7924261909D /* WorkoutCoordinatorTests.swift in Sources */,
 				C1360BFA240455586946FC50 /* WorkoutModelsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
