@@ -376,6 +376,73 @@ describe('Scenario 10: superseded socket', () => {
   });
 });
 
+// ─── Scenario 12: workout bridge — set_log → workout_event ───────────────
+describe('Scenario 12: workout bridge — set_log routes as system inbound', () => {
+  const makeSetLogEnvelope = (over: Record<string, unknown> = {}) => ({
+    v: 2 as const,
+    kind: 'data',
+    type: 'set_log',
+    id: randomUUID(),
+    seq: 1,
+    ts: new Date().toISOString(),
+    payload: {
+      workout_id: '01J6Z8W3K2N5A7B9C1D3E5F7G9',
+      exercise_slug: 'incline-db-press',
+      set_idx: 0,
+      reps: 10,
+      weight: 22.5,
+      reps_in_reserve: 3,
+      ts: new Date().toISOString(),
+      agent_id: 'payne',
+    },
+    ...over,
+  });
+
+  it('routes set_log envelope into Payne session as workout_event subtype', async () => {
+    const ws = await h.connectAuthed();
+
+    const env = makeSetLogEnvelope();
+    h.send(ws, env);
+    const ack = await h.expectIncoming(ws);
+    expect(ack.type).toBe('ack');
+    expect(ack.payload.id).toBe(env.id);
+
+    // Bridge wrote one system message tagged 'workout'.
+    expect(h.agent.systemWrites).toHaveLength(1);
+    const w = h.agent.systemWrites[0];
+    expect(w.session_id).toBe('sess-1');
+    expect(w.tag).toBe('workout');
+    const body = JSON.parse(w.text);
+    expect(body.event).toBe('set_log');
+    expect(body.payload.exercise_slug).toBe('incline-db-press');
+    expect(body.payload.reps_in_reserve).toBe(3);
+    expect(body.payload.weight).toBe(22.5);
+
+    // set_log must NOT have fired the chat-style onUserMessage path.
+    const userMsgs = h.agent.received.filter((m) => m.kind === 'user_message');
+    expect(userMsgs).toHaveLength(0);
+
+    ws.close();
+  });
+
+  it('dedups repeated set_log by id — single workout_event write', async () => {
+    const ws = await h.connectAuthed();
+    const env = makeSetLogEnvelope();
+
+    h.send(ws, env);
+    const ack1 = await h.expectIncoming(ws);
+    expect(ack1.type).toBe('ack');
+
+    h.send(ws, env);
+    const ack2 = await h.expectIncoming(ws);
+    expect(ack2.type).toBe('ack');
+
+    expect(h.agent.systemWrites).toHaveLength(1);
+
+    ws.close();
+  });
+});
+
 // ─── Scenario 11: ping isolation under load ──────────────────────────────
 describe('Scenario 11: ping isolation under load', () => {
   it('50 ping rounds interleaved with agent pushes → no ping/pong in agent or dedup/queue', async () => {

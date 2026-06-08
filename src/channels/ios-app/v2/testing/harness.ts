@@ -10,6 +10,7 @@ import { OutboundQueue } from '../outbound-queue.js';
 import { ReceiptStore } from '../receipt-store.js';
 import { InboundDispatcher } from '../inbound-dispatch.js';
 import { ContextBridge } from '../context-bridge.js';
+import { WorkoutBridge } from '../workout-bridge.js';
 import { WsHandler } from '../ws-handler.js';
 
 export interface HarnessReceivedEvent {
@@ -63,6 +64,12 @@ function nextMessage(ws: WebSocket, timeoutMs: number): Promise<any> {
   });
 }
 
+export interface HarnessSystemWrite {
+  session_id: string;
+  text: string;
+  tag: string;
+}
+
 export interface Harness {
   url: string;
   validToken: string;
@@ -70,8 +77,9 @@ export interface Harness {
   db: TransportDb;
   queue: OutboundQueue;
   bridge: ContextBridge;
+  workoutBridge: WorkoutBridge;
   handler: WsHandler;
-  agent: { received: HarnessReceivedEvent[] };
+  agent: { received: HarnessReceivedEvent[]; systemWrites: HarnessSystemWrite[] };
   close(): Promise<void>;
   send(ws: WebSocket, envelope: unknown): void;
   expectIncoming(ws: WebSocket, timeoutMs?: number): Promise<any>;
@@ -86,10 +94,22 @@ export async function startTestServer(): Promise<Harness> {
   const db = openTransportDb(':memory:');
   const queue = new OutboundQueue(db);
   const receipts = new ReceiptStore(db);
-  const agent: { received: HarnessReceivedEvent[] } = { received: [] };
+  const agent: { received: HarnessReceivedEvent[]; systemWrites: HarnessSystemWrite[] } = {
+    received: [],
+    systemWrites: [],
+  };
 
   let bridge: ContextBridge;
   let handler: WsHandler;
+
+  const workoutBridge = new WorkoutBridge({
+    writeInboundSystemMessage: (input) => {
+      agent.systemWrites.push(input);
+      agent.received.push({ kind: 'system_message', ...input });
+    },
+    resolvePlatformForSession: () => platformId,
+    sendEnvelopeToDevice: (pid, env) => handler.sendEnvelopeToDevice(pid, env),
+  });
 
   const dispatcher = new InboundDispatcher({
     db,
@@ -97,6 +117,7 @@ export async function startTestServer(): Promise<Harness> {
     receipts,
     resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
     defaultAgentSlug: 'jarvis',
+    workoutBridge,
     onUserMessage: (input) => {
       agent.received.push({ kind: 'user_message', ...input });
     },
@@ -145,6 +166,7 @@ export async function startTestServer(): Promise<Harness> {
     db,
     queue,
     bridge,
+    workoutBridge,
     handler,
     agent,
     async close() {
