@@ -193,7 +193,7 @@ struct OrbHomeView: View {
     // MARK: – Header
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .top) {
             HeaderStatusDot(side: .left,
                             isConnected: coordinator.ws.isConnected,
                             phase: .calm) {

@@ -364,7 +364,7 @@ struct ChatView: View {
     // MARK: – Header
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .top) {
             HeaderStatusDot(side: .left, isConnected: ws.isConnected, phase: orbMood) {
                 showVoiceFullscreen = true
             } onLongPress: {

@@ -47,30 +47,33 @@ struct AgentPickerInline: View {
     @ViewBuilder
     private func row(for agent: AgentIdentity, isActive: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
-                HStack(spacing: 8) {
-                    Spacer()
-                    Text(spaced(agent.displayName))
-                        .font(.system(size: Theme.fontTitle, weight: .light))
-                        .tracking(Theme.titleTracking)
-                        .foregroundStyle(isActive
-                                         ? agent.accentColor
-                                         : agent.accentColor.opacity(0.55))
-                    Spacer()
-                }
-                .overlay(alignment: .trailing) {
-                    if !isActive, let unread = unreadCounts[agent], unread > 0 {
-                        Text("\(unread)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(agent.accentColor)
-                            .padding(.trailing, 12)
+            HStack(spacing: 8) {
+                Spacer()
+                Text(spaced(agent.displayName))
+                    .font(.system(size: Theme.fontTitle, weight: .light))
+                    .tracking(Theme.titleTracking)
+                    .foregroundStyle(isActive
+                                     ? agent.accentColor
+                                     : agent.accentColor.opacity(0.55))
+                    .fixedSize()
+                    .overlay(alignment: .bottom) {
+                        // Underline spans full text width; ~3pt below baseline.
+                        Rectangle()
+                            .fill(isActive
+                                  ? agent.accentColor.opacity(0.6)
+                                  : agent.accentColor.opacity(0.35))
+                            .frame(height: 1)
+                            .offset(y: 4)
                     }
+                Spacer()
+            }
+            .overlay(alignment: .trailing) {
+                if !isActive, let unread = unreadCounts[agent], unread > 0 {
+                    Text("\(unread)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(agent.accentColor)
+                        .padding(.trailing, 12)
                 }
-                RoundedRectangle(cornerRadius: 0.5)
-                    .fill(isActive
-                          ? agent.accentColor.opacity(0.6)
-                          : agent.accentColor.opacity(0.35))
-                    .frame(width: Theme.minTapSize, height: 1)
             }
             .frame(minHeight: Theme.minTapSize)
             .contentShape(Rectangle())
