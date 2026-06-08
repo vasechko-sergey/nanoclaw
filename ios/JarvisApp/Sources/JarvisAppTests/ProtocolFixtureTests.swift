@@ -31,7 +31,7 @@ final class ProtocolFixtureTests: XCTestCase {
             .filter { $0.pathExtension == "json" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
-        XCTAssertEqual(urls.count, 17, "envelope fixture count mismatch — expected 17, got \(urls.count) at \(dir.path)")
+        XCTAssertEqual(urls.count, 18, "envelope fixture count mismatch — expected 18, got \(urls.count) at \(dir.path)")
 
         let decoder = JSONDecoder()
         let encoder = JSONEncoder()
@@ -62,6 +62,18 @@ final class ProtocolFixtureTests: XCTestCase {
             }
             XCTAssertEqual(env, reDecoded, "\(url.lastPathComponent) round-trip mismatch")
         }
+    }
+
+    func testMessageWithAgentIdPreservesField() throws {
+        let dir = try fixturesDir()
+        let url = dir.appendingPathComponent("message_with_agent_id.json")
+        let data = try Data(contentsOf: url)
+        let env = try JSONDecoder().decode(V2.Envelope.self, from: data)
+        guard case let .message(msg) = env.payload else {
+            XCTFail("expected message payload, got \(env.payload)")
+            return
+        }
+        XCTAssertEqual(msg.agent_id, "payne")
     }
 
     func testHealthUploadFixturesRoundTrip() throws {

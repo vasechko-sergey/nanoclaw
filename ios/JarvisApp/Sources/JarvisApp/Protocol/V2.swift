@@ -85,6 +85,14 @@ enum V2 {
         let text: String
         let attachments: [Attachment]?
         let context: InlineContext?
+        let agent_id: String?
+        init(thread_id: String, text: String, attachments: [Attachment]? = nil, context: InlineContext? = nil, agent_id: String? = nil) {
+            self.thread_id = thread_id
+            self.text = text
+            self.attachments = attachments
+            self.context = context
+            self.agent_id = agent_id
+        }
     }
 
     struct Attachment: Codable, Equatable {
@@ -113,16 +121,35 @@ enum V2 {
         let request_id: String
         let fields: [String]
         let params: JSONValue?
+        let agent_id: String?
+        init(request_id: String, fields: [String], params: JSONValue? = nil, agent_id: String? = nil) {
+            self.request_id = request_id
+            self.fields = fields
+            self.params = params
+            self.agent_id = agent_id
+        }
     }
 
     struct ContextResponse: Codable, Equatable {
         let request_id: String
         let data: JSONValue
         let errors: [String: String]?
+        let agent_id: String?
+        init(request_id: String, data: JSONValue, errors: [String: String]? = nil, agent_id: String? = nil) {
+            self.request_id = request_id
+            self.data = data
+            self.errors = errors
+            self.agent_id = agent_id
+        }
     }
 
     struct NewConversation: Codable, Equatable {
         let thread_id: String
+        let agent_id: String?
+        init(thread_id: String, agent_id: String? = nil) {
+            self.thread_id = thread_id
+            self.agent_id = agent_id
+        }
     }
 
     struct ActionResponse: Codable, Equatable {
