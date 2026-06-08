@@ -27,7 +27,7 @@ struct OrbHomeView: View {
         !coordinator.ws.messages.isEmpty
     }
 
-    /// Per-agent unread badge counts shown on the `AgentSwitcherStrip`.
+    /// Per-agent unread badge counts shown on the `AgentPickerInline`.
     /// Mirrors ChatView's V1 heuristic: count assistant messages targeted at
     /// any non-active agent. Switching to an agent drops its badge to zero on
     /// the next render.
@@ -103,7 +103,7 @@ struct OrbHomeView: View {
 
                 // Agent switcher picker — sits under header so it's reachable
                 // before the user taps the orb.
-                AgentSwitcherStrip(unreadCounts: unreadByAgent)
+                AgentPickerInline(unreadCounts: unreadByAgent)
                     .padding(.top, Theme.scaled(8))
 
                 // Content — offset upward to align orb with splash position

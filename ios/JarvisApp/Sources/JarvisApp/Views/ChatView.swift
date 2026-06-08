@@ -47,7 +47,7 @@ struct ChatView: View {
         }
     }
 
-    /// Per-agent unread badge counts shown on the `AgentSwitcherStrip`.
+    /// Per-agent unread badge counts shown on the `AgentPickerInline`.
     /// V1 heuristic: count assistant messages targeted at any agent that
     /// is NOT currently active. Proper "seen" semantics arrive when inbound
     /// dispatch becomes fully agent-aware (T12+); for now switching to an
@@ -85,10 +85,6 @@ struct ChatView: View {
         VStack(spacing: 0) {
             // MARK: – Custom header
             header
-
-            // MARK: – Agent switcher chips
-            AgentSwitcherStrip(unreadCounts: unreadByAgent)
-                .padding(.vertical, 6)
 
             // MARK: – Content
             if visibleMessages.isEmpty && !ws.isBusy && !emptyInputActive {
@@ -379,24 +375,7 @@ struct ChatView: View {
 
             Spacer()
 
-            Button {
-                if let onGoHome {
-                    onGoHome()
-                }
-            } label: {
-                VStack(spacing: 3) {
-                    Text("J A R V I S")
-                        .font(.system(size: Theme.fontTitle, weight: .light))
-                        .tracking(Theme.titleTracking)
-                        .foregroundStyle(Theme.accentMedium)
-                    RoundedRectangle(cornerRadius: 0.5)
-                        .fill(Theme.accentSubtle.opacity(0.2))
-                        .frame(width: Theme.minTapSize, height: 1)
-                }
-                .frame(minHeight: Theme.minTapSize)
-            }
-            .disabled(onGoHome == nil)
-            .accessibilityLabel("Домой")
+            AgentPickerInline(unreadCounts: unreadByAgent, onLongPress: onGoHome)
 
             Spacer()
 
