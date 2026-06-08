@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppSettings.self) var settings
+    @Environment(ActiveAgentState.self) private var active
     var coordinator: AppCoordinator
 
     @State private var appPhase: AppPhase = .splash
@@ -26,7 +27,7 @@ struct ContentView: View {
                     coordinator: coordinator,
                     onStartChat: { message in
                         if let msg = message {
-                            coordinator.sendMessage(msg)
+                            coordinator.sendMessage(msg, agentId: active.active.rawValue)
                         }
                         autoStartVoice = false
                         withAnimation(.easeOut(duration: 0.4)) {

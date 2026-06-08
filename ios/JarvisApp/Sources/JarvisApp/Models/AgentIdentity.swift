@@ -15,7 +15,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .jarvis: return "Джарвис"
         case .payne:  return "Майор Пейн"
-        case .greg:   return "Грег"
+        case .greg:   return "Доктор Хаус"
         }
     }
 

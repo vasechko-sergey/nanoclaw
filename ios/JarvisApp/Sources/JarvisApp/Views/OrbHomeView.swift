@@ -4,6 +4,7 @@ import SwiftUI
 /// Long press the orb to reveal action satellites (mic, camera, photo, file).
 struct OrbHomeView: View {
     @Environment(AppSettings.self) var settings
+    @Environment(ActiveAgentState.self) private var active
     var coordinator: AppCoordinator
 
     var onStartChat: (String?) -> Void   // nil = open empty chat, String = send immediately
@@ -24,6 +25,21 @@ struct OrbHomeView: View {
 
     private var hasActiveChat: Bool {
         !coordinator.ws.messages.isEmpty
+    }
+
+    /// Per-agent unread badge counts shown on the `AgentSwitcherStrip`.
+    /// Mirrors ChatView's V1 heuristic: count assistant messages targeted at
+    /// any non-active agent. Switching to an agent drops its badge to zero on
+    /// the next render.
+    private var unreadByAgent: [AgentIdentity: Int] {
+        var counts: [AgentIdentity: Int] = [:]
+        let activeSlug = active.active.rawValue
+        for msg in coordinator.ws.messages where msg.role == .assistant {
+            let slug = msg.agentId ?? "jarvis"
+            guard slug != activeSlug, let agent = AgentIdentity(rawValue: slug) else { continue }
+            counts[agent, default: 0] += 1
+        }
+        return counts
     }
 
     private var greeting: String {
@@ -82,6 +98,11 @@ struct OrbHomeView: View {
             VStack(spacing: 0) {
                 // Header
                 header
+
+                // Agent switcher picker — sits under header so it's reachable
+                // before the user taps the orb.
+                AgentSwitcherStrip(unreadCounts: unreadByAgent)
+                    .padding(.top, Theme.scaled(8))
 
                 // Content — offset upward to align orb with splash position
                 VStack(spacing: 0) {

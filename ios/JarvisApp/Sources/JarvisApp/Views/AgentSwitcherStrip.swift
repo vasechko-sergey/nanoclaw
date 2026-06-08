@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Horizontal chip row at the top of `ChatView`. Lets the user switch the
-/// active agent (Jarvis / Payne / Greg). Reads the active selection from
-/// the injected `ActiveAgentState`; takes unread counts as a parameter so
-/// the parent can recompute lazily from `ConversationStoreV2.countMessages`.
+/// Top-of-screen agent picker. Renders the active agent's name as a tappable
+/// label with a chevron; tap opens a SwiftUI Menu listing all agents.
+///
+/// Used in both ChatView (header strip) and OrbHomeView (under greeting).
 struct AgentSwitcherStrip: View {
     @Environment(ActiveAgentState.self) private var active
     let unreadCounts: [AgentIdentity: Int]
@@ -11,48 +11,61 @@ struct AgentSwitcherStrip: View {
     var body: some View {
         @Bindable var active = active
 
-        HStack(spacing: 8) {
+        Menu {
             ForEach(AgentIdentity.allCases) { agent in
-                chip(for: agent)
+                let unread = unreadCounts[agent] ?? 0
+                Button {
+                    active.active = agent
+                } label: {
+                    HStack {
+                        Text(agent.displayName)
+                        if active.active == agent {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        } else if unread > 0 {
+                            Spacer()
+                            Text("\(unread)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
-        }
-        .padding(.horizontal)
-    }
-
-    private func chip(for agent: AgentIdentity) -> some View {
-        let isActive = active.active == agent
-        let unread = unreadCounts[agent] ?? 0
-
-        return Button {
-            active.active = agent
         } label: {
-            HStack(spacing: 6) {
-                Text(agent.displayName)
-                    .font(.subheadline.weight(isActive ? .semibold : .regular))
-                if unread > 0 {
-                    Text("\(unread)")
+            HStack(spacing: 4) {
+                Text(active.active.displayName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if let activeUnread = otherAgentsUnread(active: active.active), activeUnread > 0 {
+                    Text("\(activeUnread)")
                         .font(.caption2.bold())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(Color.red))
                         .foregroundStyle(.white)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12).padding(.vertical, 6)
             .background(
-                Capsule().fill(isActive ? agent.accentColor.opacity(0.18) : Color.clear)
+                Capsule().fill(active.active.accentColor.opacity(0.12))
             )
             .overlay(
-                Capsule().stroke(
-                    agent.accentColor.opacity(isActive ? 0.6 : 0.2),
-                    lineWidth: 1
-                )
+                Capsule().stroke(active.active.accentColor.opacity(0.35), lineWidth: 1)
             )
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(agent.displayName)\(unread > 0 ? ", непрочитанных \(unread)" : "")")
-        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityLabel("Активный агент: \(active.active.displayName)")
+        .accessibilityHint("Откройте меню чтобы переключить агента")
+    }
+
+    /// Sum of unread badges for non-active agents — shown next to the active
+    /// chip so the user notices traffic in other threads without opening the menu.
+    private func otherAgentsUnread(active: AgentIdentity) -> Int? {
+        let total = unreadCounts.reduce(0) { acc, kv in
+            kv.key == active ? acc : acc + kv.value
+        }
+        return total > 0 ? total : nil
     }
 }
 
