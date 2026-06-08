@@ -54,6 +54,7 @@
 		5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0FFCD560E41761030820EB /* MessageTimeline.swift */; };
 		634AE794B556552200D1D06A /* JarvisWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C75412A22FD477079ABB55 /* JarvisWatchApp.swift */; };
 		63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */; };
+		645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */; };
 		6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F4B9D1F796C301C15ED1A3D /* AppSettings.swift */; };
 		71563F3FE9AB291D623066B4 /* HappyPathE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */; };
 		73B70554FE102A25FBBF7E6B /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79D4272E5619C20A18D50D9 /* Log.swift */; };
@@ -69,6 +70,7 @@
 		87AD40BFC10B1D04342B5E9D /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83BBF8E04395E33F04CDE186 /* EmojiPickerView.swift */; };
 		88708A700369B47D5472A1C2 /* OrbHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B254569C52137C9E716B3DCD /* OrbHomeView.swift */; };
 		8CF67025E9C5AC703F0F422B /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9592AD08ED6648DF9CCC7149 /* Message.swift */; };
+		8D619B38C4EE99D072145A51 /* SwapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */; };
 		8FD8CF0ADA1C202FEDA828D9 /* SetLogQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1916FC4113359563C4205F1 /* SetLogQueue.swift */; };
 		91941E7469BF57E69F4C9DE2 /* HealthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1A573133241875D7269CED /* HealthManager.swift */; };
 		974A0C8C09364FC532E6BEE1 /* SuggestionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */; };
@@ -196,6 +198,8 @@
 		9143ED9DD7B640862D468B63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9592AD08ED6648DF9CCC7149 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		97D8CEE69D33E1581710A543 /* ConversationStoreV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2.swift; sourceTree = "<group>"; };
+		9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwapSheetTests.swift; sourceTree = "<group>"; };
+		9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwapSheet.swift; sourceTree = "<group>"; };
 		9F0295CB82FF20C8764842F6 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		A07EC072A68CDC8A092D7A94 /* URLSessionWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionWebSocket.swift; sourceTree = "<group>"; };
 		A08C410E0AB3268B2BF632EB /* ExerciseImageCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseImageCacheTests.swift; sourceTree = "<group>"; };
@@ -393,6 +397,7 @@
 				32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */,
 				BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */,
 				BC64D6340917C38B04005455 /* SetLogQueueTests.swift */,
+				9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */,
 				0056A55985BB7DB31F765116 /* TransportV2Tests.swift */,
 				2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */,
 				5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */,
@@ -412,6 +417,7 @@
 				F07A48DFDFE814C899E5E434 /* ExerciseCardView.swift */,
 				1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */,
 				E24639DA24B7C49D4F19F2A1 /* SetRowView.swift */,
+				9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */,
 			);
 			path = Workout;
 			sourceTree = "<group>";
@@ -721,6 +727,7 @@
 				298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */,
 				4E3C2BC7DEE98EE4B972F929 /* StatusV2.swift in Sources */,
 				974A0C8C09364FC532E6BEE1 /* SuggestionEngine.swift in Sources */,
+				8D619B38C4EE99D072145A51 /* SwapSheet.swift in Sources */,
 				40BD7B10477CDAA66330969D /* Theme.swift in Sources */,
 				978C2411C830BBFCD8AEC9B1 /* TransportV2.swift in Sources */,
 				F8EE3CFA6A3BE4763FEEA0AA /* URLSessionWebSocket.swift in Sources */,
@@ -759,6 +766,7 @@
 				4BF4C88458642156C18BD71E /* RestTimerTests.swift in Sources */,
 				448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */,
 				59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */,
+				645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */,
 				E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */,
 				2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */,
 				ED86C8462FA285929BB5D83B /* WatchConnectivityBridgeTests.swift in Sources */,
