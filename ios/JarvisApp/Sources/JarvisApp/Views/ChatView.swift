@@ -15,6 +15,7 @@ private struct ScrollOffsetKey: PreferenceKey {
 
 struct ChatView: View {
     @Environment(AppSettings.self) var settings
+    @Environment(ActiveAgentState.self) private var active
     var coordinator: AppCoordinator
     var onGoHome: (() -> Void)? = nil
     @Binding var autoStartVoice: Bool
@@ -37,8 +38,29 @@ struct ChatView: View {
     private var ws: WebSocketClientV2 { coordinator.ws }
 
     /// Only messages that should render in the chat (excludes invisible technical messages).
+    /// T10: also filtered by the currently-active agent chip. Rows missing
+    /// `agentId` (pre-T7 storage) are treated as legacy `jarvis` traffic.
     private var visibleMessages: [ChatMessage] {
-        ws.messages.filter { $0.isVisible }
+        let activeSlug = active.active.rawValue
+        return ws.messages.filter { msg in
+            msg.isVisible && (msg.agentId ?? "jarvis") == activeSlug
+        }
+    }
+
+    /// Per-agent unread badge counts shown on the `AgentSwitcherStrip`.
+    /// V1 heuristic: count assistant messages targeted at any agent that
+    /// is NOT currently active. Proper "seen" semantics arrive when inbound
+    /// dispatch becomes fully agent-aware (T12+); for now switching to an
+    /// agent drops its badge to zero on the next render.
+    private var unreadByAgent: [AgentIdentity: Int] {
+        var counts: [AgentIdentity: Int] = [:]
+        let activeSlug = active.active.rawValue
+        for msg in ws.messages where msg.role == .assistant {
+            let slug = msg.agentId ?? "jarvis"
+            guard slug != activeSlug, let agent = AgentIdentity(rawValue: slug) else { continue }
+            counts[agent, default: 0] += 1
+        }
+        return counts
     }
 
     private var orbMood: OrbMood {
@@ -63,6 +85,10 @@ struct ChatView: View {
         VStack(spacing: 0) {
             // MARK: – Custom header
             header
+
+            // MARK: – Agent switcher chips
+            AgentSwitcherStrip(unreadCounts: unreadByAgent)
+                .padding(.vertical, 6)
 
             // MARK: – Content
             if visibleMessages.isEmpty && !ws.isBusy && !emptyInputActive {

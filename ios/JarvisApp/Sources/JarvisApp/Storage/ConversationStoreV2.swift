@@ -279,6 +279,39 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Observe the entire `messages` table across ALL agents. The chat view
+    /// renders one unified stream and filters per-agent at the view layer
+    /// (see `ChatView.visibleMessages`), so the timeline subscription must
+    /// not pre-filter by `agent_id`. Returns rows oldest-first to match
+    /// `observeMessages`.
+    func observeAllMessages(limit: Int = 500)
+        -> ValueObservation<ValueReducers.Fetch<[StoredMessage]>>
+    {
+        ValueObservation.tracking { db -> [StoredMessage] in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT * FROM messages
+                ORDER BY ts DESC
+                LIMIT ?
+            """, arguments: [limit])
+            return rows.reversed().map { row in
+                StoredMessage(
+                    id: row["id"],
+                    dir: MessageDir(rawValue: row["dir"]) ?? .out,
+                    seq: row["seq"],
+                    text: row["text"],
+                    attachmentsJSON: row["attachments_json"],
+                    contextJSON: row["context_json"],
+                    status: MessageStatus(rawValue: row["status"]) ?? .queued,
+                    failureReason: row["failure_reason"],
+                    ts: row["ts"],
+                    serverTS: row["server_ts"],
+                    createdAt: row["created_at"],
+                    agentId: row["agent_id"] ?? "jarvis"
+                )
+            }
+        }
+    }
+
     /// Hard-cap retention, per agent. Deletes messages in this agent's bucket
     /// beyond `keep` newest, and any orphaned attachments rows. Called by
     /// `MessageTimeline` after each insert.

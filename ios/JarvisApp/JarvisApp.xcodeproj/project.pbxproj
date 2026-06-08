@@ -96,6 +96,7 @@
 		ED86C8462FA285929BB5D83B /* WatchConnectivityBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */; };
 		EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */; };
 		F41988AFB951764121A3B9D6 /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E7FBAD4AE7AF8E526AC62E /* AppCoordinator.swift */; };
+		F60AEA2782AA92F7604C222F /* ChatViewAgentFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F5269F585666FD6D8F3D6F /* ChatViewAgentFilterTests.swift */; };
 		F8EE3CFA6A3BE4763FEEA0AA /* URLSessionWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07EC072A68CDC8A092D7A94 /* URLSessionWebSocket.swift */; };
 /* End PBXBuildFile section */
 
@@ -197,6 +198,7 @@
 		C7F32FF80D3E90C60D06FDC3 /* InboundDispatcherV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundDispatcherV2.swift; sourceTree = "<group>"; };
 		D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarManager.swift; sourceTree = "<group>"; };
 		D4C75412A22FD477079ABB55 /* JarvisWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisWatchApp.swift; sourceTree = "<group>"; };
+		D4F5269F585666FD6D8F3D6F /* ChatViewAgentFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewAgentFilterTests.swift; sourceTree = "<group>"; };
 		D6B42F42A5AB27AFC0DD5943 /* UnifiedInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedInputBar.swift; sourceTree = "<group>"; };
 		D79D4272E5619C20A18D50D9 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageView.swift; sourceTree = "<group>"; };
@@ -340,6 +342,7 @@
 				6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */,
 				BD6558F7C0D54EB55E6DFD1C /* ActiveAgentStateTests.swift */,
 				18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */,
+				D4F5269F585666FD6D8F3D6F /* ChatViewAgentFilterTests.swift */,
 				5114A888276D0E083FC387EB /* ContextBuilderTests.swift */,
 				8C9EB1688DB74A7280A71824 /* ConversationStoreV2AgentTests.swift */,
 				24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */,
@@ -671,6 +674,7 @@
 			files = (
 				D6AB552551DC96D807F9D72E /* ActiveAgentStateTests.swift in Sources */,
 				AFFBB9A3F440BF8A16D6FDCB /* AppV2BootstrapTests.swift in Sources */,
+				F60AEA2782AA92F7604C222F /* ChatViewAgentFilterTests.swift in Sources */,
 				4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */,
 				DEFAB6DF33649249BC9C24E7 /* ConversationStoreV2AgentTests.swift in Sources */,
 				EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */,

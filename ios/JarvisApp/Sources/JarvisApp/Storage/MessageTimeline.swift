@@ -21,9 +21,12 @@ final class MessageTimeline {
     }
 
     /// Begin observing the GRDB-backed message timeline. Idempotent.
+    ///
+    /// T10: feeds rows from ALL agents into the in-memory stream; per-agent
+    /// filtering happens in the view layer (`ChatView.visibleMessages`).
     func start() async throws {
         guard observationCancellable == nil else { return }
-        let observation = store.observeMessages(limit: retention)
+        let observation = store.observeAllMessages(limit: retention)
         // Seed synchronously so views render on first frame.
         self.messages = try await dbq.read { db in
             try Row.fetchAll(db, sql: """
@@ -42,7 +45,8 @@ final class MessageTimeline {
                     failureReason: row["failure_reason"],
                     ts: row["ts"],
                     serverTS: row["server_ts"],
-                    createdAt: row["created_at"]
+                    createdAt: row["created_at"],
+                    agentId: row["agent_id"] ?? "jarvis"
                 )
             }
         }

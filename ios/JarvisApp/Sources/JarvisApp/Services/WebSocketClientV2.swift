@@ -387,7 +387,8 @@ final class WebSocketClientV2 {
             return
         }
 
-        let observation = stack.store.observeMessages()
+        // T10: subscribe to ALL agents' rows; ChatView filters by active chip.
+        let observation = stack.store.observeAllMessages()
 
         observationCancellable = observation.start(
             in: stack.dbq,
@@ -440,17 +441,20 @@ final class WebSocketClientV2 {
                let image = UIImage(data: imgData) {
                 var msg = ChatMessage.image(row.id, role: role, image: image, filename: first.name, timestamp: timestamp)
                 msg.deliveryStatus = mapDelivery(row.status)
+                msg.agentId = row.agentId
                 return msg
             }
             let info = FileInfo(name: first.name, size: Int64(first.byte_size),
                                 mimeType: first.mime_type, url: nil, thumbnail: nil)
             var msg = ChatMessage.file(row.id, role: role, info: info, timestamp: timestamp)
             msg.deliveryStatus = mapDelivery(row.status)
+            msg.agentId = row.agentId
             return msg
         }
 
         var msg = ChatMessage.text(row.id, role: role, text: row.text, timestamp: timestamp)
         msg.deliveryStatus = mapDelivery(row.status)
+        msg.agentId = row.agentId
         return msg
     }
 

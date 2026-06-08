@@ -53,6 +53,10 @@ struct ChatMessage: Identifiable {
     let content: Content
     let timestamp: Date
     var deliveryStatus: DeliveryStatus = .delivered
+    /// Matches `AgentIdentity.rawValue` and the `messages.agent_id` storage
+    /// column. `nil` is treated as legacy jarvis traffic by `ChatView` so
+    /// pre-T7 rows still render under the Jarvis chip.
+    var agentId: String? = nil
 
     enum Role { case user, assistant, system }
 
