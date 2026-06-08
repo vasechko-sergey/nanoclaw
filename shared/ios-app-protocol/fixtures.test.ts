@@ -21,8 +21,15 @@ describe('shared/ios-app-protocol envelope fixtures', () => {
     });
   }
 
-  it('covers all 17 expected envelope fixtures', () => {
-    expect(envelopeFiles).toHaveLength(17);
+  it('covers all 18 expected envelope fixtures', () => {
+    expect(envelopeFiles).toHaveLength(18);
+  });
+
+  it('message_with_agent_id.json preserves agent_id through round-trip', () => {
+    const raw = readFileSync(join(fixturesDir, 'message_with_agent_id.json'), 'utf8');
+    const env = AnyEnvelope.parse(JSON.parse(raw));
+    if (env.type !== 'message') throw new Error('expected message');
+    expect(env.payload.agent_id).toBe('payne');
   });
 });
 

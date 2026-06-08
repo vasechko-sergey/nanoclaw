@@ -1,0 +1,13 @@
+{
+  "v": 2,
+  "kind": "data",
+  "type": "message",
+  "id": "11111111-1111-4111-8111-111111111111",
+  "seq": 5,
+  "ts": "2026-06-08T12:00:00.000Z",
+  "payload": {
+    "thread_id": "ios-payne-default",
+    "text": "Здорово, солдат.",
+    "agent_id": "payne"
+  }
+}
