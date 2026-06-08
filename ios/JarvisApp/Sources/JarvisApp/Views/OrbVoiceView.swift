@@ -6,6 +6,7 @@ import SwiftUI
 /// `coordinator.speech` (TTS).
 struct OrbVoiceView: View {
     @Environment(AppSettings.self) var settings
+    @Environment(ActiveAgentState.self) private var active
     @Environment(\.dismiss) private var dismiss
     var coordinator: AppCoordinator
     /// When non-nil, dismiss handoff goes here (e.g., "к чату" tap). When nil,
@@ -187,7 +188,7 @@ struct OrbVoiceView: View {
 
     private func sendIfReady() {
         guard controller.phase == .processing, !controller.transcript.isEmpty else { return }
-        coordinator.sendMessage(controller.transcript, viaVoice: true)
+        coordinator.sendMessage(controller.transcript, viaVoice: true, agentId: active.active.rawValue)
     }
 
     private func handleNewAssistantMessage() {

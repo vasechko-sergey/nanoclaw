@@ -47,6 +47,7 @@ struct AgentSwitcherStrip: View {
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(minHeight: 44)
             .background(
                 Capsule().fill(active.active.accentColor.opacity(0.12))
             )
