@@ -157,6 +157,145 @@ export const Envelopes = {
     seq: z.null(),
     payload: z.object({ ids: z.array(z.string().uuid()).min(1) }),
   }),
+  WorkoutStartRequest: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('workout_start_request'),
+    payload: z.object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  WorkoutPlan: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('workout_plan'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      plan_json: z.record(z.string(), z.unknown()),
+      image_manifest: z.array(z.object({
+        slug: z.string().min(1),
+        sha256: z.string().min(1),
+        url: z.string().optional(),
+      })),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  SetLog: EnvelopeBase.extend({
+    kind: z.literal('data'),
+    type: z.literal('set_log'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      exercise_slug: z.string().min(1),
+      set_idx: z.number().int().nonnegative(),
+      reps: z.number().int().nonnegative(),
+      weight: z.number().nonnegative(),
+      reps_in_reserve: z.number().int().min(0).max(10),
+      ts: z.string().datetime(),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  ExerciseDone: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('exercise_done'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      exercise_slug: z.string().min(1),
+      comment: z.string().optional(),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  WorkoutComplete: EnvelopeBase.extend({
+    kind: z.literal('data'),
+    type: z.literal('workout_complete'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      full_session_json: z.record(z.string(), z.unknown()),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  WorkoutAbort: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('workout_abort'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      reason: z.string().optional(),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  ImageRequest: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('image_request'),
+    payload: z.object({
+      slug: z.string().min(1),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  ImageBlob: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('image_blob'),
+    payload: z.object({
+      slug: z.string().min(1),
+      sha256: z.string().min(1),
+      base64: z.string().min(1),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  ExerciseSwapRequest: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('exercise_swap_request'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      exercise_slug: z.string().min(1),
+      proposed: z.string().optional(),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  ExerciseSwapConfirm: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('exercise_swap_confirm'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      original_slug: z.string().min(1),
+      new_slug: z.string().min(1),
+      persist: z.boolean().optional(),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  ExerciseSwapOptions: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('exercise_swap_options'),
+    payload: z.object({
+      workout_id: z.string().min(1),
+      original_slug: z.string().min(1),
+      accepted: z.object({ slug: z.string() }).optional(),
+      rejected: z.object({ slug: z.string(), reason: z.string() }).optional(),
+      alternatives: z.array(z.object({ slug: z.string(), why: z.string() })),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  ProgramUpdate: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('program_update'),
+    payload: z.object({
+      program_json: z.record(z.string(), z.unknown()),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  CoachMessage: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('coach_message'),
+    payload: z.object({
+      text: z.string().min(1),
+      workout_id: z.string().optional(),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
+  IntroRequest: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('intro_request'),
+    payload: z.object({
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
 } as const;
 
 // Health upload — POST /ios/health/upload body. Not an envelope (the WS
@@ -213,5 +352,12 @@ export const AnyEnvelope = z.discriminatedUnion('type', [
   Envelopes.NewConversation, Envelopes.ActionResponse, Envelopes.Feedback,
   Envelopes.Ack, Envelopes.Ping, Envelopes.Pong,
   Envelopes.StatusDelivered, Envelopes.StatusRead,
+  // Workout-mode envelopes (P3.T1)
+  Envelopes.WorkoutStartRequest, Envelopes.WorkoutPlan, Envelopes.SetLog,
+  Envelopes.ExerciseDone, Envelopes.WorkoutComplete, Envelopes.WorkoutAbort,
+  Envelopes.ImageRequest, Envelopes.ImageBlob,
+  Envelopes.ExerciseSwapRequest, Envelopes.ExerciseSwapConfirm,
+  Envelopes.ExerciseSwapOptions, Envelopes.ProgramUpdate,
+  Envelopes.CoachMessage, Envelopes.IntroRequest,
 ]);
 export type AnyEnvelope = z.infer<typeof AnyEnvelope>;

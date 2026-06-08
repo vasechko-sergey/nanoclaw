@@ -189,3 +189,91 @@ describe('agent_id field', () => {
     expect(parsed.payload.agent_id).toBe('greg');
   });
 });
+
+describe('workout envelopes', () => {
+  const base = {
+    v: 2 as const,
+    id: '00000000-0000-4000-8000-000000000099',
+    seq: 0,
+    ts: '2026-06-09T18:00:00.000Z',
+  };
+
+  it('parses workout_start_request', () => {
+    const e = Envelopes.WorkoutStartRequest.parse({
+      ...base, kind: 'control', type: 'workout_start_request',
+      payload: { date: '2026-06-09', agent_id: 'payne' },
+    });
+    expect(e.payload.date).toBe('2026-06-09');
+  });
+
+  it('parses workout_plan with image_manifest', () => {
+    const e = Envelopes.WorkoutPlan.parse({
+      ...base, kind: 'control', type: 'workout_plan',
+      payload: {
+        workout_id: '01J6Z8W3K2N5A7B9C1D3E5F7G9',
+        plan_json: { day_name: 'Верх A', exercises: [] },
+        image_manifest: [{ slug: 'incline-db-press', sha256: 'abc' }],
+        agent_id: 'payne',
+      },
+    });
+    expect(e.payload.image_manifest).toHaveLength(1);
+  });
+
+  it('parses set_log', () => {
+    const e = Envelopes.SetLog.parse({
+      ...base, kind: 'data', type: 'set_log',
+      payload: {
+        workout_id: 'w1',
+        exercise_slug: 'incline-db-press',
+        set_idx: 0, reps: 10, weight: 22.5, reps_in_reserve: 3,
+        ts: '2026-06-09T19:05:00.000Z',
+        agent_id: 'payne',
+      },
+    });
+    expect(e.payload.reps_in_reserve).toBe(3);
+  });
+
+  it('parses exercise_swap_request without proposed', () => {
+    const e = Envelopes.ExerciseSwapRequest.parse({
+      ...base, kind: 'control', type: 'exercise_swap_request',
+      payload: { workout_id: 'w1', exercise_slug: 'incline-db-press', agent_id: 'payne' },
+    });
+    expect(e.payload.proposed).toBeUndefined();
+  });
+
+  it('parses workout_complete with full session', () => {
+    const e = Envelopes.WorkoutComplete.parse({
+      ...base, kind: 'data', type: 'workout_complete',
+      payload: {
+        workout_id: 'w1',
+        full_session_json: { date: '2026-06-09', exercises: [] },
+        agent_id: 'payne',
+      },
+    });
+    expect(e.payload.workout_id).toBe('w1');
+  });
+
+  it('parses coach_message', () => {
+    const e = Envelopes.CoachMessage.parse({
+      ...base, kind: 'control', type: 'coach_message',
+      payload: { text: 'сбавь до 20', workout_id: 'w1', agent_id: 'payne' },
+    });
+    expect(e.payload.text).toBe('сбавь до 20');
+  });
+
+  it('parses intro_request', () => {
+    const e = Envelopes.IntroRequest.parse({
+      ...base, kind: 'control', type: 'intro_request',
+      payload: { agent_id: 'payne' },
+    });
+    expect(e.type).toBe('intro_request');
+  });
+
+  it('AnyEnvelope discriminated union accepts a workout type', () => {
+    const parsed = AnyEnvelope.parse({
+      ...base, kind: 'control', type: 'coach_message',
+      payload: { text: 'go', agent_id: 'payne' },
+    });
+    expect(parsed.type).toBe('coach_message');
+  });
+});
