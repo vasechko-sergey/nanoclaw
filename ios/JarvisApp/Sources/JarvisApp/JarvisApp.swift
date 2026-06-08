@@ -55,6 +55,7 @@ struct JarvisApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var settings: AppSettings
     @State private var coordinator: AppCoordinator
+    @State private var activeAgent: ActiveAgentState
     @Environment(\.scenePhase) private var scenePhase
 
     static var isUITesting: Bool {
@@ -65,6 +66,7 @@ struct JarvisApp: App {
         let s = AppSettings()
         _settings = State(initialValue: s)
         _coordinator = State(initialValue: AppCoordinator(settings: s))
+        _activeAgent = State(initialValue: ActiveAgentState())
     }
 
     var body: some Scene {
@@ -72,6 +74,7 @@ struct JarvisApp: App {
             ContentView(coordinator: coordinator)
                 .environment(settings)
                 .environment(coordinator)
+                .environment(activeAgent)
                 .onChange(of: scenePhase) { _, new in
                     if new == .active {
                         Theme.refreshScale()
