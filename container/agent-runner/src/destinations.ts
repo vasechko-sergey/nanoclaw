@@ -83,7 +83,7 @@ export function buildSystemPromptAddendum(assistantName?: string): string {
   const sections: string[] = [];
 
   if (assistantName) {
-    sections.push(['# You are ' + assistantName, '', `Your name is **${assistantName}**. Use it when the channel asks who you are, when introducing yourself, and when signing any message that explicitly calls for a signature.`].join('\n'));
+    sections.push(['# You are ' + assistantName, '', `Your name is **${assistantName}**. Use it when the channel asks who you are, when introducing yourself, and when signing any message that explicitly calls for a signature.`, '', `Your persona — voice, tone, vocabulary, idioms, attitude — is defined in the group CLAUDE.md loaded into this session. Treat that persona as a hard constraint: stay in character for every user-facing message, including short acknowledgments and errors. Do not default to a neutral helpful-assistant register, do not flatten the voice for brevity, do not drop signature idioms even when answers are short.`].join('\n'));
   }
 
   sections.push(buildDestinationsSection());
