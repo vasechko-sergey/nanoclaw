@@ -41,6 +41,21 @@ export interface WriteMessageOut {
  * by edit_message / add_reaction, and getMessageIdBySeq() below looks up
  * by seq across BOTH tables. If inbound and outbound could share a seq,
  * the agent's "edit message #5" could resolve to the wrong row.
+ *
+ * Why the read-max-then-insert below needs no explicit transaction:
+ *   - `seq` is UNIQUE in both tables, so a duplicate can never be inserted
+ *     silently — a collision throws, it does not corrupt.
+ *   - One writer per file: the host owns inbound.db (single Node process),
+ *     this container owns outbound.db. Two containers never write the same
+ *     outbound.db at once — wakeContainer dedups, and restart is gated on the
+ *     old process exiting (killContainer onExit) before the new one spawns.
+ *     The only same-file writer is this single-threaded bun process, whose
+ *     sync .run() calls can't interleave.
+ *   - The cross-DB MAX read can be momentarily stale, but parity (even vs odd)
+ *     makes a cross-table collision impossible anyway, so staleness affects
+ *     only global ordering, never uniqueness.
+ * If that single-writer lifecycle ever changes, wrap the read+insert (here and
+ * host-side in session-db.ts) in a BEGIN IMMEDIATE transaction.
  */
 export function writeMessageOut(msg: WriteMessageOut): number {
   const outbound = getOutboundDb();
