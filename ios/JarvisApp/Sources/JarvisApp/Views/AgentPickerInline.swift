@@ -7,7 +7,6 @@ import SwiftUI
 /// the dark/teal app palette.
 struct AgentPickerInline: View {
     @Environment(ActiveAgentState.self) private var active
-    let unreadCounts: [AgentIdentity: Int]
     /// Optional long-press action — e.g. ChatView passes onGoHome here.
     var onLongPress: (() -> Void)? = nil
 
@@ -70,14 +69,6 @@ struct AgentPickerInline: View {
                     }
                 Spacer()
             }
-            .overlay(alignment: .trailing) {
-                if !isActive, let unread = unreadCounts[agent], unread > 0 {
-                    Text("\(unread)")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(agent.accentColor)
-                        .padding(.trailing, 12)
-                }
-            }
             .frame(minHeight: Theme.minTapSize)
             .contentShape(Rectangle())
         }
@@ -99,7 +90,7 @@ struct AgentPickerInline: View {
     return ZStack(alignment: .top) {
         Theme.background.ignoresSafeArea()
         VStack {
-            AgentPickerInline(unreadCounts: [.jarvis: 2, .payne: 1])
+            AgentPickerInline()
                 .environment(state)
             Spacer()
         }

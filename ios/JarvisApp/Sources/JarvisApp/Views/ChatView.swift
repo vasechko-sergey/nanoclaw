@@ -42,7 +42,6 @@ struct ChatView: View {
     @State private var showVoiceFullscreen = false
     @AppStorage("v3MigrationShown") private var v3MigrationShown = false
     @State private var showingV3Toast = false
-    @State private var lastSeen = LastSeenStore()
 
     // P3.T17 — workout flow presentation. `activeWorkout` is set when an
     // inbound `workout_plan` envelope arrives on `coordinator.workoutBus`.
@@ -61,24 +60,6 @@ struct ChatView: View {
             let slug = msg.agentId ?? "jarvis"
             return AgentIdentity(rawValue: slug) == active.active
         }
-    }
-
-    /// Per-agent unread badge counts shown on the `AgentPickerInline`.
-    /// V1 heuristic: count assistant messages targeted at any agent that
-    /// is NOT currently active. Proper "seen" semantics arrive when inbound
-    /// dispatch becomes fully agent-aware (T12+); for now switching to an
-    /// agent drops its badge to zero on the next render.
-    private var unreadByAgent: [AgentIdentity: Int] {
-        var counts: [AgentIdentity: Int] = [:]
-        let activeSlug = active.active.rawValue
-        for msg in ws.messages where msg.role == .assistant {
-            guard let slug = msg.agentId, slug != activeSlug,
-                  let agent = AgentIdentity(rawValue: slug) else { continue }
-            if msg.timestamp > lastSeen.lastSeen(for: agent) {
-                counts[agent, default: 0] += 1
-            }
-        }
-        return counts
     }
 
     private var orbMood: OrbMood {
@@ -416,8 +397,6 @@ struct ChatView: View {
                 v3MigrationShown = true
             }
         }
-        .onAppear { lastSeen.markSeen(active.active) }
-        .onChange(of: active.active) { _, newValue in lastSeen.markSeen(newValue) }
         .alert("История чата обновлена",
                isPresented: $showingV3Toast) {
             Button("ОК", role: .cancel) {}
@@ -442,7 +421,7 @@ struct ChatView: View {
 
             Spacer()
 
-            AgentPickerInline(unreadCounts: unreadByAgent, onLongPress: onGoHome)
+            AgentPickerInline(onLongPress: onGoHome)
 
             Spacer()
 

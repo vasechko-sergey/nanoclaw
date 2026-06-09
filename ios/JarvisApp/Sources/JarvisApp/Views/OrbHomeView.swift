@@ -13,7 +13,6 @@ struct OrbHomeView: View {
 
     @State private var showSatellites = false
     @State private var showVoiceFullscreen = false
-    @State private var lastSeen = LastSeenStore()
 
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
@@ -26,23 +25,6 @@ struct OrbHomeView: View {
 
     private var hasActiveChat: Bool {
         !coordinator.ws.messages.isEmpty
-    }
-
-    /// Per-agent unread badge counts shown on the `AgentPickerInline`.
-    /// Mirrors ChatView's V1 heuristic: count assistant messages targeted at
-    /// any non-active agent. Switching to an agent drops its badge to zero on
-    /// the next render.
-    private var unreadByAgent: [AgentIdentity: Int] {
-        var counts: [AgentIdentity: Int] = [:]
-        let activeSlug = active.active.rawValue
-        for msg in coordinator.ws.messages where msg.role == .assistant {
-            guard let slug = msg.agentId, slug != activeSlug,
-                  let agent = AgentIdentity(rawValue: slug) else { continue }
-            if msg.timestamp > lastSeen.lastSeen(for: agent) {
-                counts[agent, default: 0] += 1
-            }
-        }
-        return counts
     }
 
     private var greeting: String {
@@ -191,8 +173,6 @@ struct OrbHomeView: View {
                 onStartVoiceChat()
             })
         }
-        .onAppear { lastSeen.markSeen(active.active) }
-        .onChange(of: active.active) { _, newValue in lastSeen.markSeen(newValue) }
     }
 
     // MARK: – Header
@@ -211,7 +191,7 @@ struct OrbHomeView: View {
             Spacer()
 
             // Agent picker — same component as ChatView header, in app style.
-            AgentPickerInline(unreadCounts: unreadByAgent)
+            AgentPickerInline()
 
             Spacer()
 
