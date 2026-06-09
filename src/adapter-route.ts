@@ -5,14 +5,15 @@
  * + session resolve + write + wake so the dropped_messages audit trail and
  * permissions checks stay intact.
  */
+import { gateCommand } from './command-gate.js';
 import { getAgentGroup, getAgentGroupByFolder } from './db/agent-groups.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
-import { getSession } from './db/sessions.js';
+import { findSessionForAgent, getSession, updateSession } from './db/sessions.js';
 import { log } from './log.js';
 import { getAccessGate, getSenderResolver } from './router.js';
-import { resolveSession, writeSessionMessage } from './session-manager.js';
-import { wakeContainer } from './container-runner.js';
+import { resolveSession, writeOutboundDirect, writeSessionMessage } from './session-manager.js';
+import { killContainer, wakeContainer } from './container-runner.js';
 import { startTypingRefresh, stopTypingRefresh } from './modules/typing/index.js';
 import type { InboundEvent } from './channels/adapter.js';
 
@@ -70,6 +71,66 @@ export async function adapterRouteToAgent(
   }
 
   const sessionMode: SessionMode = opts.sessionMode ?? 'shared';
+
+  // Host-side command gate. Mirrors router.ts deliverToAgent so /new etc.
+  // get handled at the host instead of being shipped to the container as
+  // plain text — the Claude Code SDK's own slash handling can stall for
+  // minutes on /new (it tries to summarize/clear in-band), while a host
+  // kill-and-resolve cycle is sub-second.
+  if (event.message.kind === 'chat' || event.message.kind === 'chat-sdk') {
+    const gate = gateCommand(event.message.content, userId, agentGroup.id);
+    if (gate.action === 'filter') {
+      log.debug('adapterRouteToAgent: filtered command dropped', { agentGroupId: agentGroup.id });
+      return { delivered: false, reason: 'filtered_command' };
+    }
+    if (gate.action === 'new_session') {
+      const existing = findSessionForAgent(agentGroup.id, mg.id, event.threadId);
+      if (existing) {
+        killContainer(existing.id, '/new command');
+        updateSession(existing.id, { status: 'closed' });
+        log.info('Session reset by /new', { oldSessionId: existing.id, agentGroupId: agentGroup.id });
+      }
+      const { session: newSession } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
+      writeOutboundDirect(newSession.agent_group_id, newSession.id, {
+        id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: 'chat',
+        platformId: event.platformId,
+        channelType: event.channelType,
+        threadId: event.threadId,
+        content: JSON.stringify({ text: 'Контекст сброшен. Начинаем с чистого листа.' }),
+      });
+      return { delivered: true, sessionId: newSession.id };
+    }
+    if (gate.action === 'rewrite') {
+      event = {
+        ...event,
+        message: { ...event.message, content: JSON.stringify({ text: gate.text }) },
+      };
+    }
+    if (gate.action === 'deny') {
+      const { session: denySession } = resolveSession(
+        agentGroup.id,
+        mg.id,
+        event.threadId,
+        sessionMode,
+      );
+      writeOutboundDirect(denySession.agent_group_id, denySession.id, {
+        id: `deny-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: 'chat',
+        platformId: event.platformId,
+        channelType: event.channelType,
+        threadId: event.threadId,
+        content: JSON.stringify({ text: `Permission denied: ${gate.command} requires admin access.` }),
+      });
+      log.info('adapterRouteToAgent: admin command denied', {
+        command: gate.command,
+        userId,
+        agentGroupId: agentGroup.id,
+      });
+      return { delivered: false, reason: 'denied' };
+    }
+  }
+
   const { session } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
   const wake = opts.wake !== false;
 
