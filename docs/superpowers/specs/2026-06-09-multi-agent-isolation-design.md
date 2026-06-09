@@ -140,6 +140,62 @@ iOS already understands envelope types `plan`, `image`, `coach`, `swap`, `set_lo
 
 No additional work. Outbound already does `session.agent_group_id → folder → payload.agent_id`. Once routing puts the message in Payne's session, the stamp is `payne` automatically. iOS filters chat scroll by `active.rawValue`, so the Payne chip shows only Payne's replies.
 
+### Component 6 — Greg reads context on session start
+
+Symmetric to Component 4 but for the `health-analyzer` agent group (slug `greg`).
+
+**Where:**
+- `groups/health-analyzer/INDEX.md` — new file, hand-written initial version, Greg maintains it.
+- Same bootstrap inbound machinery as Payne — extend `bootstrap-trio.ts` to write the bootstrap message for Greg too.
+
+**INDEX.md shape:**
+```
+# Greg INDEX
+
+## Текущие тренды (за 7 дней)
+HRV: <baseline → последние 7 дней, направление>
+RHR: <baseline → последние 7 дней, направление>
+Сон: <часов в среднем, что выбивается>
+Шаги/активность: <тренд>
+
+## Последний красный сигнал
+<дата>: <что заметил, что рекомендовал Payne'у>
+
+## Открытые вопросы к Сергею
+- <bullet list>
+
+## Активные рекомендации
+<что выдал Payne'у недавно: сменить программу, разгрузка, и т.п.>
+```
+
+**Bootstrap inbound message** (kind=`system`, `trigger=0`):
+```
+[bootstrap] Прочитай INDEX.md и memories/self/. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса Сергея или до явной аномалии в данных.
+```
+
+**Maintenance:** Greg's existing daily-analyze cron (per memory `project_jarvis_vds` — Greg runs at 09:00 UTC) appends a section to INDEX.md after each run. New section in his CLAUDE.md: "После каждого daily-analyze — обнови INDEX.md: тренды, новые красные сигналы, текущие рекомендации Payne'у."
+
+### Component 7 — Per-agent unread badges
+
+**Bug:** [ChatView.swift:67-76](ios/JarvisApp/Sources/JarvisApp/Views/ChatView.swift:67) computes `unreadByAgent` by counting all assistant messages whose `agentId` differs from the active slug. No "last seen" pointer. Counts grow unbounded across history. Currently masked because all outbound is stamped `jarvis`, so non-Jarvis chips read 0; after Component 1 lands the bug becomes visible.
+
+**Fix:**
+
+- New `LastSeenStore` (UserDefaults-backed): `[AgentIdentity: Date]`. Key `LastSeen.<slug>`. Default `Date.distantPast` for missing entries.
+- `unreadByAgent` rewrite: count `msg.timestamp > lastSeen[agent]` AND `slug != activeSlug` AND `AgentIdentity(rawValue: slug) != nil`. Messages with unknown slug do not count.
+- On chip switch (`onChange(of: active.active)`): write `lastSeen[newActive] = Date()`. The previously-active agent's badge stays 0 (it was 0 while active anyway).
+- On `onAppear` of `ChatView`: also write `lastSeen[active.active] = Date()` — covers first launch when user lands on Jarvis chip with prior history.
+- Background receive (assistant message arrives, `slug != active`): do NOT touch lastSeen. Badge increments on next render automatically.
+- Cold start: UserDefaults persists, so badge reflects only messages received since last view.
+
+**Files:**
+- `ios/JarvisApp/Sources/JarvisApp/Storage/LastSeenStore.swift` — new. `@Observable` struct, `lastSeen(for:)`, `markSeen(_:)`.
+- `ios/JarvisApp/Sources/JarvisApp/Views/ChatView.swift` — inject `LastSeenStore`, rewrite `unreadByAgent`, add `onChange` + `onAppear` handlers.
+- `ios/JarvisApp/Sources/JarvisApp/Views/OrbHomeView.swift` — same pattern (it also renders `AgentPickerInline`).
+- `ios/JarvisApp/Sources/JarvisAppTests/UnreadBadgeTests.swift` — new. Cases: fresh store + 3 jarvis messages while active=payne → payne badge 0, jarvis badge 3; switch to jarvis → jarvis badge 0; new payne message while active=jarvis → payne badge 1.
+
+**Out of band:** preview fixture `unreadCounts: [.jarvis: 2, .payne: 1]` stays — it's a hard-coded preview input, no behavior change.
+
 ## Data flow (after change)
 
 ```
@@ -178,8 +234,6 @@ Jarvis container never sees this message. Jarvis chip in iOS never sees Payne's 
 
 - Daily context reset (deferred — dead-session problem unresolved).
 - Workout history queries from chat (Payne can grep `groups/payne/sessions/` himself).
-- Greg's data bootstrap analogue (cover separately once we see how Payne's INDEX.md pattern lands).
-- Per-agent unread badges on iOS chip (UI concern, separate spec).
 
 ## Open Questions
 
