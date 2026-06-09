@@ -135,18 +135,7 @@ async function spawnContainer(session: Session): Promise<void> {
 
   const mounts = buildMounts(agentGroup, session, containerConfig, contribution);
   const containerName = `nanoclaw-v2-${agentGroup.folder}-${Date.now()}`;
-  // OneCLI agent identifier is always the agent group id — stable across
-  // sessions and reversible via getAgentGroup() for approval routing.
-  const agentIdentifier = agentGroup.id;
-  const args = await buildContainerArgs(
-    mounts,
-    containerName,
-    agentGroup,
-    containerConfig,
-    provider,
-    contribution,
-    agentIdentifier,
-  );
+  const args = await buildContainerArgs(mounts, containerName, agentGroup, containerConfig, provider, contribution);
 
   log.info('Spawning container', { sessionId: session.id, agentGroup: agentGroup.name, containerName });
 
@@ -434,7 +423,6 @@ async function buildContainerArgs(
   containerConfig: import('./container-config.js').ContainerConfig,
   provider: string,
   providerContribution: ProviderContainerContribution,
-  agentIdentifier?: string,
 ): Promise<string[]> {
   const args: string[] = ['run', '--rm', '--name', containerName, '--label', CONTAINER_INSTALL_LABEL];
 
