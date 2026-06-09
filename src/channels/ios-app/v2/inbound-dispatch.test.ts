@@ -184,6 +184,60 @@ describe('InboundDispatcher', () => {
     expect(bridgeCalls).toEqual([{ sid: 'sess-1', type: 'set_log' }]);
   });
 
+  it('routes a user message to the addressed agent when agent_id is present', () => {
+    const calls: Array<{ platform_id: string; agent_group_id: string }> = [];
+    const dispatcher = new InboundDispatcher({
+      db,
+      queue: q,
+      receipts,
+      resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
+      defaultAgentSlug: 'jarvis',
+      routeToAgent: (input) => calls.push({ platform_id: input.platform_id, agent_group_id: input.agent_group_id }),
+      onContextResponse,
+      onAction,
+      onNewConversation,
+      onFeedback,
+    });
+    dispatcher.dispatch(pid, env({ payload: { thread_id: 'thr', text: 'go', agent_id: 'payne' } }));
+    expect(calls).toEqual([{ platform_id: pid, agent_group_id: 'payne' }]);
+  });
+
+  it('falls back to defaultAgentSlug on routeToAgent when agent_id is missing', () => {
+    const calls: Array<{ agent_group_id: string }> = [];
+    const dispatcher = new InboundDispatcher({
+      db,
+      queue: q,
+      receipts,
+      resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
+      defaultAgentSlug: 'jarvis',
+      routeToAgent: (input) => calls.push({ agent_group_id: input.agent_group_id }),
+      onContextResponse,
+      onAction,
+      onNewConversation,
+      onFeedback,
+    });
+    dispatcher.dispatch(pid, env({ payload: { thread_id: null, text: 'hello' } }));
+    expect(calls).toEqual([{ agent_group_id: 'jarvis' }]);
+  });
+
+  it('passes unknown agent_id slug through so adapterRouteToAgent can log/drop', () => {
+    const calls: Array<{ agent_group_id: string }> = [];
+    const dispatcher = new InboundDispatcher({
+      db,
+      queue: q,
+      receipts,
+      resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
+      defaultAgentSlug: 'jarvis',
+      routeToAgent: (input) => calls.push({ agent_group_id: input.agent_group_id }),
+      onContextResponse,
+      onAction,
+      onNewConversation,
+      onFeedback,
+    });
+    dispatcher.dispatch(pid, env({ payload: { thread_id: null, text: 'hi', agent_id: 'ghost' } }));
+    expect(calls).toEqual([{ agent_group_id: 'ghost' }]);
+  });
+
   it('context_response calls onContextResponse', () => {
     d.dispatch(
       pid,
