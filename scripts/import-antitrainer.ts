@@ -280,13 +280,15 @@ async function importExerciseCard(at: AtExercise): Promise<{ slug: string }> {
   const slug = slugify(at.name);
   const muscles = mapMuscles(at.muscles ?? []);
   const refinedPrimary = refineByName(at.name, muscles.primary);
+  const inferred = inferEquipment(at.name);
   const card: Record<string, unknown> = {
     slug,
     name_ru: at.name,
     name_en: null,
     primary_muscle_groups: refinedPrimary,
     secondary_muscle_groups: muscles.secondary.filter((s) => !refinedPrimary.includes(s)),
-    equipment: [], // antitrainer не отдаёт явно, заполняется вручную
+    equipment: inferred.equipment_inferred,
+    is_gym: inferred.is_gym,
     axial_load: isAxial(at.name),
     image: at.thumbnail ? `${slug}.jpg` : null,
     refs: [`antitrainer://exercise/${at.id}`],
@@ -414,6 +416,98 @@ interface AtDiary {
  * antitrainer — we infer it from `week.name` (Лёгкая/Средняя/Тяжёлая)
  * since that's the protocol Sergei was running.
  */
+/**
+ * Pull the full antitrainer exercise catalog (~140 entries) and import any
+ * not already seen via programs. Equipment is inferred from the name since
+ * antitrainer's `inventories` field is empty for all rows. Sergei wants
+ * gym-only — we tag each card and skip non-gym from the saved set.
+ */
+function inferEquipment(name: string): {
+  equipment_inferred: string[];
+  is_gym: boolean;
+} {
+  const n = name.toLowerCase();
+  const eq = new Set<string>();
+  const gymKeywords = [
+    ['штанг', 'barbell'],
+    ['гантел', 'dumbbell'],
+    ['блок', 'cable'],
+    ['кроссовер', 'cable'],
+    ['трос', 'cable'],
+    ['тренажёр', 'machine'],
+    ['тренажер', 'machine'],
+    ['машин', 'machine'],
+    ['гак', 'hack_squat'],
+    ['гриф', 'barbell'],
+    ['скамь', 'bench'],
+    ['скамей', 'bench'],
+    ['жим ногами', 'leg_press'],
+    ['икроножн', 'machine'],
+    ['разгибани', 'machine'],
+    ['сгибани', 'machine'],
+    ['отведени', 'machine'],
+    ['подтягивани', 'pull_up_bar'],
+    ['брусь', 'parallel_bars'],
+  ];
+  for (const [kw, label] of gymKeywords) {
+    if (n.includes(kw)) eq.add(label);
+  }
+  const homeKeywords = ['резинк', 'эспандер', 'коврик', 'собственный вес', 'без отягощения'];
+  let isGym = eq.size > 0;
+  if (eq.size === 0 && homeKeywords.some((k) => n.includes(k))) {
+    eq.add('bodyweight');
+    isGym = false;
+  }
+  // Cardio (беговая дорожка / велотренажёр) — treat as gym since в зале есть.
+  if (n.includes('беговой') || n.includes('велотренаж') || n.includes('эллипс')) {
+    eq.add('cardio_machine');
+    isGym = true;
+  }
+  return { equipment_inferred: Array.from(eq), is_gym: isGym };
+}
+
+interface AtCatalogExercise {
+  id: number;
+  name: string;
+  thumbnail?: { url?: string };
+  muscles?: AtMuscle[];
+}
+
+async function importFullCatalog(): Promise<{
+  totalSeen: number;
+  newImported: number;
+  skippedNonGym: number;
+}> {
+  console.log('Full catalog: enumerating...');
+  let page = 1;
+  const ids: number[] = [];
+  for (;;) {
+    const resp = await get<{
+      data: AtCatalogExercise[];
+      meta: { current_page: number; last_page: number };
+    }>(`/exercises?include=muscles&page=${page}&per_page=100`);
+    for (const ex of resp.data) ids.push(ex.id);
+    if (resp.meta.current_page >= resp.meta.last_page) break;
+    page++;
+  }
+  console.log(`  catalog has ${ids.length} entries`);
+
+  let newImported = 0;
+  for (const id of ids) {
+    if (exerciseCache.has(id)) continue;
+    let detail: { data: AtExercise };
+    try {
+      detail = await get<{ data: AtExercise }>(`/exercises/${id}`);
+    } catch (err) {
+      console.warn(`  ! detail ${id} failed: ${(err as Error).message}`);
+      continue;
+    }
+    await importExerciseCard(detail.data);
+    newImported++;
+  }
+  return { totalSeen: ids.length, newImported, skippedNonGym: 0 };
+}
+
 async function importDiaries(): Promise<{
   sessionsWritten: number;
   totalSets: number;
@@ -545,6 +639,10 @@ async function main() {
   for (const p of programs) {
     await importProgram(p.id);
   }
+
+  console.log('');
+  const catalogStats = await importFullCatalog();
+  console.log(`  catalog: ${catalogStats.totalSeen} total, ${catalogStats.newImported} new (all imported)`);
 
   console.log('');
   const diaryStats = await importDiaries();
