@@ -107,6 +107,41 @@ export function wakeContainer(session: Session): Promise<boolean> {
   return promise;
 }
 
+/** Cap a single container.log generation before rotating to .log.1. */
+const CONTAINER_LOG_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Open an append stream to `<sessionDir>/container.log` for the spawned
+ * container's stderr. Rotates the existing file to `.log.1` if it has grown
+ * past CONTAINER_LOG_MAX_BYTES, so the log survives `--rm` without growing
+ * unbounded across many wakes. Returns null (and logs) if the stream can't
+ * be opened — stderr still reaches the host debug log either way.
+ */
+export function openContainerLogStream(
+  agentGroupId: string,
+  sessionId: string,
+  containerName: string,
+): fs.WriteStream | null {
+  try {
+    const dir = sessionDir(agentGroupId, sessionId);
+    fs.mkdirSync(dir, { recursive: true });
+    const logPath = path.join(dir, 'container.log');
+    try {
+      if (fs.statSync(logPath).size > CONTAINER_LOG_MAX_BYTES) {
+        fs.renameSync(logPath, `${logPath}.1`); // keep one prior generation
+      }
+    } catch {
+      /* no existing file — nothing to rotate */
+    }
+    const stream = fs.createWriteStream(logPath, { flags: 'a' });
+    stream.write(`\n--- ${new Date().toISOString()} spawn ${containerName} ---\n`);
+    return stream;
+  } catch (err) {
+    log.warn('Failed to open container log stream', { agentGroupId, sessionId, err });
+    return null;
+  }
+}
+
 async function spawnContainer(session: Session): Promise<void> {
   const agentGroup = getAgentGroup(session.agent_group_id);
   if (!agentGroup) {
@@ -150,12 +185,31 @@ async function spawnContainer(session: Session): Promise<void> {
   activeContainers.set(session.id, { process: container, containerName });
   markContainerRunning(session.id);
 
-  // Log stderr
+  // Persist container stderr to a per-session file. The container runs with
+  // `--rm`, so once it exits there is otherwise NO trace of why it died — and
+  // the in-process `log.debug` below is dropped at the default INFO level.
+  // The file is the only durable record for diagnosing a silent container
+  // failure (OOM, crash, bad config). Rotated at spawn so it can't grow
+  // unbounded across many wakes; one prior generation is kept as .log.1.
+  const logStream = openContainerLogStream(agentGroup.id, session.id, containerName);
+
+  // Log stderr — both to the durable file and to the host log at debug level.
   container.stderr?.on('data', (data) => {
-    for (const line of data.toString().trim().split('\n')) {
+    const text = data.toString();
+    logStream?.write(text);
+    for (const line of text.trim().split('\n')) {
       if (line) log.debug(line, { container: agentGroup.folder });
     }
   });
+  const closeLogStream = (): void => {
+    try {
+      logStream?.end();
+    } catch {
+      /* already closed */
+    }
+  };
+  container.once('close', closeLogStream);
+  container.once('error', closeLogStream);
 
   // stdout is unused in v2 (all IO is via session DB)
   container.stdout?.on('data', () => {});
