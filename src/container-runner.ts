@@ -27,7 +27,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
-import { composeGroupClaudeMd } from './claude-md-compose.js';
+import { ensureAgentInstructionsSymlink } from './instructions-gen.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
@@ -258,9 +258,10 @@ function buildMounts(
   const claudeDir = path.join(DATA_DIR, 'v2-sessions', agentGroup.id, '.claude-shared');
   syncSkillSymlinks(claudeDir, containerConfig, agentGroup);
 
-  // Compose CLAUDE.md fresh every spawn from the shared base, enabled skill
-  // fragments, and MCP server instructions. See `claude-md-compose.ts`.
-  composeGroupClaudeMd(agentGroup);
+  // Ensure the per-agent INSTRUCTIONS.md symlink exists so the agent's
+  // CLAUDE.md can reference the host-generated shared instructions via
+  // `@./INSTRUCTIONS.md`. See `instructions-gen.ts`.
+  ensureAgentInstructionsSymlink(agentGroup.folder);
 
   const mounts: VolumeMount[] = [];
   const sessDir = sessionDir(agentGroup.id, session.id);
@@ -299,13 +300,6 @@ function buildMounts(
   const globalDir = path.join(GROUPS_DIR, 'global');
   if (fs.existsSync(globalDir)) {
     mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: true });
-  }
-
-  // Shared CLAUDE.md — read-only, imported by the composed entry point via
-  // the `.claude-shared.md` symlink inside the group dir.
-  const sharedClaudeMd = path.join(process.cwd(), 'container', 'CLAUDE.md');
-  if (fs.existsSync(sharedClaudeMd)) {
-    mounts.push({ hostPath: sharedClaudeMd, containerPath: '/app/CLAUDE.md', readonly: true });
   }
 
   // Per-group .claude-shared at /home/node/.claude (Claude state, settings,
