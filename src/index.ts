@@ -9,6 +9,7 @@ import path from 'path';
 import type { Server } from 'http';
 
 import { backfillContainerConfigs } from './backfill-container-configs.js';
+import { bootstrapTrio } from './bootstrap-trio.js';
 import { CREDENTIAL_PROXY_PORT, DATA_DIR } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
 import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
@@ -78,6 +79,7 @@ async function main(): Promise<void> {
   const dbPath = path.join(DATA_DIR, 'v2.db');
   const db = initDb(dbPath);
   runMigrations(db);
+  bootstrapTrio();
   log.info('Central DB ready', { path: dbPath });
 
   // 1b. Backfill container_configs from legacy container.json files.
