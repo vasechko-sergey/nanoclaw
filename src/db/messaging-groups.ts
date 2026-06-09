@@ -130,6 +130,14 @@ export function setMessagingGroupDeniedAt(id: string, deniedAt: string | null): 
  * mirrors the backfill logic in migration 004.
  */
 export function createMessagingGroupAgent(mga: MessagingGroupAgent): void {
+  // Clear any owner-denied flag on the messaging group. The router only
+  // consults `denied_at` on the zero-agent branch (router.ts:218), so while
+  // an agent is wired the flag is dormant — but if this agent is later
+  // unwired (agentCount back to 0), a stale `denied_at` would silently drop
+  // messages instead of re-escalating for channel approval. Clearing it on
+  // wire keeps the deny→wire→unwire path clean.
+  getDb().prepare('UPDATE messaging_groups SET denied_at = NULL WHERE id = ?').run(mga.messaging_group_id);
+
   getDb()
     .prepare(
       `INSERT INTO messaging_group_agents (

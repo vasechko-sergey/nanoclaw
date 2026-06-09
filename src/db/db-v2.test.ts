@@ -15,6 +15,7 @@ import {
   getMessagingGroupByPlatform,
   updateMessagingGroup,
   deleteMessagingGroup,
+  setMessagingGroupDeniedAt,
   createMessagingGroupAgent,
   getMessagingGroupAgents,
   getMessagingGroupAgent,
@@ -192,6 +193,16 @@ describe('messaging group agents', () => {
     const results = getMessagingGroupAgents('mg-1');
     expect(results).toHaveLength(1);
     expect(results[0].agent_group_id).toBe('ag-1');
+  });
+
+  it('clears a stale denied_at when an agent is wired', () => {
+    // Owner denied the channel, then later wires an agent to it: the deny
+    // flag must be cleared so a future unwire re-escalates instead of
+    // silently dropping (router only checks denied_at on the zero-agent path).
+    setMessagingGroupDeniedAt('mg-1', now());
+    expect(getMessagingGroup('mg-1')!.denied_at).not.toBeNull();
+    createMessagingGroupAgent(mga());
+    expect(getMessagingGroup('mg-1')!.denied_at).toBeNull();
   });
 
   it('should order by priority descending', () => {
