@@ -45,8 +45,17 @@ function generateSessionId(): string {
 }
 
 export function bootstrapTrio(): void {
+  // Resolve canonical agent_group ids. If an agent already exists for this
+  // folder (legacy installs created Jarvis with a UUID id rather than the
+  // slug `jarvis`), reuse its row id everywhere downstream — otherwise
+  // ensureContainerConfig and the wiring/session rows fail with
+  // FOREIGN KEY constraint failed.
+  const canonicalIdByFolder = new Map<string, string>();
   for (const entry of TRIO) {
-    if (!getAgentGroupByFolder(entry.folder)) {
+    const existing = getAgentGroupByFolder(entry.folder);
+    if (existing) {
+      canonicalIdByFolder.set(entry.folder, existing.id);
+    } else {
       createAgentGroup({
         id: entry.id,
         name: entry.name,
@@ -54,20 +63,22 @@ export function bootstrapTrio(): void {
         agent_provider: null,
         created_at: new Date().toISOString(),
       });
+      canonicalIdByFolder.set(entry.folder, entry.id);
       log.info('bootstrap-trio created agent_group', { id: entry.id });
     }
-    ensureContainerConfig(entry.id);
+    ensureContainerConfig(canonicalIdByFolder.get(entry.folder)!);
   }
 
   const ios = getAllMessagingGroups().filter((m) => m.channel_type === 'ios-app-v2');
   for (const mg of ios) {
     let priority = 0;
     for (const entry of TRIO) {
-      if (!getMessagingGroupAgentByPair(mg.id, entry.id)) {
+      const canonicalId = canonicalIdByFolder.get(entry.folder)!;
+      if (!getMessagingGroupAgentByPair(mg.id, canonicalId)) {
         createMessagingGroupAgent({
           id: `mga-${randomUUID()}`,
           messaging_group_id: mg.id,
-          agent_group_id: entry.id,
+          agent_group_id: canonicalId,
           // 'pattern' + engage_pattern '.' is the "match every message" sentinel
           // (see types.ts MessagingGroupAgent.engage_pattern doc).
           engage_mode: 'pattern',
@@ -78,14 +89,14 @@ export function bootstrapTrio(): void {
           priority: priority++,
           created_at: new Date().toISOString(),
         });
-        log.info('bootstrap-trio wired agent to mg', { mg: mg.id, agent: entry.id });
+        log.info('bootstrap-trio wired agent to mg', { mg: mg.id, agent: canonicalId });
       }
-      const existing = findSessionForAgent(entry.id, mg.id, null);
+      const existing = findSessionForAgent(canonicalId, mg.id, null);
       if (!existing) {
         const newSessId = generateSessionId();
         createSession({
           id: newSessId,
-          agent_group_id: entry.id,
+          agent_group_id: canonicalId,
           messaging_group_id: mg.id,
           thread_id: null,
           agent_provider: null,
@@ -94,13 +105,13 @@ export function bootstrapTrio(): void {
           last_active: null,
           created_at: new Date().toISOString(),
         });
-        log.info('bootstrap-trio eager-created session', { sessionId: newSessId, agent: entry.id, mg: mg.id });
+        log.info('bootstrap-trio eager-created session', { sessionId: newSessId, agent: canonicalId, mg: mg.id });
         if (entry.bootstrap) {
           // writeSessionMessage opens inbound.db at the session folder path,
           // which requires the folder to exist — initSessionFolder both mkdirs
           // and applies the inbound/outbound schemas.
-          initSessionFolder(entry.id, newSessId);
-          writeSessionMessage(entry.id, newSessId, {
+          initSessionFolder(canonicalId, newSessId);
+          writeSessionMessage(canonicalId, newSessId, {
             id: `bootstrap-${randomUUID()}`,
             kind: 'system',
             timestamp: new Date().toISOString(),
