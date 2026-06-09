@@ -7,6 +7,7 @@ import fs from 'fs';
 import os from 'os';
 
 import { CONTAINER_INSTALL_LABEL } from './config.js';
+import { readEnvFile } from './env.js';
 import { log } from './log.js';
 
 /** The container runtime binary name. */
@@ -37,7 +38,9 @@ function detectProxyBindHost(): string {
   return '0.0.0.0';
 }
 
-export const PROXY_BIND_HOST = process.env.CREDENTIAL_PROXY_HOST || detectProxyBindHost();
+const proxyHostEnv = readEnvFile(['CREDENTIAL_PROXY_HOST']);
+export const PROXY_BIND_HOST =
+  process.env.CREDENTIAL_PROXY_HOST || proxyHostEnv.CREDENTIAL_PROXY_HOST || detectProxyBindHost();
 
 /** CLI args needed for the container to resolve the host gateway. */
 export function hostGatewayArgs(): string[] {
