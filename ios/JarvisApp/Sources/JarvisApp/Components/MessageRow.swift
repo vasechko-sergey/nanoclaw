@@ -129,12 +129,28 @@ struct MessageRow: View {
             .padding(.top, 7)
     }
 
+    private var senderLabel: String {
+        if isUser { return "Я" }
+        if let slug = message.agentId,
+           let agent = AgentIdentity(rawValue: slug) {
+            return agent.displayName.uppercased()
+        }
+        return "JARVIS"
+    }
+
+    private var senderAccentColor: Color {
+        guard !isUser,
+              let slug = message.agentId,
+              let agent = AgentIdentity(rawValue: slug) else { return Theme.accentMedium }
+        return agent.accentColor
+    }
+
     private var metaRow: some View {
         HStack(spacing: 6) {
-            Text(isUser ? "Я" : "JARVIS")
+            Text(senderLabel)
                 .font(Theme.metaFont)
                 .tracking(0.5)
-                .foregroundStyle(Theme.accentMedium)
+                .foregroundStyle(senderAccentColor)
             Spacer()
             Text(message.timestamp, style: .time)
                 .font(Theme.metaFont)

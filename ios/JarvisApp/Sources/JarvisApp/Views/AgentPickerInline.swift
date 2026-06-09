@@ -16,28 +16,31 @@ struct AgentPickerInline: View {
     var body: some View {
         @Bindable var active = active
 
+        // Stable layout: when expanded, render every agent in the fixed
+        // AgentIdentity.allCases order so tap positions don't shift when the
+        // user switches chips. The active row also occupies its own canonical
+        // slot rather than being lifted to the top. Collapsed: only the
+        // active row is visible.
         VStack(spacing: 4) {
-            // Active (always shown at top).
-            row(for: active.active, isActive: true) {
-                if isExpanded {
-                    withAnimation(.easeInOut(duration: 0.25)) { isExpanded = false }
-                } else {
-                    withAnimation(.easeInOut(duration: 0.25)) { isExpanded = true }
-                }
-            }
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.5).onEnded { _ in onLongPress?() }
-            )
-
-            if isExpanded {
-                ForEach(otherAgents) { agent in
-                    row(for: agent, isActive: false) {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            active.active = agent
-                            isExpanded = false
+            ForEach(AgentIdentity.allCases) { agent in
+                let isActive = agent == active.active
+                if isActive || isExpanded {
+                    row(for: agent, isActive: isActive) {
+                        if isActive {
+                            withAnimation(.easeInOut(duration: 0.25)) { isExpanded.toggle() }
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                active.active = agent
+                                isExpanded = false
+                            }
                         }
                     }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                            if isActive { onLongPress?() }
+                        }
+                    )
+                    .transition(.opacity)
                 }
             }
         }
@@ -81,10 +84,6 @@ struct AgentPickerInline: View {
         .buttonStyle(.plain)
         .accessibilityLabel(isActive ? "Активный агент: \(agent.displayName), нажмите чтобы открыть выбор"
                                      : "Переключиться на \(agent.displayName)")
-    }
-
-    private var otherAgents: [AgentIdentity] {
-        AgentIdentity.allCases.filter { $0 != active.active }
     }
 
     /// Insert U+2009 (thin space) between every character to match the
