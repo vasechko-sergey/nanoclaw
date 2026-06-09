@@ -11,6 +11,19 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
+    /// Accept folder-name aliases the host stamps on the outbound `agent_id`
+    /// field. Greg's group folder on the server is `health-analyzer`, but
+    /// iOS treats `.greg.rawValue == "greg"` as canonical, so without this
+    /// alias every Greg reply would be filtered out of ChatView.
+    init?(rawValue: String) {
+        switch rawValue {
+        case "jarvis": self = .jarvis
+        case "payne": self = .payne
+        case "greg", "health-analyzer": self = .greg
+        default: return nil
+        }
+    }
+
     /// Compact English title used in the navbar picker so letter-spaced
     /// uppercase fits one line (`J A R V I S`, `M A J   P A Y N E`,
     /// `D R   H O U S E`). Greetings + agent personas still respond in

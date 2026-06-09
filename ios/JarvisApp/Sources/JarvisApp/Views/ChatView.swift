@@ -53,10 +53,13 @@ struct ChatView: View {
     /// Only messages that should render in the chat (excludes invisible technical messages).
     /// T10: also filtered by the currently-active agent chip. Rows missing
     /// `agentId` (pre-T7 storage) are treated as legacy `jarvis` traffic.
+    /// Comparison goes through `AgentIdentity(rawValue:)` so folder-name
+    /// aliases (e.g. `health-analyzer` → `.greg`) match correctly.
     private var visibleMessages: [ChatMessage] {
-        let activeSlug = active.active.rawValue
         return ws.messages.filter { msg in
-            msg.isVisible && (msg.agentId ?? "jarvis") == activeSlug
+            guard msg.isVisible else { return false }
+            let slug = msg.agentId ?? "jarvis"
+            return AgentIdentity(rawValue: slug) == active.active
         }
     }
 
