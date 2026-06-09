@@ -120,12 +120,11 @@ struct MessageRow: View {
     // MARK: - Building blocks
 
     private var avatarDot: some View {
-        Circle()
-            .fill(isUser
-                  ? Theme.avatarUserDot
-                  : Theme.accent)
+        let color = isUser ? Theme.avatarUserDot : senderAccentColor
+        return Circle()
+            .fill(color)
             .frame(width: Theme.avatarDotSize, height: Theme.avatarDotSize)
-            .shadow(color: isUser ? .clear : Theme.accent.opacity(0.5), radius: 3)
+            .shadow(color: isUser ? .clear : color.opacity(0.5), radius: 3)
             .padding(.top, 7)
     }
 
