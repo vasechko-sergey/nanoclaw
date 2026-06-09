@@ -17,11 +17,9 @@ import { log } from './log.js';
 
 export const SENTINEL_NAME = '.migrated-claude-md-v2';
 
-const OLD_COMPOSED_HEADER =
-  '<!-- Composed at spawn — do not edit. Edit CLAUDE.local.md for per-group content. -->';
+const OLD_COMPOSED_HEADER = '<!-- Composed at spawn — do not edit. Edit CLAUDE.local.md for per-group content. -->';
 
-const TODO_MARKER =
-  '<!-- TODO: review against INSTRUCTIONS.md — drop sections that duplicate the shared preamble. -->';
+const TODO_MARKER = '<!-- TODO: review against INSTRUCTIONS.md — drop sections that duplicate the shared preamble. -->';
 
 const STUB_PERSONA = `# TODO: persona
 
@@ -90,10 +88,7 @@ function migrateGroup(dir: string, name: string, actions: string[]): void {
   const indexPath = path.join(memoriesDir, 'index.md');
   if (fs.existsSync(memoriesDir) && !fs.existsSync(indexPath)) {
     const entries = collectMemoryFiles(memoriesDir, memoriesDir);
-    const body =
-      '# Memory index\n\n' +
-      entries.map((rel) => `- ${rel}`).join('\n') +
-      '\n';
+    const body = '# Memory index\n\n' + entries.map((rel) => `- ${rel}`).join('\n') + '\n';
     fs.writeFileSync(indexPath, body);
     actions.push(`${name}/memories/index.md seeded`);
   }
@@ -116,9 +111,7 @@ function migrateGroup(dir: string, name: string, actions: string[]): void {
 
 function collectMemoryFiles(root: string, dir: string): string[] {
   const out: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-    a.name.localeCompare(b.name),
-  )) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.name === 'index.md') continue;
     const full = path.join(dir, entry.name);
     const rel = path.relative(root, full);

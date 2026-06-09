@@ -69,9 +69,7 @@ describe('migrateClaudeMdV2', () => {
     makeGroup('payne2', { 'CLAUDE.md': '# Payne\n\n.', 'CLAUDE.local.md': '' });
     migrateClaudeMdV2({ groupsDir });
     expect(fs.existsSync(path.join(groupsDir, 'payne2', 'CLAUDE.local.md'))).toBe(false);
-    expect(
-      fs.existsSync(path.join(groupsDir, 'payne2', 'memories', 'CLAUDE.local-archive.md')),
-    ).toBe(false);
+    expect(fs.existsSync(path.join(groupsDir, 'payne2', 'memories', 'CLAUDE.local-archive.md'))).toBe(false);
   });
 
   it('seeds memories/index.md when memories/ exists but the index does not', () => {
@@ -81,10 +79,7 @@ describe('migrateClaudeMdV2', () => {
       'memories/people/ivan.md': 'i',
     });
     migrateClaudeMdV2({ groupsDir });
-    const index = fs.readFileSync(
-      path.join(groupsDir, 'jarvis2', 'memories', 'index.md'),
-      'utf8',
-    );
+    const index = fs.readFileSync(path.join(groupsDir, 'jarvis2', 'memories', 'index.md'), 'utf8');
     expect(index).toContain('# Memory index');
     expect(index).toContain('profile.md');
     expect(index).toContain('people/ivan.md');
