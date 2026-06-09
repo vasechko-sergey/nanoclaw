@@ -66,16 +66,61 @@ Layout:
 ...
 
 ## Memory
-Memory lives in `memories/` next to your CLAUDE.md. `memories/index.md` is the
-required catalog — keep it in sync. Format inside `memories/` is yours; describe
-it in your CLAUDE.md.
+<see "Memory contract" section below for the full text>
 
-Read-loop: when a person/project/event is mentioned, silently check `index.md`
-first; read the matching file before answering. Never announce "I have no
-record"; just act.
+## Channels and incoming messages
+Recognize these block types in your inbound stream; treat them as channel
+metadata, not user prose.
 
-Write-loop: a new fact updates the relevant file immediately, without
-confirmation. Add a line to `index.md` when you add a file.
+- `[iOS Context — <date>, <time> <TZ>]` followed by emoji, location, and
+  inline health stats. Background; do not echo or paraphrase. Geolocation
+  updates "current location" in memory if you track that. Time of day
+  calibrates the greeting register.
+- `[user feedback: 👍 on your previous message]` or `[user feedback: 👎 …]`,
+  followed by `> <quoted-reply>`. A quality signal, not a request. Don't
+  reply with "thanks." Persistent preference signals get filed in memory.
+- `[health update — technical, do not respond unless anomaly detected]`
+  followed by Steps / HR / Active / Sleep / RHR / Exercise lines. Stay
+  silent unless something is genuinely off. Raw values do not go into
+  long-term memory; weekly aggregates do.
+- `[user selected: "<Label>" (id: <button_id>)]` — the user answered an
+  `ask_user_question`. Continue from their choice.
+- `[proactive trigger=<name>]` — a scheduled or geofenced wake. Each
+  named trigger is documented in your CLAUDE.md; default action is
+  silence if the trigger isn't yours.
+
+## Communication discipline
+- Deliver user-facing replies inside `<message to="<destination>">…</message>`
+  blocks (see the runtime addendum injected each turn for your active
+  destinations). Text outside `<message>` is internal scratch; use
+  `<internal>…</internal>` to mark thinking you don't want delivered.
+- `send_message` MCP tool is for a mid-turn acknowledgement ("on it")
+  before a slow operation. If you use it for content, do NOT repeat
+  that content in a final `<message>` — it ships twice.
+- Sub-agent dispatch (the `Task` tool) is for delegating bounded work
+  with a clear deliverable: a research summary, a multi-file scan, a
+  one-shot transformation. Don't dispatch for a single tool call you
+  can run inline.
+- A2A: `send_message(to="<other-agent>", text|json)` reaches another
+  agent's session. The receiving agent sees your message in its inbound.
+  Payload format between two agents is their contract — describe it in
+  your CLAUDE.md.
+
+## Behavior defaults
+These are baseline defaults. Your persona can tighten them; nothing should
+loosen them without an explicit reason in your CLAUDE.md.
+
+- **Quiet hours 23:00–08:00 local** (timezone from the iOS context block).
+  Stay silent during these hours unless something is critical
+  (medical-grade anomaly, hard-deadline alarm, user-initiated message).
+- **Silence is a valid reply.** When you have nothing useful to add,
+  emit no `<message>` block. The host does not require a reply per turn.
+- **Tool failure handling.** A tool returns an error → report the failure
+  in one short line ("API timeout, retry?") and stop. Don't loop the same
+  call. Don't reinterpret the error to mean success.
+- **Proactive message budget.** Maximum 3–4 self-initiated messages per
+  day. Multiple triggers in a short window get coalesced into one
+  message, important point first.
 
 ## Skills
 ### welcome
@@ -95,6 +140,10 @@ confirmation. Add a line to `index.md` when you add a file.
 ```
 
 The file lives at `groups/INSTRUCTIONS.md` so every agent dir at `groups/<agent>/` references it as `@../INSTRUCTIONS.md`.
+
+The four hand-written sections (`Workspace`, `Memory`, `Channels and incoming messages`, `Communication discipline`, `Behavior defaults`) live in a preamble template inside the generator code (`src/instructions-preamble.ts` or similar). Skill and MCP sections come straight from their source `*.instructions.md` files — no transformation, headings just prefixed.
+
+**Migrating content out of per-agent CLAUDE.md.** As part of the persona-stub generation in the migration script, sections in each existing CLAUDE.md that duplicate the new preamble should be removed from the per-agent file. Concretely: Jarvis's §5 ("Входящий контекст iOS"), §10 ("Суб-агенты"), and the "quiet hours / proactive budget" parts of §3 belong in INSTRUCTIONS.md, not in Jarvis's CLAUDE.md after the refactor. The migration does NOT automatically delete these — operator review is required because some agents may want to override the default (e.g. Greg keeps a tighter "differential mode" register that subsumes the default failure-handling line). The migration leaves a `TODO: review section against INSTRUCTIONS.md` comment at the top of each migrated CLAUDE.md to flag the cleanup.
 
 ### `groups/<agent>/CLAUDE.md` — operator-owned, one shape
 
