@@ -214,10 +214,10 @@ async function main(): Promise<void> {
   // The long-running NanoClaw service holds an exclusive WAL handle to
   // data/v2.db. Open in the same `journal_mode=WAL` so we share access
   // cleanly; pragma the WAL on init via the normal `initDb` path.
-  initDb(CENTRAL_DB_PATH);
+  const db = initDb(CENTRAL_DB_PATH);
   // Schema check is cheap. Skip if the service has already migrated —
   // runMigrations is itself idempotent.
-  runMigrations();
+  runMigrations(db);
 
   let session = findExistingHeadless();
   if (session) {
