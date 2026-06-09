@@ -43,7 +43,7 @@ const DEFAULT_SETTINGS_JSON =
  * Skill symlinks are synced at spawn time by container-runner.ts.
  *
  * The composed `CLAUDE.md` is NOT written here — it's regenerated on every
- * spawn by `composeGroupClaudeMd()` (see `claude-md-compose.ts`). Initial
+ * spawn by the instructions generator (see `instructions-gen.ts`). Initial
  * per-group instructions (if provided) seed `CLAUDE.local.md`.
  */
 export function initGroupFilesystem(group: AgentGroup, opts?: { instructions?: string }): void {

@@ -61,10 +61,7 @@ function listMcpSections(mcpDir: string): Array<{ name: string; body: string }> 
   return sections;
 }
 
-function compose(
-  skills: Array<{ name: string; body: string }>,
-  mcp: Array<{ name: string; body: string }>,
-): string {
+function compose(skills: Array<{ name: string; body: string }>, mcp: Array<{ name: string; body: string }>): string {
   const parts: string[] = [PREAMBLE.trimEnd(), ''];
   if (skills.length > 0) {
     parts.push('## Skills', '');

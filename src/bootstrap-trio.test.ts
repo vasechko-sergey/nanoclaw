@@ -62,7 +62,9 @@ describe('bootstrapTrio', () => {
       denied_at: null,
     });
     bootstrapTrio();
-    const wired = getMessagingGroupAgents('mg-ios').map((r) => r.agent_group_id).sort();
+    const wired = getMessagingGroupAgents('mg-ios')
+      .map((r) => r.agent_group_id)
+      .sort();
     expect(wired).toEqual(['greg', 'jarvis', 'payne']);
     for (const slug of ['jarvis', 'payne', 'greg']) {
       expect(findSessionForAgent(slug, 'mg-ios', null)).toBeDefined();

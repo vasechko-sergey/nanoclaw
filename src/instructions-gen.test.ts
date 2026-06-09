@@ -3,10 +3,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-import {
-  regenerateSharedInstructions,
-  ensureAgentInstructionsSymlink,
-} from './instructions-gen.js';
+import { regenerateSharedInstructions, ensureAgentInstructionsSymlink } from './instructions-gen.js';
 import { GENERATOR_MARKER } from './instructions-preamble.js';
 
 let tmp: string;
@@ -79,9 +76,7 @@ describe('regenerateSharedInstructions', () => {
 
   it('refuses to overwrite an INSTRUCTIONS.md without the generator marker', () => {
     fs.writeFileSync(path.join(groupsDir, 'INSTRUCTIONS.md'), 'hand-edited content');
-    expect(() => regenerateSharedInstructions({ groupsDir, skillsDir, mcpDir })).toThrow(
-      /hand-edited/,
-    );
+    expect(() => regenerateSharedInstructions({ groupsDir, skillsDir, mcpDir })).toThrow(/hand-edited/);
     const out = fs.readFileSync(path.join(groupsDir, 'INSTRUCTIONS.md'), 'utf8');
     expect(out).toBe('hand-edited content');
   });
