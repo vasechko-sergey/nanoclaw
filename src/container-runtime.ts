@@ -28,14 +28,28 @@ function detectProxyBindHost(): string {
   // WSL uses Docker Desktop (same VM routing as macOS) — loopback is correct.
   if (fs.existsSync('/proc/sys/fs/binfmt_misc/WSLInterop')) return '127.0.0.1';
 
-  // Bare-metal Linux: bind to docker0 bridge IP instead of 0.0.0.0
+  // Bare-metal Linux: bind to docker0 bridge IP so containers (but not the
+  // public internet) can reach the proxy.
   const ifaces = os.networkInterfaces();
   const docker0 = ifaces['docker0'];
   if (docker0) {
     const ipv4 = docker0.find((a) => a.family === 'IPv4');
     if (ipv4) return ipv4.address;
   }
-  return '0.0.0.0';
+
+  // No docker0 IPv4 visible (interface down, rootless docker, etc.).
+  // We deliberately fall back to loopback rather than 0.0.0.0 — on a
+  // public host, binding the credential proxy to 0.0.0.0 would expose
+  // the operator's Anthropic token to anyone who can reach the port.
+  // Containers won't be able to reach 127.0.0.1 via host.docker.internal
+  // until the operator sets CREDENTIAL_PROXY_HOST explicitly (e.g. to
+  // 172.17.0.1 once docker0 is up) — that's the safe failure mode.
+  log.warn(
+    'Credential proxy: no docker0 IPv4 detected, falling back to 127.0.0.1. ' +
+      'Containers will not reach the proxy until CREDENTIAL_PROXY_HOST is set in .env ' +
+      '(typically to the docker0 IP, e.g. 172.17.0.1).',
+  );
+  return '127.0.0.1';
 }
 
 const proxyHostEnv = readEnvFile(['CREDENTIAL_PROXY_HOST']);
