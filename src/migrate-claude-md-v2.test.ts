@@ -3,7 +3,12 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-import { migrateClaudeMdV2, SENTINEL_NAME } from './migrate-claude-md-v2.js';
+import {
+  migrateClaudeMdV2,
+  cleanupDeadFragmentImports,
+  stripDeadFragmentImports,
+  SENTINEL_NAME,
+} from './migrate-claude-md-v2.js';
 
 let tmp: string;
 let groupsDir: string;
@@ -95,6 +100,21 @@ describe('migrateClaudeMdV2', () => {
     expect(fs.existsSync(path.join(dir, '.claude-fragments'))).toBe(false);
   });
 
+  it('strips dead @./.claude-fragments/* imports from a manual CLAUDE.md body', () => {
+    const body =
+      '# Persona\n\nrules here\n\n' +
+      '@./.claude-fragments/module-core.md\n' +
+      '@./.claude-fragments/module-scheduling.md\n' +
+      '@./.claude-fragments/skill-onecli-gateway.md\n';
+    makeGroup('jarvis', { 'CLAUDE.md': body });
+    migrateClaudeMdV2({ groupsDir });
+    const out = fs.readFileSync(path.join(groupsDir, 'jarvis', 'CLAUDE.md'), 'utf8');
+    expect(out).not.toContain('.claude-fragments');
+    expect(out).toContain('# Persona');
+    expect(out).toContain('rules here');
+    expect(out.startsWith('@./INSTRUCTIONS.md')).toBe(true);
+  });
+
   it('writes the sentinel after a successful run', () => {
     makeGroup('x', { 'CLAUDE.md': '# X\n\n.' });
     migrateClaudeMdV2({ groupsDir });
@@ -110,5 +130,51 @@ describe('migrateClaudeMdV2', () => {
     expect(second).toBe(first);
     const occurrences = (second.match(/TODO: review against INSTRUCTIONS.md/g) || []).length;
     expect(occurrences).toBe(1);
+  });
+});
+
+describe('stripDeadFragmentImports', () => {
+  it('removes dead fragment imports and collapses blank runs', () => {
+    const input = 'a\n\n@./.claude-fragments/module-core.md\n@./.claude-fragments/module-cli.md\n\nb\n';
+    const out = stripDeadFragmentImports(input);
+    expect(out).not.toContain('.claude-fragments');
+    expect(out).toContain('a');
+    expect(out).toContain('b');
+    expect(out).not.toMatch(/\n{3,}/);
+  });
+
+  it('is a no-op when there are no dead imports', () => {
+    const input = '# Persona\n\nclean body\n';
+    expect(stripDeadFragmentImports(input)).toBe(input);
+  });
+
+  it('is idempotent', () => {
+    const input = 'x\n@./.claude-fragments/a.md\ny\n';
+    const once = stripDeadFragmentImports(input);
+    expect(stripDeadFragmentImports(once)).toBe(once);
+  });
+});
+
+describe('cleanupDeadFragmentImports', () => {
+  it('scrubs already-migrated CLAUDE.md files regardless of the sentinel', () => {
+    // Simulate an install migrated before the strip-fix: sentinel present,
+    // CLAUDE.md already has the @./INSTRUCTIONS.md import + dead refs.
+    fs.writeFileSync(path.join(groupsDir, SENTINEL_NAME), 'migrated\n');
+    makeGroup('jarvis', {
+      'CLAUDE.md': '@./INSTRUCTIONS.md\n\n# Persona\n\n@./.claude-fragments/module-core.md\n',
+    });
+    cleanupDeadFragmentImports({ groupsDir });
+    const out = fs.readFileSync(path.join(groupsDir, 'jarvis', 'CLAUDE.md'), 'utf8');
+    expect(out).not.toContain('.claude-fragments');
+    expect(out).toContain('# Persona');
+    expect(out.startsWith('@./INSTRUCTIONS.md')).toBe(true);
+  });
+
+  it('leaves a clean CLAUDE.md byte-identical', () => {
+    const clean = '@./INSTRUCTIONS.md\n\n# Persona\n\nbody\n';
+    makeGroup('payne', { 'CLAUDE.md': clean });
+    cleanupDeadFragmentImports({ groupsDir });
+    const out = fs.readFileSync(path.join(groupsDir, 'payne', 'CLAUDE.md'), 'utf8');
+    expect(out).toBe(clean);
   });
 });
