@@ -250,8 +250,9 @@ async function importExerciseCard(at: AtExercise): Promise<{ slug: string }> {
     rules: at.rules ?? [],
     warnings: at.warnings ?? [],
     antitrainer_id: at.id,
+    // gif_video — это inline mp4 на storage. external video (kinescope) не берём
+    // — пришлось бы дёргать сторонний плеер. Берём только то что рендерится сразу.
     gif_url: at.gif_video?.url ?? null,
-    video_url: at.video?.url ?? null,
     rest_default_sec: at.execution_rest ? hmsToSec(at.execution_rest) : null,
     created_at: new Date().toISOString(),
   };
