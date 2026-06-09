@@ -5,7 +5,7 @@
  * + session resolve + write + wake so the dropped_messages audit trail and
  * permissions checks stay intact.
  */
-import { getAgentGroup } from './db/agent-groups.js';
+import { getAgentGroup, getAgentGroupByFolder } from './db/agent-groups.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
 import { getSession } from './db/sessions.js';
@@ -43,7 +43,7 @@ export async function adapterRouteToAgent(
     return { delivered: false, reason: 'no_messaging_group' };
   }
 
-  const agentGroup = getAgentGroup(agentGroupId);
+  const agentGroup = getAgentGroup(agentGroupId) ?? getAgentGroupByFolder(agentGroupId);
   if (!agentGroup) {
     log.warn('adapterRouteToAgent: unknown agent group', { agentGroupId });
     recordDroppedMessage({
@@ -63,14 +63,14 @@ export async function adapterRouteToAgent(
 
   const accessGate = getAccessGate();
   if (accessGate) {
-    const gate = accessGate(event, userId, mg, agentGroupId);
+    const gate = accessGate(event, userId, mg, agentGroup.id);
     if (!gate.allowed) {
       return { delivered: false, reason: gate.reason };
     }
   }
 
   const sessionMode: SessionMode = opts.sessionMode ?? 'shared';
-  const { session } = resolveSession(agentGroupId, mg.id, event.threadId, sessionMode);
+  const { session } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
   const wake = opts.wake !== false;
 
   writeSessionMessage(session.agent_group_id, session.id, {

@@ -30,7 +30,13 @@ describe('adapterRouteToAgent', () => {
     process.env.DATA_DIR = tmp;
     const db = initTestDb();
     runMigrations(db);
-    createAgentGroup({ id: 'payne', name: 'Payne', folder: 'payne', agent_provider: null, created_at: new Date().toISOString() });
+    createAgentGroup({
+      id: 'payne',
+      name: 'Payne',
+      folder: 'payne',
+      agent_provider: null,
+      created_at: new Date().toISOString(),
+    });
     createMessagingGroup({
       id: 'mg-test',
       channel_type: 'ios-app-v2',
@@ -62,5 +68,21 @@ describe('adapterRouteToAgent', () => {
     const event = makeEvent('ios:nobody', null, 'hi');
     const res = await adapterRouteToAgent(event, 'payne', { wake: false });
     expect(res).toEqual({ delivered: false, reason: 'no_messaging_group' });
+  });
+
+  it('resolves the agent group by folder when id lookup misses', async () => {
+    // Re-create with UUID-style id but folder='legacy'
+    createAgentGroup({
+      id: 'ag-uuid-style',
+      name: 'Legacy Jarvis',
+      folder: 'legacy',
+      agent_provider: null,
+      created_at: new Date().toISOString(),
+    });
+    const event = makeEvent('ios:test', null, 'hello legacy');
+    const res = await adapterRouteToAgent(event, 'legacy', { wake: false });
+    expect(res.delivered).toBe(true);
+    const sess = findSessionForAgent('ag-uuid-style', 'mg-test', null);
+    expect(sess).toBeDefined();
   });
 });
