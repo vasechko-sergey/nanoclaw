@@ -26,7 +26,13 @@ export interface DispatcherDeps {
   resolveSessionForPlatform: (platform_id: string, agent_id: string | undefined) => string | null;
   /** Slug used when an inbound envelope omits `agent_id`. */
   defaultAgentSlug: string;
-  onUserMessage: (input: { platform_id: string; session_id: string; envelope: UserMessageEnvelope }) => void;
+  /**
+   * Route a user-message envelope directly to the addressed agent.
+   * Called instead of the host's routeInbound for ios-app-v2 — the adapter
+   * already knows the target agent from `payload.agent_id` (defaulting to
+   * `defaultAgentSlug` when absent).
+   */
+  routeToAgent: (input: { platform_id: string; agent_group_id: string; envelope: UserMessageEnvelope }) => void;
   onContextResponse: (input: { platform_id: string; envelope: ContextResponseEnvelope }) => void;
   onAction: (input: { platform_id: string; envelope: ActionResponseEnvelope }) => void;
   onNewConversation: (input: { platform_id: string; envelope: NewConversationEnvelope }) => void;
@@ -89,9 +95,15 @@ export class InboundDispatcher {
       }
 
       switch (env.type) {
-        case 'message':
-          if (session_id) this.deps.onUserMessage({ platform_id, session_id, envelope: env });
+        case 'message': {
+          const targetSlug = (env.payload as { agent_id?: string }).agent_id ?? this.deps.defaultAgentSlug;
+          this.deps.routeToAgent({
+            platform_id,
+            agent_group_id: targetSlug,
+            envelope: env,
+          });
           break;
+        }
         case 'context_response':
           this.deps.onContextResponse({ platform_id, envelope: env });
           break;

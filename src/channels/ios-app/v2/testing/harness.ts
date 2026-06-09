@@ -118,7 +118,7 @@ export async function startTestServer(): Promise<Harness> {
     resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
     defaultAgentSlug: 'jarvis',
     workoutBridge,
-    onUserMessage: (input) => {
+    routeToAgent: (input) => {
       agent.received.push({ kind: 'user_message', ...input });
     },
     onContextResponse: (input) => {

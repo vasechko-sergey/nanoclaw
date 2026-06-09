@@ -33,7 +33,7 @@ async function startServer(opts: { commands?: Array<{ command: string; descripti
     receipts,
     resolveSessionForPlatform: (_pid, _agent) => 'sess-1',
     defaultAgentSlug: 'jarvis',
-    onUserMessage: () => {},
+    routeToAgent: () => {},
     onContextResponse: () => {},
     onAction: () => {},
     onNewConversation: () => {},

@@ -16,6 +16,7 @@ import { WebSocketServer } from 'ws';
 
 import type { ChannelAdapter, ChannelSetup } from '../../adapter.js';
 import { registerChannelAdapter } from '../../channel-registry.js';
+import { adapterRouteToAgent } from '../../../adapter-route.js';
 import { readEnvFile } from '../../../env.js';
 import { log } from '../../../log.js';
 import { DATA_DIR, GROUPS_DIR } from '../../../config.js';
@@ -235,23 +236,26 @@ function createV2Adapter(): ChannelAdapter | null {
     receipts,
     resolveSessionForPlatform,
     defaultAgentSlug,
-    onUserMessage: ({ platform_id, envelope }) => {
-      if (!cfg) return;
-      const ios_context = envelope.payload.context ?? null;
-      const attachments = envelope.payload.attachments ?? [];
-      const text = envelope.payload.text ?? '';
-      const threadId = envelope.payload.thread_id ?? null;
-      cfg.onInbound(platform_id, threadId, {
-        id: envelope.id,
-        kind: 'chat',
-        content: {
-          text,
-          senderId: platform_id,
-          ios_context,
-          attachments,
+    routeToAgent: ({ platform_id, agent_group_id, envelope }) => {
+      void adapterRouteToAgent(
+        {
+          channelType: CHANNEL_TYPE,
+          platformId: platform_id,
+          threadId: envelope.payload.thread_id ?? null,
+          message: {
+            id: envelope.id,
+            kind: 'chat',
+            content: JSON.stringify({
+              text: envelope.payload.text ?? '',
+              senderId: platform_id,
+              ios_context: envelope.payload.context ?? null,
+              attachments: envelope.payload.attachments ?? [],
+            }),
+            timestamp: envelope.ts ?? new Date().toISOString(),
+          },
         },
-        timestamp: envelope.ts ?? new Date().toISOString(),
-      });
+        agent_group_id,
+      ).catch((err) => logV2Warn('routeToAgent threw', { err: String(err), agent_group_id }));
     },
     onContextResponse: ({ envelope }) => {
       const requestId = envelope.payload.request_id;
