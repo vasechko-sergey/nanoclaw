@@ -12,7 +12,8 @@ import { backfillContainerConfigs } from './backfill-container-configs.js';
 import { bootstrapTrio } from './bootstrap-trio.js';
 import { CREDENTIAL_PROXY_PORT, DATA_DIR } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
-import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
+import { regenerateSharedInstructions } from './instructions-gen.js';
+import { migrateClaudeMdV2 } from './migrate-claude-md-v2.js';
 import { startCredentialProxy } from './credential-proxy.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
@@ -87,7 +88,8 @@ async function main(): Promise<void> {
   backfillContainerConfigs();
 
   // 1c. One-time filesystem cutover — idempotent, no-op after first run.
-  migrateGroupsToClaudeLocal();
+  migrateClaudeMdV2();
+  regenerateSharedInstructions();
 
   // 2. Container runtime
   ensureContainerRuntimeRunning();
