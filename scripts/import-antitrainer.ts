@@ -137,6 +137,49 @@ function mapMuscles(muscles: Array<{ name: string; filtering?: number }>): {
   };
 }
 
+/**
+ * Antitrainer отдаёт "Грудь" одним слагом — у нас три (upper/middle/lower).
+ * Уточняем по ключевым словам в названии упражнения. То же для спины
+ * (низ/верх широчайших), плеч (передние/средние/задние дельты).
+ */
+function refineByName(name: string, primary: string[]): string[] {
+  const n = name.toLowerCase();
+  const result = [...primary];
+
+  const swap = (from: string, to: string) => {
+    const idx = result.indexOf(from);
+    if (idx >= 0 && !result.includes(to)) result[idx] = to;
+  };
+
+  // Грудь
+  if (result.includes('chest_middle')) {
+    if (n.includes('наклонной') || n.includes('наклонную') || n.includes('incline')) {
+      swap('chest_middle', 'chest_upper');
+    } else if (
+      n.includes('отрицательным') ||
+      n.includes('декомпрессионн') ||
+      n.includes('decline') ||
+      n.includes('бабочк') // не груди, оставим как есть
+    ) {
+      // декомпрессия — низ; бабочка — середина (no-op)
+      if (!n.includes('бабочк')) swap('chest_middle', 'chest_lower');
+    }
+  }
+
+  // Плечи без уточнения → отвести от средней дельты по жесту
+  if (result.includes('delts_side')) {
+    if (n.includes('перед собой') || n.includes('фронталь')) {
+      swap('delts_side', 'delts_front');
+    } else if (n.includes('обратн') || n.includes('задних') || n.includes('лежа на животе')) {
+      swap('delts_side', 'delts_rear');
+    } else if (n.includes('жим') && (n.includes('сидя') || n.includes('гантел'))) {
+      swap('delts_side', 'delts_front');
+    }
+  }
+
+  return result;
+}
+
 // ── Axial-load detection (Сергея ограничение) ─────────────────────────────
 
 const AXIAL_KEYWORDS = [
@@ -236,12 +279,13 @@ async function importExerciseCard(at: AtExercise): Promise<{ slug: string }> {
 
   const slug = slugify(at.name);
   const muscles = mapMuscles(at.muscles ?? []);
+  const refinedPrimary = refineByName(at.name, muscles.primary);
   const card: Record<string, unknown> = {
     slug,
     name_ru: at.name,
     name_en: null,
-    primary_muscle_groups: muscles.primary,
-    secondary_muscle_groups: muscles.secondary,
+    primary_muscle_groups: refinedPrimary,
+    secondary_muscle_groups: muscles.secondary.filter((s) => !refinedPrimary.includes(s)),
     equipment: [], // antitrainer не отдаёт явно, заполняется вручную
     axial_load: isAxial(at.name),
     image: at.thumbnail ? `${slug}.jpg` : null,
