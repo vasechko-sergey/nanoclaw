@@ -34,7 +34,7 @@ const TRIO = [
   {
     id: 'greg',
     name: 'Dr House (Greg)',
-    folder: 'health-analyzer',
+    folder: 'greg',
     bootstrap:
       '[bootstrap] Прочитай INDEX.md и memories/self/. Молчи до явного запроса Сергея или явной аномалии в данных.',
   },

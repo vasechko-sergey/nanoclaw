@@ -28,10 +28,10 @@ import { writeDestinations } from '../src/modules/agent-to-agent/write-destinati
 // (from-folder, local_name_for_destination, to-folder)
 // Folder is stable across installs; the agent_group id may be auto-generated.
 const PAIRS: Array<[string, string, string]> = [
-  ['jarvis',          'payne',  'payne'],
-  ['payne',           'jarvis', 'jarvis'],
-  ['health-analyzer', 'payne',  'payne'],
-  ['payne',           'greg',   'health-analyzer'],
+  ['jarvis', 'payne',  'payne'],
+  ['payne',  'jarvis', 'jarvis'],
+  ['greg',   'payne',  'payne'],
+  ['payne',  'greg',   'greg'],
 ];
 
 function main(): void {

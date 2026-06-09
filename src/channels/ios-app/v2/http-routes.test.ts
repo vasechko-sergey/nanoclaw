@@ -242,7 +242,7 @@ describe('POST /ios/health/upload', () => {
   it('accepts missing platformId when healthOverrideDir is set and writes to the override folder', async () => {
     await h.close();
     const overrideRoot = mkdtempSync(join(tmpdir(), 'ios-app-v2-override-'));
-    const overrideDir = join(overrideRoot, 'health-analyzer', 'health');
+    const overrideDir = join(overrideRoot, 'greg', 'health');
     h = await bootHarness({ healthOverrideDir: overrideDir });
 
     const body = JSON.stringify({

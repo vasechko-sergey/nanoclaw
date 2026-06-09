@@ -155,8 +155,8 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
             writeRoot = idx > 0 ? healthOverrideDir.slice(0, idx) : '.';
             writeFolder = idx > 0 ? healthOverrideDir.slice(idx + 1) : healthOverrideDir;
             // appendHealthHistory adds a 'health' subdir under the folder,
-            // so the legacy path `.../groups/health-analyzer/health` is
-            // recreated by passing `groups` + `health-analyzer` here. For
+            // so a path like `.../groups/greg/health` is
+            // recreated by passing `groups` + `greg` here. For
             // installs that set IOS_HEALTH_HISTORY_DIR to an exact path
             // ending in `/health`, strip the trailing `/health` segment
             // since appendHealthHistory re-adds it.
@@ -185,7 +185,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
           // response — we log and move on. The trigger reads the full raw.jsonl
           // (cheap, ~14 lines typical) and only does work if the rule fires.
           // Install-specific: SICK_DAY_TARGET_AGENT_GROUP_ID must be set to the
-          // agent-group id (NOT folder name) of the health-analyzer agent (e.g. "greg").
+          // agent-group id of the Greg agent (i.e. "greg").
           // Unset = trigger is a no-op, safe default.
           try {
             const allRows = loadAllHealthRows(writeRoot, writeFolder);

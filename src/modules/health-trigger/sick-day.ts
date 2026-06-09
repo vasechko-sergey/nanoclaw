@@ -3,7 +3,7 @@
  *
  * Called after `appendHealthHistory` writes new rows from the iOS app's
  * `POST /ios/health/upload`. We re-implement the three-threshold rule from
- * `groups/health-analyzer/scripts/analyze.js:sickDayDetect` (deliberately
+ * `groups/greg/scripts/analyze.js:sickDayDetect` (deliberately
  * duplicated — the host can't shell out to bun on the request path) and,
  * if 2 of 3 signals fire, write a one-shot wake message into Greg's
  * session inbound DB so he runs `--mode sick-day` on the next poll.
@@ -86,8 +86,8 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
 }
 
 export interface SickDayCheckArgs {
-  /** Agent-group id to wake. NOT the on-disk folder — they may differ
-   *  (e.g. folder `health-analyzer` ↔ id `greg`). The HTTP handler resolves
+  /** Agent-group id to wake (`greg`; folder and id are now unified). The
+   *  HTTP handler resolves
    *  this from env `SICK_DAY_TARGET_AGENT_GROUP_ID` (falls back to undefined,
    *  in which case this function is a no-op). */
   agentGroupId: string | undefined;

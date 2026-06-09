@@ -40,7 +40,7 @@ describe('bootstrapTrio', () => {
     bootstrapTrio();
     expect(getAgentGroupByFolder('jarvis')).toBeDefined();
     expect(getAgentGroupByFolder('payne')).toBeDefined();
-    expect(getAgentGroupByFolder('health-analyzer')).toBeDefined();
+    expect(getAgentGroupByFolder('greg')).toBeDefined();
   });
 
   it('is idempotent on repeated runs', () => {
