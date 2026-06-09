@@ -117,6 +117,10 @@ function pickHeadlessSessionId(): string {
 }
 
 function findExistingHeadless(): Session | null {
+  // Accept both NULL and '' for `messaging_group_id` so a previously
+  // hand-rolled headless row (whatever convention it used) still gets
+  // detected — keeps the script idempotent across schema-history
+  // accidents.
   const row = getDb()
     .prepare(
       "SELECT * FROM sessions WHERE agent_group_id = ? AND status = 'active' AND (messaging_group_id IS NULL OR messaging_group_id = '')",
@@ -229,12 +233,15 @@ async function main(): Promise<void> {
   session = {
     id: newId,
     agent_group_id: AGENT_GROUP_ID,
-    // Empty string (not NULL) to match Greg's row exactly. The
-    // `messaging_groups` join in writeSessionRouting treats falsy values
-    // the same — no channel routing is written for headless.
-    messaging_group_id: '',
-    thread_id: '',
-    agent_provider: '',
+    // NULL matches Greg's row. `sessions.messaging_group_id` has a FK
+    // to `messaging_groups(id)`, so empty string would dangle; NULL is
+    // the only legal "no channel binding" value. `writeSessionRouting`
+    // gates on `if (session.messaging_group_id)` — NULL falls through
+    // without writing channel routing, which is what we want for a
+    // headless cron session.
+    messaging_group_id: null,
+    thread_id: null,
+    agent_provider: null,
     status: 'active',
     container_status: 'stopped',
     last_active: nowIso(),
