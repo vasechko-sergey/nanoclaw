@@ -9,6 +9,9 @@ const RESET_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 // Index = number of consecutive crashes (0 = clean start, attempt 1).
 // 6+ crashes capped at 15min.
 const BACKOFF_SCHEDULE_S = [0, 0, 10, 30, 120, 300, 900];
+// How long the process must stay up before we treat the start as healthy and
+// clear the crash counter. Anything shorter is still "crash-loop" territory.
+const HEALTHY_UPTIME_MS = 60 * 1000;
 
 interface CircuitBreakerState {
   attempt: number;
@@ -36,11 +39,38 @@ function getDelay(attempt: number): number {
   return BACKOFF_SCHEDULE_S[idx];
 }
 
-export function resetCircuitBreaker(): void {
+function clearState(): boolean {
   try {
     fs.unlinkSync(CB_PATH);
-    log.info('Circuit breaker reset on clean shutdown');
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function resetCircuitBreaker(): void {
+  if (clearState()) log.info('Circuit breaker reset on clean shutdown');
+}
+
+/**
+ * After the process has stayed up HEALTHY_UPTIME_MS, clear the crash counter
+ * so a single crash much later (or any unrelated future restart) starts from
+ * attempt=1 instead of inheriting a stale, escalated backoff. Without this the
+ * counter only ever resets on a clean shutdown or after the 1h window.
+ *
+ * The timer is unref'd so it never keeps the event loop alive on its own.
+ *
+ * NOTE: this does NOT shorten the delay of the CURRENT start — backoff is
+ * applied at startup before this fires. To skip a pending backoff after you've
+ * fixed the root cause, delete data/circuit-breaker.json before restarting.
+ */
+export function scheduleHealthyReset(): NodeJS.Timeout {
+  const timer = setTimeout(() => {
+    if (clearState())
+      log.info('Circuit breaker: process healthy, crash counter cleared', { afterMs: HEALTHY_UPTIME_MS });
+  }, HEALTHY_UPTIME_MS);
+  timer.unref?.();
+  return timer;
 }
 
 export async function enforceStartupBackoff(): Promise<void> {

@@ -36,7 +36,7 @@ vi.mock('./log.js', () => ({
   },
 }));
 
-import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
+import { enforceStartupBackoff, resetCircuitBreaker, scheduleHealthyReset } from './circuit-breaker.js';
 
 function readState(): { attempt: number; timestamp: string } {
   return JSON.parse(fs.readFileSync(CB_PATH, 'utf-8'));
@@ -67,6 +67,26 @@ describe('resetCircuitBreaker', () => {
   it('is a no-op when the file does not exist', () => {
     expect(fs.existsSync(CB_PATH)).toBe(false);
     expect(() => resetCircuitBreaker()).not.toThrow();
+  });
+});
+
+describe('scheduleHealthyReset', () => {
+  it('clears the crash counter after the healthy uptime window', () => {
+    vi.useFakeTimers();
+    seedState(5);
+    expect(fs.existsSync(CB_PATH)).toBe(true);
+    scheduleHealthyReset();
+    // Not cleared immediately.
+    expect(fs.existsSync(CB_PATH)).toBe(true);
+    vi.advanceTimersByTime(60 * 1000);
+    expect(fs.existsSync(CB_PATH)).toBe(false);
+  });
+
+  it('does not throw when there is no state file to clear', () => {
+    vi.useFakeTimers();
+    expect(fs.existsSync(CB_PATH)).toBe(false);
+    scheduleHealthyReset();
+    expect(() => vi.advanceTimersByTime(60 * 1000)).not.toThrow();
   });
 });
 

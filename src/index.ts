@@ -11,7 +11,7 @@ import type { Server } from 'http';
 import { backfillContainerConfigs } from './backfill-container-configs.js';
 import { bootstrapTrio } from './bootstrap-trio.js';
 import { CREDENTIAL_PROXY_PORT, DATA_DIR } from './config.js';
-import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
+import { enforceStartupBackoff, resetCircuitBreaker, scheduleHealthyReset } from './circuit-breaker.js';
 import { ensureAgentInstructionsCopy, regenerateSharedInstructions } from './instructions-gen.js';
 import { migrateClaudeMdV2, cleanupDeadFragmentImports } from './migrate-claude-md-v2.js';
 import { getAllAgentGroups } from './db/agent-groups.js';
@@ -206,6 +206,11 @@ async function main(): Promise<void> {
 
   // 7. Start the `ncl` CLI socket server (data/ncl.sock).
   await startCliServer();
+
+  // Clear the crash counter once we've stayed up long enough to count as a
+  // healthy start, so a stale escalated backoff doesn't carry into a future
+  // unrelated restart.
+  scheduleHealthyReset();
 
   log.info('NanoClaw running');
 }
