@@ -2,7 +2,7 @@
  * Generate the shared groups/INSTRUCTIONS.md from the preamble + every
  * container/skills/*\/instructions.md + every
  * container/agent-runner/src/mcp-tools/*.instructions.md. Each agent dir
- * gets a sibling symlink so its CLAUDE.md can reference the file with
+ * gets a sibling copy so its CLAUDE.md can reference the file with
  * `@./INSTRUCTIONS.md`.
  *
  * The function is the only writer for groups/INSTRUCTIONS.md and refuses
@@ -25,7 +25,7 @@ export interface GenOpts {
   mcpDir?: string;
 }
 
-export interface SymlinkOpts {
+export interface CopyOpts {
   groupsDir?: string;
 }
 
@@ -104,24 +104,24 @@ export function regenerateSharedInstructions(opts: GenOpts = {}): void {
   fs.renameSync(tmp, outPath);
 }
 
-export function ensureAgentInstructionsSymlink(folder: string, opts: SymlinkOpts = {}): void {
+export function ensureAgentInstructionsCopy(folder: string, opts: CopyOpts = {}): void {
   const groupsDir = opts.groupsDir ?? GROUPS_DIR;
   const agentDir = path.join(groupsDir, folder);
   if (!fs.existsSync(agentDir)) {
     fs.mkdirSync(agentDir, { recursive: true });
   }
-  const linkPath = path.join(agentDir, 'INSTRUCTIONS.md');
-  let currentTarget: string | null = null;
-  try {
-    currentTarget = fs.readlinkSync(linkPath);
-  } catch {
-    /* missing or regular file */
+  const source = path.join(groupsDir, 'INSTRUCTIONS.md');
+  const target = path.join(agentDir, 'INSTRUCTIONS.md');
+
+  if (!fs.existsSync(source)) {
+    // Shared instructions haven't been generated yet — skip silently.
+    return;
   }
-  if (currentTarget === '../INSTRUCTIONS.md') return;
-  try {
-    fs.unlinkSync(linkPath);
-  } catch {
-    /* missing */
-  }
-  fs.symlinkSync('../INSTRUCTIONS.md', linkPath);
+
+  // Replace any existing target (symlink from prior version, stale copy).
+  // Atomic write via tmp + rename so a half-written file never lands.
+  const content = fs.readFileSync(source);
+  const tmp = `${target}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, content);
+  fs.renameSync(tmp, target);
 }

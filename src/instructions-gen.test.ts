@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-import { regenerateSharedInstructions, ensureAgentInstructionsSymlink } from './instructions-gen.js';
+import { regenerateSharedInstructions, ensureAgentInstructionsCopy } from './instructions-gen.js';
 import { GENERATOR_MARKER } from './instructions-preamble.js';
 
 let tmp: string;
@@ -82,31 +82,43 @@ describe('regenerateSharedInstructions', () => {
   });
 });
 
-describe('ensureAgentInstructionsSymlink', () => {
-  it('creates a symlink to ../INSTRUCTIONS.md in the agent dir', () => {
+describe('ensureAgentInstructionsCopy', () => {
+  it('writes the shared INSTRUCTIONS.md content into the agent dir as a regular file', () => {
+    fs.writeFileSync(path.join(groupsDir, 'INSTRUCTIONS.md'), 'SHARED CONTENT');
     const agentDir = path.join(groupsDir, 'jarvis');
     fs.mkdirSync(agentDir);
-    ensureAgentInstructionsSymlink('jarvis', { groupsDir });
-    const linkPath = path.join(agentDir, 'INSTRUCTIONS.md');
-    const target = fs.readlinkSync(linkPath);
-    expect(target).toBe('../INSTRUCTIONS.md');
+    ensureAgentInstructionsCopy('jarvis', { groupsDir });
+    const targetPath = path.join(agentDir, 'INSTRUCTIONS.md');
+    expect(fs.lstatSync(targetPath).isFile()).toBe(true);
+    expect(fs.readFileSync(targetPath, 'utf8')).toBe('SHARED CONTENT');
   });
 
-  it('is idempotent — second call leaves the symlink unchanged', () => {
+  it('is idempotent — second call produces byte-identical content', () => {
+    fs.writeFileSync(path.join(groupsDir, 'INSTRUCTIONS.md'), 'V1');
     const agentDir = path.join(groupsDir, 'payne');
     fs.mkdirSync(agentDir);
-    ensureAgentInstructionsSymlink('payne', { groupsDir });
-    const before = fs.lstatSync(path.join(agentDir, 'INSTRUCTIONS.md')).mtimeMs;
-    ensureAgentInstructionsSymlink('payne', { groupsDir });
-    const after = fs.lstatSync(path.join(agentDir, 'INSTRUCTIONS.md')).mtimeMs;
-    expect(after).toBe(before);
+    ensureAgentInstructionsCopy('payne', { groupsDir });
+    const first = fs.readFileSync(path.join(agentDir, 'INSTRUCTIONS.md'));
+    ensureAgentInstructionsCopy('payne', { groupsDir });
+    const second = fs.readFileSync(path.join(agentDir, 'INSTRUCTIONS.md'));
+    expect(Buffer.compare(first, second)).toBe(0);
   });
 
-  it('replaces a stale symlink pointing somewhere else', () => {
+  it('replaces a stale symlink left over from the old design', () => {
+    fs.writeFileSync(path.join(groupsDir, 'INSTRUCTIONS.md'), 'SHARED');
     const agentDir = path.join(groupsDir, 'greg');
     fs.mkdirSync(agentDir);
     fs.symlinkSync('elsewhere', path.join(agentDir, 'INSTRUCTIONS.md'));
-    ensureAgentInstructionsSymlink('greg', { groupsDir });
-    expect(fs.readlinkSync(path.join(agentDir, 'INSTRUCTIONS.md'))).toBe('../INSTRUCTIONS.md');
+    ensureAgentInstructionsCopy('greg', { groupsDir });
+    const targetPath = path.join(agentDir, 'INSTRUCTIONS.md');
+    expect(fs.lstatSync(targetPath).isFile()).toBe(true);
+    expect(fs.lstatSync(targetPath).isSymbolicLink()).toBe(false);
+  });
+
+  it('is a no-op when groups/INSTRUCTIONS.md does not exist yet', () => {
+    const agentDir = path.join(groupsDir, 'newbie');
+    fs.mkdirSync(agentDir);
+    expect(() => ensureAgentInstructionsCopy('newbie', { groupsDir })).not.toThrow();
+    expect(fs.existsSync(path.join(agentDir, 'INSTRUCTIONS.md'))).toBe(false);
   });
 });

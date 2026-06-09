@@ -27,7 +27,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
-import { ensureAgentInstructionsSymlink } from './instructions-gen.js';
+import { ensureAgentInstructionsCopy } from './instructions-gen.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
@@ -258,10 +258,10 @@ function buildMounts(
   const claudeDir = path.join(DATA_DIR, 'v2-sessions', agentGroup.id, '.claude-shared');
   syncSkillSymlinks(claudeDir, containerConfig, agentGroup);
 
-  // Ensure the per-agent INSTRUCTIONS.md symlink exists so the agent's
+  // Ensure the per-agent INSTRUCTIONS.md copy exists so the agent's
   // CLAUDE.md can reference the host-generated shared instructions via
   // `@./INSTRUCTIONS.md`. See `instructions-gen.ts`.
-  ensureAgentInstructionsSymlink(agentGroup.folder);
+  ensureAgentInstructionsCopy(agentGroup.folder);
 
   const mounts: VolumeMount[] = [];
   const sessDir = sessionDir(agentGroup.id, session.id);
