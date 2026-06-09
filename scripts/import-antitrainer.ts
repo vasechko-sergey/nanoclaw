@@ -348,6 +348,143 @@ async function importProgram(programId: number): Promise<void> {
   console.log(`  → ${path.relative(REPO_ROOT, outPath)}`);
 }
 
+interface AtDiary {
+  id: number;
+  weight: number;
+  repeats: number | null;
+  duration: number | null;
+  notes: string | null;
+  week?: { id: number; name: string; color: string; icon: string };
+  training_id: number;
+  exercise_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Pull every diary entry for every imported exercise, regroup by
+ * antitrainer training_id, and write one session JSON per training.
+ *
+ * Each diary entry == one logged set. reps_in_reserve isn't tracked by
+ * antitrainer — we infer it from `week.name` (Лёгкая/Средняя/Тяжёлая)
+ * since that's the protocol Sergei was running.
+ */
+async function importDiaries(): Promise<{
+  sessionsWritten: number;
+  totalSets: number;
+}> {
+  // training_id -> { date, week_label, exercises: { slug -> sets[] } }
+  type SessionAccum = {
+    date: string;
+    week_label?: string;
+    week_color?: string;
+    exercises: Map<string, Array<Record<string, unknown>>>;
+  };
+  const sessions = new Map<number, SessionAccum>();
+  let totalSets = 0;
+
+  const uniqueAntitrainerIds = Array.from(new Set([...exerciseCache.keys()]));
+  console.log(`Diaries: walking ${uniqueAntitrainerIds.length} exercises...`);
+
+  for (const exId of uniqueAntitrainerIds) {
+    const cached = exerciseCache.get(exId);
+    if (!cached) continue;
+
+    // Pagination — pull all entries, page-by-page.
+    let page = 1;
+    let pagesSeen = 0;
+    for (;;) {
+      const url = `/diaries?filter%5Bexercise_id%5D=${exId}&include%5B0%5D=week&page=${page}&per_page=200`;
+      let resp: { data: AtDiary[]; meta?: { last_page: number; current_page: number } };
+      try {
+        resp = await get<{ data: AtDiary[]; meta?: { last_page: number; current_page: number } }>(url);
+      } catch (err) {
+        console.warn(`  ! diaries ${exId} p${page} failed: ${(err as Error).message}`);
+        break;
+      }
+      const rows = resp.data ?? [];
+      if (rows.length === 0) break;
+
+      for (const row of rows) {
+        const tid = row.training_id;
+        let acc = sessions.get(tid);
+        if (!acc) {
+          acc = {
+            date: row.created_at.slice(0, 10),
+            week_label: row.week?.name,
+            week_color: row.week?.color,
+            exercises: new Map(),
+          };
+          sessions.set(tid, acc);
+        }
+        // Use the earliest ts as session date.
+        if (row.created_at.slice(0, 10) < acc.date) acc.date = row.created_at.slice(0, 10);
+
+        let setList = acc.exercises.get(cached.slug);
+        if (!setList) {
+          setList = [];
+          acc.exercises.set(cached.slug, setList);
+        }
+        setList.push({
+          reps: row.repeats ?? 0,
+          weight: row.weight,
+          reps_in_reserve: rirFromWeek(row.week?.name),
+          duration_sec: row.duration,
+          notes: row.notes,
+          ts: row.created_at,
+          antitrainer_diary_id: row.id,
+        });
+        totalSets++;
+      }
+
+      pagesSeen++;
+      const meta = resp.meta;
+      if (!meta || meta.current_page >= meta.last_page) break;
+      page++;
+      if (page > 50) break; // safety
+    }
+    if (pagesSeen > 0) {
+      const total = Array.from(sessions.values()).reduce(
+        (n, s) => n + (s.exercises.get(cached.slug)?.length ?? 0),
+        0
+      );
+      console.log(`  ${cached.slug.padEnd(40)} ${total} sets (${pagesSeen} pages)`);
+    }
+  }
+
+  // Write each session.
+  let written = 0;
+  for (const [tid, acc] of sessions) {
+    const exercises = Array.from(acc.exercises, ([slug, sets]) => ({
+      exercise_slug: slug,
+      sets: sets.sort((a, b) => String(a.ts).localeCompare(String(b.ts))),
+    }));
+    const out = {
+      antitrainer_training_id: tid,
+      date: acc.date,
+      week_label: acc.week_label ?? null,
+      week_color: acc.week_color ?? null,
+      source: 'antitrainer',
+      imported_at: new Date().toISOString(),
+      exercises,
+    };
+    const fname = `${acc.date}-at-${tid}.json`;
+    fs.writeFileSync(path.join(SESSIONS_DIR, fname), JSON.stringify(out, null, 2));
+    written++;
+  }
+  return { sessionsWritten: written, totalSets };
+}
+
+/** Map antitrainer week intensity label → default reps_in_reserve. */
+function rirFromWeek(label?: string): number {
+  switch (label) {
+    case 'Лёгкая': return 4;
+    case 'Средняя': return 2;
+    case 'Тяжёлая': return 1;
+    default: return 2;
+  }
+}
+
 async function main() {
   ensureDir(EXERCISES_DIR);
   ensureDir(PROGRAMS_DIR);
@@ -364,35 +501,16 @@ async function main() {
     await importProgram(p.id);
   }
 
-  // Baseline JSON: max-known weight per exercise.
-  const baselineExercises: unknown[] = [];
-  for (const [exId, weight] of baselineWeights) {
-    const cached = exerciseCache.get(exId);
-    if (!cached) continue;
-    baselineExercises.push({
-      exercise_slug: cached.slug,
-      // Synthetic single "set" for progression's input shape; reps_in_reserve neutral.
-      sets: [{ reps: 8, weight, reps_in_reserve: 2 }],
-    });
-  }
-  const baseline = {
-    source: 'antitrainer',
-    imported_at: new Date().toISOString(),
-    note: 'Max-weight snapshot per exercise from antitrainer progress. reps and reps_in_reserve are synthetic neutral values for progression.js compatibility.',
-    exercises: baselineExercises,
-  };
-  fs.writeFileSync(
-    path.join(SESSIONS_DIR, 'baseline-from-antitrainer.json'),
-    JSON.stringify(baseline, null, 2)
-  );
+  console.log('');
+  const diaryStats = await importDiaries();
 
   console.log('');
   console.log('Summary:');
   console.log(`  ${exerciseCache.size} unique exercise cards`);
-  console.log(`  ${baselineWeights.size} baseline weights`);
   console.log(`  ${programs.length} programs`);
+  console.log(`  ${diaryStats.sessionsWritten} sessions (${diaryStats.totalSets} sets)`);
   console.log('');
-  console.log('Inspect:  ls groups/payne/exercises  ls groups/payne/programs  cat groups/payne/sessions/baseline-from-antitrainer.json');
+  console.log('Inspect:  ls groups/payne/exercises  ls groups/payne/programs  ls groups/payne/sessions');
 }
 
 main().catch((err) => {
