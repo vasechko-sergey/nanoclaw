@@ -296,7 +296,6 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      log(`Query error: ${errMsg}`);
 
       // Stale/corrupt continuation recovery: ask the provider whether
       // this error means the stored continuation is unusable, and clear
@@ -307,15 +306,36 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
         clearContinuation(config.providerName);
       }
 
-      // Write error response so the user knows something went wrong
-      writeMessageOut({
-        id: generateId(),
-        kind: 'chat',
-        platform_id: routing.platformId,
-        channel_type: routing.channelType,
-        thread_id: routing.threadId,
-        content: JSON.stringify({ text: `Error: ${errMsg}` }),
-      });
+      // Classify credential/auth failures distinctly. Since the host's
+      // credential proxy injects an OAuth token that EXPIRES, a 401/403 is
+      // an expected, recurring failure mode — surface it legibly:
+      //   - operator log marker (CREDENTIAL AUTH FAILURE) so it's greppable
+      //   - a plain user message instead of the raw "Error: 401 ... x-api-key"
+      //     dump, which leaks internals and tells the user nothing actionable.
+      if (isAuthError(errMsg)) {
+        log(`CREDENTIAL AUTH FAILURE — host token likely expired/invalid: ${errMsg}`);
+        writeMessageOut({
+          id: generateId(),
+          kind: 'chat',
+          platform_id: routing.platformId,
+          channel_type: routing.channelType,
+          thread_id: routing.threadId,
+          content: JSON.stringify({
+            text: 'My credentials were rejected (auth error). The operator needs to refresh the API token — I can’t recover this from here.',
+          }),
+        });
+      } else {
+        log(`Query error: ${errMsg}`);
+        // Write error response so the user knows something went wrong
+        writeMessageOut({
+          id: generateId(),
+          kind: 'chat',
+          platform_id: routing.platformId,
+          channel_type: routing.channelType,
+          thread_id: routing.threadId,
+          content: JSON.stringify({ text: `Error: ${errMsg}` }),
+        });
+      }
     } finally {
       clearCurrentInReplyTo();
     }
@@ -915,4 +935,15 @@ function resolveDestinationThread(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Heuristic: does an error message look like an authentication/authorization
+ * failure from the upstream API (expired/invalid token, rejected key)?
+ * Matches the substrings the Anthropic API + Claude Code SDK surface on 401/403.
+ */
+export function isAuthError(message: string): boolean {
+  return /\b401\b|\b403\b|unauthorized|forbidden|authentication|invalid[_\s-]?api[_\s-]?key|x-api-key|oauth.*(expired|invalid)|token.*(expired|invalid|rejected)/i.test(
+    message,
+  );
 }

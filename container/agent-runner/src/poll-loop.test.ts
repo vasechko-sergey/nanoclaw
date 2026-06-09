@@ -4,7 +4,7 @@ import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from '
 import { getPendingMessages, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
 import { formatMessages, extractRouting } from './formatter.js';
-import { dispatchSystemReplies, partitionMessagesBySource } from './poll-loop.js';
+import { dispatchSystemReplies, partitionMessagesBySource, isAuthError } from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
 
@@ -564,5 +564,31 @@ describe('partitionMessagesBySource', () => {
 
   it('returns the empty list for an empty input', () => {
     expect(partitionMessagesBySource([])).toEqual([]);
+  });
+});
+
+describe('isAuthError', () => {
+  it('matches 401/403 and auth phrases', () => {
+    for (const m of [
+      'Request failed: 401 Unauthorized',
+      'HTTP 403 Forbidden',
+      'authentication_error: invalid x-api-key',
+      'invalid api key',
+      'oauth token expired',
+      'token rejected by upstream',
+    ]) {
+      expect(isAuthError(m)).toBe(true);
+    }
+  });
+
+  it('does not match unrelated errors', () => {
+    for (const m of [
+      'ECONNREFUSED 127.0.0.1:3002',
+      'stream stalled — response cut short',
+      'rate limit exceeded',
+      'no conversation found',
+    ]) {
+      expect(isAuthError(m)).toBe(false);
+    }
   });
 });
