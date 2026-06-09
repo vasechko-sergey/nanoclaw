@@ -58,6 +58,10 @@ export function setSenderResolver(fn: SenderResolverFn): void {
   senderResolver = fn;
 }
 
+export function getSenderResolver(): SenderResolverFn | null {
+  return senderResolver;
+}
+
 /**
  * Access-gate hook. Runs after agent resolution.
  *
@@ -83,6 +87,10 @@ export function setAccessGate(fn: AccessGateFn): void {
     log.warn('Access gate overwritten');
   }
   accessGate = fn;
+}
+
+export function getAccessGate(): AccessGateFn | null {
+  return accessGate;
 }
 
 /**
