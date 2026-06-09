@@ -39,6 +39,17 @@ struct OrbHomeView: View {
         return GreetingBank.pick(agent: active.active, slot: slot)
     }
 
+    private var greetingLabel: some View {
+        Text(greeting)
+            .font(.system(size: Theme.scaled(11), weight: .light))
+            .tracking(2)
+            .foregroundStyle(Theme.accentMedium.opacity(0.7))
+            .opacity(showSatellites ? 0.3 : 1)
+            .animation(.easeOut(duration: 0.2), value: showSatellites)
+            .padding(.bottom, Theme.scaled(12))
+            .accessibilityIdentifier("home-greeting")
+    }
+
     private var contextualSuggestions: [String] {
         SuggestionEngine.suggestions(count: 4)
     }
@@ -96,6 +107,7 @@ struct OrbHomeView: View {
                     Spacer()
                 }
             }
+            .safeAreaInset(edge: .bottom) { greetingLabel }
             .background {
                 GeometryReader { geo in
                     ZStack {
@@ -273,7 +285,7 @@ struct OrbHomeView: View {
                 )
             }
 
-            // Central orb + greeting label
+            // Central orb
             VStack(spacing: Theme.scaled(8)) {
                 ZStack {
                     OrbView(size: Theme.orbSize, mood: showSatellites ? .heroic : .welcoming)
@@ -314,13 +326,6 @@ struct OrbHomeView: View {
                         .accessibilityIdentifier("home-orb-uitest")
                     }
                 }
-
-                Text(greeting)
-                    .font(.system(size: Theme.scaled(11), weight: .light))
-                    .tracking(2)
-                    .foregroundStyle(Theme.accentMedium.opacity(0.7))
-                    .opacity(showSatellites ? 0.3 : 1)
-                    .animation(.easeOut(duration: 0.2), value: showSatellites)
             }
 
             // UI-test-only: tap target to reveal action satellites.
