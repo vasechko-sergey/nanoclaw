@@ -12,8 +12,9 @@ import { backfillContainerConfigs } from './backfill-container-configs.js';
 import { bootstrapTrio } from './bootstrap-trio.js';
 import { CREDENTIAL_PROXY_PORT, DATA_DIR } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
-import { regenerateSharedInstructions } from './instructions-gen.js';
+import { ensureAgentInstructionsCopy, regenerateSharedInstructions } from './instructions-gen.js';
 import { migrateClaudeMdV2 } from './migrate-claude-md-v2.js';
+import { getAllAgentGroups } from './db/agent-groups.js';
 import { startCredentialProxy } from './credential-proxy.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
@@ -90,6 +91,12 @@ async function main(): Promise<void> {
   // 1c. One-time filesystem cutover — idempotent, no-op after first run.
   migrateClaudeMdV2();
   regenerateSharedInstructions();
+  // Eager-create per-agent INSTRUCTIONS.md copy so it's visible without
+  // waiting for the first container spawn. ensureAgentInstructionsCopy
+  // is idempotent.
+  for (const ag of getAllAgentGroups()) {
+    ensureAgentInstructionsCopy(ag.folder);
+  }
 
   // 2. Container runtime
   ensureContainerRuntimeRunning();
