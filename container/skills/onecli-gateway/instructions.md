@@ -1,7 +1,7 @@
 # Credentials & External Services
 
-Your HTTP requests go through the OneCLI proxy, which injects real credentials automatically. Just call any API directly (Gmail, GitHub, Slack, etc.) — the proxy adds auth before it reaches the service.
+Anthropic API calls (your own SDK traffic) go through a host-side credential proxy: `ANTHROPIC_BASE_URL` is pre-set, and your `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` env var is a placeholder that the proxy replaces with the real value before forwarding. You don't need to do anything — just call the SDK normally.
 
-Use any method: curl, Python, a CLI tool, whatever fits. If a tool checks for credentials locally, pass any placeholder value — the proxy replaces it with real credentials at request time.
+Other services (Gmail, GitHub, Slack, etc.) are NOT routed through this proxy. Their credentials live in workspace `.env` files (see the group's CLAUDE.md for the exact path) or per-tool config. If a third-party call returns `401`/`403`, check the relevant `.env` first; never ask the user to "authenticate via the gateway" for non-Anthropic APIs.
 
-If you get a `401`/`403`/`app_not_connected`, the error response contains a `connect_url` — you MUST show it to the user as a bare URL on its own line (no angle brackets, no markdown link syntax) so they can click to connect. Run `/onecli-gateway` for the full error-handling flow. Never ask the user for API keys or tokens.
+If Anthropic itself returns `401` / `connection refused`, the host-side credential proxy is down or the host `.env` is misconfigured. Surface that plainly to the user — you cannot recover from inside the container.

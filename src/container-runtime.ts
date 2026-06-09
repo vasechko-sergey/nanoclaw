@@ -3,6 +3,7 @@
  * All runtime-specific logic lives here so swapping runtimes means changing one file.
  */
 import { execSync } from 'child_process';
+import fs from 'fs';
 import os from 'os';
 
 import { CONTAINER_INSTALL_LABEL } from './config.js';
@@ -10,6 +11,33 @@ import { log } from './log.js';
 
 /** The container runtime binary name. */
 export const CONTAINER_RUNTIME_BIN = 'docker';
+
+/** Hostname containers use to reach the host machine. */
+export const CONTAINER_HOST_GATEWAY = 'host.docker.internal';
+
+/**
+ * Address the credential proxy binds to.
+ * Docker Desktop (macOS): 127.0.0.1 — VM routes host.docker.internal to loopback.
+ * Docker (Linux): bind to docker0 bridge IP so only containers can reach it,
+ *   falling back to 0.0.0.0 if interface isn't found.
+ */
+function detectProxyBindHost(): string {
+  if (os.platform() === 'darwin') return '127.0.0.1';
+
+  // WSL uses Docker Desktop (same VM routing as macOS) — loopback is correct.
+  if (fs.existsSync('/proc/sys/fs/binfmt_misc/WSLInterop')) return '127.0.0.1';
+
+  // Bare-metal Linux: bind to docker0 bridge IP instead of 0.0.0.0
+  const ifaces = os.networkInterfaces();
+  const docker0 = ifaces['docker0'];
+  if (docker0) {
+    const ipv4 = docker0.find((a) => a.family === 'IPv4');
+    if (ipv4) return ipv4.address;
+  }
+  return '0.0.0.0';
+}
+
+export const PROXY_BIND_HOST = process.env.CREDENTIAL_PROXY_HOST || detectProxyBindHost();
 
 /** CLI args needed for the container to resolve the host gateway. */
 export function hostGatewayArgs(): string[] {
