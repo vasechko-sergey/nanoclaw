@@ -13,6 +13,7 @@ struct OrbHomeView: View {
 
     @State private var showSatellites = false
     @State private var showVoiceFullscreen = false
+    @State private var lastSeen = LastSeenStore()
 
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
@@ -35,9 +36,11 @@ struct OrbHomeView: View {
         var counts: [AgentIdentity: Int] = [:]
         let activeSlug = active.active.rawValue
         for msg in coordinator.ws.messages where msg.role == .assistant {
-            let slug = msg.agentId ?? "jarvis"
-            guard slug != activeSlug, let agent = AgentIdentity(rawValue: slug) else { continue }
-            counts[agent, default: 0] += 1
+            guard let slug = msg.agentId, slug != activeSlug,
+                  let agent = AgentIdentity(rawValue: slug) else { continue }
+            if msg.timestamp > lastSeen.lastSeen(for: agent) {
+                counts[agent, default: 0] += 1
+            }
         }
         return counts
     }
@@ -188,6 +191,8 @@ struct OrbHomeView: View {
                 onStartVoiceChat()
             })
         }
+        .onAppear { lastSeen.markSeen(active.active) }
+        .onChange(of: active.active) { _, newValue in lastSeen.markSeen(newValue) }
     }
 
     // MARK: – Header

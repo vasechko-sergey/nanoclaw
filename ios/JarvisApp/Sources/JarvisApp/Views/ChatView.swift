@@ -42,6 +42,7 @@ struct ChatView: View {
     @State private var showVoiceFullscreen = false
     @AppStorage("v3MigrationShown") private var v3MigrationShown = false
     @State private var showingV3Toast = false
+    @State private var lastSeen = LastSeenStore()
 
     // P3.T17 — workout flow presentation. `activeWorkout` is set when an
     // inbound `workout_plan` envelope arrives on `coordinator.workoutBus`.
@@ -68,9 +69,11 @@ struct ChatView: View {
         var counts: [AgentIdentity: Int] = [:]
         let activeSlug = active.active.rawValue
         for msg in ws.messages where msg.role == .assistant {
-            let slug = msg.agentId ?? "jarvis"
-            guard slug != activeSlug, let agent = AgentIdentity(rawValue: slug) else { continue }
-            counts[agent, default: 0] += 1
+            guard let slug = msg.agentId, slug != activeSlug,
+                  let agent = AgentIdentity(rawValue: slug) else { continue }
+            if msg.timestamp > lastSeen.lastSeen(for: agent) {
+                counts[agent, default: 0] += 1
+            }
         }
         return counts
     }
@@ -410,6 +413,8 @@ struct ChatView: View {
                 v3MigrationShown = true
             }
         }
+        .onAppear { lastSeen.markSeen(active.active) }
+        .onChange(of: active.active) { _, newValue in lastSeen.markSeen(newValue) }
         .alert("История чата обновлена",
                isPresented: $showingV3Toast) {
             Button("ОК", role: .cancel) {}
