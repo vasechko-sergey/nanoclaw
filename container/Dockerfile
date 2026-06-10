@@ -122,6 +122,16 @@ RUN --mount=type=cache,target=/root/.cache/pnpm \
 RUN --mount=type=cache,target=/root/.cache/pnpm \
     pnpm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
+# ---- Shared agent libraries (require-able from any agent workspace) -----------
+# @napi-rs/canvas is used by more than one agent (surf-forecast/Jarvis,
+# charts/Scrooge). Installed at the filesystem root so `require("@napi-rs/canvas")`
+# resolves from any agent script via standard upward node_modules traversal — no
+# per-workspace `npm install` needed. Pinned to an exact version; bump
+# deliberately (ships a native prebuilt binary, no minimumReleaseAge gate here).
+ARG CANVAS_VERSION=1.0.0
+RUN --mount=type=cache,target=/root/.cache/pnpm \
+    cd / && pnpm add "@napi-rs/canvas@${CANVAS_VERSION}"
+
 # ---- ncl CLI wrapper ----------------------------------------------------------
 # Actual script lives in the mounted source at /app/src/cli/ncl.ts.
 RUN printf '#!/bin/sh\nexec bun /app/src/cli/ncl.ts "$@"\n' > /usr/local/bin/ncl && \
