@@ -71,7 +71,12 @@ struct EmptyStateView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: Theme.scaled(360))
+        // maxHeight (not a rigid height) so the cluster can compress when the
+        // software keyboard shrinks the available vertical space. With a rigid
+        // height the column overflowed and pushed the chat input bar partially
+        // under the keyboard in the empty state. The surrounding Spacers still
+        // center the orb when there's room, so the no-keyboard look is unchanged.
+        .frame(maxHeight: Theme.scaled(360))
     }
 }
 
