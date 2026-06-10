@@ -2,8 +2,9 @@ import fs from 'fs';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { openContainerLogStream, resolveProviderName } from './container-runner.js';
-import { sessionDir } from './session-manager.js';
+import { clearContinuationIfHeadless, openContainerLogStream, resolveProviderName } from './container-runner.js';
+import { initSessionFolder, openOutboundDbRw, outboundDbPath, sessionDir } from './session-manager.js';
+import type { Session } from './types.js';
 
 describe('resolveProviderName', () => {
   it('prefers session over container config', () => {
@@ -47,6 +48,106 @@ describe('openContainerLogStream', () => {
     const body = fs.readFileSync(logPath, 'utf8');
     expect(body).toContain('spawn nanoclaw-test-1');
     expect(body).toContain('boom: container died');
+  });
+
+  it('clearContinuationIfHeadless: noop for sessions with messaging_group_id', () => {
+    const ag2 = `test-cont-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sid2 = 'sess-interactive';
+    initSessionFolder(ag2, sid2);
+    try {
+      const db = openOutboundDbRw(ag2, sid2);
+      db.exec(`CREATE TABLE IF NOT EXISTS session_state (
+        key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT ''
+      )`);
+      db.exec(
+        `INSERT INTO session_state (key, value, updated_at) VALUES ('continuation:claude', 'KEEP_ME', '')`,
+      );
+      db.close();
+
+      const interactive: Session = {
+        id: sid2,
+        agent_group_id: ag2,
+        messaging_group_id: 'mg-x',
+        thread_id: null,
+        agent_provider: null,
+        status: 'active',
+        container_status: 'stopped',
+        last_active: null,
+        created_at: new Date().toISOString(),
+      };
+      clearContinuationIfHeadless(interactive);
+
+      const verify = openOutboundDbRw(ag2, sid2);
+      const row = verify.prepare("SELECT value FROM session_state WHERE key='continuation:claude'").get() as
+        | { value: string }
+        | undefined;
+      verify.close();
+      expect(row?.value).toBe('KEEP_ME');
+    } finally {
+      fs.rmSync(sessionDir(ag2, sid2), { recursive: true, force: true });
+    }
+  });
+
+  it('clearContinuationIfHeadless: wipes continuation rows when messaging_group_id is null', () => {
+    const ag2 = `test-cont-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sid2 = 'sess-headless';
+    initSessionFolder(ag2, sid2);
+    try {
+      const db = openOutboundDbRw(ag2, sid2);
+      db.exec(`CREATE TABLE IF NOT EXISTS session_state (
+        key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT ''
+      )`);
+      db.exec(`INSERT INTO session_state (key, value, updated_at) VALUES
+        ('continuation:claude', 'OLD_CLAUDE', ''),
+        ('continuation:codex',  'OLD_CODEX',  ''),
+        ('other_key',           'PRESERVE',   '')`);
+      db.close();
+
+      const headless: Session = {
+        id: sid2,
+        agent_group_id: ag2,
+        messaging_group_id: null,
+        thread_id: null,
+        agent_provider: null,
+        status: 'active',
+        container_status: 'stopped',
+        last_active: null,
+        created_at: new Date().toISOString(),
+      };
+      clearContinuationIfHeadless(headless);
+
+      const verify = openOutboundDbRw(ag2, sid2);
+      const rows = verify.prepare('SELECT key, value FROM session_state ORDER BY key').all() as Array<{
+        key: string;
+        value: string;
+      }>;
+      verify.close();
+      // continuation:* rows gone, unrelated keys retained.
+      expect(rows.map((r) => r.key)).toEqual(['other_key']);
+      expect(rows[0].value).toBe('PRESERVE');
+    } finally {
+      fs.rmSync(sessionDir(ag2, sid2), { recursive: true, force: true });
+    }
+  });
+
+  it('clearContinuationIfHeadless: silently skips when outbound.db does not exist yet', () => {
+    const ag2 = `test-cont-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sid2 = 'sess-fresh-headless';
+    // No initSessionFolder — outbound.db will not exist.
+    const headless: Session = {
+      id: sid2,
+      agent_group_id: ag2,
+      messaging_group_id: null,
+      thread_id: null,
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: new Date().toISOString(),
+    };
+    // Should not throw.
+    expect(() => clearContinuationIfHeadless(headless)).not.toThrow();
+    expect(fs.existsSync(outboundDbPath(ag2, sid2))).toBe(false);
   });
 
   it('rotates to .log.1 when the existing file exceeds the size cap', async () => {

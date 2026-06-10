@@ -46,6 +46,8 @@ import {
   heartbeatPath,
   markContainerRunning,
   markContainerStopped,
+  openOutboundDbRw,
+  outboundDbPath,
   sessionDir,
   writeSessionRouting,
 } from './session-manager.js';
@@ -142,12 +144,67 @@ export function openContainerLogStream(
   }
 }
 
+/**
+ * Headless sessions (no messaging_group, no thread) are cron-only. They
+ * exist purely to host recurring tasks (`schedule_task` rows) and should
+ * NEVER accumulate SDK conversation state across fires — every wake is a
+ * new, unrelated job. The session's `outbound.db` keeps a
+ * `session_state.continuation:<provider>` row that the agent-runner
+ * passes to the SDK to resume a prior conversation; if we don't clear
+ * it, each daily fire piles onto the previous, the SDK's auto-compact
+ * eventually starts eating the actual response (see Greg's
+ * sess-1779443246846 which has been a single accreting conversation
+ * since 22 May and stopped producing usable output once the running
+ * context crossed ~130k tokens), and the agent appears silent.
+ *
+ * Detection: `messaging_group_id == null` (we accept undefined too as
+ * a defensive measure; the FK schema only permits NULL or a valid
+ * messaging_group row). Sessions tied to iOS-app, Telegram, Discord
+ * etc. always have a messaging_group_id and are exempt — they're
+ * interactive and the continuation IS the conversation.
+ *
+ * Safe to write to outbound.db here: the only writer is the container
+ * we're about to spawn, and the activeContainers guard above means
+ * none is currently up. The DELETE is wrapped in try/catch so a brand
+ * new session (no session_state table yet — the table is created by
+ * the container on first start) does not block the wake.
+ */
+export function clearContinuationIfHeadless(session: Session): void {
+  if (session.messaging_group_id != null) return;
+  const dbPath = outboundDbPath(session.agent_group_id, session.id);
+  // First-ever wake: outbound.db may not even exist yet. The container
+  // will create it on startup with a fresh (empty) session_state.
+  if (!fs.existsSync(dbPath)) return;
+  try {
+    const db = openOutboundDbRw(session.agent_group_id, session.id);
+    try {
+      db.exec("DELETE FROM session_state WHERE key LIKE 'continuation:%'");
+    } finally {
+      db.close();
+    }
+    log.info('Cleared SDK continuation for headless wake', { sessionId: session.id });
+  } catch (err) {
+    // Table-missing on a freshly-initialized DB is the common case and
+    // not worth a warning. Real errors (permissions, corruption) still
+    // log so we can find them.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      log.warn('Failed to clear continuation for headless session', { sessionId: session.id, err: msg });
+    }
+  }
+}
+
 async function spawnContainer(session: Session): Promise<void> {
   const agentGroup = getAgentGroup(session.agent_group_id);
   if (!agentGroup) {
     log.error('Agent group not found', { agentGroupId: session.agent_group_id });
     return;
   }
+
+  // Wipe the SDK continuation for headless cron sessions so each fire
+  // is a brand-new conversation. See `clearContinuationIfHeadless`
+  // docblock for the reasoning — interactive sessions are untouched.
+  clearContinuationIfHeadless(session);
 
   // Refresh the destination map and default reply routing so any admin
   // changes take effect on wake. Destinations come from the agent-to-agent
