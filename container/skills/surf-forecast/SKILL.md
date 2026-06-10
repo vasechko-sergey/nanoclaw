@@ -99,7 +99,7 @@ Renderer уже ship-аится со skill: `/app/skills/surf-forecast/render.cj
 
 ## 4. Отрендерить и отправить
 
-Renderer требует `@napi-rs/canvas` в `node_modules` агентского workspace. У большинства агентов оно уже стоит (Jarvis — да). Если нет — однократно: `cd /workspace/agent && npm install @napi-rs/canvas`.
+Renderer требует `@napi-rs/canvas`. Он встроен в образ агента (установлен в `/node_modules`), поэтому `require('@napi-rs/canvas')` разрешается из любого скрипта без установки в workspace. (Старым контейнерам, поднятым до пересборки образа, ещё нужна workspace-копия — она резолвится через `NODE_PATH` ниже; новый спавн её не требует.)
 
 Запуск:
 ```bash
