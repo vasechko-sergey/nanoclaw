@@ -7,29 +7,34 @@ SwiftUI-чат с агентом Jarvis (NanoClaw на VDS `148.253.211.164`).
 
 ```
 ios/JarvisApp/
-├── project.yml               # xcodegen — единственный источник истины проекта
+├── project.yml               # xcodegen — единственный источник истины проекта (PRODUCT_NAME: Jarvis)
 ├── JarvisApp.xcodeproj       # генерируется: xcodegen generate (из ios/JarvisApp/)
 ├── Assets.xcassets/
 ├── JarvisApp.entitlements    # HealthKit entitlement
-└── Sources/JarvisApp/
-    ├── JarvisApp.swift       # @main + AppDelegate (APNs token → WebSocketClient)
-    ├── AppSettings.swift     # @AppStorage: serverURL, bearerToken, agentName, useLocation, useHealth, statusEmoji
-    ├── Message.swift         # ChatMessage: id, role, content (.text | .image), timestamp
-    ├── WebSocketClient.swift # WS + reconnect + APNs token; messages инициализируются из MessageCache.load()
-    ├── MessageCache.swift    # Documents/MessageCache/ — index.json + *.jpg; лимит 150 сообщений
-    ├── ContextBuilder.swift  # собирает context dict из location/health/statusEmoji
-    ├── LocationManager.swift # CLLocationManager, кэш 15 мин, reverseGeocode → cityName
-    ├── HealthManager.swift   # HKHealthStore: steps, heartRate, activeEnergyBurned
-    ├── ContentView.swift     # splash (GIFView load.gif) → ChatView или SettingsView
-    ├── ChatView.swift        # главный экран; emoji-пикер + шестерёнка в тулбаре
-    ├── MessageBubble.swift   # .text / .image пузыри + TypingIndicator (SVG-кольцо)
-    ├── InputBar.swift        # TextField + кнопка отправки
-    ├── SettingsView.swift    # URL, токен, переключатели контекста, Platform ID
-    ├── EmojiPickerView.swift # попап со статус-эмодзи (18 штук), .popover из тулбара
-    ├── FullScreenImageView.swift # FitScrollView + UIScrollView zoom 1–6x, double-tap
-    ├── GIFView.swift         # UIViewRepresentable → UIImageView animatedImage; gifDuration()
-    ├── JarvisRingView.swift  # не используется (оставлен)
-    └── load.gif              # 390×844 portrait, 23 кадра, ~1.8MB
+└── Sources/JarvisApp/        # организовано по слоям (V2-рефактор: мульти-агент + GRDB)
+    ├── JarvisApp.swift        # @main + AppDelegate (APNs token → транспорт)
+    ├── Protocol/V2.swift      # типы v2-протокола (Envelope + payload-структуры)
+    ├── Models/                # AgentIdentity (enum агентов jarvis/payne/greg/scrooge — picker/displayName/accentColor;
+    │                          #   rawValue = folder-слаг хоста), ActiveAgentState, AppSettings (@AppStorage),
+    │                          #   Message, DraftAttachment, Workout
+    ├── Storage/               # ПЕРСИСТЕНТНОСТЬ — GRDB SQLite (см. «Хранилище»)
+    │   ├── ConversationStoreV2.swift # стор сообщений; prune(agentId,keep:500)
+    │   ├── MessageTimeline.swift     # live-observe GRDB-таймлайна (DatabaseQueue, retention 500)
+    │   ├── Schema.swift              # GRDB-миграции (таблицы + индексы)
+    │   └── SetLogQueue.swift         # durable GRDB-очередь set_log (тренировки)
+    ├── Services/              # транспорт + системные сервисы:
+    │   ├── AppV2Bootstrap.swift      # открывает Documents/jarvis-v2.sqlite (DatabaseQueue), поднимает стор/таймлайн
+    │   ├── AppCoordinator.swift      # центральный координатор (ws/стор/speech/workout-bus)
+    │   ├── WebSocketClientV2 · TransportV2 · URLSessionWebSocket  # WS v2 + reconnect + APNs
+    │   ├── InboundDispatcherV2       # входящие envelope → стор/шины
+    │   ├── ContextBuilder · LocationManager · HealthManager (+Health*)  # iOS-контекст гео/здоровье
+    │   ├── SpeechManager · SpeechSynthesizer · VoiceLoopController       # голос/TTS
+    │   └── Workout* · ProactiveDispatcher · ConnectivityMonitor · StatusV2 · WatchConnectivityBridge · …
+    ├── Views/                 # ContentView (splash→home/chat), OrbHomeView (домашний орб+picker, приветствие внизу),
+    │                          #   ChatView (чат), AgentPickerInline, Settings/Profile/RightDrawer/OrbVoice/FullScreenImage, Workout/*
+    ├── Components/            # EmptyStateView (пустой чат), MessageRow, MarkdownText, UnifiedInputBar/InputBar/OrbInputBar,
+    │                          #   OrbView/MiniOrbView, HeaderStatusDot, ConnectionBanner, AttachmentBar, CameraPicker, EmojiPicker
+    └── Utility/               # Theme (цвета/scaled()), GreetingBank (per-agent приветствия), SuggestionEngine, Log
 ```
 
 ## Цветовая схема (из load.gif)
@@ -93,14 +98,15 @@ xcodegen generate
 - Floyd-Steinberg dithering для сохранения градиентов
 - 23 кадра, 70ms каждый
 
-## Кэш сообщений
+## Хранилище (GRDB SQLite)
 
-`MessageCache` сохраняет в `Documents/MessageCache/`:
-- `index.json` — массив `CachedMessage` с `.iso8601` датами
-- `<msg-id>.jpg` — изображения (JPEG 85%)
-- Лимит 150 сообщений, старые JPG автоматически удаляются
+Сообщения и связанные данные — в **`Documents/jarvis-v2.sqlite`** (GRDB), открывается в `Services/AppV2Bootstrap.swift` через `DatabaseQueue`. Старого JSON-кэша (`MessageCache`, `Documents/MessageCache/` с `index.json`+`*.jpg`) **больше НЕТ** — файл удалён.
 
-`WebSocketClient.messages` инициализируется из кэша при запуске — старые сообщения видны сразу.
+- **Таблицы** (`Storage/Schema.swift`, миграции): `conversations`, `messages` (`conversation_id`, `ts`, `status`, `created_at`, `agent_id`), `attachments`, `cursors`, `inbound_dedup`, `kv`. Индексы: `idx_msg_conv_ts`, `idx_msg_status`.
+- **Стор/наблюдение:** `Storage/ConversationStoreV2.swift` (CRUD) + `Storage/MessageTimeline.swift` (live-observe таймлайна через GRDB `ValueObservation`). UI подписывается на таймлайн активного агента.
+- **Retention:** жёсткий cap **`keep: 500` сообщений НА АГЕНТА** (`ConversationStoreV2.prune(agentId:keep:)`) — не 150.
+- **Мульти-агент:** строки помечены `agent_id` (jarvis/payne/greg/scrooge); таймлайн фильтруется по активному агенту. `conversationId` ↔ `thread_id` сессии (новый чат = новый контейнер).
+- **Очистка чата при дебаге:** удали `Documents/jarvis-v2.sqlite` (НЕ `Documents/MessageCache/` — его не существует).
 
 ## Серверная часть
 
