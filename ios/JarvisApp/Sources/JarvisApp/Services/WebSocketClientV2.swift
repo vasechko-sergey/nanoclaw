@@ -406,7 +406,7 @@ final class WebSocketClientV2 {
             },
             onChange: { [weak self] rows in
                 guard let self else { return }
-                let mapped = rows.map(Self.toChatMessage)
+                let mapped = rows.flatMap(Self.toChatMessage)
                 // Detect new assistant arrivals for haptic + auto-speak hooks.
                 let oldIds = Set(self.messages.map { $0.id })
                 let newAssistant = mapped.filter {
@@ -432,38 +432,53 @@ final class WebSocketClientV2 {
 
     // MARK: - Mapping
 
-    private static func toChatMessage(_ row: StoredMessage) -> ChatMessage {
+    // A single stored row may carry BOTH a text caption and an attachment
+    // (e.g. "Держи выписку" + Statement.pdf). The ChatMessage.Content enum holds
+    // only one of those, so such a row maps to TWO bubbles: the caption first,
+    // then the attachment. Returning an array (flat-mapped at the call sites)
+    // keeps the typed text visible instead of being swallowed by the attachment.
+    static func toChatMessage(_ row: StoredMessage) -> [ChatMessage] {
         let timestamp = Date(timeIntervalSince1970: TimeInterval(row.ts) / 1000)
         let role: ChatMessage.Role = row.dir == .out ? .user : .assistant
 
-        // Decode first attachment for image rendering (basic — file/text
-        // mixed payloads not supported in 5.2b; views can use .text for
-        // those).
         if let attJSON = row.attachmentsJSON,
            let data = attJSON.data(using: .utf8),
            let atts = try? JSONDecoder().decode([V2.Attachment].self, from: data),
            let first = atts.first {
+            var out: [ChatMessage] = []
+
+            // Caption bubble (if the user/agent typed text alongside the file).
+            let caption = row.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !caption.isEmpty {
+                var t = ChatMessage.text(row.id + "-text", role: role, text: row.text, timestamp: timestamp)
+                t.deliveryStatus = mapDelivery(row.status)
+                t.agentId = row.agentId
+                out.append(t)
+            }
+
+            // Attachment bubble keeps the bare `row.id` so delivery-status
+            // updates (looked up by the stored row id) still land on it.
+            var attMsg: ChatMessage
             if first.kind == "image",
                let b64 = first.bytes_base64,
                let imgData = Data(base64Encoded: b64),
                let image = UIImage(data: imgData) {
-                var msg = ChatMessage.image(row.id, role: role, image: image, filename: first.name, timestamp: timestamp)
-                msg.deliveryStatus = mapDelivery(row.status)
-                msg.agentId = row.agentId
-                return msg
+                attMsg = ChatMessage.image(row.id, role: role, image: image, filename: first.name, timestamp: timestamp)
+            } else {
+                let info = FileInfo(name: first.name, size: Int64(first.byte_size),
+                                    mimeType: first.mime_type, url: nil, thumbnail: nil)
+                attMsg = ChatMessage.file(row.id, role: role, info: info, timestamp: timestamp)
             }
-            let info = FileInfo(name: first.name, size: Int64(first.byte_size),
-                                mimeType: first.mime_type, url: nil, thumbnail: nil)
-            var msg = ChatMessage.file(row.id, role: role, info: info, timestamp: timestamp)
-            msg.deliveryStatus = mapDelivery(row.status)
-            msg.agentId = row.agentId
-            return msg
+            attMsg.deliveryStatus = mapDelivery(row.status)
+            attMsg.agentId = row.agentId
+            out.append(attMsg)
+            return out
         }
 
         var msg = ChatMessage.text(row.id, role: role, text: row.text, timestamp: timestamp)
         msg.deliveryStatus = mapDelivery(row.status)
         msg.agentId = row.agentId
-        return msg
+        return [msg]
     }
 
     private static func mapDelivery(_ s: MessageStatus) -> DeliveryStatus {
@@ -577,7 +592,7 @@ final class WebSocketClientV2 {
                     )
                 }
             }
-            messages = rows.map(Self.toChatMessage)
+            messages = rows.flatMap(Self.toChatMessage)
         } catch {
             Log.warn(.ws, "refreshMessagesForTesting read failed: \(error)")
         }
