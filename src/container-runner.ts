@@ -27,7 +27,6 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
-import { ensureAgentInstructionsCopy } from './instructions-gen.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
@@ -169,29 +168,42 @@ export function openContainerLogStream(
  * new session (no session_state table yet — the table is created by
  * the container on first start) does not block the wake.
  */
-export function clearContinuationIfHeadless(session: Session): void {
-  if (session.messaging_group_id != null) return;
-  const dbPath = outboundDbPath(session.agent_group_id, session.id);
+/**
+ * Delete the persisted SDK continuation row(s) from a session's outbound.db so
+ * the next container start begins a brand-new conversation — fresh CLAUDE.md /
+ * INSTRUCTIONS load, no replayed context. CALLER MUST ENSURE no container for
+ * this session is currently up: the container is the sole writer of
+ * outbound.db, so clearing while it runs both races the writer and gets
+ * re-persisted by the live session. Used by headless wakes and by `/new`
+ * (where it runs only after killContainer's process-exit callback fires).
+ */
+export function clearSessionContinuation(agentGroupId: string, sessionId: string): void {
+  const dbPath = outboundDbPath(agentGroupId, sessionId);
   // First-ever wake: outbound.db may not even exist yet. The container
   // will create it on startup with a fresh (empty) session_state.
   if (!fs.existsSync(dbPath)) return;
   try {
-    const db = openOutboundDbRw(session.agent_group_id, session.id);
+    const db = openOutboundDbRw(agentGroupId, sessionId);
     try {
       db.exec("DELETE FROM session_state WHERE key LIKE 'continuation:%'");
     } finally {
       db.close();
     }
-    log.info('Cleared SDK continuation for headless wake', { sessionId: session.id });
+    log.info('Cleared SDK continuation', { sessionId });
   } catch (err) {
     // Table-missing on a freshly-initialized DB is the common case and
     // not worth a warning. Real errors (permissions, corruption) still
     // log so we can find them.
     const msg = err instanceof Error ? err.message : String(err);
     if (!/no such table/i.test(msg)) {
-      log.warn('Failed to clear continuation for headless session', { sessionId: session.id, err: msg });
+      log.warn('Failed to clear continuation', { sessionId, err: msg });
     }
   }
+}
+
+export function clearContinuationIfHeadless(session: Session): void {
+  if (session.messaging_group_id != null) return;
+  clearSessionContinuation(session.agent_group_id, session.id);
 }
 
 async function spawnContainer(session: Session): Promise<void> {
@@ -358,11 +370,6 @@ function buildMounts(
   const claudeDir = path.join(DATA_DIR, 'v2-sessions', agentGroup.id, '.claude-shared');
   syncSkillSymlinks(claudeDir, containerConfig, agentGroup);
 
-  // Ensure the per-agent INSTRUCTIONS.md copy exists so the agent's
-  // CLAUDE.md can reference the host-generated shared instructions via
-  // `@./INSTRUCTIONS.md`. See `instructions-gen.ts`.
-  ensureAgentInstructionsCopy(agentGroup.folder);
-
   const mounts: VolumeMount[] = [];
   const sessDir = sessionDir(agentGroup.id, session.id);
   const groupDir = path.resolve(GROUPS_DIR, agentGroup.folder);
@@ -380,20 +387,22 @@ function buildMounts(
     mounts.push({ hostPath: containerJsonPath, containerPath: '/workspace/agent/container.json', readonly: true });
   }
 
-  // Composer-managed CLAUDE.md artifacts — nested RO mounts. These are
-  // regenerated from the shared base + fragments on every spawn; any
-  // agent-side writes would be clobbered, so enforce read-only. Only
-  // CLAUDE.local.md (per-group memory) remains RW via the group-dir mount.
-  // `.claude-shared.md` is a symlink whose target (`/app/CLAUDE.md`) is
-  // already RO-mounted, so writes through it fail regardless — no need for
-  // a nested mount there.
-  const composedClaudeMd = path.join(groupDir, 'CLAUDE.md');
-  if (fs.existsSync(composedClaudeMd)) {
-    mounts.push({ hostPath: composedClaudeMd, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
+  // CLAUDE.md — static per-group persona. Nested RO mount on top of the RW
+  // group dir so the agent can read but not overwrite it. Nothing composes
+  // or regenerates this file; it's a plain file on disk, hand-maintained.
+  // Per-group memory (CLAUDE.local.md) stays RW via the group-dir mount.
+  const claudeMdPath = path.join(groupDir, 'CLAUDE.md');
+  if (fs.existsSync(claudeMdPath)) {
+    mounts.push({ hostPath: claudeMdPath, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
   }
-  const fragmentsDir = path.join(groupDir, '.claude-fragments');
-  if (fs.existsSync(fragmentsDir)) {
-    mounts.push({ hostPath: fragmentsDir, containerPath: '/workspace/agent/.claude-fragments', readonly: true });
+
+  // Shared INSTRUCTIONS.md — ONE static file under GROUPS_DIR, mounted RO into
+  // every container at the path each group's CLAUDE.md references via
+  // `@./INSTRUCTIONS.md`. Hand-maintained: the host never generates or copies
+  // it. Edit groups/INSTRUCTIONS.md directly when skills/channels change.
+  const instructionsPath = path.join(GROUPS_DIR, 'INSTRUCTIONS.md');
+  if (fs.existsSync(instructionsPath)) {
+    mounts.push({ hostPath: instructionsPath, containerPath: '/workspace/agent/INSTRUCTIONS.md', readonly: true });
   }
 
   // Global memory directory — always read-only.

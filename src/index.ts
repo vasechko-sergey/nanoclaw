@@ -12,8 +12,6 @@ import { backfillContainerConfigs } from './backfill-container-configs.js';
 import { bootstrapTrio } from './bootstrap-trio.js';
 import { CREDENTIAL_PROXY_PORT, DATA_DIR } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker, scheduleHealthyReset } from './circuit-breaker.js';
-import { ensureAgentInstructionsCopy, regenerateSharedInstructions } from './instructions-gen.js';
-import { migrateClaudeMdV2, cleanupDeadFragmentImports } from './migrate-claude-md-v2.js';
 import { getAllAgentGroups } from './db/agent-groups.js';
 import { startCredentialProxy } from './credential-proxy.js';
 import { initDb } from './db/connection.js';
@@ -88,18 +86,10 @@ async function main(): Promise<void> {
   // Idempotent — skips groups that already have a config row.
   backfillContainerConfigs();
 
-  // 1c. One-time filesystem cutover — idempotent, no-op after first run.
-  migrateClaudeMdV2();
-  // Scrub dead `@./.claude-fragments/*` imports left in CLAUDE.md by installs
-  // migrated before the strip-fix shipped. Idempotent, only rewrites if dirty.
-  cleanupDeadFragmentImports();
-  regenerateSharedInstructions();
-  // Eager-create per-agent INSTRUCTIONS.md copy so it's visible without
-  // waiting for the first container spawn. ensureAgentInstructionsCopy
-  // is idempotent.
-  for (const ag of getAllAgentGroups()) {
-    ensureAgentInstructionsCopy(ag.folder);
-  }
+  // Instruction files (groups/INSTRUCTIONS.md + each group's CLAUDE.md) are
+  // now static on disk and hand-maintained — the host never generates,
+  // composes, copies, or rewrites them. The shared INSTRUCTIONS.md is
+  // mounted read-only into every container (see container-runner buildMounts).
 
   // 2. Container runtime
   ensureContainerRuntimeRunning();

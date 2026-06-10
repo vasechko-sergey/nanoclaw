@@ -70,7 +70,7 @@ describe('adapterRouteToAgent', () => {
     expect(res).toEqual({ delivered: false, reason: 'no_messaging_group' });
   });
 
-  it('handles /new by closing the existing session and creating a new one without forwarding to the container', async () => {
+  it('handles /new by resetting the existing session in place (same session, wiped continuation) without forwarding to the container', async () => {
     // Seed an existing session by sending a normal message first.
     await adapterRouteToAgent(makeEvent('ios:test', null, 'hello'), 'payne', { wake: false });
     const before = findSessionForAgent('payne', 'mg-test', null);
@@ -78,10 +78,13 @@ describe('adapterRouteToAgent', () => {
 
     const res = await adapterRouteToAgent(makeEvent('ios:test', null, '/new'), 'payne', { wake: false });
     expect(res.delivered).toBe(true);
-
-    // The pre-existing session is closed, a new active session is now the one returned for the agent.
+    // Reset-in-place: the SAME session is returned (not a new dir/id). Its SDK
+    // continuation is cleared so the next wake starts fresh; the session row
+    // stays active and the reset notice lands on its outbound.
+    expect(res.sessionId).toBe(before!.id);
     const after = findSessionForAgent('payne', 'mg-test', null);
-    expect(after?.id).not.toBe(before?.id);
+    expect(after?.id).toBe(before?.id);
+    expect(after?.status).toBe('active');
   });
 
   it('resolves the agent group by folder when id lookup misses', async () => {

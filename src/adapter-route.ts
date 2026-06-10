@@ -9,11 +9,11 @@ import { gateCommand } from './command-gate.js';
 import { getAgentGroup, getAgentGroupByFolder } from './db/agent-groups.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
-import { findSessionForAgent, getSession, updateSession } from './db/sessions.js';
+import { getSession } from './db/sessions.js';
 import { log } from './log.js';
 import { getAccessGate, getSenderResolver } from './router.js';
 import { resolveSession, writeOutboundDirect, writeSessionMessage } from './session-manager.js';
-import { killContainer, wakeContainer } from './container-runner.js';
+import { killContainer, wakeContainer, clearSessionContinuation, isContainerRunning } from './container-runner.js';
 import { startTypingRefresh, stopTypingRefresh } from './modules/typing/index.js';
 import type { InboundEvent } from './channels/adapter.js';
 
@@ -84,14 +84,21 @@ export async function adapterRouteToAgent(
       return { delivered: false, reason: 'filtered_command' };
     }
     if (gate.action === 'new_session') {
-      const existing = findSessionForAgent(agentGroup.id, mg.id, event.threadId);
-      if (existing) {
-        killContainer(existing.id, '/new command');
-        updateSession(existing.id, { status: 'closed' });
-        log.info('Session reset by /new', { oldSessionId: existing.id, agentGroupId: agentGroup.id });
-      }
-      const { session: newSession } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
-      writeOutboundDirect(newSession.agent_group_id, newSession.id, {
+      // Reset IN PLACE. Resolve the exact session the next message would land
+      // on (mode-aware — the previous code looked the session up by the raw
+      // event.threadId, which misses under 'shared' mode where the session's
+      // thread_id is null, so the old session was reused with its SDK
+      // continuation intact and /new only *looked* like a reset). Kill the
+      // container and wipe the persisted `continuation:%` so the next wake
+      // starts a brand-new conversation (fresh CLAUDE.md, no replayed context).
+      // Clear AFTER the container exits so the dying writer can't re-persist it.
+      const { session: target } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
+      const clearContinuation = (): void => clearSessionContinuation(target.agent_group_id, target.id);
+      const wasRunning = isContainerRunning(target.id);
+      killContainer(target.id, '/new command', clearContinuation);
+      if (!wasRunning) clearContinuation();
+      log.info('Session reset by /new', { sessionId: target.id, agentGroupId: agentGroup.id });
+      writeOutboundDirect(target.agent_group_id, target.id, {
         id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',
         platformId: event.platformId,
@@ -99,7 +106,7 @@ export async function adapterRouteToAgent(
         threadId: event.threadId,
         content: JSON.stringify({ text: 'Контекст сброшен. Начинаем с чистого листа.' }),
       });
-      return { delivered: true, sessionId: newSession.id };
+      return { delivered: true, sessionId: target.id };
     }
     if (gate.action === 'rewrite') {
       event = {
@@ -108,12 +115,7 @@ export async function adapterRouteToAgent(
       };
     }
     if (gate.action === 'deny') {
-      const { session: denySession } = resolveSession(
-        agentGroup.id,
-        mg.id,
-        event.threadId,
-        sessionMode,
-      );
+      const { session: denySession } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
       writeOutboundDirect(denySession.agent_group_id, denySession.id, {
         id: `deny-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',

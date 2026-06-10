@@ -42,8 +42,9 @@ const DEFAULT_SETTINGS_JSON =
  * Source code and skills are shared RO mounts — not copied per-group.
  * Skill symlinks are synced at spawn time by container-runner.ts.
  *
- * The composed `CLAUDE.md` is NOT written here — it's regenerated on every
- * spawn by the instructions generator (see `instructions-gen.ts`). Initial
+ * `CLAUDE.md` is NOT written here — it's a static, hand-maintained file on
+ * disk (the host never generates or composes it). The shared `INSTRUCTIONS.md`
+ * is likewise static and mounted read-only by `buildMounts()`. Initial
  * per-group instructions (if provided) seed `CLAUDE.local.md`.
  */
 export function initGroupFilesystem(group: AgentGroup, opts?: { instructions?: string }): void {
