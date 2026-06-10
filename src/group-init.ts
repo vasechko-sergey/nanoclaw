@@ -44,10 +44,10 @@ const DEFAULT_SETTINGS_JSON =
  *
  * `CLAUDE.md` is NOT written here — it's a static, hand-maintained file on
  * disk (the host never generates or composes it). The shared `INSTRUCTIONS.md`
- * is likewise static and mounted read-only by `buildMounts()`. Initial
- * per-group instructions (if provided) seed `CLAUDE.local.md`.
+ * is likewise static and mounted read-only by `buildMounts()`. Nothing seeds
+ * `CLAUDE.local.md`; per-group memory lives in `memories/` and CLAUDE.md.
  */
-export function initGroupFilesystem(group: AgentGroup, opts?: { instructions?: string }): void {
+export function initGroupFilesystem(group: AgentGroup): void {
   const initialized: string[] = [];
 
   // 1. groups/<folder>/ — group memory + working dir
@@ -55,15 +55,6 @@ export function initGroupFilesystem(group: AgentGroup, opts?: { instructions?: s
   if (!fs.existsSync(groupDir)) {
     fs.mkdirSync(groupDir, { recursive: true });
     initialized.push('groupDir');
-  }
-
-  // groups/<folder>/CLAUDE.local.md — per-group agent memory, auto-loaded by
-  // Claude Code. Seeded with caller-provided instructions on first creation.
-  const claudeLocalFile = path.join(groupDir, 'CLAUDE.local.md');
-  if (!fs.existsSync(claudeLocalFile)) {
-    const body = opts?.instructions ? opts.instructions + '\n' : '';
-    fs.writeFileSync(claudeLocalFile, body);
-    initialized.push('CLAUDE.local.md');
   }
 
   // Ensure container_configs row exists in the DB. Idempotent — no-op if

@@ -21,7 +21,7 @@ const ADMIN_COMMANDS = new Set(['/clear', '/compact', '/context', '/cost', '/fil
 const SESSION_COMMANDS = new Set(['/new']);
 
 // Slash commands that Claude Code doesn't know — rewrite to plain text so the
-// agent handles them naturally via its CLAUDE.local.md instructions.
+// agent handles them naturally via its CLAUDE.md instructions.
 const REWRITE_COMMANDS: Record<string, (rest: string) => string> = {
   '/surf': () => 'прогноз серфинга',
   '/people': () => 'покажи список людей из памяти',

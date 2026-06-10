@@ -1,8 +1,15 @@
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { clearContinuationIfHeadless, openContainerLogStream, resolveProviderName } from './container-runner.js';
+import {
+  clearContinuationIfHeadless,
+  isGlobalMemoryWriter,
+  openContainerLogStream,
+  resolveProviderName,
+} from './container-runner.js';
 import { initSessionFolder, openOutboundDbRw, outboundDbPath, sessionDir } from './session-manager.js';
 import type { Session } from './types.js';
 
@@ -27,6 +34,32 @@ describe('resolveProviderName', () => {
   it('treats empty string as unset (falls through)', () => {
     expect(resolveProviderName('', 'opencode')).toBe('opencode');
     expect(resolveProviderName(null, '')).toBe('claude');
+  });
+});
+
+describe('isGlobalMemoryWriter', () => {
+  it('grants write only to the folder named in .writer', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nclaw-gw-'));
+    try {
+      fs.writeFileSync(path.join(dir, '.writer'), 'jarvis\n');
+      expect(isGlobalMemoryWriter(dir, 'jarvis')).toBe(true);
+      expect(isGlobalMemoryWriter(dir, 'greg')).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('grants write to nobody when .writer is missing, empty, or whitespace', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nclaw-gw-'));
+    try {
+      // missing
+      expect(isGlobalMemoryWriter(dir, 'jarvis')).toBe(false);
+      // whitespace-only
+      fs.writeFileSync(path.join(dir, '.writer'), '   \n');
+      expect(isGlobalMemoryWriter(dir, 'jarvis')).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -59,9 +92,7 @@ describe('openContainerLogStream', () => {
       db.exec(`CREATE TABLE IF NOT EXISTS session_state (
         key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT ''
       )`);
-      db.exec(
-        `INSERT INTO session_state (key, value, updated_at) VALUES ('continuation:claude', 'KEEP_ME', '')`,
-      );
+      db.exec(`INSERT INTO session_state (key, value, updated_at) VALUES ('continuation:claude', 'KEEP_ME', '')`);
       db.close();
 
       const interactive: Session = {

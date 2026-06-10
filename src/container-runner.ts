@@ -336,6 +336,22 @@ export function resolveProviderName(
   return (sessionProvider || containerConfigProvider || 'claude').toLowerCase();
 }
 
+/**
+ * Whether `agentFolder` is the designated writer of the shared global memory
+ * dir. The writer is named (one folder, e.g. `jarvis`) in `<globalDir>/.writer`.
+ * That group mounts `/workspace/global` read-write so it can maintain shared
+ * facts about the user; every other group gets the same dir read-only. A
+ * missing, empty, or whitespace-only `.writer` means no writer (all read-only).
+ */
+export function isGlobalMemoryWriter(globalDir: string, agentFolder: string): boolean {
+  try {
+    const writer = fs.readFileSync(path.join(globalDir, '.writer'), 'utf8').trim();
+    return writer.length > 0 && writer === agentFolder;
+  } catch {
+    return false;
+  }
+}
+
 function resolveProviderContribution(
   session: Session,
   agentGroup: AgentGroup,
@@ -377,7 +393,7 @@ function buildMounts(
   // Session folder at /workspace (contains inbound.db, outbound.db, outbox/, .claude/)
   mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false });
 
-  // Agent group folder at /workspace/agent (RW for working files + CLAUDE.local.md)
+  // Agent group folder at /workspace/agent (RW for working files + memories/)
   mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: false });
 
   // container.json — nested RO mount on top of RW group dir so the agent
@@ -390,7 +406,7 @@ function buildMounts(
   // CLAUDE.md — static per-group persona. Nested RO mount on top of the RW
   // group dir so the agent can read but not overwrite it. Nothing composes
   // or regenerates this file; it's a plain file on disk, hand-maintained.
-  // Per-group memory (CLAUDE.local.md) stays RW via the group-dir mount.
+  // Per-group memory (memories/) stays RW via the group-dir mount.
   const claudeMdPath = path.join(groupDir, 'CLAUDE.md');
   if (fs.existsSync(claudeMdPath)) {
     mounts.push({ hostPath: claudeMdPath, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
@@ -405,10 +421,14 @@ function buildMounts(
     mounts.push({ hostPath: instructionsPath, containerPath: '/workspace/agent/INSTRUCTIONS.md', readonly: true });
   }
 
-  // Global memory directory — always read-only.
+  // Global memory directory — shared facts about the user, mounted at
+  // /workspace/global. Read-only for every group except the one named in
+  // groups/global/.writer (e.g. Jarvis), which gets it read-write so it can
+  // maintain the shared memory the others only read.
   const globalDir = path.join(GROUPS_DIR, 'global');
   if (fs.existsSync(globalDir)) {
-    mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: true });
+    const writable = isGlobalMemoryWriter(globalDir, agentGroup.folder);
+    mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: !writable });
   }
 
   // Per-group .claude-shared at /home/node/.claude (Claude state, settings,

@@ -5,6 +5,7 @@
  * agent_destinations rows, projects the new destination into the parent's
  * running container, and notifies the parent.
  */
+import fs from 'fs';
 import path from 'path';
 
 import { GROUPS_DIR } from '../../config.js';
@@ -82,7 +83,17 @@ export async function handleCreateAgent(content: Record<string, unknown>, sessio
     created_at: now,
   };
   createAgentGroup(newGroup);
-  initGroupFilesystem(newGroup, { instructions: instructions ?? undefined });
+  initGroupFilesystem(newGroup);
+
+  // Seed the new agent's persona. CLAUDE.md is the static, auto-loaded
+  // instruction file (CLAUDE.local.md is no longer used). Prepend the shared
+  // `@./INSTRUCTIONS.md` import so the agent inherits the common tool docs like
+  // every other group; the caller-supplied `instructions` become its persona.
+  const newClaudeMd = path.join(groupPath, 'CLAUDE.md');
+  if (!fs.existsSync(newClaudeMd)) {
+    const persona = instructions?.trim() ? `${instructions.trim()}\n` : `# ${name}\n`;
+    fs.writeFileSync(newClaudeMd, `@./INSTRUCTIONS.md\n\n${persona}`);
+  }
 
   // Insert bidirectional destination rows (= ACL grants).
   // Creator refers to child by the name it chose; child refers to creator as "parent".
