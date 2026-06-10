@@ -37,35 +37,24 @@ ios/JarvisApp/
     └── Utility/               # Theme (цвета/scaled()), GreetingBank (per-agent приветствия), SuggestionEngine, Log
 ```
 
-## Цветовая схема (из load.gif)
+## Цветовая схема
 
-```swift
-bgColor          = Color(red: 0.07, green: 0.11, blue: 0.15)  // #111C26 — фон чата
-jarvisBackground = Color(red: 0.09, green: 0.16, blue: 0.22)  // пузырь Джарвиса
-userBubble       = Color(red: 0.05, green: 0.22, blue: 0.38)  // пузырь пользователя
-teal             = Color(red: 0.33, green: 0.74, blue: 0.77)  // #54BCC5 — акцент
-splashBg         = Color(red: 0.06, green: 0.06, blue: 0.06)  // фон сплэша
-```
+Источник истины — `Utility/Theme.swift` (`Theme.background`, `Theme.accent` ≈ teal `#54BCC5`, `Theme.surface`, `Theme.textPrimary`, `Theme.online/offline`, …; плюс размеры через `Theme.scaled()`). Per-agent акцент picker'а — в `AgentIdentity.accentColor` (jarvis — teal, payne — copper, greg — sage, scrooge — gold). (Раньше цвета «выводились из load.gif» — этого ассета больше нет.)
 
-## Протокол WebSocket
+## Протокол WebSocket (v2 envelopes)
 
-Клиент → сервер:
-```json
-{ "type": "auth", "token": "<IOS_APP_TOKEN>", "platformId": "ios:<UUID>" }
-{ "type": "message", "text": "...", "conversationId": "<UUID>", "context": { "location": {...}, "health": {...}, "status": "🏄" } }
-{ "type": "new_conversation", "conversationId": "<UUID>" }
-{ "type": "feedback", "conversationId": "<UUID>", "messageId": "...", "value": true, "messageText": "<текст оцениваемого ответа>" }
-{ "type": "apns_token", "token": "<hex>" }
-```
+Wire-формат — **envelope-based v2**. Каноническая схема: `shared/ios-app-protocol/v2.ts` (TS), Swift-зеркало: `Sources/JarvisApp/Protocol/V2.swift`, закреплено fixture-контракт-тестами. Старый плоский v1-JSON (`{type:"auth"/"message"/"image"}` с `conversationId` в корне) больше НЕ используется.
 
-Сервер → клиент:
-```json
-{ "type": "auth_ok", "commands": [{ "command": "/new", "description": "..." }] }
-{ "type": "message", "id": "...", "text": "...", "conversationId": "<UUID>", "timestamp": "..." }
-{ "type": "image",   "id": "...", "data": "<base64>", "filename": "...", "conversationId": "<UUID>", "timestamp": "..." }
-```
+Envelope несёт `type` (дискриминатор), `kind` ∈ `data|control|ack|status`, и payload-union. Основные `type`:
+- **auth / auth_ok / auth_fail** — рукопожатие (token + platformId; `auth_ok` несёт список commands).
+- **message** — текст + (опц.) attachments + ios-context; помечен `agent_id` (какому агенту) + `thread_id`.
+- **new_conversation** — сброс треда.
+- **context_request / context_response** — pull iOS-контекста (гео/здоровье) по запросу агента.
+- **action_response / feedback** — нажатие inline-кнопки / 👍👎.
+- **ack / delivered / read / ping / pong** — доставка, статусы прочтения, keepalive.
+- **workout_* · exercise_swap_* · set_log · coach_message · program_update · image_request · image_blob** — workout-флоу (Payne) + картинки.
 
-`conversationId` маппится на `thread_id` сессии nanoclaw — каждый диалог = отдельный контейнер агента (изоляция контекста, «новый чат = сброс»). Адаптер: `supportsThreads: true`. `feedback` доставляется агенту как входящее сообщение `[user feedback: 👍/👎 on your previous message]` + цитата `messageText` в сессию диалога — агент опирается на конкретный текст.
+Семантика: `thread_id` (он же conversationId) = тред сессии nanoclaw — новый чат = отдельный контейнер агента (изоляция «новый чат = сброс»). `agent_id` = folder-слаг агента (роутинг к нужному агенту/сессии — см. `AgentIdentity`). `feedback` доставляется агенту как `[user feedback: 👍/👎 …]` + цитата текста оцениваемого ответа.
 
 iOS-контекст попадает к Джарвису как текстовый блок перед сообщением:
 ```
@@ -89,14 +78,9 @@ xcodegen generate
 
 **Важно:** `JarvisApp.xcodeproj` генерируется из `project.yml`. Никогда не редактировать `.xcodeproj` вручную — изменения потеряются при следующем `xcodegen generate`.
 
-## GIF сплэша
+## Сплэш
 
-`load.gif` генерируется из `load2.gif` (источник 720×404) скриптом на Python (Pillow):
-- Кроп до центрального квадрата 404×404
-- Resize до 390×390, размещение на 390×844 canvas
-- Gradient fade сверху/снизу (80px feather)
-- Floyd-Steinberg dithering для сохранения градиентов
-- 23 кадра, 70ms каждый
+`SplashView` в `Views/ContentView.swift` (НЕ GIF — `load.gif`/`GIFView` удалены). Анимированный `OrbView` + титул «J A R V I S» + статус-строка. Фазы коннекта: `loading → connecting → ready` (→ home) / `failed` (кнопки «Повторить» / «Продолжить автономно») / `waitingSetup` (inline setup-карта: сервер URL + токен). Таймаут коннекта 10с. App-фазы: `splash → home (OrbHomeView) → chat (ChatView)`, opacity/transition-driven (чат всегда смонтирован).
 
 ## Хранилище (GRDB SQLite)
 
@@ -110,7 +94,7 @@ xcodegen generate
 
 ## Серверная часть
 
-Канальный адаптер: `src/channels/ios-app.ts` в репозитории NanoClaw.
+Канальный адаптер: `src/channels/ios-app/v2/` в репозитории NanoClaw (главный файл `index.ts`; v1 `ios-app.ts` удалён).
 Переменные окружения на VDS (`.env`):
 ```
 IOS_APP_TOKEN=<hex>
