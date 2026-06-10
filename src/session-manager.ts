@@ -297,7 +297,15 @@ function extractAttachmentFiles(
 
   let changed = false;
   for (const att of attachments) {
-    if (typeof att.data !== 'string') continue;
+    // Base64 bytes arrive as `data` (Chat SDK adapters) or `bytes_base64`
+    // (ios-app v2 protocol). Accept either.
+    const b64 =
+      typeof att.data === 'string'
+        ? att.data
+        : typeof att.bytes_base64 === 'string'
+          ? att.bytes_base64
+          : null;
+    if (b64 === null) continue;
 
     const rawName = deriveAttachmentName(att);
     const filename = isSafeAttachmentName(rawName) ? rawName : `attachment-${Date.now()}`;
@@ -341,7 +349,7 @@ function extractAttachmentFiles(
       // wx = exclusive create. Refuses to follow a pre existing symlink or
       // overwrite any existing file. The host expects to be the sole writer
       // of these attachments.
-      fs.writeFileSync(filePath, Buffer.from(att.data as string, 'base64'), { flag: 'wx' });
+      fs.writeFileSync(filePath, Buffer.from(b64, 'base64'), { flag: 'wx' });
     } catch (err: unknown) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'EEXIST') {
@@ -357,6 +365,7 @@ function extractAttachmentFiles(
     att.name = filename;
     att.localPath = `inbox/${messageId}/${filename}`;
     delete att.data;
+    delete att.bytes_base64;
     changed = true;
     log.debug('Saved attachment to inbox', { messageId, filename, size: att.size });
   }

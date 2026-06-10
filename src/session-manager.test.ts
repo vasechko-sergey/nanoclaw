@@ -360,6 +360,29 @@ describe('inbound attachment extraction + safety', () => {
     expect(parsed.attachments[0].name).toBe('note.txt');
   });
 
+  it('saves an iOS-v2 attachment carrying bytes_base64 (not data) to inbox with localPath', () => {
+    // The ios-app v2 protocol names the base64 field `bytes_base64`, not `data`.
+    const bytes_base64 = Buffer.from('pdf-bytes').toString('base64');
+    writeSessionMessage(TEST_AG, SESSION_ID, {
+      id: 'msg-v2',
+      kind: 'chat',
+      timestamp: now(),
+      content: JSON.stringify({
+        text: 'Держи выписку',
+        attachments: [{ name: 'Statement.pdf', mime_type: 'application/pdf', bytes_base64 }],
+      }),
+    });
+
+    const onDisk = path.join(sessionDir(TEST_AG, SESSION_ID), 'inbox', 'msg-v2', 'Statement.pdf');
+    expect(fs.existsSync(onDisk)).toBe(true);
+    expect(fs.readFileSync(onDisk, 'utf8')).toBe('pdf-bytes');
+
+    const parsed = JSON.parse(storedContent('msg-v2'));
+    expect(parsed.attachments[0].localPath).toBe('inbox/msg-v2/Statement.pdf');
+    expect(parsed.attachments[0].bytes_base64).toBeUndefined(); // base64 stripped from stored content
+    expect(parsed.attachments[0].name).toBe('Statement.pdf');
+  });
+
   it('leaves non-JSON content untouched', () => {
     writeSessionMessage(TEST_AG, SESSION_ID, {
       id: 'plain',
