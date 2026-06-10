@@ -99,11 +99,20 @@ function resolveSessionForPlatform(platformId: PlatformId, agentId: string | und
   const mg = getMessagingGroupByPlatform(CHANNEL_TYPE, platformId);
   if (!mg) return null;
   if (agentId) {
-    const ag = getAgentGroupByFolder(agentId);
+    // Match the authoritative router (adapter-route.ts): resolve by folder
+    // OR by id. The device may target by either; id-targeting (e.g. greg /
+    // scrooge whose id === folder, or jarvis whose id is a UUID) otherwise
+    // tripped the "no matching agent_group" warning even though routing
+    // downstream resolved it fine.
+    const ag = getAgentGroupByFolder(agentId) ?? getAgentGroup(agentId);
     if (ag) {
       const sess = findSessionForAgent(ag.id, mg.id, null);
       if (sess) return sess.id;
-      logV2Warn('agent_id provided but no per-agent session found, falling back to mg default', {
+      // Normal steady state before the agent's first message: the session is
+      // created on demand by adapterRouteToAgent → resolveSession. Not a
+      // routing error (this return value is unused for chat envelopes), so
+      // log at info, not warn.
+      logV2('agent_id provided but no per-agent session yet, will create on route', {
         platform_id: platformId,
         agent_id: agentId,
         messaging_group_id: mg.id,

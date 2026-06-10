@@ -33,6 +33,37 @@ export interface WriteMessageOut {
 }
 
 /**
+ * Turn-scoped count of user-facing messages written to outbound.
+ *
+ * Every user-visible send funnels through `writeMessageOut`: streamed
+ * <message> blocks (poll-loop `sendToDestination`), the MCP `send_message` /
+ * `send_photo` / `edit` / `reaction` tools, etc. The poll-loop resets this at
+ * each turn boundary and reads it before writing the "[stream stalled]"
+ * fallback: if the turn already delivered real content (e.g. a forecast photo
+ * followed by a stalled summary), the fallback is a misleading error stapled
+ * onto a good answer and is suppressed.
+ *
+ * Status pings (`{"type":"status"}`) are progress signals, not answers, so
+ * they do not count — a turn that only emitted "working on it…" then stalled
+ * should still get the fallback.
+ */
+let userFacingDispatchCount = 0;
+
+export function resetUserFacingDispatch(): void {
+  userFacingDispatchCount = 0;
+}
+
+export function getUserFacingDispatchCount(): number {
+  return userFacingDispatchCount;
+}
+
+function isUserFacing(msg: WriteMessageOut): boolean {
+  if (msg.kind !== 'chat') return false;
+  if (msg.content.includes('"type":"status"')) return false;
+  return true;
+}
+
+/**
  * Write a new outbound message, auto-assigning an odd seq number.
  * Container uses odd seq (1, 3, 5...), host uses even (2, 4, 6...).
  *
@@ -87,6 +118,8 @@ export function writeMessageOut(msg: WriteMessageOut): number {
       $thread_id: msg.thread_id ?? null,
       $content: msg.content,
     });
+
+  if (isUserFacing(msg)) userFacingDispatchCount++;
 
   return nextSeq;
 }

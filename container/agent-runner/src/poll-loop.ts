@@ -1,6 +1,6 @@
 import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
-import { writeMessageOut } from './db/messages-out.js';
+import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
 import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
 import { clearCurrentInReplyTo, setCurrentInReplyTo } from './current-batch.js';
@@ -24,18 +24,22 @@ const ACTIVE_POLL_INTERVAL_MS = 500;
  * signal), the poll-loop assumes the stream is wedged, aborts the query,
  * notifies the user, and lets the next message wake a fresh turn.
  *
- * Two minutes is generous for a real tool call (Bash, Edit, MCP) but
- * far below the host-side 30-minute container ceiling — fires first, so
- * the user gets a fallback message instead of 30 minutes of silence.
+ * Four minutes is generous for a real tool call (Bash, Edit, MCP) AND for a
+ * slow post-tool model response (large tool outputs / web scrapes push the
+ * time-to-first-token up), yet still far below the host-side 30-minute
+ * container ceiling — fires first, so the user gets a fallback instead of
+ * half an hour of silence. Raised from 2m after a real surf-forecast turn
+ * stalled on the post-tool summary just past the old ceiling.
  *
  * Symptom this prevents: model emits an assistant text block followed by
  * a tool_use, the tool completes, and the SDK never returns control —
  * the streaming dispatch already sent any complete <message> blocks, but
  * if the model produced text only via the terminal `result` event it
  * was lost. With this watchdog the user at least gets a "[stream stalled]"
- * fallback within 2 minutes.
+ * fallback within 4 minutes — and only if nothing else was delivered this
+ * turn (see the suppression in the abort branch below).
  */
-const STREAM_IDLE_TIMEOUT_MS = 120_000;
+const STREAM_IDLE_TIMEOUT_MS = 240_000;
 
 function log(msg: string): void {
   console.error(`[poll-loop] ${msg}`);
@@ -502,8 +506,11 @@ async function processQuery(
         log(`Pushing ${keep.length} follow-up message(s) into active query`);
         unwrappedNudged = false;
         // Fresh turn — clear the post-result idle bypass so the watchdog
-        // can still surface a real stall in this new turn.
+        // can still surface a real stall in this new turn, and zero the
+        // user-facing dispatch counter so a stall in this follow-up turn is
+        // judged on what THIS turn delivered.
         resultReceived = false;
+        resetUserFacingDispatch();
         query.push(prompt);
         markCompleted(keptIds);
       } catch (err) {
@@ -559,6 +566,10 @@ async function processQuery(
   // Promise and only clearing it once consumed keeps the read in lock-step
   // with the producer.
   let pendingNext: Promise<IteratorResult<ProviderEvent>> | null = null;
+
+  // Fresh turn: zero the user-facing dispatch counter so the stall-fallback
+  // decision below reflects only what THIS turn delivered to the user.
+  resetUserFacingDispatch();
 
   try {
     while (true) {
@@ -618,16 +629,28 @@ async function processQuery(
           streamBuffer = remainder;
         }
         markCompleted(initialBatchIds);
-        writeMessageOut({
-          id: generateId(),
-          kind: 'chat',
-          platform_id: routing.platformId,
-          channel_type: routing.channelType,
-          thread_id: routing.threadId,
-          content: JSON.stringify({
-            text: '[stream stalled — response cut short. Please retry or rephrase.]',
-          }),
-        });
+        // Only surface the "[stream stalled]" error if the user got NOTHING
+        // this turn. If real content already went out (streamed <message>
+        // blocks, send_message / send_photo) — e.g. a forecast photo
+        // followed by a stalled summary — the fallback is a misleading error
+        // stapled onto a good answer. Status pings don't count (see
+        // isUserFacing in messages-out.ts). The streamBuffer flush above runs
+        // first so a just-completed block is reflected in the count.
+        const delivered = getUserFacingDispatchCount();
+        if (delivered === 0) {
+          writeMessageOut({
+            id: generateId(),
+            kind: 'chat',
+            platform_id: routing.platformId,
+            channel_type: routing.channelType,
+            thread_id: routing.threadId,
+            content: JSON.stringify({
+              text: '[stream stalled — response cut short. Please retry or rephrase.]',
+            }),
+          });
+        } else {
+          log(`Stream stalled but ${delivered} message(s) already delivered this turn — suppressing fallback`);
+        }
         try {
           query.abort();
         } catch (err) {

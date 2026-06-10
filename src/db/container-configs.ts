@@ -1,4 +1,5 @@
 import type { ContainerConfigRow } from '../types.js';
+import { log } from '../log.js';
 import { getDb } from './connection.js';
 
 const SCALAR_COLUMNS = new Set([
@@ -41,12 +42,23 @@ export function createContainerConfig(config: ContainerConfigRow): void {
 
 /** Create an empty config row with sensible defaults. Idempotent — no-ops if row exists. */
 export function ensureContainerConfig(agentGroupId: string): void {
-  getDb()
-    .prepare(
-      `INSERT OR IGNORE INTO container_configs (agent_group_id, updated_at)
+  const db = getDb();
+  // Guard the FK: container_configs.agent_group_id REFERENCES agent_groups(id).
+  // If the parent row is missing (e.g. an id/folder skew during bootstrap),
+  // the INSERT throws `SqliteError: FOREIGN KEY constraint failed`. INSERT OR
+  // IGNORE does NOT swallow FK violations — only uniqueness/NOT NULL. Because
+  // this runs in bootstrapTrio at startup, that single bad id used to crash
+  // the whole host and the circuit breaker would crash-loop it. Skip instead:
+  // a missing agent group has nothing to configure.
+  const exists = db.prepare('SELECT 1 FROM agent_groups WHERE id = ?').get(agentGroupId);
+  if (!exists) {
+    log.warn('ensureContainerConfig: no agent_groups row — skipping', { agentGroupId });
+    return;
+  }
+  db.prepare(
+    `INSERT OR IGNORE INTO container_configs (agent_group_id, updated_at)
        VALUES (?, ?)`,
-    )
-    .run(agentGroupId, new Date().toISOString());
+  ).run(agentGroupId, new Date().toISOString());
 }
 
 /** Update scalar fields on a config row. Only touches fields present in `updates`. */
