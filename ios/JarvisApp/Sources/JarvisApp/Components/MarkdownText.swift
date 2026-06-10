@@ -106,30 +106,22 @@ struct MarkdownText: View {
 
     @ViewBuilder
     private func tableView(_ rows: [[String]]) -> some View {
+        // Use a Grid (iOS 16+) so every column shares one width across all
+        // rows — a per-row HStack sizes each cell independently, which made
+        // columns drift out of alignment ("поехала"). Cells render inline
+        // markdown so **bold**/`code` in a cell isn't shown as literal syntax.
+        let colCount = rows.map(\.count).max() ?? 0
         ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 0, verticalSpacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { i, cols in
-                    HStack(spacing: 0) {
-                        ForEach(Array(cols.enumerated()), id: \.offset) { j, cell in
-                            Text(cell)
-                                .font(.system(size: max(fontSize - 2, 12), design: .monospaced))
-                                .foregroundStyle(i == 0 ? Theme.accent.opacity(0.85) : Theme.textPrimary.opacity(0.8))
-                                .fontWeight(i == 0 ? .medium : .regular)
-                                .padding(.horizontal, Theme.scaled(10))
-                                .padding(.vertical, Theme.scaled(6))
-                                .frame(minWidth: Theme.scaled(80), alignment: .leading)
-                                .overlay(alignment: .trailing) {
-                                    if j < cols.count - 1 {
-                                        Rectangle()
-                                            .frame(width: 0.5)
-                                            .foregroundStyle(Theme.surfaceBorder)
-                                    }
-                                }
+                    GridRow {
+                        ForEach(0..<colCount, id: \.self) { j in
+                            tableCell(j < cols.count ? cols[j] : "", isHeader: i == 0, isLastCol: j == colCount - 1)
                         }
                     }
                     .background(i == 0 ? Theme.accent.opacity(0.06) : (i % 2 == 0 ? Theme.surface.opacity(0.4) : Color.clear))
                     if i < rows.count - 1 {
-                        Rectangle().frame(height: 0.5).foregroundStyle(Theme.surfaceBorder)
+                        Divider().overlay(Theme.surfaceBorder).gridCellUnsizedAxes(.horizontal)
                     }
                 }
             }
@@ -138,6 +130,35 @@ struct MarkdownText: View {
                 RoundedRectangle(cornerRadius: Theme.cardRadius)
                     .stroke(Theme.surfaceBorder, lineWidth: 0.5)
             )
+        }
+    }
+
+    @ViewBuilder
+    private func tableCell(_ cell: String, isHeader: Bool, isLastCol: Bool) -> some View {
+        let size = max(fontSize - 2, 12)
+        Group {
+            if let attributed = try? AttributedString(
+                markdown: preprocessInline(cell),
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            ) {
+                Text(attributed)
+            } else {
+                Text(cell)
+            }
+        }
+        .font(.system(size: size))
+        .fontWeight(isHeader ? .semibold : .regular)
+        .foregroundStyle(isHeader ? Theme.accent.opacity(0.85) : Theme.textPrimary.opacity(0.85))
+        .multilineTextAlignment(.leading)
+        .tint(Theme.accent)
+        .padding(.horizontal, Theme.scaled(10))
+        .padding(.vertical, Theme.scaled(6))
+        .frame(minWidth: Theme.scaled(64), alignment: .leading)
+        .frame(maxHeight: .infinity, alignment: .leading)
+        .overlay(alignment: .trailing) {
+            if !isLastCol {
+                Rectangle().frame(width: 0.5).foregroundStyle(Theme.surfaceBorder)
+            }
         }
     }
 
