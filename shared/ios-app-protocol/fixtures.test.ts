@@ -51,6 +51,7 @@ describe('shared/ios-app-protocol health-upload fixtures', () => {
     expect(d.deepMin).toBe(62);
     expect(d.remMin).toBe(95);
     expect(d.awakeMin).toBe(18);
+    expect(d.coreMin).toBe(275);
     expect(d.sleepOnsetMin).toBe(-42);
     expect(d.hrvMorning).toBe(58);
     expect(d.spo2Avg).toBe(96.4);
