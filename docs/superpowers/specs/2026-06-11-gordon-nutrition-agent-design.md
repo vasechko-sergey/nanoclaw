@@ -54,7 +54,7 @@
 
 ### Внешние базы
 
-- **USDA FoodData Central** — free API, нужен ключ `USDA_FDC_API_KEY` в `groups/gordon/scripts/.env`. Пользователь заводит на data.gov (бесплатно, мгновенно). Цельные продукты, надёжные макросы per-100g.
+- **USDA FoodData Central** — free API, нужен ключ `USDA_FDC_API_KEY` в `groups/gordon/scripts/.env`. Регистрация: https://fdc.nal.usda.gov/api-key-signup.html (имя/email → ключ мгновенно, лимит 1000 req/час). Эндпоинт: `https://api.nal.usda.gov/fdc/v1/foods/search?query=<food>&api_key=<key>`. Цельные продукты, надёжные макросы per-100g.
 - **Open Food Facts** — без ключа. Упаковка/штрихкод/брендовое.
 - Сетевой запрос в шаге quantify; кэш по найденным продуктам, чтобы не бить API на каждый рис.
 
