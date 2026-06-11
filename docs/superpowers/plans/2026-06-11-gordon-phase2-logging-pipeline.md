@@ -267,6 +267,16 @@ test("extractUsdaMacros pulls per-100g macros by nutrient number", () => {
   expect(m.carb_100g).toBe(0);
 });
 
+test("extractUsdaMacros reads Foundation energy from 957 when 208 is absent", () => {
+  const foundation = { foodNutrients: [
+    { nutrientNumber: "203", value: 22.5 }, { nutrientNumber: "204", value: 1.93 },
+    { nutrientNumber: "205", value: 0 }, { nutrientNumber: "957", value: 106 }, { nutrientNumber: "958", value: 112 },
+  ]};
+  const m = extractUsdaMacros(foundation);
+  expect(m.kcal_100g).toBe(106); // 957 preferred over 958
+  expect(m.protein_100g).toBe(22.5);
+});
+
 test("lookupFood returns USDA result with source usda", async () => {
   const fetchImpl = async () => ({ ok: true, json: async () => USDA_HIT });
   const res = await lookupFood("chicken breast", { fetchImpl, apiKey: "k", cache: new Map() });
@@ -316,16 +326,20 @@ const USDA_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
 const OFF_URL = "https://world.openfoodfacts.org/cgi/search.pl";
 const CACHE_PATH = "/workspace/agent/nutrition/food-cache.json";
 
-const NUTRIENT = { kcal_100g: "208", protein_100g: "203", fat_100g: "204", carb_100g: "205" };
+// Energy varies by dataType: Branded / SR Legacy use 208; Foundation foods omit
+// 208 and report energy under 957 (Atwater General) / 958 (Atwater Specific).
+const ENERGY_NUMS = ["208", "957", "958"];
+const NUTRIENT = { protein_100g: "203", fat_100g: "204", carb_100g: "205" };
 
 export function extractUsdaMacros(food) {
   const byNum = {};
   for (const n of food.foodNutrients ?? []) {
     const num = String(n.nutrientNumber ?? n.number ?? n.nutrient?.number ?? "");
-    if (num) byNum[num] = n.value ?? n.amount ?? 0;
+    if (num && byNum[num] == null) byNum[num] = n.value ?? n.amount ?? 0;
   }
+  const kcal = ENERGY_NUMS.map((n) => byNum[n]).find((v) => v != null) ?? 0;
   return {
-    kcal_100g: Number(byNum[NUTRIENT.kcal_100g] ?? 0),
+    kcal_100g: Number(kcal),
     protein_100g: Number(byNum[NUTRIENT.protein_100g] ?? 0),
     fat_100g: Number(byNum[NUTRIENT.fat_100g] ?? 0),
     carb_100g: Number(byNum[NUTRIENT.carb_100g] ?? 0),
@@ -704,7 +718,7 @@ Common failures: `lookup-food.js` USDA key not loaded (check `scripts/.env` depl
 
 **3. Type/name consistency:** `openMealsDb`/`insertMeal`/`mealId` (db.js) used identically in db.test.js, log-meal.js, log-meal.test.js, and the smoke-test query. `lookupFood`/`extractUsdaMacros` match between lookup-food.js and its test. Per-100g field names (`kcal_100g`/`protein_100g`/`fat_100g`/`carb_100g`) consistent across lookup-food.js, its test, and the SKILL.md quantify step. Item field names (`food`/`grams`/`kcal`/`protein_g`/`fat_g`/`carb_g`/`source`/`fdc_id`) consistent across db.js, log-meal.js, tests, and SKILL.md. ✓
 
-**4. Known runtime caveat to verify at smoke test:** USDA FDC nutrient extraction uses `nutrientNumber` 208/203/204/205 and assumes per-100g values (true for Foundation/SR Legacy; Branded items can differ). The `critique` subagent + the smoke test catch gross errors; refine `extractUsdaMacros` against a live response if a logged meal's macros look wrong.
+**4. USDA energy extraction — verified live + fixed:** a live FDC call revealed Foundation foods omit nutrient 208 and report energy under 957 (Atwater General) / 958, so `extractUsdaMacros` now tries 208 → 957 → 958 (regression-tested). Protein/fat/carb (203/204/205) are consistent. Per-100g assumption holds for Foundation/SR Legacy; Branded items occasionally report per-serving — the `critique` subagent + smoke test catch any gross outlier.
 
 ---
 
