@@ -161,7 +161,7 @@ final class HealthHistoryTests: XCTestCase {
 
 - [ ] **Step 2: Build the test target — verify it FAILS to compile**
 
-Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -20`
+Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -20`
 Expected: compile error — `value of type 'V2.HealthUpload.Day' has no member 'deepMin'`.
 
 - [ ] **Step 3: Add the vars to `HealthUpload.Day`**
@@ -184,7 +184,7 @@ In `ios/JarvisApp/Sources/JarvisApp/Protocol/V2.swift`, inside `struct Day`, aft
 
 - [ ] **Step 4: Run the Swift test — verify it PASSES**
 
-Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/HealthHistoryTests/test_day_decodes_new_sensor_fields 2>&1 | tail -20`
+Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/HealthHistoryTests/test_day_decodes_new_sensor_fields 2>&1 | tail -20`
 Expected: `Test Suite 'HealthHistoryTests' passed`.
 
 - [ ] **Step 5: Commit**
@@ -231,7 +231,7 @@ Append to `HealthHistoryTests.swift`:
 
 - [ ] **Step 2: Build-for-testing — verify it FAILS to compile** (`SleepSampleInput`/`bucketSleepStages` undefined)
 
-Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -20`
+Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -20`
 Expected: compile error referencing `SleepSampleInput`.
 
 - [ ] **Step 3: Add the pure reducer to `HealthHistory.swift`**
@@ -279,7 +279,7 @@ At the top of `enum HealthHistory { ... }` (after `private static let store`):
 
 - [ ] **Step 4: Run the test — verify it PASSES**
 
-Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/HealthHistoryTests/test_bucketSleepStages_splits_minutes_and_onset 2>&1 | tail -20`
+Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/HealthHistoryTests/test_bucketSleepStages_splits_minutes_and_onset 2>&1 | tail -20`
 Expected: PASS.
 
 - [ ] **Step 5: Wire the reducer into the HK sleep query (replace `sleepByDay`)**
@@ -338,7 +338,7 @@ Replace the old `sleepByDay(...)` helper with:
 
 - [ ] **Step 6: Build to confirm the shell compiles**
 
-Run: `cd ios/JarvisApp && xcodebuild build -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -15`
+Run: `cd ios/JarvisApp && xcodebuild build -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -15`
 Expected: `BUILD SUCCEEDED`.
 
 - [ ] **Step 7: Commit**
@@ -356,90 +356,101 @@ git commit -m "feat(ios): split sleep into stages + onset, keep sleepHours"
 - Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift`
 - Test: `ios/JarvisApp/Sources/JarvisAppTests/HealthHistoryTests.swift`
 
-- [ ] **Step 1: Add a failing test for the windowed-average reducer**
+- [ ] **Step 1: Add a failing test for the overnight-bucketing reducer**
 
-Append to `HealthHistoryTests.swift`:
+`hrvMorning` (and SpO2 in Task 5) must reflect the OVERNIGHT reading, not the 24h average — otherwise it's a silent re-derivation of the whole-day `hrv`. So we bucket samples to wake-days keeping only overnight / early-morning readings and dropping daytime. Append to `HealthHistoryTests.swift`:
 
 ```swift
-    func test_averageInWindow_filters_by_timestamp() {
-        let base = Date(timeIntervalSince1970: 1_800_000_000)
-        func t(_ h: Double) -> Date { base.addingTimeInterval(h * 3600) }
+    func test_bucketOvernight_keeps_overnight_drops_daytime() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let f = ISO8601DateFormatter()
         let samples: [(value: Double, date: Date)] = [
-            (40, t(-2)), (60, t(1)), (80, t(3)), (200, t(9)) // last is outside window
+            (50, f.date(from: "2026-06-09T22:00:00Z")!), // evening → wake-day 06-10
+            (55, f.date(from: "2026-06-10T05:00:00Z")!), // morning → wake-day 06-10
+            (99, f.date(from: "2026-06-10T14:00:00Z")!), // daytime → dropped
         ]
-        let avg = HealthHistory.averageInWindow(samples, from: t(-3), to: t(6))
-        XCTAssertNotNil(avg)
-        XCTAssertEqual(avg!, 60, accuracy: 0.01) // (40+60+80)/3
-        XCTAssertNil(HealthHistory.averageInWindow([], from: t(-3), to: t(6)))
+        let out = HealthHistory.bucketOvernight(samples, calendar: cal)
+        XCTAssertEqual(out["2026-06-10"]?.sorted(), [50, 55])
+        XCTAssertFalse(out["2026-06-10"]?.contains(99) ?? false)
+        XCTAssertTrue(HealthHistory.bucketOvernight([], calendar: cal).isEmpty)
     }
 ```
 
-- [ ] **Step 2: Build-for-testing — verify it FAILS** (`averageInWindow` undefined)
+- [ ] **Step 2: Build-for-testing — verify it FAILS** (`bucketOvernight` undefined)
 
-Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -15`
-Expected: compile error referencing `averageInWindow`.
+Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -15`
+Expected: compile error referencing `bucketOvernight`.
 
 - [ ] **Step 3: Add the pure reducer**
 
 In `HealthHistory.swift` (near `bucketSleepStages`):
 
 ```swift
-    /// Pure: mean of samples whose timestamp falls in [from, to]. nil if none.
-    static func averageInWindow(_ samples: [(value: Double, date: Date)], from: Date, to: Date) -> Double? {
-        let inWin = samples.filter { $0.date >= from && $0.date <= to }.map(\.value)
-        guard !inWin.isEmpty else { return nil }
-        return inWin.reduce(0, +) / Double(inWin.count)
+    /// Pure: bucket time-stamped samples to wake-days, keeping only overnight /
+    /// early-morning readings (local hour >= eveningStart the night before →
+    /// next morning, or < morningEnd the day-of). Daytime samples are dropped so
+    /// the value reflects sleep recovery, not daytime stress. Key = wake-day
+    /// "yyyy-MM-dd" in `calendar`'s timezone. Shared by morning HRV + SpO2.
+    static func bucketOvernight(
+        _ samples: [(value: Double, date: Date)], calendar: Calendar,
+        eveningStart: Int = 20, morningEnd: Int = 11
+    ) -> [String: [Double]] {
+        let fmt = DateFormatter()
+        fmt.calendar = calendar
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = calendar.timeZone
+        fmt.dateFormat = "yyyy-MM-dd"
+        var out: [String: [Double]] = [:]
+        for s in samples {
+            let h = calendar.component(.hour, from: s.date)
+            let wakeDay: Date
+            if h >= eveningStart {
+                wakeDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: s.date))!
+            } else if h < morningEnd {
+                wakeDay = calendar.startOfDay(for: s.date)
+            } else { continue } // daytime — not a recovery signal
+            out[fmt.string(from: wakeDay), default: []].append(s.value)
+        }
+        return out
     }
 ```
 
 - [ ] **Step 4: Run the test — verify it PASSES**
 
-Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/HealthHistoryTests/test_averageInWindow_filters_by_timestamp 2>&1 | tail -15`
+Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/HealthHistoryTests/test_bucketOvernight_keeps_overnight_drops_daytime 2>&1 | tail -15`
 Expected: PASS.
 
-- [ ] **Step 5: Add the HK morning-HRV query (sleep window of the wake night)**
+- [ ] **Step 5: Add the HK morning-HRV query (overnight SDNN, daytime excluded)**
 
-In `HealthHistory.fetch`, after the existing whole-day HRV block (the `group.enter(); collection(.heartRateVariabilitySDNN, ...)` block ~lines 82-93), add:
+In `HealthHistory.fetch`, after the existing whole-day HRV block (the `group.enter(); collection(.heartRateVariabilitySDNN, ...)` block ~lines 82-93), add. This queries SDNN over the whole interval but uses `bucketOvernight` to keep only overnight/morning readings per wake-day — so `hrvMorning` is genuinely the sleep-recovery signal, distinct from the whole-day `hrv`:
 
 ```swift
-        // Morning HRV: SDNN samples inside the night's sleep window (18h before
-        // local noon → noon), bucketed to the wake day. Cleaner than whole-day avg.
+        // Morning HRV: overnight SDNN only (bucketOvernight drops daytime), per
+        // wake day. Cleaner recovery signal than the whole-day SDNN average.
         group.enter()
-        let hrvWin = HealthHistory.sleepWindow(start: start, end: end)
         let hrvQ = HKSampleQuery(
             sampleType: HKQuantityType(.heartRateVariabilitySDNN),
-            predicate: HKQuery.predicateForSamples(withStart: hrvWin.from, end: hrvWin.to),
-            limit: HKObjectQueryNoLimit,
-            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]
+            predicate: HKQuery.predicateForSamples(withStart: start, end: end),
+            limit: HKObjectQueryNoLimit, sortDescriptors: nil
         ) { _, samples, _ in
             let ms = HKUnit.secondUnit(with: .milli)
-            var byDay: [String: [(value: Double, date: Date)]] = [:]
-            for s in (samples as? [HKQuantitySample]) ?? [] {
-                let k = bucketKey(s.endDate)
-                byDay[k, default: []].append((s.quantity.doubleValue(for: ms), s.endDate))
-            }
-            for (k, arr) in byDay {
-                // window per day = the samples already grouped; average them all.
-                if let avg = HealthHistory.averageInWindow(arr, from: hrvWin.from, to: hrvWin.to) {
-                    mutate(k) { $0.hrvMorning = Int(avg.rounded()) }
-                }
+            let pairs = ((samples as? [HKQuantitySample]) ?? [])
+                .map { (value: $0.quantity.doubleValue(for: ms), date: $0.endDate) }
+            for (k, vals) in HealthHistory.bucketOvernight(pairs, calendar: cal) {
+                let avg = vals.reduce(0, +) / Double(vals.count)
+                mutate(k) { $0.hrvMorning = Int(avg.rounded()) }
             }
             group.leave()
         }
         store.execute(hrvQ)
 ```
 
-Add the window helper near `cal0`:
-
-```swift
-    /// Overall sleep window across the fetch interval: from `start` to `end`.
-    /// (Per-day bucketing happens by sample end-day; this just scopes the query.)
-    static func sleepWindow(start: Date, end: Date) -> (from: Date, to: Date) { (start, end) }
-```
+(No window helper needed — `bucketOvernight` does the per-day overnight scoping. `cal` is the `Calendar.current` already defined at the top of `fetch`.)
 
 - [ ] **Step 6: Build to confirm compile**
 
-Run: `cd ios/JarvisApp && xcodebuild build -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -15`
+Run: `cd ios/JarvisApp && xcodebuild build -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -15`
 Expected: `BUILD SUCCEEDED`.
 
 - [ ] **Step 7: Commit**
@@ -475,7 +486,7 @@ Append to `HealthHistoryTests.swift`:
 
 - [ ] **Step 2: Build-for-testing — verify it FAILS** (`reduceSpo2` undefined)
 
-Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -15`
+Run: `cd ios/JarvisApp && xcodebuild build-for-testing -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -15`
 Expected: compile error referencing `reduceSpo2`.
 
 - [ ] **Step 3: Add the pure reducer**
@@ -494,7 +505,7 @@ In `HealthHistory.swift`:
 
 - [ ] **Step 4: Run the test — verify it PASSES**
 
-Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/HealthHistoryTests/test_reduceSpo2_returns_avg_and_min_in_percent 2>&1 | tail -15`
+Run: `cd ios/JarvisApp && xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/HealthHistoryTests/test_reduceSpo2_returns_avg_and_min_in_percent 2>&1 | tail -15`
 Expected: PASS.
 
 - [ ] **Step 5: Authorize `.oxygenSaturation`**
@@ -507,27 +518,25 @@ In `HealthManager.swift`, add to the `types` set in `requestAndFetch()` (after `
 
 - [ ] **Step 6: Add the SpO2 HK query + build-time sample count**
 
-In `HealthHistory.fetch`, after the morning-HRV block:
+In `HealthHistory.fetch`, after the morning-HRV block. Uses `bucketOvernight` (from Task 4) so SpO2 reflects NOCTURNAL desaturation, not daytime readings:
 
 ```swift
-        // Nocturnal SpO2: min + avg over the sleep window, per wake day.
+        // Nocturnal SpO2: overnight min + avg (bucketOvernight drops daytime), per wake day.
         group.enter()
-        let spo2Win = HealthHistory.sleepWindow(start: start, end: end)
         let spo2Q = HKSampleQuery(
             sampleType: HKQuantityType(.oxygenSaturation),
-            predicate: HKQuery.predicateForSamples(withStart: spo2Win.from, end: spo2Win.to),
+            predicate: HKQuery.predicateForSamples(withStart: start, end: end),
             limit: HKObjectQueryNoLimit, sortDescriptors: nil
         ) { _, samples, _ in
             let frac = HKUnit.percent()  // HK percent unit == fraction 0..1
-            var byDay: [String: [Double]] = [:]
-            for s in (samples as? [HKQuantitySample]) ?? [] {
-                byDay[bucketKey(s.endDate), default: []].append(s.quantity.doubleValue(for: frac))
-            }
+            let pairs = ((samples as? [HKQuantitySample]) ?? [])
+                .map { (value: $0.quantity.doubleValue(for: frac), date: $0.endDate) }
+            let byDay = HealthHistory.bucketOvernight(pairs, calendar: cal)
             // Build-time diagnostic (SpO2 availability sanity-check; see spec §8).
             let total = byDay.values.reduce(0) { $0 + $1.count }
-            print("[HealthHistory] SpO2 samples in window: \(total) across \(byDay.count) day(s)")
-            for (k, arr) in byDay {
-                if let r = HealthHistory.reduceSpo2(arr) {
+            print("[HealthHistory] SpO2 overnight samples: \(total) across \(byDay.count) day(s)")
+            for (k, vals) in byDay {
+                if let r = HealthHistory.reduceSpo2(vals) {
                     mutate(k) { $0.spo2Avg = r.avg; $0.spo2Min = r.min }
                 }
             }
@@ -538,7 +547,7 @@ In `HealthHistory.fetch`, after the morning-HRV block:
 
 - [ ] **Step 7: Build to confirm compile**
 
-Run: `cd ios/JarvisApp && xcodebuild build -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -15`
+Run: `cd ios/JarvisApp && xcodebuild build -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -15`
 Expected: `BUILD SUCCEEDED`.
 
 - [ ] **Step 8: Commit**
@@ -1173,7 +1182,7 @@ Run from `ios/JarvisApp`:
 
 ```bash
 xcodegen generate
-xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/HealthHistoryTests 2>&1 | tail -15
+xcodebuild test -scheme Jarvis -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/HealthHistoryTests 2>&1 | tail -15
 ```
 
 Expected: `HealthHistoryTests` pass. Then install on Sergei's physical device via Xcode (Product → Run on the connected iPhone) — HealthKit data requires a real device, not the simulator.
