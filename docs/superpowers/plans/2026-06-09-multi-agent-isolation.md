@@ -1291,7 +1291,7 @@ Expected: `greg`, `jarvis`, `payne` returned; if any ios-app-v2 mg exists, all t
 
 ```bash
 git push
-ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "cd ~/nanoclaw && git pull && pnpm run build && ./container/build.sh && bash ~/nanoclaw/start-nanoclaw.sh"'
+ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "cd ~/nanoclaw && git pull && pnpm run build && ./container/build.sh && XDG_RUNTIME_DIR=/run/user/$(id -u nanoclaw) systemctl --user restart nanoclaw"'
 ```
 
 - [ ] **Step 5: Live verify**

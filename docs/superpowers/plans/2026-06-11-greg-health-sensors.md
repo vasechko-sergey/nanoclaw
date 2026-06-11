@@ -1161,7 +1161,7 @@ Expected: push succeeds (personal repo, direct-to-main per workflow).
 
 - [ ] **Step 3: Deploy host on the VDS**
 
-Run: `ssh root@148.253.211.164 'sudo -u nanoclaw bash -lc "cd ~/nanoclaw && git pull && pnpm install --frozen-lockfile && pnpm run build && bash ~/nanoclaw/start-nanoclaw.sh"'`
+Run: `ssh root@148.253.211.164 'sudo -u nanoclaw bash -lc "cd ~/nanoclaw && git pull && pnpm install --frozen-lockfile && pnpm run build && XDG_RUNTIME_DIR=/run/user/$(id -u nanoclaw) systemctl --user restart nanoclaw"'`
 Expected: pull + build OK, service restarts. (Protocol/zod change is live so new fields survive ingest.)
 
 - [ ] **Step 4: Sync Greg's group files to the VDS**

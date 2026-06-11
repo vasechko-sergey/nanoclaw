@@ -530,7 +530,7 @@ The host code (`src/bootstrap-trio.ts`) ships via git + rebuild; the agent files
 ```bash
 git push
 scp -r groups/gordon nanoclaw@148.253.211.164:~/nanoclaw/groups/
-ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "cd ~/nanoclaw && git pull && pnpm run build && bash ~/nanoclaw/start-nanoclaw.sh"'
+ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "cd ~/nanoclaw && git pull && pnpm run build && XDG_RUNTIME_DIR=/run/user/$(id -u nanoclaw) systemctl --user restart nanoclaw"'
 ```
 
 On host restart, `bootstrapTrio()` runs: creates the `gordon` agent group + container config, wires it to the iOS messaging group, eager-creates a session, seeds the channel destination, and writes the bootstrap inbound (Gordon stays silent until addressed).

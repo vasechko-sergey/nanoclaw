@@ -111,7 +111,7 @@ cd ios/JarvisApp && xcodegen generate
 **Сервер (после правок ios-app.ts / CLAUDE.md):**
 ```bash
 pnpm run build && git push
-ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "cd ~/nanoclaw && git pull && pnpm run build && bash ~/nanoclaw/start-nanoclaw.sh"'
+ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "cd ~/nanoclaw && git pull && pnpm run build && XDG_RUNTIME_DIR=/run/user/$(id -u nanoclaw) systemctl --user restart nanoclaw"'
 ```
 Health: `GET http://100.94.184.60:3001/ios/health` → `{"ok":true}`.
 
