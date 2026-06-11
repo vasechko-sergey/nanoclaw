@@ -16,4 +16,23 @@ final class HealthHistoryTests: XCTestCase {
         XCTAssertEqual(day.spo2Avg, 96.4)
         XCTAssertEqual(day.spo2Min, 91.0)
     }
+
+    func test_bucketSleepStages_splits_minutes_and_onset() {
+        let midnight = Date(timeIntervalSince1970: 1_800_000_000)
+        func t(_ min: Int) -> Date { midnight.addingTimeInterval(Double(min) * 60) }
+        let samples: [HealthHistory.SleepSampleInput] = [
+            .init(stage: HealthHistory.SleepStage.asleepDeep.rawValue, start: t(-30), end: t(30)),
+            .init(stage: HealthHistory.SleepStage.asleepREM.rawValue,  start: t(30),  end: t(120)),
+            .init(stage: HealthHistory.SleepStage.asleepCore.rawValue, start: t(120), end: t(240)),
+            .init(stage: HealthHistory.SleepStage.awake.rawValue,      start: t(240), end: t(255)),
+            .init(stage: HealthHistory.SleepStage.inBed.rawValue,      start: t(-40), end: t(260)),
+        ]
+        let r = HealthHistory.bucketSleepStages(samples, dayStart: midnight)
+        XCTAssertEqual(r.deepMin, 60)
+        XCTAssertEqual(r.remMin, 90)
+        XCTAssertEqual(r.coreMin, 120)
+        XCTAssertEqual(r.awakeMin, 15)
+        XCTAssertEqual(r.onsetMin, -30)
+        XCTAssertEqual(r.sleepHours, 4.5, accuracy: 0.05)
+    }
 }

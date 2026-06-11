@@ -7,6 +7,43 @@ import HealthKit
 enum HealthHistory {
     private static let store = HKHealthStore()
 
+    /// Sleep stage rawValues — mirror HKCategoryValueSleepAnalysis so the pure
+    /// reducer needs no live HealthKit store and is unit-testable.
+    enum SleepStage: Int { case inBed = 0, asleepUnspecified = 1, awake = 2, asleepCore = 3, asleepDeep = 4, asleepREM = 5 }
+
+    struct SleepSampleInput { let stage: Int; let start: Date; let end: Date }
+    struct SleepStageResult: Equatable {
+        var deepMin: Int; var remMin: Int; var coreMin: Int; var awakeMin: Int
+        var onsetMin: Int?; var sleepHours: Double
+    }
+
+    /// Pure: split sleep samples into per-stage minutes + onset (minutes from
+    /// `dayStart` local midnight to the earliest asleep sample; negative = before
+    /// midnight). `inBed` ignored; `asleepUnspecified`→core. sleepHours = (deep+rem+core)/60.
+    static func bucketSleepStages(_ samples: [SleepSampleInput], dayStart: Date) -> SleepStageResult {
+        var deep = 0.0, rem = 0.0, core = 0.0, awake = 0.0
+        var earliestAsleep: Date? = nil
+        for s in samples {
+            let mins = s.end.timeIntervalSince(s.start) / 60
+            switch SleepStage(rawValue: s.stage) {
+            case .asleepDeep: deep += mins
+            case .asleepREM:  rem += mins
+            case .asleepCore, .asleepUnspecified: core += mins
+            case .awake: awake += mins
+            case .inBed, .none: continue
+            }
+            if s.stage != SleepStage.awake.rawValue && s.stage != SleepStage.inBed.rawValue {
+                if earliestAsleep == nil || s.start < earliestAsleep! { earliestAsleep = s.start }
+            }
+        }
+        let onset = earliestAsleep.map { Int(($0.timeIntervalSince(dayStart) / 60).rounded()) }
+        return SleepStageResult(
+            deepMin: Int(deep.rounded()), remMin: Int(rem.rounded()),
+            coreMin: Int(core.rounded()), awakeMin: Int(awake.rounded()),
+            onsetMin: onset, sleepHours: ((deep + rem + core) / 60 * 10).rounded() / 10
+        )
+    }
+
     /// `from`/`to` are "yyyy-MM-dd" (local). Returns one `V2.HealthUpload.Day`
     /// per day — wire shape pinned by shared/ios-app-protocol fixtures.
     static func fetch(from: String, to: String, completion: @escaping ([V2.HealthUpload.Day]) -> Void) {
@@ -92,12 +129,18 @@ enum HealthHistory {
             group.leave()
         }
 
-        // Sleep: sum asleep durations, bucketed by wake day (the day the sleep block ends).
+        // Sleep: split into stages + onset, bucketed by wake day (sample end day).
         group.enter()
-        sleepByDay(start: start, end: end, bucket: bucketKey) { sleep in
-            for (k, hours) in sleep {
-                let v = (hours * 10).rounded() / 10
-                mutate(k) { $0.sleepHours = v }
+        sleepSamplesByWakeDay(start: start, end: end, bucket: bucketKey) { byWakeDay in
+            for (k, samples) in byWakeDay {
+                let dayStart = self.cal0(for: samples) ?? start
+                let r = HealthHistory.bucketSleepStages(samples, dayStart: dayStart)
+                mutate(k) {
+                    $0.deepMin = r.deepMin; $0.remMin = r.remMin
+                    $0.coreMin = r.coreMin; $0.awakeMin = r.awakeMin
+                    $0.sleepOnsetMin = r.onsetMin
+                    $0.sleepHours = r.sleepHours
+                }
             }
             group.leave()
         }
@@ -225,31 +268,31 @@ enum HealthHistory {
         store.execute(q)
     }
 
-    private static func sleepByDay(
-        start: Date,
-        end: Date,
+    /// Group sleep samples by wake-day key (sample end day). Returns the raw
+    /// per-day samples so the pure reducer does the stage math.
+    private static func sleepSamplesByWakeDay(
+        start: Date, end: Date,
         bucket: @escaping (Date) -> String,
-        _ cb: @escaping ([String: Double]) -> Void
+        _ cb: @escaping ([String: [SleepSampleInput]]) -> Void
     ) {
-        let asleepValues: Set<Int> = [
-            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
-            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-        ]
         let q = HKSampleQuery(
             sampleType: HKCategoryType(.sleepAnalysis),
             predicate: HKQuery.predicateForSamples(withStart: start, end: end),
-            limit: HKObjectQueryNoLimit,
-            sortDescriptors: nil
+            limit: HKObjectQueryNoLimit, sortDescriptors: nil
         ) { _, samples, _ in
-            var hoursByDay: [String: Double] = [:]
-            for s in (samples as? [HKCategorySample]) ?? [] where asleepValues.contains(s.value) {
+            var byDay: [String: [SleepSampleInput]] = [:]
+            for s in (samples as? [HKCategorySample]) ?? [] {
                 let k = bucket(s.endDate)
-                hoursByDay[k, default: 0] += s.endDate.timeIntervalSince(s.startDate) / 3600
+                byDay[k, default: []].append(.init(stage: s.value, start: s.startDate, end: s.endDate))
             }
-            cb(hoursByDay)
+            cb(byDay)
         }
         store.execute(q)
+    }
+
+    /// Local midnight of the wake day for a sample set (used as onset reference).
+    private static func cal0(for samples: [SleepSampleInput]) -> Date? {
+        guard let last = samples.map(\.end).max() else { return nil }
+        return Calendar.current.startOfDay(for: last)
     }
 }
