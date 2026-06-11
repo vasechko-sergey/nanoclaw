@@ -22,4 +22,10 @@ Use **`add_mcp_server`** to add an MCP server to your configuration. Browse avai
 add_mcp_server({ name: "memory", command: "pnpm", args: ["dlx", "@modelcontextprotocol/server-memory"] })
 ```
 
-Do not ask the user to give you credentials or tell them how to create credentials (OAuth, API keys, etc.) — NEVER fabricate credential setup instructions. Credentials are handled by the OneCLI gateway. Use `"onecli-managed"` as the placeholder value for any credential env vars or config fields. After the MCP server is installed and the container restarts, load `/onecli-gateway` for the full credential-handling flow (connect URLs, stubs, error recovery).
+**Credentials.** The MCP server gets its credentials from `.env`. If it needs a new API key / token:
+
+1. Tell Sergei exactly which env var name you need (e.g. `BRAVE_SEARCH_API_KEY`) and where to put it — host `.env` for system-wide tokens, `/workspace/agent/scripts/.env` for agent-scoped tokens.
+2. Wait for him to add it and confirm.
+3. After the container restarts (`ncl groups restart`), the new env var is visible to the MCP server's process.
+
+Never fabricate credential setup instructions; never reference a vault/gateway flow. If you don't know where the API key comes from, ask.
