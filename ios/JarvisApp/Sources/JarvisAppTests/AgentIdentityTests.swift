@@ -8,4 +8,11 @@ final class AgentIdentityTests: XCTestCase {
         XCTAssertEqual(AgentIdentity.scrooge.rawValue, "scrooge")
         XCTAssertFalse(AgentIdentity.scrooge.displayName.isEmpty)
     }
+
+    func testGordonIsAValidCase() {
+        XCTAssertTrue(AgentIdentity.allCases.contains(.gordon))
+        XCTAssertEqual(AgentIdentity(rawValue: "gordon"), .gordon)
+        XCTAssertEqual(AgentIdentity.gordon.rawValue, "gordon")
+        XCTAssertEqual(AgentIdentity.gordon.displayName, "Ramzi")
+    }
 }

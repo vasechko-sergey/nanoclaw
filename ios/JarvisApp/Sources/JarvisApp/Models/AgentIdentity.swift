@@ -9,6 +9,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
     case payne
     case greg
     case scrooge
+    case gordon
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         case "payne": self = .payne
         case "greg", "health-analyzer": self = .greg
         case "scrooge": self = .scrooge
+        case "gordon": self = .gordon
         default: return nil
         }
     }
@@ -36,6 +38,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         case .payne:  return "Maj Payne"
         case .greg:   return "Dr House"
         case .scrooge: return "Scrooge"
+        case .gordon: return "Ramzi"
         }
     }
 
@@ -51,6 +54,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         case .payne:  return Color(red: 0.78, green: 0.55, blue: 0.30)  // copper #C68C4D
         case .greg:   return Color(red: 0.45, green: 0.70, blue: 0.62)  // sage #73B39E
         case .scrooge: return Color(red: 0.88, green: 0.72, blue: 0.30)  // muted gold #E0B84C
+        case .gordon:  return Color(red: 0.80, green: 0.42, blue: 0.34)  // desaturated tomato #CC6B57
         }
     }
 }
