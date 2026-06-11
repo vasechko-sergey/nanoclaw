@@ -7,6 +7,7 @@ import { initTestDb, closeDb, createMessagingGroup, getAllAgentGroups, getAgentG
 import { getMessagingGroupAgents } from './db/messaging-groups.js';
 import { findSessionForAgent } from './db/sessions.js';
 import { runMigrations } from './db/migrations/index.js';
+import { getDestinationByTarget } from './modules/agent-to-agent/db/agent-destinations.js';
 
 // Mock the session-manager so bootstrapTrio's writeSessionMessage /
 // initSessionFolder calls (used for the bootstrap inbound) don't touch
@@ -106,5 +107,31 @@ describe('bootstrapTrio', () => {
     const firstCount = writeCalls.length;
     bootstrapTrio();
     expect(writeCalls.length).toBe(firstCount);
+  });
+
+  it('wires every agent with a channel destination so replies resolve', () => {
+    // bootstrap wires each agent via createMessagingGroupAgent, which
+    // auto-creates the channel agent_destinations row. Without that row an
+    // agent's <message> reply resolves to "Unknown" and the runner drops it,
+    // so this guards that a freshly bootstrapped agent (e.g. gordon) can reply.
+    createMessagingGroup({
+      id: 'mg-ios4',
+      channel_type: 'ios-app-v2',
+      platform_id: 'ios:jkl',
+      name: 'iPhone',
+      is_group: 0,
+      unknown_sender_policy: 'strict',
+      created_at: new Date().toISOString(),
+      denied_at: null,
+    });
+    bootstrapTrio();
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon']) {
+      expect(getDestinationByTarget(slug, 'channel', 'mg-ios4')).toBeDefined();
+    }
+    // Idempotent: a second bootstrap must not throw on the PK or duplicate.
+    bootstrapTrio();
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon']) {
+      expect(getDestinationByTarget(slug, 'channel', 'mg-ios4')).toBeDefined();
+    }
   });
 });

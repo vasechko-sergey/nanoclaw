@@ -1,13 +1,13 @@
 /**
- * Idempotent host-startup bootstrap of the three iOS agents.
+ * Idempotent host-startup bootstrap of the iOS team agents.
  *
- * Ensures `jarvis`/`payne`/`greg` agent_groups + container_configs rows
- * exist. For every ios-app-v2 messaging_group, wires all three as
- * `messaging_group_agents` and eager-creates one session per agent so the
- * adapter routing path always finds a session even before the first
- * inbound message. Writes the bootstrap inbound system message for
- * payne and greg on freshly-created sessions so they prime their context
- * from INDEX.md without producing a chat reply.
+ * Ensures `jarvis`/`payne`/`greg`/`gordon` agent_groups + container_configs
+ * rows exist. For every ios-app-v2 messaging_group, wires each as
+ * `messaging_group_agents` (which auto-creates the channel destination so the
+ * agent can reply) and eager-creates one session per agent so the adapter
+ * routing path always finds a session even before the first inbound message.
+ * Writes the bootstrap inbound system message for payne, greg, and gordon on
+ * freshly-created sessions so they prime their context without a chat reply.
  */
 import { randomUUID } from 'node:crypto';
 
