@@ -50,4 +50,19 @@ final class HealthHistoryTests: XCTestCase {
         XCTAssertEqual(allAwake.sleepHours, 0, accuracy: 0.001)
         XCTAssertEqual(allAwake.awakeMin, 30)
     }
+
+    func test_bucketOvernight_keeps_overnight_drops_daytime() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let f = ISO8601DateFormatter()
+        let samples: [(value: Double, date: Date)] = [
+            (50, f.date(from: "2026-06-09T22:00:00Z")!), // evening → wake-day 06-10
+            (55, f.date(from: "2026-06-10T05:00:00Z")!), // morning → wake-day 06-10
+            (99, f.date(from: "2026-06-10T14:00:00Z")!), // daytime → dropped
+        ]
+        let out = HealthHistory.bucketOvernight(samples, calendar: cal)
+        XCTAssertEqual(out["2026-06-10"]?.sorted(), [50, 55])
+        XCTAssertFalse(out["2026-06-10"]?.contains(99) ?? false)
+        XCTAssertTrue(HealthHistory.bucketOvernight([], calendar: cal).isEmpty)
+    }
 }

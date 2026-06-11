@@ -44,6 +44,34 @@ enum HealthHistory {
         )
     }
 
+    /// Pure: bucket time-stamped samples to wake-days, keeping only overnight /
+    /// early-morning readings (local hour >= eveningStart the night before →
+    /// next morning, or < morningEnd the day-of). Daytime samples are dropped so
+    /// the value reflects sleep recovery, not daytime stress. Key = wake-day
+    /// "yyyy-MM-dd" in `calendar`'s timezone. Shared by morning HRV + SpO2.
+    static func bucketOvernight(
+        _ samples: [(value: Double, date: Date)], calendar: Calendar,
+        eveningStart: Int = 20, morningEnd: Int = 11
+    ) -> [String: [Double]] {
+        let fmt = DateFormatter()
+        fmt.calendar = calendar
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = calendar.timeZone
+        fmt.dateFormat = "yyyy-MM-dd"
+        var out: [String: [Double]] = [:]
+        for s in samples {
+            let h = calendar.component(.hour, from: s.date)
+            let wakeDay: Date
+            if h >= eveningStart {
+                wakeDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: s.date))!
+            } else if h < morningEnd {
+                wakeDay = calendar.startOfDay(for: s.date)
+            } else { continue } // daytime — not a recovery signal
+            out[fmt.string(from: wakeDay), default: []].append(s.value)
+        }
+        return out
+    }
+
     /// `from`/`to` are "yyyy-MM-dd" (local). Returns one `V2.HealthUpload.Day`
     /// per day — wire shape pinned by shared/ios-app-protocol fixtures.
     static func fetch(from: String, to: String, completion: @escaping ([V2.HealthUpload.Day]) -> Void) {
@@ -128,6 +156,25 @@ enum HealthHistory {
             }
             group.leave()
         }
+
+        // Morning HRV: overnight SDNN only (bucketOvernight drops daytime), per
+        // wake day. Cleaner recovery signal than the whole-day SDNN average.
+        group.enter()
+        let hrvQ = HKSampleQuery(
+            sampleType: HKQuantityType(.heartRateVariabilitySDNN),
+            predicate: HKQuery.predicateForSamples(withStart: start, end: end),
+            limit: HKObjectQueryNoLimit, sortDescriptors: nil
+        ) { _, samples, _ in
+            let ms = HKUnit.secondUnit(with: .milli)
+            let pairs = ((samples as? [HKQuantitySample]) ?? [])
+                .map { (value: $0.quantity.doubleValue(for: ms), date: $0.endDate) }
+            for (k, vals) in HealthHistory.bucketOvernight(pairs, calendar: cal) {
+                let avg = vals.reduce(0, +) / Double(vals.count)
+                mutate(k) { $0.hrvMorning = Int(avg.rounded()) }
+            }
+            group.leave()
+        }
+        store.execute(hrvQ)
 
         // Sleep: split into stages + onset, bucketed by wake day (sample end day).
         group.enter()
