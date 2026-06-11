@@ -44,6 +44,14 @@ enum HealthHistory {
         )
     }
 
+    /// Pure: nocturnal SpO2 avg + min, converting HK fraction (0..1) to percent.
+    static func reduceSpo2(_ fractions: [Double]) -> (avg: Double, min: Double)? {
+        guard !fractions.isEmpty else { return nil }
+        let pct = fractions.map { $0 * 100 }
+        let avg = pct.reduce(0, +) / Double(pct.count)
+        return (avg: (avg * 100).rounded() / 100, min: (pct.min()! * 10).rounded() / 10)
+    }
+
     /// Pure: bucket time-stamped samples to wake-days, keeping only overnight /
     /// early-morning readings (local hour >= eveningStart the night before →
     /// next morning, or < morningEnd the day-of). Daytime samples are dropped so
@@ -175,6 +183,29 @@ enum HealthHistory {
             group.leave()
         }
         store.execute(hrvQ)
+
+        // Nocturnal SpO2: overnight min + avg (bucketOvernight drops daytime), per wake day.
+        group.enter()
+        let spo2Q = HKSampleQuery(
+            sampleType: HKQuantityType(.oxygenSaturation),
+            predicate: HKQuery.predicateForSamples(withStart: start, end: end),
+            limit: HKObjectQueryNoLimit, sortDescriptors: nil
+        ) { _, samples, _ in
+            let frac = HKUnit.percent()  // HK percent unit == fraction 0..1
+            let pairs = ((samples as? [HKQuantitySample]) ?? [])
+                .map { (value: $0.quantity.doubleValue(for: frac), date: $0.endDate) }
+            let byDay = HealthHistory.bucketOvernight(pairs, calendar: cal)
+            // Build-time diagnostic (SpO2 availability sanity-check; see spec §8).
+            let total = byDay.values.reduce(0) { $0 + $1.count }
+            print("[HealthHistory] SpO2 overnight samples: \(total) across \(byDay.count) day(s)")
+            for (k, vals) in byDay {
+                if let r = HealthHistory.reduceSpo2(vals) {
+                    mutate(k) { $0.spo2Avg = r.avg; $0.spo2Min = r.min }
+                }
+            }
+            group.leave()
+        }
+        store.execute(spo2Q)
 
         // Sleep: split into stages + onset, bucketed by wake day (sample end day).
         group.enter()

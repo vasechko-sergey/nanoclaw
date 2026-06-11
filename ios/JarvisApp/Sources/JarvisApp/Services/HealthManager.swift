@@ -26,6 +26,7 @@ import HealthKit
             HKQuantityType(.respiratoryRate),
             HKQuantityType(.walkingHeartRateAverage),
             HKQuantityType(.vo2Max),
+            HKQuantityType(.oxygenSaturation),
             HKWorkoutType.workoutType(),
         ]
         store.requestAuthorization(toShare: nil, read: types) { [weak self] ok, _ in

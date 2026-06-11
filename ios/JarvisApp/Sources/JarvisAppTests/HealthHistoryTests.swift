@@ -51,6 +51,15 @@ final class HealthHistoryTests: XCTestCase {
         XCTAssertEqual(allAwake.awakeMin, 30)
     }
 
+    func test_reduceSpo2_returns_avg_and_min_in_percent() {
+        // HealthKit reports fraction (0..1); reducer converts to percent.
+        let r = HealthHistory.reduceSpo2([0.97, 0.95, 0.91, 0.96])
+        XCTAssertNotNil(r)
+        XCTAssertEqual(r!.avg, 94.75, accuracy: 0.01)
+        XCTAssertEqual(r!.min, 91.0, accuracy: 0.01)
+        XCTAssertNil(HealthHistory.reduceSpo2([]))
+    }
+
     func test_bucketOvernight_keeps_overnight_drops_daytime() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
