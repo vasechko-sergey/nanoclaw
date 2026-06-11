@@ -628,6 +628,15 @@ extension V2 {
             var respiratoryRate: Double?        // breaths/min
             var walkingHeartRateAverage: Int?   // bpm
             var vo2max: Double?                 // mL/kg/min
+            // New 2026-06-11: sleep phases, onset, morning HRV, nocturnal SpO2.
+            var deepMin: Int?
+            var remMin: Int?
+            var coreMin: Int?
+            var awakeMin: Int?
+            var sleepOnsetMin: Int?              // minutes from local midnight; <0 = before midnight
+            var hrvMorning: Int?                 // ms, SDNN over sleep window
+            var spo2Avg: Double?                 // %
+            var spo2Min: Double?                 // %
             var workouts: [Workout]?
         }
 

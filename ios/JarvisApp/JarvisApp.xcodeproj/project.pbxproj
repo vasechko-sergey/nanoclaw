@@ -90,6 +90,7 @@
 		B065348C458302F95325E16F /* ThinkingRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AA5A25FF72A993B2BA61E6 /* ThinkingRowTests.swift */; };
 		B274F6D0E73327D5E6CFF8E6 /* V2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B444C288D4DEB267ABF3D02 /* V2.swift */; };
 		B3168E41D417AECBDE8EC56A /* WatchAppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3EB21126CB3C83D223E10A6 /* WatchAppState.swift */; };
+		B377A0764FF637C59A620237 /* HealthHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */; };
 		B53C92F62A47B0340DA0F933 /* ConnectivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6A33B378AA0CC36F2DE37A /* ConnectivityMonitor.swift */; };
 		B5715D361A0394CCB595AA15 /* RightDrawerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A1411D12B13E550ED69744 /* RightDrawerTests.swift */; };
 		B88D79F57FB96DD1EE3F983E /* MiniOrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6BD1E4ABB502A83CDD29883 /* MiniOrbView.swift */; };
@@ -257,6 +258,7 @@
 		F5A055AF8989128A047D605C /* HealthSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSync.swift; sourceTree = "<group>"; };
 		F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextCoordinator.swift; sourceTree = "<group>"; };
 		F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetectorTests.swift; sourceTree = "<group>"; };
+		F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthHistoryTests.swift; sourceTree = "<group>"; };
 		FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinator.swift; sourceTree = "<group>"; };
 		FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreetingBank.swift; sourceTree = "<group>"; };
 		FE1A573133241875D7269CED /* HealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthManager.swift; sourceTree = "<group>"; };
@@ -400,6 +402,7 @@
 				A08C410E0AB3268B2BF632EB /* ExerciseImageCacheTests.swift */,
 				4741A7AAAEAAB4133351A78F /* GreetingBankTests.swift */,
 				44C051ECA1BBC173253E5FF4 /* HeaderStatusDotTests.swift */,
+				F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */,
 				C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */,
 				F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */,
 				3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */,
@@ -774,6 +777,7 @@
 				4AA4A9E6701037C12967B46D /* GreetingBankTests.swift in Sources */,
 				71563F3FE9AB291D623066B4 /* HappyPathE2ETests.swift in Sources */,
 				BA63D1A5A6AFDD559D9911A0 /* HeaderStatusDotTests.swift in Sources */,
+				B377A0764FF637C59A620237 /* HealthHistoryTests.swift in Sources */,
 				C00FE8906E1739C80BA7568D /* HealthSyncTests.swift in Sources */,
 				57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */,
 				56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */,
