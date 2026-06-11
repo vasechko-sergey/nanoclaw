@@ -1,0 +1,25 @@
+{
+  "platformId": "ios-app-v2:default",
+  "days": [
+    {
+      "date": "2026-06-10",
+      "steps": 9176,
+      "activeEnergy": 589,
+      "exerciseMinutes": 71,
+      "heartRate": 78,
+      "restingHeartRate": 63,
+      "hrv": 51,
+      "sleepHours": 7.2,
+      "deepMin": 62,
+      "remMin": 95,
+      "coreMin": 275,
+      "awakeMin": 18,
+      "sleepOnsetMin": -42,
+      "hrvMorning": 58,
+      "spo2Avg": 96.4,
+      "spo2Min": 91.0,
+      "wristTempDeviation": 0.1,
+      "respiratoryRate": 15.2
+    }
+  ]
+}

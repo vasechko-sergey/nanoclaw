@@ -330,6 +330,18 @@ export const HealthUploadDay = z.object({
   respiratoryRate: z.number().nonnegative().optional(),
   walkingHeartRateAverage: z.number().int().nonnegative().optional(),
   vo2max: z.number().nonnegative().optional(),
+  // New 2026-06-11: sleep phases (split out of sleepHours), sleep onset for
+  // circadian regularity, morning HRV (cleaner than whole-day SDNN), nocturnal
+  // SpO2 (min catches desaturation). All optional — older rows omit them and
+  // analyze.js's series() skips missing values.
+  deepMin: z.number().int().nonnegative().optional(),
+  remMin: z.number().int().nonnegative().optional(),
+  coreMin: z.number().int().nonnegative().optional(),
+  awakeMin: z.number().int().nonnegative().optional(),
+  sleepOnsetMin: z.number().int().optional(),       // minutes from local midnight; <0 = before midnight
+  hrvMorning: z.number().int().nonnegative().optional(),
+  spo2Avg: z.number().nonnegative().optional(),
+  spo2Min: z.number().nonnegative().optional(),
   workouts: z.array(Workout).optional(),
 });
 export type HealthUploadDay = z.infer<typeof HealthUploadDay>;

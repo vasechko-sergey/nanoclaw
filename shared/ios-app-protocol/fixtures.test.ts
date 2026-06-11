@@ -43,4 +43,17 @@ describe('shared/ios-app-protocol health-upload fixtures', () => {
       expect(reParsed).toEqual(body);
     });
   }
+
+  it('upload_sensors.json preserves sleep-phase / morning-HRV / SpO2 fields', () => {
+    const raw = readFileSync(join(fixturesDir, 'health', 'upload_sensors.json'), 'utf8');
+    const body = HealthUploadBody.parse(JSON.parse(raw));
+    const d = body.days[0];
+    expect(d.deepMin).toBe(62);
+    expect(d.remMin).toBe(95);
+    expect(d.awakeMin).toBe(18);
+    expect(d.sleepOnsetMin).toBe(-42);
+    expect(d.hrvMorning).toBe(58);
+    expect(d.spo2Avg).toBe(96.4);
+    expect(d.spo2Min).toBe(91.0);
+  });
 });
