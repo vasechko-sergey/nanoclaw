@@ -42,12 +42,15 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Picker accent — desaturated, sits in the same value/saturation range
-    /// as the app's teal accent (#54BCC5) so the three agents read as
-    /// variants of one calm palette instead of generic system colors.
+    /// Picker accent — desaturated so the agents read as a coherent palette
+    /// rather than generic system colors. The original three sit in the teal
+    /// value/saturation range (#54BCC5); the later domain agents add warmer,
+    /// still-muted accents to stay distinguishable.
     /// - Jarvis: the existing app teal.
     /// - Payne: muted military copper.
     /// - Greg/House: sage green, low-key.
+    /// - Scrooge: muted gold.
+    /// - Gordon/Ramzi: desaturated tomato, a kitchen nod.
     var accentColor: Color {
         switch self {
         case .jarvis: return Color(red: 0.33, green: 0.74, blue: 0.77)  // teal #54BCC5
