@@ -22,7 +22,7 @@ import { createSession, findSessionForAgent } from './db/sessions.js';
 import { initSessionFolder, writeSessionMessage } from './session-manager.js';
 import { log } from './log.js';
 
-const TRIO = [
+const TEAM = [
   { id: 'jarvis', name: 'Jarvis', folder: 'jarvis', bootstrap: null as string | null },
   {
     id: 'payne',
@@ -38,6 +38,13 @@ const TRIO = [
     bootstrap:
       '[bootstrap] Прочитай INDEX.md и memories/self/. Молчи до явного запроса Сергея или явной аномалии в данных.',
   },
+  {
+    id: 'gordon',
+    name: 'Гордон Рамзи',
+    folder: 'gordon',
+    bootstrap:
+      '[bootstrap] Прочитай memories/index.md и /workspace/global/about-sergei.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса Сергея.',
+  },
 ] as const;
 
 function generateSessionId(): string {
@@ -51,7 +58,7 @@ export function bootstrapTrio(): void {
   // ensureContainerConfig and the wiring/session rows fail with
   // FOREIGN KEY constraint failed.
   const canonicalIdByFolder = new Map<string, string>();
-  for (const entry of TRIO) {
+  for (const entry of TEAM) {
     const existing = getAgentGroupByFolder(entry.folder);
     if (existing) {
       canonicalIdByFolder.set(entry.folder, existing.id);
@@ -72,7 +79,7 @@ export function bootstrapTrio(): void {
   const ios = getAllMessagingGroups().filter((m) => m.channel_type === 'ios-app-v2');
   for (const mg of ios) {
     let priority = 0;
-    for (const entry of TRIO) {
+    for (const entry of TEAM) {
       const canonicalId = canonicalIdByFolder.get(entry.folder)!;
       if (!getMessagingGroupAgentByPair(mg.id, canonicalId)) {
         createMessagingGroupAgent({

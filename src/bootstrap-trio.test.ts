@@ -36,11 +36,12 @@ describe('bootstrapTrio', () => {
   });
   afterEach(() => closeDb());
 
-  it('creates the three agent groups on first run', () => {
+  it('creates all four agent groups on first run', () => {
     bootstrapTrio();
     expect(getAgentGroupByFolder('jarvis')).toBeDefined();
     expect(getAgentGroupByFolder('payne')).toBeDefined();
     expect(getAgentGroupByFolder('greg')).toBeDefined();
+    expect(getAgentGroupByFolder('gordon')).toBeDefined();
   });
 
   it('is idempotent on repeated runs', () => {
@@ -65,8 +66,8 @@ describe('bootstrapTrio', () => {
     const wired = getMessagingGroupAgents('mg-ios')
       .map((r) => r.agent_group_id)
       .sort();
-    expect(wired).toEqual(['greg', 'jarvis', 'payne']);
-    for (const slug of ['jarvis', 'payne', 'greg']) {
+    expect(wired).toEqual(['gordon', 'greg', 'jarvis', 'payne']);
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon']) {
       expect(findSessionForAgent(slug, 'mg-ios', null)).toBeDefined();
     }
   });
@@ -84,7 +85,7 @@ describe('bootstrapTrio', () => {
     });
     bootstrapTrio();
     const agents = writeCalls.map((c) => c.agentGroupId).sort();
-    expect(agents).toEqual(['greg', 'payne']);
+    expect(agents).toEqual(['gordon', 'greg', 'payne']);
     for (const c of writeCalls) {
       expect(c.trigger).toBe(0);
     }
