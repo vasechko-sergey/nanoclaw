@@ -133,7 +133,7 @@ enum HealthHistory {
         group.enter()
         sleepSamplesByWakeDay(start: start, end: end, bucket: bucketKey) { byWakeDay in
             for (k, samples) in byWakeDay {
-                let dayStart = self.cal0(for: samples) ?? start
+                let dayStart = cal.startOfDay(for: fmt.date(from: k) ?? start)
                 let r = HealthHistory.bucketSleepStages(samples, dayStart: dayStart)
                 mutate(k) {
                     $0.deepMin = r.deepMin; $0.remMin = r.remMin
@@ -290,9 +290,4 @@ enum HealthHistory {
         store.execute(q)
     }
 
-    /// Local midnight of the wake day for a sample set (used as onset reference).
-    private static func cal0(for samples: [SleepSampleInput]) -> Date? {
-        guard let last = samples.map(\.end).max() else { return nil }
-        return Calendar.current.startOfDay(for: last)
-    }
 }

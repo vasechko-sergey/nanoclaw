@@ -35,4 +35,19 @@ final class HealthHistoryTests: XCTestCase {
         XCTAssertEqual(r.onsetMin, -30)
         XCTAssertEqual(r.sleepHours, 4.5, accuracy: 0.05)
     }
+
+    func test_bucketSleepStages_handles_empty_and_all_awake() {
+        let midnight = Date(timeIntervalSince1970: 1_800_000_000)
+        func t(_ min: Int) -> Date { midnight.addingTimeInterval(Double(min) * 60) }
+        let empty = HealthHistory.bucketSleepStages([], dayStart: midnight)
+        XCTAssertNil(empty.onsetMin)
+        XCTAssertEqual(empty.sleepHours, 0, accuracy: 0.001)
+        XCTAssertEqual(empty.deepMin, 0)
+        let allAwake = HealthHistory.bucketSleepStages([
+            .init(stage: HealthHistory.SleepStage.awake.rawValue, start: t(0), end: t(30)),
+        ], dayStart: midnight)
+        XCTAssertNil(allAwake.onsetMin)
+        XCTAssertEqual(allAwake.sleepHours, 0, accuracy: 0.001)
+        XCTAssertEqual(allAwake.awakeMin, 30)
+    }
 }
