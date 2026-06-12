@@ -73,6 +73,15 @@
 - a2a остаётся для **срочного push'а**: критическая находка Грега → Jarvis немедленно (sick-day, severity critical). «Действуй сейчас.»
 - Делёж жёсткий: рутинный кросс-контекст — фрагмент (pull); событие требующее немедленной реакции — a2a (push).
 
+### Дневной цикл публикации (синхронно, утром)
+
+Все агенты обновляют `memories/public.md` раз в сутки в **утреннем окне ~08:30 Makassar** (через `schedule_task`), синхронно, перед брифом:
+- **Greg** уже формирует дневной отчёт в это время (`daily-cycle`) — публикация фрагмента складывается туда (вместо/вместе с пушем тренда).
+- **Gordon / Payne / Scrooge** — добавить утренний publish-шаг (планируемый `schedule_task` ~08:30, отдельный от вечернего `daily` Гордона).
+- Хост-свип проецирует `public.md` → `profiles/<slug>.md` в пределах 60с. К 09:00 фрагменты свежие (буфер 30 мин >> лаг свипа — поэтому host-sweep-проекции достаточно, on-exit не нужен).
+
+**Jarvis собирает утренний бриф ЧТЕНИЕМ фрагментов** (`morning-brief` skill, 09:00 Makassar): читает `groups/global/profiles/*.md` (свежие после 08:30-публикации) + календарь/почта → бриф. Это **обобщает** текущий паттерн (сейчас Greg пушит `health_trend` → Jarvis пишет `self/health.md` → бриф читает его): теперь Jarvis тянет фрагменты напрямую, агенты не пушат тренды. Один источник, меньше a2a. `jarvis.md`-фрагмент НЕ нужен — Jarvis читатель/ассемблер, не публикует.
+
 ---
 
 ## C. Данные состава тела (iOS → Greg-тренд + pull)
@@ -124,7 +133,7 @@ iOS добавляет 4 HealthKit-поля: `bodyMass`, `height`, `bodyFatPerce
 | Стрим | Что | Деплой |
 |-------|-----|--------|
 | A | `request_context.ts` гейт + legacy-чистка | **пересборка образа** + редеплой |
-| B | host-sweep проекция, `groups/global/profiles/`, INSTRUCTIONS §профили, per-agent `public.md` + CLAUDE.md-инструкции | host: build+restart; group-файлы: scp |
+| B | host-sweep проекция, `groups/global/profiles/`, INSTRUCTIONS §профили, per-agent `public.md` + утренний publish-таск (~08:30) + CLAUDE.md-инструкции; **Jarvis `morning-brief` skill — читать фрагменты** | host: build+restart; group-файлы: scp |
 | C1 | iOS protocol+HealthHistory+auth; Greg analyze.js+CLAUDE.md | **iOS-пересборка**; Greg: scp; host: build (shared protocol) |
 | C2 | iOS HealthManager+AppContextCoordinator | **iOS-пересборка** |
 | D | Gordon intake/daily skills + public.md + CLAUDE.md | scp |
@@ -142,7 +151,7 @@ iOS добавляет 4 HealthKit-поля: `bodyMass`, `height`, `bodyFatPerce
 
 ## Открытые вопросы (провизорно)
 
-- **Проекция-триггер:** host-sweep (60с) vs on-container-exit. Старт — свип (проще). Если лаг важен — добавить on-exit.
-- **`jarvis.md`:** заводить ли фрагмент Jarvis или он только читатель. Старт — без него, добавим если понадобится.
+- **Проекция-триггер — РЕШЕНО:** host-sweep (60с). Публикация 08:30 → бриф 09:00, буфер 30 мин >> лаг свипа. on-exit не нужен.
+- **`jarvis.md` — РЕШЕНО:** не заводить. Jarvis ассемблер/читатель, не публикует.
 - **Формат `public.md`:** свободный markdown с фиксированными заголовками (агенты парсят глазами, не машинно) — каждый агент описывает свой в CLAUDE.md.
 - **Дедуп инфы about-sergei vs профили:** профили = текущее состояние (меняется); about-sergei = стабильные факты. Не дублировать вес в about-sergei — он в `greg.md`/pull.
