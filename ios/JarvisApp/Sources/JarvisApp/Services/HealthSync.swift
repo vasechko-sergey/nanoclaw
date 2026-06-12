@@ -16,6 +16,7 @@ enum HealthSync {
         HKQuantityType(.restingHeartRate),
         HKQuantityType(.appleExerciseTime),
         HKQuantityType(.heartRateVariabilitySDNN),
+        HKQuantityType(.oxygenSaturation),
         HKCategoryType(.sleepAnalysis),
     ]
 
