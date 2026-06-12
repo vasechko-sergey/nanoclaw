@@ -35,6 +35,8 @@ targets:
           - remote-notification
           - fetch
           - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.vasechko.jarvis.morning-health
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"

@@ -15,6 +15,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
         // Passive background health sync (HealthKit background delivery → HTTP upload).
         HealthSync.start()
+        // Time-based morning backstop: a daily ~08:00 upload floor even when no
+        // new-sample wake fires. register() MUST run before launch finishes.
+        HealthBackgroundTask.register()
+        HealthBackgroundTask.schedule()
         return true
     }
 
@@ -80,6 +84,10 @@ struct JarvisApp: App {
                         Theme.refreshScale()
                         Theme.refreshDrawerWidth()
                         HealthSync.kickIfStale()
+                    }
+                    if new == .background {
+                        // Re-arm the morning upload each time we background.
+                        HealthBackgroundTask.schedule()
                     }
                     Task { @MainActor in
                         coordinator.ws.handleScenePhase(new)
