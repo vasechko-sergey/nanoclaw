@@ -7,7 +7,7 @@
  * the promise rejects. Late responses after timeout are silently dropped.
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { requestContextTool, onContextResponse } from './request_context.js';
+import { requestContextTool, onContextResponse, isIosChannel } from './request_context.js';
 
 const writeMessageOut = mock(async () => {});
 const ctx = { session_id: 'sess-1', writeMessageOut } as const;
@@ -58,5 +58,23 @@ describe('request_context tool', () => {
       errors: { health: 'denied' },
     });
     await expect(promise).rejects.toThrow(/context error/);
+  });
+});
+
+describe('isIosChannel registration gate', () => {
+  it('accepts the legacy ios-app channel', () => {
+    expect(isIosChannel('ios-app')).toBe(true);
+  });
+  it('accepts ios-app-v2 — the v2 sessions that were silently excluded', () => {
+    expect(isIosChannel('ios-app-v2')).toBe(true);
+  });
+  it('rejects a non-iOS channel', () => {
+    expect(isIosChannel('telegram')).toBe(false);
+  });
+  it('rejects the cli channel', () => {
+    expect(isIosChannel('cli')).toBe(false);
+  });
+  it('rejects a null channel_type', () => {
+    expect(isIosChannel(null)).toBe(false);
   });
 });

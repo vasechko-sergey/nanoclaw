@@ -220,6 +220,21 @@ export function buildRequestContextDefinition(opts: {
 }
 
 /**
+ * True when a session's channel_type is any iOS transport — both the legacy
+ * `ios-app` (v1, removed) and the current `ios-app-v2`. The `request_context`
+ * tool is gated on this.
+ *
+ * Bug history: this gate used to be `channel_type === 'ios-app'`, which
+ * silently excluded every v2 session (`ios-app-v2`) and killed health/context
+ * pull for Greg, Gordon, and any other iOS agent. `startsWith` matches both
+ * and is future-proof for any later `ios-app-*` transport. Returns a type
+ * predicate so callers narrow `string | null → string` past the guard.
+ */
+export function isIosChannel(channel_type: string | null): channel_type is string {
+  return channel_type?.startsWith('ios-app') ?? false;
+}
+
+/**
  * Register `request_context` for the current session, ONLY when the
  * session is bound to the ios-app channel. No-op otherwise. Called from
  * the MCP tools barrel after session routing has been established.
@@ -233,7 +248,7 @@ export function registerRequestContextTool(opts: {
   channel_type: string | null;
   platform_id: string | null;
 }): void {
-  if (opts.channel_type !== 'ios-app') return;
+  if (!isIosChannel(opts.channel_type)) return;
   registerTools([
     buildRequestContextDefinition({
       session_id: opts.session_id,
