@@ -580,11 +580,11 @@ function createV2Adapter(): ChannelAdapter | null {
 /**
  * Register the v2 ios-app adapter with the channel registry.
  *
- * Registers under the distinct name `ios-app-v2` so the legacy `ios-app`
- * adapter (still bound to messaging_groups with channel_type='ios-app') can
- * coexist during the migration window. The factory itself short-circuits to
- * null unless `IOS_APP_V2_PORT` is set in the env, so the default behavior is
- * "v2 is a no-op; legacy serves all iOS traffic".
+ * Registers under the name `ios-app-v2`. The legacy `ios-app` adapter has
+ * been removed, so this is the only iOS transport — operators migrate any
+ * remaining `channel_type='ios-app'` messaging-group rows to `'ios-app-v2'`.
+ * The factory short-circuits to null unless `IOS_APP_V2_PORT` is set, so iOS
+ * traffic is served only when that env var is configured.
  */
 export function registerIosAppV2(): void {
   registerChannelAdapter('ios-app-v2', { factory: createV2Adapter });
