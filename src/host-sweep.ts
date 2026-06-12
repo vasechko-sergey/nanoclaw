@@ -29,6 +29,7 @@
 import type Database from 'better-sqlite3';
 import fs from 'fs';
 
+import { GROUPS_DIR } from './config.js';
 import { getActiveSessions } from './db/sessions.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import {
@@ -44,6 +45,7 @@ import {
 } from './db/session-db.js';
 import { log } from './log.js';
 import { openInboundDb, openOutboundDb, openOutboundDbRw, inboundDbPath, heartbeatPath } from './session-manager.js';
+import { projectPublicProfiles } from './public-profiles.js';
 import { isContainerRunning, killContainer, wakeContainer } from './container-runner.js';
 import type { Session } from './types.js';
 
@@ -131,6 +133,15 @@ export function stopHostSweep(): void {
 
 async function sweep(): Promise<void> {
   if (!running) return;
+
+  // Fan out each agent's public.md → groups/global/profiles/<slug>.md.
+  // Own try so a projection failure never skips the session sweep below.
+  try {
+    const written = projectPublicProfiles(GROUPS_DIR);
+    if (written > 0) log.info('Projected public profiles', { written });
+  } catch (err) {
+    log.error('Public profile projection error', { err });
+  }
 
   try {
     const sessions = getActiveSessions();
