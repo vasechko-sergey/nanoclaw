@@ -342,6 +342,13 @@ export const HealthUploadDay = z.object({
   hrvMorning: z.number().int().nonnegative().optional(),
   spo2Avg: z.number().nonnegative().optional(),
   spo2Min: z.number().nonnegative().optional(),
+  // New 2026-06-12: body composition (smart scale). bodyFatPercentage is a
+  // percent number (e.g. 18.5), not a 0-1 fraction. All optional — days with
+  // no scale measurement omit them.
+  bodyMass: z.number().nonnegative().optional(),
+  height: z.number().nonnegative().optional(),
+  bodyFatPercentage: z.number().nonnegative().optional(),
+  leanBodyMass: z.number().nonnegative().optional(),
   workouts: z.array(Workout).optional(),
 });
 export type HealthUploadDay = z.infer<typeof HealthUploadDay>;

@@ -56,5 +56,9 @@ describe('shared/ios-app-protocol health-upload fixtures', () => {
     expect(d.hrvMorning).toBe(58);
     expect(d.spo2Avg).toBe(96.4);
     expect(d.spo2Min).toBe(91.0);
+    expect(d.bodyMass).toBe(78.4);
+    expect(d.height).toBe(1.82);
+    expect(d.bodyFatPercentage).toBe(18.5);
+    expect(d.leanBodyMass).toBe(63.9);
   });
 });

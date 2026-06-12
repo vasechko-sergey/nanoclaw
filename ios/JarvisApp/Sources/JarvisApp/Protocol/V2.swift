@@ -637,6 +637,11 @@ extension V2 {
             var hrvMorning: Int?                 // ms, SDNN over sleep window
             var spo2Avg: Double?                 // %
             var spo2Min: Double?                 // %
+            // New 2026-06-12: body composition (smart scale).
+            var bodyMass: Double?               // kg
+            var height: Double?                 // m
+            var bodyFatPercentage: Double?      // percent number, e.g. 18.5
+            var leanBodyMass: Double?           // kg
             var workouts: [Workout]?
         }
 

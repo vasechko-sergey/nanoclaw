@@ -19,7 +19,11 @@
       "spo2Avg": 96.4,
       "spo2Min": 91.0,
       "wristTempDeviation": 0.1,
-      "respiratoryRate": 15.2
+      "respiratoryRate": 15.2,
+      "bodyMass": 78.4,
+      "height": 1.82,
+      "bodyFatPercentage": 18.5,
+      "leanBodyMass": 63.9
     }
   ]
 }
