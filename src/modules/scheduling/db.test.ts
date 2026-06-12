@@ -17,6 +17,7 @@ import {
   resumeTask,
   updateTask,
   getCompletedRecurring,
+  migrateRecurringTasks,
   type RecurringMessage,
 } from './db.js';
 
@@ -278,5 +279,137 @@ describe('insertRecurrence', () => {
     };
     expect(row.series_id).toBe('task-orig');
     db.close();
+  });
+});
+
+describe('migrateRecurringTasks', () => {
+  const TEST_DIR_TO = '/tmp/nanoclaw-scheduling-db-test-to';
+  const DB_PATH_TO = path.join(TEST_DIR_TO, 'inbound.db');
+
+  function freshToDb() {
+    if (fs.existsSync(TEST_DIR_TO)) fs.rmSync(TEST_DIR_TO, { recursive: true });
+    fs.mkdirSync(TEST_DIR_TO, { recursive: true });
+    ensureSchema(DB_PATH_TO, 'inbound');
+    return openInboundDb(DB_PATH_TO);
+  }
+
+  afterEach(() => {
+    if (fs.existsSync(TEST_DIR_TO)) fs.rmSync(TEST_DIR_TO, { recursive: true });
+  });
+
+  it('migrates only live recurring tasks (returns count)', () => {
+    const from = freshDb();
+    const to = freshToDb();
+
+    // Live recurring task — should be migrated
+    insertBasicTask(from, 'task-recurring', '0 9 * * *');
+    // Non-recurring task — should NOT be migrated
+    insertBasicTask(from, 'task-oneshot', null);
+    // Already-completed recurring row — should NOT be migrated
+    insertBasicTask(from, 'task-done', '0 18 * * *');
+    from.prepare("UPDATE messages_in SET status = 'completed' WHERE id = 'task-done'").run();
+
+    const count = migrateRecurringTasks(from, to);
+    expect(count).toBe(1);
+
+    from.close();
+    to.close();
+  });
+
+  it('destination has the migrated recurring task with same recurrence and content', () => {
+    const from = freshDb();
+    const to = freshToDb();
+
+    const content = JSON.stringify({ prompt: 'morning brief', script: null });
+    insertTask(from, {
+      id: 'task-r',
+      processAfter: '2026-06-15T09:00:00Z',
+      recurrence: '0 9 * * *',
+      platformId: 'plat-1',
+      channelType: 'telegram',
+      threadId: 'thr-1',
+      content,
+    });
+
+    migrateRecurringTasks(from, to);
+
+    const rows = to
+      .prepare(
+        "SELECT recurrence, content, platform_id, channel_type, thread_id FROM messages_in WHERE kind = 'task' AND recurrence IS NOT NULL AND status IN ('pending', 'paused')",
+      )
+      .all() as Array<{
+      recurrence: string;
+      content: string;
+      platform_id: string | null;
+      channel_type: string | null;
+      thread_id: string | null;
+    }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].recurrence).toBe('0 9 * * *');
+    expect(rows[0].content).toBe(content);
+    expect(rows[0].platform_id).toBe('plat-1');
+    expect(rows[0].channel_type).toBe('telegram');
+    expect(rows[0].thread_id).toBe('thr-1');
+
+    from.close();
+    to.close();
+  });
+
+  it('cancels the source live recurring task after migration', () => {
+    const from = freshDb();
+    const to = freshToDb();
+
+    insertBasicTask(from, 'task-recurring', '0 9 * * *');
+    // Also insert a paused recurring task to cover that status
+    insertBasicTask(from, 'task-paused', '0 18 * * *');
+    from.prepare("UPDATE messages_in SET status = 'paused' WHERE id = 'task-paused'").run();
+
+    migrateRecurringTasks(from, to);
+
+    const srcRows = from
+      .prepare(
+        "SELECT id, status, recurrence FROM messages_in WHERE kind = 'task' AND id IN ('task-recurring', 'task-paused')",
+      )
+      .all() as Array<{ id: string; status: string; recurrence: string | null }>;
+
+    for (const row of srcRows) {
+      expect(row.status).toBe('completed');
+      expect(row.recurrence).toBeNull();
+    }
+
+    from.close();
+    to.close();
+  });
+
+  it('does not touch non-recurring tasks in the source', () => {
+    const from = freshDb();
+    const to = freshToDb();
+
+    insertBasicTask(from, 'task-oneshot', null);
+    insertBasicTask(from, 'task-recurring', '0 9 * * *');
+
+    migrateRecurringTasks(from, to);
+
+    const oneshot = from.prepare("SELECT status FROM messages_in WHERE id = 'task-oneshot'").get() as {
+      status: string;
+    };
+    expect(oneshot.status).toBe('pending');
+
+    from.close();
+    to.close();
+  });
+
+  it('returns 0 and does not throw when source has no recurring tasks', () => {
+    const from = freshDb();
+    const to = freshToDb();
+
+    const count = migrateRecurringTasks(from, to);
+    expect(count).toBe(0);
+
+    const toRows = to.prepare('SELECT * FROM messages_in').all();
+    expect(toRows).toHaveLength(0);
+
+    from.close();
+    to.close();
   });
 });

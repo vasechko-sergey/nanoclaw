@@ -59,6 +59,35 @@ export function findSessionByAgentGroup(agentGroupId: string): Session | undefin
     .get(agentGroupId) as Session | undefined;
 }
 
+/**
+ * Most recent session for an agent + routing key, ANY status. Used to locate
+ * the prior (just-closed) session so a freshly-created session can inherit its
+ * recurring tasks. messagingGroupId === null → scope by agent only (agent-shared).
+ */
+export function findLatestSession(
+  agentGroupId: string,
+  messagingGroupId: string | null,
+  threadId: string | null,
+): Session | undefined {
+  if (messagingGroupId === null) {
+    return getDb()
+      .prepare('SELECT * FROM sessions WHERE agent_group_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(agentGroupId) as Session | undefined;
+  }
+  if (threadId) {
+    return getDb()
+      .prepare(
+        'SELECT * FROM sessions WHERE agent_group_id = ? AND messaging_group_id = ? AND thread_id = ? ORDER BY created_at DESC LIMIT 1',
+      )
+      .get(agentGroupId, messagingGroupId, threadId) as Session | undefined;
+  }
+  return getDb()
+    .prepare(
+      'SELECT * FROM sessions WHERE agent_group_id = ? AND messaging_group_id = ? AND thread_id IS NULL ORDER BY created_at DESC LIMIT 1',
+    )
+    .get(agentGroupId, messagingGroupId) as Session | undefined;
+}
+
 export function getSessionsByAgentGroup(agentGroupId: string): Session[] {
   return getDb().prepare('SELECT * FROM sessions WHERE agent_group_id = ?').all(agentGroupId) as Session[];
 }

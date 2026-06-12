@@ -21,6 +21,7 @@ import { DATA_DIR } from './config.js';
 import { getMessagingGroup } from './db/messaging-groups.js';
 import {
   createSession,
+  findLatestSession,
   findSessionByAgentGroup,
   findSessionForAgent,
   getSession,
@@ -35,6 +36,7 @@ import {
   insertMessage,
   migrateMessagesInTable,
 } from './db/session-db.js';
+import { migrateRecurringTasks } from './modules/scheduling/db.js';
 import { log } from './log.js';
 import type { Session } from './types.js';
 
@@ -113,6 +115,12 @@ export function resolveSession(
 
   const id = generateId();
   const lookupThreadId = sessionMode === 'per-thread' ? threadId : null;
+
+  // Locate the prior session (any status) for this routing key so the fresh
+  // session can inherit its recurring schedulers (see migrateRecurringTasks).
+  const priorScopeMg = sessionMode === 'agent-shared' ? null : messagingGroupId;
+  const prior = findLatestSession(agentGroupId, priorScopeMg, lookupThreadId);
+
   const session: Session = {
     id,
     agent_group_id: agentGroupId,
@@ -127,8 +135,26 @@ export function resolveSession(
 
   createSession(session);
   initSessionFolder(agentGroupId, id);
-  log.info('Session created', { id, agentGroupId, messagingGroupId, threadId: lookupThreadId, sessionMode });
 
+  if (prior && prior.id !== id) {
+    try {
+      const fromDb = openInboundDb(agentGroupId, prior.id);
+      const toDb = openInboundDb(agentGroupId, id);
+      try {
+        const migrated = migrateRecurringTasks(fromDb, toDb);
+        if (migrated > 0) {
+          log.info('Migrated recurring tasks to fresh session', { agentGroupId, from: prior.id, to: id, migrated });
+        }
+      } finally {
+        fromDb.close();
+        toDb.close();
+      }
+    } catch (err) {
+      log.warn('Recurring task migration failed', { agentGroupId, from: prior.id, to: id, err });
+    }
+  }
+
+  log.info('Session created', { id, agentGroupId, messagingGroupId, threadId: lookupThreadId, sessionMode });
   return { session, created: true };
 }
 
@@ -300,11 +326,7 @@ function extractAttachmentFiles(
     // Base64 bytes arrive as `data` (Chat SDK adapters) or `bytes_base64`
     // (ios-app v2 protocol). Accept either.
     const b64 =
-      typeof att.data === 'string'
-        ? att.data
-        : typeof att.bytes_base64 === 'string'
-          ? att.bytes_base64
-          : null;
+      typeof att.data === 'string' ? att.data : typeof att.bytes_base64 === 'string' ? att.bytes_base64 : null;
     if (b64 === null) continue;
 
     const rawName = deriveAttachmentName(att);

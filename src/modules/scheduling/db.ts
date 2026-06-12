@@ -151,3 +151,45 @@ export function insertRecurrence(
 export function clearRecurrence(db: Database.Database, messageId: string): void {
   db.prepare('UPDATE messages_in SET recurrence = NULL WHERE id = ?').run(messageId);
 }
+
+/**
+ * Move live recurring tasks from one session's inbound.db to another. Called
+ * when a fresh session is created so schedulers (morning-brief, daily, publish)
+ * survive session rotation instead of stranding in the closed session. The
+ * series get fresh ids in the destination; the source rows are cancelled so a
+ * reactivated old session can't double-fire. Returns the number migrated.
+ */
+export function migrateRecurringTasks(from: Database.Database, to: Database.Database): number {
+  const rows = from
+    .prepare(
+      "SELECT recurrence, process_after, platform_id, channel_type, thread_id, content FROM messages_in WHERE kind = 'task' AND recurrence IS NOT NULL AND status IN ('pending', 'paused')",
+    )
+    .all() as Array<{
+    recurrence: string;
+    process_after: string | null;
+    platform_id: string | null;
+    channel_type: string | null;
+    thread_id: string | null;
+    content: string;
+  }>;
+  if (rows.length === 0) return 0;
+
+  let i = 0;
+  for (const r of rows) {
+    insertTask(to, {
+      id: `task-mig-${Date.now()}-${(i++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      processAfter: r.process_after ?? new Date().toISOString(),
+      recurrence: r.recurrence,
+      platformId: r.platform_id,
+      channelType: r.channel_type,
+      threadId: r.thread_id,
+      content: r.content,
+    });
+  }
+  from
+    .prepare(
+      "UPDATE messages_in SET status = 'completed', recurrence = NULL WHERE kind = 'task' AND recurrence IS NOT NULL AND status IN ('pending', 'paused')",
+    )
+    .run();
+  return rows.length;
+}
