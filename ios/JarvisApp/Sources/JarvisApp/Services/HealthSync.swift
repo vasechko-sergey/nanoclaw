@@ -18,6 +18,10 @@ enum HealthSync {
         HKQuantityType(.heartRateVariabilitySDNN),
         HKQuantityType(.oxygenSaturation),
         HKCategoryType(.sleepAnalysis),
+        HKQuantityType(.bodyMass),
+        HKQuantityType(.height),
+        HKQuantityType(.bodyFatPercentage),
+        HKQuantityType(.leanBodyMass),
     ]
 
     static func start() {

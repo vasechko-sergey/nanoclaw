@@ -282,6 +282,56 @@ enum HealthHistory {
             group.leave()
         }
 
+        // Body composition (smart scale): discrete measurements, per measured day.
+        group.enter()
+        collection(.bodyMass, start: start, end: end, options: .discreteAverage) { stats in
+            let kg = HKUnit.gramUnit(with: .kilo)
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: kg) * 10).rounded() / 10
+                    mutate(k) { $0.bodyMass = v }
+                }
+            }
+            group.leave()
+        }
+        group.enter()
+        collection(.height, start: start, end: end, options: .discreteAverage) { stats in
+            let m = HKUnit.meter()
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: m) * 100).rounded() / 100
+                    mutate(k) { $0.height = v }
+                }
+            }
+            group.leave()
+        }
+        group.enter()
+        collection(.bodyFatPercentage, start: start, end: end, options: .discreteAverage) { stats in
+            let frac = HKUnit.percent()  // HK percent unit == fraction 0..1; ×100 → human percent number
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: frac) * 1000).rounded() / 10
+                    mutate(k) { $0.bodyFatPercentage = v }
+                }
+            }
+            group.leave()
+        }
+        group.enter()
+        collection(.leanBodyMass, start: start, end: end, options: .discreteAverage) { stats in
+            let kg = HKUnit.gramUnit(with: .kilo)
+            for s in stats {
+                if let q = s.averageQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: kg) * 10).rounded() / 10
+                    mutate(k) { $0.leanBodyMass = v }
+                }
+            }
+            group.leave()
+        }
+
         // Workouts — array per day. Differential mode uses accumulated load as evidence.
         group.enter()
         let workoutQuery = HKSampleQuery(
