@@ -8,6 +8,8 @@ import HealthKit
     var sleepHours: Double?
     var restingHeartRate: Int?
     var exerciseMinutes: Int?
+    var bodyMass: Double?   // kg, latest
+    var height: Double?     // m, latest
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
@@ -28,6 +30,10 @@ import HealthKit
             HKQuantityType(.vo2Max),
             HKQuantityType(.oxygenSaturation),
             HKWorkoutType.workoutType(),
+            HKQuantityType(.bodyMass),
+            HKQuantityType(.height),
+            HKQuantityType(.bodyFatPercentage),
+            HKQuantityType(.leanBodyMass),
         ]
         store.requestAuthorization(toShare: nil, read: types) { [weak self] ok, _ in
             guard ok else { return }
@@ -70,6 +76,28 @@ import HealthKit
             }
         }
         store.execute(qRHR)
+
+        let qBodyMass = HKSampleQuery(
+            sampleType: HKQuantityType(.bodyMass),
+            predicate: nil, limit: 1, sortDescriptors: [sort]
+        ) { [weak self] _, s, _ in
+            if let s = s?.first as? HKQuantitySample {
+                let kg = (s.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo)) * 10).rounded() / 10
+                DispatchQueue.main.async { self?.bodyMass = kg }
+            }
+        }
+        store.execute(qBodyMass)
+
+        let qHeight = HKSampleQuery(
+            sampleType: HKQuantityType(.height),
+            predicate: nil, limit: 1, sortDescriptors: [sort]
+        ) { [weak self] _, s, _ in
+            if let s = s?.first as? HKQuantitySample {
+                let m = (s.quantity.doubleValue(for: HKUnit.meter()) * 100).rounded() / 100
+                DispatchQueue.main.async { self?.height = m }
+            }
+        }
+        store.execute(qHeight)
 
         fetchSleep()
     }

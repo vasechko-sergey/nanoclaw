@@ -43,6 +43,8 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
         let active = await MainActor.run { h.activeEnergy }
         let sleep = await MainActor.run { h.sleepHours }
         let exercise = await MainActor.run { h.exerciseMinutes }
+        let bodyMass = await MainActor.run { h.bodyMass }
+        let height = await MainActor.run { h.height }
 
         var obj: [String: V2.JSONValue] = [:]
         if let v = steps { obj["steps_today"] = .int(v) }
@@ -51,6 +53,8 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
         if let v = active { obj["active_energy"] = .int(v) }
         if let v = sleep { obj["sleep_hours"] = .double(v) }
         if let v = exercise { obj["exercise_minutes"] = .int(v) }
+        if let v = bodyMass { obj["body_mass_kg"] = .double(v) }
+        if let v = height { obj["height_m"] = .double(v) }
         return .object(obj)
     }
 
