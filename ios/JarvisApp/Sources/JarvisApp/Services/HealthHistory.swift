@@ -411,8 +411,21 @@ enum HealthHistory {
         store.execute(q)
     }
 
-    /// Group sleep samples by wake-day key (sample end day). Returns the raw
-    /// per-day samples so the pure reducer does the stage math.
+    /// Wake-day for a sleep sample, by a noon cutoff on its START time: from
+    /// local noon onward the sample belongs to that night (→ wake the NEXT day);
+    /// before noon it belongs to the previous night (→ wake that day). Groups a
+    /// whole night — including pre-midnight chunks that END before midnight —
+    /// under one wake day, instead of splitting them onto the prior calendar day.
+    static func sleepWakeDay(start: Date, calendar: Calendar) -> Date {
+        let day0 = calendar.startOfDay(for: start)
+        return calendar.component(.hour, from: start) >= 12
+            ? calendar.date(byAdding: .day, value: 1, to: day0)!
+            : day0
+    }
+
+    /// Group sleep samples by wake-day key (noon cutoff on sample START — see
+    /// `sleepWakeDay`). Returns the raw per-day samples so the pure reducer does
+    /// the stage math.
     private static func sleepSamplesByWakeDay(
         start: Date, end: Date,
         bucket: @escaping (Date) -> String,
@@ -425,7 +438,7 @@ enum HealthHistory {
         ) { _, samples, _ in
             var byDay: [String: [SleepSampleInput]] = [:]
             for s in (samples as? [HKCategorySample]) ?? [] {
-                let k = bucket(s.endDate)
+                let k = bucket(HealthHistory.sleepWakeDay(start: s.startDate, calendar: Calendar.current))
                 byDay[k, default: []].append(.init(stage: s.value, start: s.startDate, end: s.endDate))
             }
             cb(byDay)

@@ -85,6 +85,21 @@ final class HealthHistoryTests: XCTestCase {
         XCTAssertEqual(r.deepMin, 80)
     }
 
+    func testSleepWakeDayNoonCutoff() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Makassar")!
+        func at(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int) -> Date {
+            cal.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi))!
+        }
+        let jun13 = cal.startOfDay(for: at(2026, 6, 13, 0, 0))
+        // pre-midnight evening chunk (23:00 Jun 12) → night that wakes Jun 13
+        XCTAssertEqual(HealthHistory.sleepWakeDay(start: at(2026, 6, 12, 23, 0), calendar: cal), jun13)
+        // post-midnight chunk (02:40 Jun 13) → same wake day Jun 13
+        XCTAssertEqual(HealthHistory.sleepWakeDay(start: at(2026, 6, 13, 2, 40), calendar: cal), jun13)
+        // morning (08:00 Jun 13) → wake day Jun 13
+        XCTAssertEqual(HealthHistory.sleepWakeDay(start: at(2026, 6, 13, 8, 0), calendar: cal), jun13)
+    }
+
     func test_bucketOvernight_keeps_overnight_drops_daytime() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
