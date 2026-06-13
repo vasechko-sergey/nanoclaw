@@ -113,11 +113,15 @@ export function bootstrapTrio(): void {
           created_at: new Date().toISOString(),
         });
         log.info('bootstrap-trio eager-created session', { sessionId: newSessId, agent: canonicalId, mg: mg.id });
+        // Every eager-created session needs its on-disk folder + DB schemas so
+        // the adapter routing path can write inbound messages to it. This MUST
+        // run for all agents, not only those with a bootstrap prompt: agents
+        // without one (e.g. jarvis, bootstrap=null) previously got an active
+        // session row with no folder, so every inbound threw "Cannot open
+        // database because the directory does not exist". initSessionFolder
+        // both mkdirs and applies the inbound/outbound schemas.
+        initSessionFolder(canonicalId, newSessId);
         if (entry.bootstrap) {
-          // writeSessionMessage opens inbound.db at the session folder path,
-          // which requires the folder to exist — initSessionFolder both mkdirs
-          // and applies the inbound/outbound schemas.
-          initSessionFolder(canonicalId, newSessId);
           writeSessionMessage(canonicalId, newSessId, {
             id: `bootstrap-${randomUUID()}`,
             kind: 'system',
