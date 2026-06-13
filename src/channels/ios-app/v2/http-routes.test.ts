@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -316,6 +316,33 @@ describe('POST /ios/proactive', () => {
       body: JSON.stringify({ platformId: 'ios-app-v2:dev-1', trigger: 'hk' }),
     });
     expect(r.status).toBe(503);
+  });
+});
+
+describe('GET /ios/state', () => {
+  it('returns levels + ordered agent rows', async () => {
+    const profilesDir = join(h.groupsDir, 'global', 'profiles');
+    mkdirSync(profilesDir, { recursive: true });
+    writeFileSync(
+      join(profilesDir, 'greg.md'),
+      `---\nupdated: 2026-06-13\nsummary: Всё ок\nlevels: {energy: 72, stress: 34, recovery: 81, readiness: 68}\n---\nDetail text.`,
+    );
+    writeFileSync(join(profilesDir, 'gordon.md'), `---\nsummary: Рекомп идёт хорошо\n---\nGordon detail.`);
+
+    const r = await fetchJson(`${h.url}/ios/state`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    const body = r.json() as { levels: Record<string, unknown>; agents: Array<{ key: string; summary: string }> };
+    expect(body.levels.energy).toBe(72);
+    expect(body.agents[0].key).toBe('greg');
+    expect(body.agents.find((a) => a.key === 'gordon')?.summary).toContain('Рекомп');
+  });
+
+  it('requires bearer auth', async () => {
+    const r = await fetchJson(`${h.url}/ios/state`, { method: 'GET' });
+    expect(r.status).toBe(401);
   });
 });
 

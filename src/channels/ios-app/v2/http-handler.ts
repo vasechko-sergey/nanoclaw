@@ -17,7 +17,7 @@
 // vars + a live ws server).
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ChannelSetup } from '../../adapter.js';
@@ -28,6 +28,7 @@ import { readEnvFile } from '../../../env.js';
 import { appendHealthHistory } from './health-ingest.js';
 import { openHealthDb, readHealthDays } from './health-db.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
+import { parseProfile } from './profiles.js';
 import type { PlatformId } from './types.js';
 
 function loadAllHealthRows(groupsDir: string, agentFolder: string): HealthUploadDay[] {
@@ -46,7 +47,7 @@ export interface HttpHandlerDeps {
   healthRequestsStore: HealthRequestsStore;
   /** Returns the agent group folder wired to a device, or null. */
   resolveAgentFolderForPlatform: (platformId: PlatformId) => string | null;
-  /** Where to write the resolved folder's `health/raw.jsonl`. */
+  /** Where to write the resolved folder's `health/health.db`. */
   groupsDir: string;
   /**
    * Optional override directory — if set, ALL devices write to this single
@@ -72,6 +73,15 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
     log,
     logWarn,
   } = deps;
+
+  const AGENT_META: Record<string, { title: string; icon: string }> = {
+    greg: { title: 'Здоровье · Greg', icon: '🩺' },
+    gordon: { title: 'Питание · Gordon', icon: '🍽' },
+    payne: { title: 'Тренировки · Payne', icon: '🏋' },
+    scrooge: { title: 'Финансы · Scrooge', icon: '💰' },
+    jarvis: { title: 'Фокус · Jarvis', icon: '🧭' },
+  };
+  const AGENT_ORDER = ['greg', 'gordon', 'payne', 'scrooge', 'jarvis'];
 
   const requireToken = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
     const auth = req.headers.authorization ?? '';
@@ -176,8 +186,8 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
             requestId: requestId ?? null,
           });
           // Fire-and-forget sick-day trigger. Failures here must not block the upload
-          // response — we log and move on. The trigger reads the full raw.jsonl
-          // (cheap, ~14 lines typical) and only does work if the rule fires.
+          // response — we log and move on. The trigger reads the full health.db
+          // (cheap, ~14 rows typical) and only does work if the rule fires.
           // Install-specific: SICK_DAY_TARGET_AGENT_GROUP_ID must be set to the
           // agent-group id of the Greg agent (i.e. "greg").
           // Unset = trigger is a no-op, safe default.
@@ -262,6 +272,49 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
             .writeHead(400, { 'Content-Type': 'application/json' })
             .end(JSON.stringify({ error: String(err instanceof Error ? err.message : err) }));
         });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/ios/state') {
+      if (!requireToken(req, res)) return;
+      const profilesDir = join(groupsDir, 'global', 'profiles');
+      const parsed = new Map<string, ReturnType<typeof parseProfile>>();
+      try {
+        for (const f of readdirSync(profilesDir)) {
+          if (!f.endsWith('.md')) continue;
+          const key = f.slice(0, -3);
+          if (!AGENT_META[key]) continue;
+          try {
+            parsed.set(key, parseProfile(key, readFileSync(join(profilesDir, f), 'utf8')));
+          } catch {
+            /* skip unreadable fragment */
+          }
+        }
+      } catch {
+        /* no profiles dir yet */
+      }
+
+      const greg = parsed.get('greg');
+      const levels = {
+        energy: greg?.levels?.energy ?? null,
+        stress: greg?.levels?.stress ?? null,
+        recovery: greg?.levels?.recovery ?? null,
+        readiness: greg?.levels?.readiness ?? null,
+        recovery7d: greg?.recovery7d ?? null,
+        updated: greg?.updated ?? null,
+      };
+      const agents = AGENT_ORDER.filter((k) => parsed.has(k)).map((k) => {
+        const p = parsed.get(k)!;
+        return {
+          key: k,
+          title: AGENT_META[k].title,
+          icon: AGENT_META[k].icon,
+          summary: p.summary,
+          detail: p.detail,
+          updated: p.updated,
+        };
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ levels, agents }));
       return;
     }
 
