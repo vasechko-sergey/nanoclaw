@@ -11,6 +11,9 @@ struct OrbHomeView: View {
     var onStartVoiceChat: () -> Void    // open chat + auto-start voice recording
     var onContinueChat: () -> Void
 
+    @StateObject private var stateService = StateService()
+    @State private var showStateBoard = false
+
     @State private var showSatellites = false
     @State private var showVoiceFullscreen = false
 
@@ -104,6 +107,10 @@ struct OrbHomeView: View {
                     orbCluster
                         .offset(y: -Theme.headerHeight)
 
+                    HealthStripView(levels: stateService.state?.levels)
+                        .onTapGesture { showStateBoard = true }
+                        .padding(.bottom, Theme.scaled(12))
+
                     Spacer()
                 }
             }
@@ -179,6 +186,10 @@ struct OrbHomeView: View {
                 // Attachment picked — go to chat with it
                 onStartChat(nil)
             }
+        }
+        .onAppear { stateService.refresh() }
+        .sheet(isPresented: $showStateBoard) {
+            NavigationView { StateBoardView(service: stateService) }
         }
         .fullScreenCover(isPresented: $showVoiceFullscreen) {
             OrbVoiceView(coordinator: coordinator, onHandoffToChat: {

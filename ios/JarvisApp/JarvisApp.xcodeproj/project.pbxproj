@@ -23,6 +23,7 @@
 		298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */; };
 		2B5AD345B9E6DD536F03540D /* UnifiedInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B42F42A5AB27AFC0DD5943 /* UnifiedInputBar.swift */; };
 		2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */; };
+		3199A7F9DFF9940F12F911AF /* HealthStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C036FF712D8EB7735FCBC7 /* HealthStripView.swift */; };
 		323B15E35E629EC77D90958C /* AttachmentBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C635D17DBD6BF940C89E024 /* AttachmentBar.swift */; };
 		3502D3234561E8F256B9EAD5 /* JarvisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */; };
 		365191E0FC23319F9CA2C898 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 31E0AB4EF75BC659349C8E0A /* GRDB */; };
@@ -217,6 +218,7 @@
 		8C9EB1688DB74A7280A71824 /* ConversationStoreV2AgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2AgentTests.swift; sourceTree = "<group>"; };
 		8F8D87E938816ECB8B161DBD /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewSmokeTests.swift; sourceTree = "<group>"; };
+		90C036FF712D8EB7735FCBC7 /* HealthStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthStripView.swift; sourceTree = "<group>"; };
 		9143ED9DD7B640862D468B63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9592AD08ED6648DF9CCC7149 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		97D8CEE69D33E1581710A543 /* ConversationStoreV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2.swift; sourceTree = "<group>"; };
@@ -337,6 +339,7 @@
 				83BBF8E04395E33F04CDE186 /* EmojiPickerView.swift */,
 				83D3D7941261E832088202BF /* EmptyStateView.swift */,
 				ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */,
+				90C036FF712D8EB7735FCBC7 /* HealthStripView.swift */,
 				0B48F479168B41727E62B105 /* InputBar.swift */,
 				79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */,
 				00895EA002A4092BA433AF4C /* MessageRow.swift */,
@@ -740,6 +743,7 @@
 				4C81E915D4CA0441EEA698DF /* HealthHistory.swift in Sources */,
 				91941E7469BF57E69F4C9DE2 /* HealthManager.swift in Sources */,
 				A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */,
+				3199A7F9DFF9940F12F911AF /* HealthStripView.swift in Sources */,
 				3F712956E032728A955B67F8 /* HealthSync.swift in Sources */,
 				D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */,
 				A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */,
