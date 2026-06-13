@@ -52,6 +52,14 @@ enum HealthHistory {
         return (avg: (avg * 100).rounded() / 100, min: (pct.min()! * 10).rounded() / 10)
     }
 
+    /// Overnight metrics (sleep stages, morning HRV, nocturnal SpO₂) can begin
+    /// before midnight of the wake day. The fetch window must start one day
+    /// before the requested `from` so the left-edge day's pre-midnight samples
+    /// are included; wake-day bucketing keeps attribution correct.
+    static func overnightWindowStart(from start: Date, calendar: Calendar) -> Date {
+        calendar.date(byAdding: .day, value: -1, to: start)!
+    }
+
     /// Pure: bucket time-stamped samples to wake-days, keeping only overnight /
     /// early-morning readings (local hour >= eveningStart the night before →
     /// next morning, or < morningEnd the day-of). Daytime samples are dropped so

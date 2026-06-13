@@ -60,6 +60,31 @@ final class HealthHistoryTests: XCTestCase {
         XCTAssertNil(HealthHistory.reduceSpo2([]))
     }
 
+    func testOvernightWindowStartIsOneDayBefore() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Makassar")!
+        let from = cal.date(from: DateComponents(year: 2026, month: 6, day: 13))!
+        let got = HealthHistory.overnightWindowStart(from: from, calendar: cal)
+        let want = cal.date(from: DateComponents(year: 2026, month: 6, day: 12))!
+        XCTAssertEqual(got, want)
+    }
+
+    func testBucketSleepStagesCountsPreMidnightDeep() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Makassar")!
+        let dayStart = cal.date(from: DateComponents(year: 2026, month: 6, day: 13))!
+        func at(_ h: Int, _ m: Int, _ off: Int) -> Date {
+            cal.date(byAdding: .day, value: off,
+                     to: cal.date(bySettingHour: h, minute: m, second: 0, of: dayStart)!)!
+        }
+        let samples = [
+            HealthHistory.SleepSampleInput(stage: 4, start: at(22, 50, -1), end: at(23, 30, -1)),
+            HealthHistory.SleepSampleInput(stage: 4, start: at(2, 0, 0),  end: at(2, 40, 0)),
+        ]
+        let r = HealthHistory.bucketSleepStages(samples, dayStart: dayStart)
+        XCTAssertEqual(r.deepMin, 80)
+    }
+
     func test_bucketOvernight_keeps_overnight_drops_daytime() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
