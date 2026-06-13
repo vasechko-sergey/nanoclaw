@@ -107,11 +107,11 @@ struct OrbHomeView: View {
                     orbCluster
                         .offset(y: -Theme.headerHeight)
 
+                    Spacer()
+
                     HealthStripView(levels: stateService.state?.levels)
                         .onTapGesture { showStateBoard = true }
-                        .padding(.bottom, Theme.scaled(12))
-
-                    Spacer()
+                        .padding(.bottom, Theme.scaled(8))
                 }
             }
             .safeAreaInset(edge: .bottom) { greetingLabel }
