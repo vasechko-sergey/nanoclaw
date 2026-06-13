@@ -25,9 +25,7 @@ describe('projectPublicProfiles', () => {
     writePublic('greg', '# greg\nreadiness: 72\n');
     const n = projectPublicProfiles(tmp);
     expect(n).toBe(1);
-    expect(
-      fs.readFileSync(path.join(tmp, 'global', 'profiles', 'greg.md'), 'utf8'),
-    ).toBe('# greg\nreadiness: 72\n');
+    expect(fs.readFileSync(path.join(tmp, 'global', 'profiles', 'greg.md'), 'utf8')).toBe('# greg\nreadiness: 72\n');
   });
 
   it('skips the reserved global folder', () => {
@@ -53,8 +51,6 @@ describe('projectPublicProfiles', () => {
     projectPublicProfiles(tmp);
     writePublic('greg', 'v2');
     expect(projectPublicProfiles(tmp)).toBe(1);
-    expect(
-      fs.readFileSync(path.join(tmp, 'global', 'profiles', 'greg.md'), 'utf8'),
-    ).toBe('v2');
+    expect(fs.readFileSync(path.join(tmp, 'global', 'profiles', 'greg.md'), 'utf8')).toBe('v2');
   });
 });
