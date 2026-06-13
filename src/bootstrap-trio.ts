@@ -45,6 +45,13 @@ const TEAM = [
     bootstrap:
       '[bootstrap] Прочитай memories/index.md и /workspace/global/about-sergei.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса Сергея.',
   },
+  {
+    id: 'scrooge',
+    name: 'Scrooge',
+    folder: 'scrooge',
+    bootstrap:
+      '[bootstrap] Прочитай memories/index.md и /workspace/global/about-sergei.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса Сергея.',
+  },
 ] as const;
 
 function generateSessionId(): string {
