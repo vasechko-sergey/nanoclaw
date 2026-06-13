@@ -17,7 +17,7 @@
 // vars + a live ws server).
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ChannelSetup } from '../../adapter.js';
@@ -26,25 +26,19 @@ import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.
 import { sickDayCheck } from '../../../modules/health-trigger/sick-day.js';
 import { readEnvFile } from '../../../env.js';
 import { appendHealthHistory } from './health-ingest.js';
+import { openHealthDb, readHealthDays } from './health-db.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
 import type { PlatformId } from './types.js';
 
 function loadAllHealthRows(groupsDir: string, agentFolder: string): HealthUploadDay[] {
-  const path = join(groupsDir, agentFolder, 'health', 'raw.jsonl');
+  const path = join(groupsDir, agentFolder, 'health', 'health.db');
   if (!existsSync(path)) return [];
-  const text = readFileSync(path, 'utf8');
-  const byDate = new Map<string, HealthUploadDay>();
-  for (const line of text.split('\n')) {
-    const s = line.trim();
-    if (!s) continue;
-    try {
-      const row = JSON.parse(s) as HealthUploadDay;
-      if (row && row.date) byDate.set(row.date, row);
-    } catch {
-      /* skip malformed line */
-    }
+  const db = openHealthDb(path);
+  try {
+    return readHealthDays(db); // already sorted oldest→newest by date
+  } finally {
+    db.close();
   }
-  return [...byDate.keys()].sort().map((d) => byDate.get(d)!);
 }
 
 export interface HttpHandlerDeps {

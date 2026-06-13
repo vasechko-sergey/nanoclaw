@@ -7,13 +7,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { openTransportDb } from './transport-db.js';
 import { HealthRequestsStore } from './health-requests-store.js';
 import { createIosHttpHandler } from './http-handler.js';
+import { openHealthDb, readHealthDays } from './health-db.js';
 import type { ChannelSetup } from '../../adapter.js';
 
 interface Harness {
@@ -185,7 +186,7 @@ describe('GET /ios/health/requests', () => {
 });
 
 describe('POST /ios/health/upload', () => {
-  it('appends JSONL rows to the wired agent group folder and clears the request', async () => {
+  it('upserts rows into the wired agent group health.db and clears the request', async () => {
     h.store.enqueue('ios-app-v2:dev-1', 'req-1', 3);
 
     const body = JSON.stringify({
@@ -204,13 +205,14 @@ describe('POST /ios/health/upload', () => {
     expect(r.status).toBe(200);
     expect(r.json()).toEqual({ ok: true });
 
-    // File written under <groupsDir>/jarvis/health/raw.jsonl with one line per day.
-    const jsonl = join(h.groupsDir, 'jarvis', 'health', 'raw.jsonl');
-    expect(existsSync(jsonl)).toBe(true);
-    const lines = readFileSync(jsonl, 'utf8').trim().split('\n');
-    expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0])).toMatchObject({ date: '2026-05-29', steps: 8000 });
-    expect(JSON.parse(lines[1])).toMatchObject({ date: '2026-05-30', steps: 9500, restingHeartRate: 58 });
+    // Rows written to <groupsDir>/jarvis/health/health.db, sorted oldest→newest.
+    const dbPath = join(h.groupsDir, 'jarvis', 'health', 'health.db');
+    const db = openHealthDb(dbPath);
+    const rows = readHealthDays(db);
+    db.close();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ date: '2026-05-29', steps: 8000 });
+    expect(rows[1]).toMatchObject({ date: '2026-05-30', steps: 9500, restingHeartRate: 58 });
 
     // Request cleared.
     expect(h.store.listForDevice('ios-app-v2:dev-1')).toHaveLength(0);
@@ -258,11 +260,13 @@ describe('POST /ios/health/upload', () => {
     });
     expect(r.status).toBe(200);
 
-    const jsonl = join(overrideDir, 'raw.jsonl');
-    expect(existsSync(jsonl)).toBe(true);
-    const lines = readFileSync(jsonl, 'utf8').trim().split('\n');
-    expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0])).toMatchObject({ date: '2026-05-31', steps: 1234 });
+    // Rows written to the override folder's health.db, sorted oldest→newest.
+    const dbPath = join(overrideDir, 'health.db');
+    const db = openHealthDb(dbPath);
+    const rows = readHealthDays(db);
+    db.close();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ date: '2026-05-31', steps: 1234 });
 
     rmSync(overrideRoot, { recursive: true, force: true });
   });
