@@ -106,6 +106,9 @@ enum HealthHistory {
             completion([]); return
         }
 
+        // Overnight metrics need the previous evening; widen their left edge.
+        let sleepStart = HealthHistory.overnightWindowStart(from: start, calendar: cal)
+
         var byDay: [String: V2.HealthUpload.Day] = [:]
         let group = DispatchGroup()
         let lock = NSLock()
@@ -178,7 +181,7 @@ enum HealthHistory {
         group.enter()
         let hrvQ = HKSampleQuery(
             sampleType: HKQuantityType(.heartRateVariabilitySDNN),
-            predicate: HKQuery.predicateForSamples(withStart: start, end: end),
+            predicate: HKQuery.predicateForSamples(withStart: sleepStart, end: end),
             limit: HKObjectQueryNoLimit, sortDescriptors: nil
         ) { _, samples, _ in
             let ms = HKUnit.secondUnit(with: .milli)
@@ -196,7 +199,7 @@ enum HealthHistory {
         group.enter()
         let spo2Q = HKSampleQuery(
             sampleType: HKQuantityType(.oxygenSaturation),
-            predicate: HKQuery.predicateForSamples(withStart: start, end: end),
+            predicate: HKQuery.predicateForSamples(withStart: sleepStart, end: end),
             limit: HKObjectQueryNoLimit, sortDescriptors: nil
         ) { _, samples, _ in
             let frac = HKUnit.percent()  // HK percent unit == fraction 0..1
@@ -217,7 +220,7 @@ enum HealthHistory {
 
         // Sleep: split into stages + onset, bucketed by wake day (sample end day).
         group.enter()
-        sleepSamplesByWakeDay(start: start, end: end, bucket: bucketKey) { byWakeDay in
+        sleepSamplesByWakeDay(start: sleepStart, end: end, bucket: bucketKey) { byWakeDay in
             for (k, samples) in byWakeDay {
                 let dayStart = cal.startOfDay(for: fmt.date(from: k) ?? start)
                 let r = HealthHistory.bucketSleepStages(samples, dayStart: dayStart)
@@ -376,7 +379,11 @@ enum HealthHistory {
         store.execute(workoutQuery)
 
         group.notify(queue: .main) {
-            let rows = byDay.values.sorted { $0.date < $1.date }
+            // The widened sleep window can surface a partial (from-1) wake-day row;
+            // emit only days within the requested [from, to] range.
+            let rows = byDay.values
+                .filter { $0.date >= from && $0.date <= to }
+                .sorted { $0.date < $1.date }
             completion(Array(rows))
         }
     }
