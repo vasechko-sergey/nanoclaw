@@ -54,52 +54,41 @@ import HealthKit
             DispatchQueue.main.async { self?.exerciseMinutes = v.map(Int.init) }
         }
 
-        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
-        let qHR = HKSampleQuery(
-            sampleType: HKQuantityType(.heartRate),
-            predicate: nil, limit: 1, sortDescriptors: [sort]
-        ) { [weak self] _, s, _ in
-            if let s = s?.first as? HKQuantitySample {
-                let bpm = Int(s.quantity.doubleValue(for: HKUnit(from: "count/min")))
-                DispatchQueue.main.async { self?.heartRate = bpm }
-            }
+        latestSample(.heartRate,        unit: HKUnit(from: "count/min"))  { [weak self] v in
+            self?.heartRate = Int(v)
         }
-        store.execute(qHR)
-
-        let qRHR = HKSampleQuery(
-            sampleType: HKQuantityType(.restingHeartRate),
-            predicate: nil, limit: 1, sortDescriptors: [sort]
-        ) { [weak self] _, s, _ in
-            if let s = s?.first as? HKQuantitySample {
-                let bpm = Int(s.quantity.doubleValue(for: HKUnit(from: "count/min")))
-                DispatchQueue.main.async { self?.restingHeartRate = bpm }
-            }
+        latestSample(.restingHeartRate, unit: HKUnit(from: "count/min"))  { [weak self] v in
+            self?.restingHeartRate = Int(v)
         }
-        store.execute(qRHR)
-
-        let qBodyMass = HKSampleQuery(
-            sampleType: HKQuantityType(.bodyMass),
-            predicate: nil, limit: 1, sortDescriptors: [sort]
-        ) { [weak self] _, s, _ in
-            if let s = s?.first as? HKQuantitySample {
-                let kg = (s.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo)) * 10).rounded() / 10
-                DispatchQueue.main.async { self?.bodyMass = kg }
-            }
+        latestSample(.bodyMass,         unit: HKUnit.gramUnit(with: .kilo)) { [weak self] v in
+            self?.bodyMass = (v * 10).rounded() / 10
         }
-        store.execute(qBodyMass)
-
-        let qHeight = HKSampleQuery(
-            sampleType: HKQuantityType(.height),
-            predicate: nil, limit: 1, sortDescriptors: [sort]
-        ) { [weak self] _, s, _ in
-            if let s = s?.first as? HKQuantitySample {
-                let m = (s.quantity.doubleValue(for: HKUnit.meter()) * 100).rounded() / 100
-                DispatchQueue.main.async { self?.height = m }
-            }
+        latestSample(.height,           unit: HKUnit.meter())             { [weak self] v in
+            self?.height = (v * 100).rounded() / 100
         }
-        store.execute(qHeight)
 
         fetchSleep()
+    }
+
+    /// Fetch the single most-recent sample for `id`, read it in `unit`, and hand
+    /// the raw `Double` to `assign` on the main queue. Callers do their own
+    /// Int-cast / rounding inside `assign`.
+    private func latestSample(
+        _ id: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        assign: @escaping (Double) -> Void
+    ) {
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let q = HKSampleQuery(
+            sampleType: HKQuantityType(id),
+            predicate: nil, limit: 1, sortDescriptors: [sort]
+        ) { _, s, _ in
+            if let s = s?.first as? HKQuantitySample {
+                let v = s.quantity.doubleValue(for: unit)
+                DispatchQueue.main.async { assign(v) }
+            }
+        }
+        store.execute(q)
     }
 
     private func fetchSleep() {
