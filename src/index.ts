@@ -9,6 +9,7 @@ import path from 'path';
 import type { Server } from 'http';
 
 import { backfillContainerConfigs } from './backfill-container-configs.js';
+import { migrateHealthStores } from './channels/ios-app/v2/health-migrate.js';
 import { bootstrapTrio } from './bootstrap-trio.js';
 import { CREDENTIAL_PROXY_PORT, DATA_DIR } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker, scheduleHealthyReset } from './circuit-breaker.js';
@@ -85,6 +86,10 @@ async function main(): Promise<void> {
   // 1b. Backfill container_configs from legacy container.json files.
   // Idempotent — skips groups that already have a config row.
   backfillContainerConfigs();
+
+  // 1c. One-time: migrate each agent group's health raw.jsonl → health.db.
+  // Idempotent — skips groups where health.db already exists.
+  migrateHealthStores();
 
   // Instruction files (groups/INSTRUCTIONS.md + each group's CLAUDE.md) are
   // now static on disk and hand-maintained — the host never generates,
