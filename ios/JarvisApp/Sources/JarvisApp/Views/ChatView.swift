@@ -82,9 +82,6 @@ struct ChatView: View {
     var body: some View {
         ZStack(alignment: .leading) {
         VStack(spacing: 0) {
-            // MARK: – Custom header
-            header
-
             // MARK: – Content
             if visibleMessages.isEmpty && !ws.isBusy && !emptyInputActive {
                 EmptyStateView(
@@ -270,6 +267,12 @@ struct ChatView: View {
                             onPinchOut: { showVoiceFullscreen = true })
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+        // Header lives in a TOP safe-area inset rather than as the first child
+        // of the VStack. The software keyboard insets only the BOTTOM safe
+        // area; keeping the header in the top inset makes it immune to the
+        // keyboard-avoidance offset, so the agent picker (which grows tall when
+        // expanded) no longer drifts upward when the keyboard is open.
+        .safeAreaInset(edge: .top, spacing: 0) { header }
         .simultaneousGesture(rightEdgeSwipeGesture)
 
         // Right drawer
