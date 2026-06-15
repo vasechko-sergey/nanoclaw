@@ -41,7 +41,7 @@ final class AppV2BootstrapTests: XCTestCase {
         }
 
         // calendar → empty array.
-        let c = try await coord.calendar()
+        let c = try await coord.calendar(window: "today")
         if case .array(let arr) = c {
             XCTAssertTrue(arr.isEmpty)
         } else {

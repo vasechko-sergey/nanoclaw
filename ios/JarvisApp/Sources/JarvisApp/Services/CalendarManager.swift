@@ -60,6 +60,7 @@ final class CalendarManager: ObservableObject {
             calendars: nil
         )
         return store.events(matching: pred)
+            .filter { !$0.isAllDay }
             .sorted { $0.startDate < $1.startDate }
             .map { ($0.title ?? "", $0.startDate, $0.endDate) }
     }
