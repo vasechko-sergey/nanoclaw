@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
   initTestDb,
+  getDb,
   closeDb,
   runMigrations,
   createAgentGroup,
@@ -437,5 +438,25 @@ describe('pending questions', () => {
     });
     deletePendingQuestion('q-1');
     expect(getPendingQuestion('q-1')).toBeUndefined();
+  });
+});
+
+// ── Migration 016 ──
+
+describe('migration 016', () => {
+  beforeEach(() => {
+    const db = initTestDb();
+    runMigrations(db);
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it('migration 016 adds person_key and owner_key', () => {
+    const userCols = getDb().prepare('PRAGMA table_info(users)').all() as { name: string }[];
+    const sessionCols = getDb().prepare('PRAGMA table_info(sessions)').all() as { name: string }[];
+    expect(userCols.map((c) => c.name)).toContain('person_key');
+    expect(sessionCols.map((c) => c.name)).toContain('owner_key');
   });
 });
