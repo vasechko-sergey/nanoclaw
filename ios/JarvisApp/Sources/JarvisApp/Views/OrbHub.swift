@@ -45,10 +45,10 @@ struct OrbHub: View {
     var mood: OrbMood = .welcoming
     /// Tint color for the central orb (unused by `OrbView` directly, reserved for future tinting).
     var coreAccent: Color = Theme.accent
+    @Binding var showSatellites: Bool
     /// Called when the central orb is tapped and the action ring is not showing.
     var onOrbTap: () -> Void
 
-    @State private var showSatellites = false
 
     // Radius is based on the default-ring count, matching the original orbCluster
     // behaviour where `defaultSatellites.count` drove the radius for BOTH rings.

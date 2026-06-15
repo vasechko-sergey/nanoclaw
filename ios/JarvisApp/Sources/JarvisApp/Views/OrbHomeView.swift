@@ -14,6 +14,7 @@ struct OrbHomeView: View {
     @StateObject private var stateService = StateService()
     @State private var showStateBoard = false
 
+    @State private var showSatellites = false
     @State private var showVoiceFullscreen = false
 
     @State private var rightDrawerOpen = false
@@ -46,6 +47,8 @@ struct OrbHomeView: View {
             .font(.system(size: Theme.scaled(11), weight: .light))
             .tracking(2)
             .foregroundStyle(Theme.accentMedium.opacity(0.7))
+            .opacity(showSatellites ? 0.3 : 1)
+            .animation(.easeOut(duration: 0.2), value: showSatellites)
             .padding(.bottom, Theme.scaled(12))
             .accessibilityIdentifier("home-greeting")
     }
@@ -112,6 +115,7 @@ struct OrbHomeView: View {
                     OrbHub(
                         satellites: satellites,
                         actionSatellites: actionSatellites,
+                        showSatellites: $showSatellites,
                         onOrbTap: { showVoiceFullscreen = true }
                     )
                     .offset(y: -Theme.headerHeight)
