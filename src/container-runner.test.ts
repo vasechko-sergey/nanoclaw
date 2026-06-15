@@ -2,14 +2,17 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  buildMounts,
   clearContinuationIfHeadless,
   isGlobalMemoryWriter,
   openContainerLogStream,
   resolveProviderName,
 } from './container-runner.js';
+import { DATA_DIR, GROUPS_DIR, OWNER_PERSON_KEY } from './config.js';
+import { initTestDb, closeDb, runMigrations, createAgentGroup } from './db/index.js';
 import { initSessionFolder, openOutboundDbRw, outboundDbPath, sessionDir } from './session-manager.js';
 import type { Session } from './types.js';
 
@@ -200,5 +203,67 @@ describe('openContainerLogStream', () => {
     const fresh = fs.readFileSync(logPath, 'utf8');
     expect(fresh).toContain('spawn nanoclaw-test-2');
     expect(fresh.length).toBeLessThan(1024);
+  });
+});
+
+const ISO_AG = 'ag-test-iso';
+const ISO_FOLDER = 'test-iso-mounts'; // throwaway — never a real agent folder
+
+function mountsFor(ownerKey: string | null) {
+  const agentGroup = { id: ISO_AG, name: 'Iso', folder: ISO_FOLDER, agent_provider: null, created_at: 'now' };
+  const session = {
+    id: 'sess-iso',
+    agent_group_id: ISO_AG,
+    messaging_group_id: null,
+    thread_id: null,
+    owner_key: ownerKey,
+    agent_provider: null,
+    status: 'active' as const,
+    container_status: 'stopped' as const,
+    last_active: null,
+    created_at: 'now',
+  };
+  const cfg = { provider: 'claude', skills: [] as string[], additionalMounts: [] } as any;
+  return buildMounts(agentGroup as any, session as any, cfg, {});
+}
+
+describe('buildMounts owner isolation', () => {
+  beforeEach(() => {
+    const db = initTestDb();
+    runMigrations(db);
+    createAgentGroup({ id: ISO_AG, name: 'Iso', folder: ISO_FOLDER, agent_provider: null, created_at: 'now' });
+  });
+  afterEach(() => {
+    closeDb();
+    fs.rmSync(path.join(GROUPS_DIR, ISO_FOLDER), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'p2', ISO_FOLDER), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, ISO_FOLDER), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'p2', 'global'), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'v2-sessions', ISO_AG), { recursive: true, force: true });
+  });
+
+  it('mounts memory + .claude from the session owner tree, never another person', () => {
+    const mounts = mountsFor('p2');
+    const p2Root = path.join(DATA_DIR, 'user-memory', 'p2');
+    const memMount = mounts.find((m) => m.containerPath === '/workspace/agent/memories');
+    expect(memMount?.hostPath).toBe(path.join(p2Root, ISO_FOLDER, 'memories'));
+    expect(memMount?.readonly).toBe(false);
+    const claudeMount = mounts.find((m) => m.containerPath === '/home/node/.claude');
+    expect(claudeMount?.hostPath).toBe(path.join(p2Root, ISO_FOLDER, '.claude'));
+    const ownerRoot = path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY);
+    expect(mounts.some((m) => m.hostPath.startsWith(ownerRoot + path.sep))).toBe(false);
+  });
+
+  it('mounts the shared code dir read-only for every session', () => {
+    const mounts = mountsFor('p2');
+    const codeMount = mounts.find((m) => m.containerPath === '/workspace/agent');
+    expect(codeMount?.hostPath).toBe(path.join(GROUPS_DIR, ISO_FOLDER));
+    expect(codeMount?.readonly).toBe(true);
+  });
+
+  it('falls back to OWNER_PERSON_KEY when owner_key is null', () => {
+    const mounts = mountsFor(null);
+    const memMount = mounts.find((m) => m.containerPath === '/workspace/agent/memories');
+    expect(memMount?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, ISO_FOLDER, 'memories'));
   });
 });

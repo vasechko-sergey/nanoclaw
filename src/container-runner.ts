@@ -14,6 +14,7 @@ import {
   CREDENTIAL_PROXY_PORT,
   DATA_DIR,
   GROUPS_DIR,
+  OWNER_PERSON_KEY,
   TIMEZONE,
 } from './config.js';
 import { materializeContainerJson } from './container-config.js';
@@ -51,6 +52,7 @@ import {
   writeSessionRouting,
 } from './session-manager.js';
 import type { AgentGroup, Session } from './types.js';
+import { userMemoryRoot, userGlobalRoot, initUserMemory, MEMORY_SUBDIRS } from './user-memory.js';
 
 /** Active containers tracked by session ID. */
 const activeContainers = new Map<string, { process: ChildProcess; containerName: string }>();
@@ -369,7 +371,7 @@ function resolveProviderContribution(
   return { provider, contribution };
 }
 
-function buildMounts(
+export function buildMounts(
   agentGroup: AgentGroup,
   session: Session,
   containerConfig: import('./container-config.js').ContainerConfig,
@@ -382,64 +384,66 @@ function buildMounts(
   // is a no-op for groups that have spawned before.
   initGroupFilesystem(agentGroup);
 
-  // Sync skill symlinks based on container.json selection before mounting.
-  const claudeDir = path.join(DATA_DIR, 'v2-sessions', agentGroup.id, '.claude-shared');
-  syncSkillSymlinks(claudeDir, containerConfig, agentGroup);
-
   const mounts: VolumeMount[] = [];
   const sessDir = sessionDir(agentGroup.id, session.id);
   const groupDir = path.resolve(GROUPS_DIR, agentGroup.folder);
 
-  // Session folder at /workspace (contains inbound.db, outbound.db, outbox/, .claude/)
+  // Per-person memory root. owner_key is set at session creation; pre-migration
+  // sessions (null) fall back to the owner. THIS is the isolation boundary:
+  // the only writable user-data mounts below resolve under this person's tree.
+  const ownerKey = session.owner_key || OWNER_PERSON_KEY;
+  initUserMemory(ownerKey, agentGroup.folder);
+  const memRoot = userMemoryRoot(ownerKey, agentGroup.folder);
+
+  // Session folder at /workspace (inbound.db, outbound.db, outbox/). Per-session
+  // already, so naturally isolated.
   mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false });
 
-  // Agent group folder at /workspace/agent (RW for working files + memories/)
-  mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: false });
+  // Shared code at /workspace/agent — READ-ONLY for every session. No agent
+  // edits its own behavior; behavior changes happen via host edits + redeploy.
+  mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: true });
 
-  // container.json — nested RO mount on top of RW group dir so the agent
-  // can read its config but cannot modify it.
+  // Per-person writable memory, nested over the RO code dir at the same paths
+  // the agent already uses today.
+  for (const sub of MEMORY_SUBDIRS) {
+    mounts.push({ hostPath: path.join(memRoot, sub), containerPath: `/workspace/agent/${sub}`, readonly: false });
+  }
+
+  // container.json — RO nested (unchanged).
   const containerJsonPath = path.join(groupDir, 'container.json');
   if (fs.existsSync(containerJsonPath)) {
     mounts.push({ hostPath: containerJsonPath, containerPath: '/workspace/agent/container.json', readonly: true });
   }
 
-  // CLAUDE.md — static per-group persona. Nested RO mount on top of the RW
-  // group dir so the agent can read but not overwrite it. Nothing composes
-  // or regenerates this file; it's a plain file on disk, hand-maintained.
-  // Per-group memory (memories/) stays RW via the group-dir mount.
+  // CLAUDE.md — RO nested (unchanged).
   const claudeMdPath = path.join(groupDir, 'CLAUDE.md');
   if (fs.existsSync(claudeMdPath)) {
     mounts.push({ hostPath: claudeMdPath, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
   }
 
-  // Shared INSTRUCTIONS.md — ONE static file under GROUPS_DIR, mounted RO into
-  // every container at the path each group's CLAUDE.md references via
-  // `@./INSTRUCTIONS.md`. Hand-maintained: the host never generates or copies
-  // it. Edit groups/INSTRUCTIONS.md directly when skills/channels change.
+  // Shared INSTRUCTIONS.md — RO (unchanged).
   const instructionsPath = path.join(GROUPS_DIR, 'INSTRUCTIONS.md');
   if (fs.existsSync(instructionsPath)) {
     mounts.push({ hostPath: instructionsPath, containerPath: '/workspace/agent/INSTRUCTIONS.md', readonly: true });
   }
 
-  // Global memory directory — shared facts about the user, mounted at
-  // /workspace/global. Read-only for every group except the one named in
-  // groups/global/.writer (e.g. Jarvis), which gets it read-write so it can
-  // maintain the shared memory the others only read.
-  const globalDir = path.join(GROUPS_DIR, 'global');
-  if (fs.existsSync(globalDir)) {
-    const writable = isGlobalMemoryWriter(globalDir, agentGroup.folder);
-    mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: !writable });
-  }
+  // Per-person global memory at /workspace/global. Writable only when this
+  // person's writer agent (named in their global/.writer) is this folder.
+  const globalDir = userGlobalRoot(ownerKey);
+  const writable = isGlobalMemoryWriter(globalDir, agentGroup.folder);
+  mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: !writable });
 
-  // Per-group .claude-shared at /home/node/.claude (Claude state, settings,
-  // skill symlinks)
+  // Per-person Claude home (state, settings, skill symlinks). Was per-agent-
+  // group .claude-shared — that shared Claude history/todos across people.
+  const claudeDir = path.join(memRoot, '.claude');
+  syncSkillSymlinks(claudeDir, containerConfig, agentGroup);
   mounts.push({ hostPath: claudeDir, containerPath: '/home/node/.claude', readonly: false });
 
-  // Shared agent-runner source — read-only, same code for all groups.
+  // Shared agent-runner source — RO (unchanged).
   const agentRunnerSrc = path.join(projectRoot, 'container', 'agent-runner', 'src');
   mounts.push({ hostPath: agentRunnerSrc, containerPath: '/app/src', readonly: true });
 
-  // Shared skills — read-only, symlinks in .claude-shared/skills/ point here.
+  // Shared skills — RO (unchanged).
   const skillsSrc = path.join(projectRoot, 'container', 'skills');
   if (fs.existsSync(skillsSrc)) {
     mounts.push({ hostPath: skillsSrc, containerPath: '/app/skills', readonly: true });
@@ -460,7 +464,7 @@ function buildMounts(
 }
 
 /**
- * Sync skill symlinks in .claude-shared/skills/ to match the container.json
+ * Sync skill symlinks in .claude/skills/ to match the container.json
  * selection (shared skills) plus any per-group skills found under
  * `groups/<folder>/skills/`. Each symlink points to a container path
  * (`/app/skills/<name>` for shared, `/workspace/agent/skills/<name>` for
@@ -499,9 +503,9 @@ function syncSkillSymlinks(
   }
 
   // Per-group skills — always all subdirectories in groups/<folder>/skills/
-  // that contain a SKILL.md. Per-group skills are writable from inside the
-  // container (groupDir is mounted RW at /workspace/agent), so the agent
-  // can edit its own skills.
+  // that contain a SKILL.md. Per-group skills are read-only from inside the
+  // container (/workspace/agent is mounted RO), so skill changes must be made
+  // via host edits + redeploy, not by the agent at runtime.
   const groupSkillsDir = path.join(GROUPS_DIR, agentGroup.folder, 'skills');
   const groupDesired: string[] = fs.existsSync(groupSkillsDir)
     ? fs.readdirSync(groupSkillsDir).filter((e) => {
