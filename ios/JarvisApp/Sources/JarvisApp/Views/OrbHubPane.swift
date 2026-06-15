@@ -31,8 +31,9 @@ struct OrbHubPane: View {
                     side: .left,
                     isConnected: coordinator.ws.isConnected,
                     phase: .calm,
-                    action: {}
+                    action: {} // status indicator only — no tap action in the pane
                 )
+                .accessibilityLabel("Статус подключения")
                 Spacer()
                 HeaderStatusDot(
                     side: .right,
@@ -40,6 +41,7 @@ struct OrbHubPane: View {
                     phase: .calm,
                     action: onOpenProfile
                 )
+                .accessibilityLabel("Открыть профиль и настройки")
             }
             .padding(.horizontal, Theme.scaled(8))
             .frame(minHeight: Theme.headerHeight)
