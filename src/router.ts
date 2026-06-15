@@ -29,6 +29,7 @@ import {
 import { findSessionByAgentGroup, findSessionForAgent, updateSession } from './db/sessions.js';
 import { startTypingRefresh, stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
+import { resolvePersonKey } from './person-key.js';
 import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
 import { killContainer, wakeContainer } from './container-runner.js';
 import { getSession } from './db/sessions.js';
@@ -458,7 +459,7 @@ async function deliverToAgent(
         updateSession(existing.id, { status: 'closed' });
         log.info('Session reset by /new', { oldSessionId: existing.id, agentGroupId: agent.agent_group_id });
       }
-      const { session: newSession } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
+      const { session: newSession } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode, resolvePersonKey(userId));
       writeOutboundDirect(newSession.agent_group_id, newSession.id, {
         id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',
@@ -481,6 +482,7 @@ async function deliverToAgent(
         mg.id,
         event.threadId,
         effectiveSessionMode,
+        resolvePersonKey(userId),
       );
       writeOutboundDirect(denySession.agent_group_id, denySession.id, {
         id: `deny-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -495,7 +497,7 @@ async function deliverToAgent(
     }
   }
 
-  const { session, created } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
+  const { session, created } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode, resolvePersonKey(userId));
 
   writeSessionMessage(session.agent_group_id, session.id, {
     id: messageIdForAgent(event.message.id, agent.agent_group_id),

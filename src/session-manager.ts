@@ -17,7 +17,7 @@ import path from 'path';
 import { deriveAttachmentName } from './attachment-naming.js';
 import { isSafeAttachmentName } from './attachment-safety.js';
 import type { OutboundFile } from './channels/adapter.js';
-import { DATA_DIR } from './config.js';
+import { DATA_DIR, OWNER_PERSON_KEY } from './config.js';
 import { getMessagingGroup } from './db/messaging-groups.js';
 import {
   createSession,
@@ -96,6 +96,7 @@ export function resolveSession(
   messagingGroupId: string | null,
   threadId: string | null,
   sessionMode: 'shared' | 'per-thread' | 'agent-shared',
+  ownerKey?: string,
 ): { session: Session; created: boolean } {
   // agent-shared: single session per agent group, regardless of messaging group
   if (sessionMode === 'agent-shared') {
@@ -126,7 +127,7 @@ export function resolveSession(
     agent_group_id: agentGroupId,
     messaging_group_id: messagingGroupId,
     thread_id: lookupThreadId,
-    owner_key: null,
+    owner_key: ownerKey ?? OWNER_PERSON_KEY, // Task 11 will extend this to inherit prior?.owner_key
     agent_provider: null,
     status: 'active',
     container_status: 'stopped',

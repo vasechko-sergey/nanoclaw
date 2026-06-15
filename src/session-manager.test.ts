@@ -40,7 +40,9 @@ import {
   writeOutboundDirect,
   readOutboxFiles,
   clearOutbox,
+  resolveSession,
 } from './session-manager.js';
+import { OWNER_PERSON_KEY } from './config.js';
 
 function now() {
   return new Date().toISOString();
@@ -587,5 +589,22 @@ describe('clearOutbox', () => {
     expect(fs.existsSync(path.join(outsideTarget, 'keep.txt'))).toBe(true);
 
     fs.rmSync(outsideTarget, { recursive: true, force: true });
+  });
+});
+
+// ── resolveSession: owner_key stamping ──
+
+describe('resolveSession owner_key', () => {
+  it('resolveSession stamps owner_key from the argument', () => {
+    createAgentGroup({ id: TEST_AG, name: 'Test', folder: TEST_AG, agent_provider: null, created_at: now() });
+    const { session } = resolveSession(TEST_AG, null, null, 'agent-shared', 'p2');
+    expect(session.owner_key).toBe('p2');
+    expect(getSession(session.id)?.owner_key).toBe('p2');
+  });
+
+  it('resolveSession defaults owner_key to OWNER_PERSON_KEY', () => {
+    createAgentGroup({ id: TEST_AG, name: 'Test', folder: TEST_AG, agent_provider: null, created_at: now() });
+    const { session } = resolveSession(TEST_AG, null, null, 'agent-shared');
+    expect(session.owner_key).toBe(OWNER_PERSON_KEY);
   });
 });
