@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
-import { isSafeAttachmentName, routeAgentMessage } from './agent-route.js';
+import { isSafeAttachmentName, resolveTargetSession, routeAgentMessage } from './agent-route.js';
 import { createDestination } from './db/agent-destinations.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup } from '../../db/index.js';
 import { createSession, updateSession } from '../../db/sessions.js';
@@ -492,5 +492,79 @@ describe('routeAgentMessage return-path', () => {
     const targetPath = path.join(sessionDir(B, SB.id), parsed.attachments[0].localPath);
     expect(fs.existsSync(targetPath)).toBe(true);
     expect(fs.readFileSync(targetPath, 'utf-8')).toBe('fake-pdf-bytes');
+  });
+});
+
+/**
+ * Owner-scoped a2a routing: agents are shared across people, memory is
+ * partitioned by `session.owner_key`. Routing must stay within one person —
+ * a source session owned by `p2` sending to a target group with both an
+ * owner-owned and a p2-owned active session must land in the p2 session.
+ */
+describe('resolveTargetSession owner-scoping', () => {
+  beforeEach(() => {
+    if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
+    fs.mkdirSync(TEST_DIR, { recursive: true });
+
+    const db = initTestDb();
+    runMigrations(db);
+  });
+
+  afterEach(() => {
+    closeDb();
+    if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
+  });
+
+  it('resolveTargetSession picks the session matching the source owner_key', () => {
+    const tgt = 'ag-greg';
+    createAgentGroup({ id: tgt, name: 'Greg', folder: 'greg', agent_provider: null, created_at: now() });
+    // Source agent group + its inbound DB folder (resolveTargetSession opens it).
+    createAgentGroup({ id: 'ag-jarvis', name: 'Jarvis', folder: 'jarvis', agent_provider: null, created_at: now() });
+    initSessionFolder('ag-jarvis', 's-src');
+
+    createSession({
+      id: 's-owner',
+      agent_group_id: tgt,
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: 'sergei',
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: now(),
+    });
+    createSession({
+      id: 's-p2',
+      agent_group_id: tgt,
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: 'p2',
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: now(),
+    });
+
+    const sourceSession = {
+      id: 's-src',
+      agent_group_id: 'ag-jarvis',
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: 'p2',
+      agent_provider: null,
+      status: 'active' as const,
+      container_status: 'stopped' as const,
+      last_active: null,
+      created_at: now(),
+    };
+    const picked = resolveTargetSession(
+      { id: 'm1', platform_id: tgt, content: '{}', in_reply_to: null },
+      sourceSession,
+      tgt,
+    );
+    expect(picked.owner_key).toBe('p2');
+    expect(picked.id).toBe('s-p2');
   });
 });

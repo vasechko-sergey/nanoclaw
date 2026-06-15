@@ -24,7 +24,8 @@ import path from 'path';
 import { isSafeAttachmentName } from '../../attachment-safety.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getInboundA2aHops, getInboundSourceSessionId, getMostRecentPeerSourceSessionId } from '../../db/session-db.js';
-import { getSession } from '../../db/sessions.js';
+import { getSession, getSessionsByAgentGroup } from '../../db/sessions.js';
+import { OWNER_PERSON_KEY } from '../../config.js';
 import { wakeContainer } from '../../container-runner.js';
 import { log } from '../../log.js';
 import { openInboundDb, resolveSession, sessionDir, writeSessionMessage } from '../../session-manager.js';
@@ -123,49 +124,72 @@ export interface RoutableAgentMessage {
 /**
  * Pick which session of `targetAgentGroupId` should receive this a2a message.
  *
- * Three layers, highest-fidelity first:
+ * SECURITY: agents are shared across people and memory is partitioned by
+ * `session.owner_key`. Routing MUST stay within one person — the source
+ * session's owner (`owner_key`, defaulting to OWNER_PERSON_KEY) determines
+ * which owner's target session may receive the message. A candidate owned by
+ * a different person is never returned; we fall through to an owner-scoped
+ * session (existing or freshly created) instead.
+ *
+ * Three layers, highest-fidelity first — each owner-gated:
  *
  * 1. **Direct return-path** (in_reply_to lookup): if the message is a reply
  *    (`in_reply_to` set), open the source agent's inbound DB and read the
  *    triggering row's `source_session_id`. That column was stamped when the
  *    original outbound was routed — it's the session that started the
- *    conversation, and replies should land there even when the target has
- *    multiple active sessions.
+ *    conversation, and replies should land there when it is active AND owned
+ *    by the same person.
  *
  * 2. **Peer-affinity fallback**: if (1) misses (in_reply_to is null or the
  *    referenced row isn't an a2a inbound), look up the most recent a2a
  *    inbound *from the target agent group* in source's inbound and use its
- *    `source_session_id`. The intuition: the last time this peer talked to
- *    me, which target session was driving? Route the reply there, since
- *    that's the session most plausibly in active conversation.
+ *    `source_session_id`. Same owner gate applies to the candidate.
  *
- * 3. **Newest active session**: legacy heuristic. Used when no prior a2a
- *    has been recorded with `source_session_id` (e.g. fresh installs,
- *    pre-migration data).
+ * 3. **Newest owner-scoped active session, else fresh**: pick the newest
+ *    active session of the target group owned by this person. If none exists,
+ *    create a fresh session stamped with this person's owner_key (never adopt
+ *    another person's session).
  */
-function resolveTargetSession(msg: RoutableAgentMessage, sourceSession: Session, targetAgentGroupId: string): Session {
+export function resolveTargetSession(
+  msg: RoutableAgentMessage,
+  sourceSession: Session,
+  targetAgentGroupId: string,
+): Session {
+  const ownerKey = sourceSession.owner_key || OWNER_PERSON_KEY;
   const srcDb = openInboundDb(sourceSession.agent_group_id, sourceSession.id);
   let originSessionId: string | null = null;
   try {
-    if (msg.in_reply_to) {
-      originSessionId = getInboundSourceSessionId(srcDb, msg.in_reply_to);
-    }
-    if (!originSessionId) {
-      // Peer-affinity fallback — covers the case where the container's
-      // outbound write didn't carry in_reply_to (e.g. legacy MCP send_message
-      // path, container running pre-fix code).
-      originSessionId = getMostRecentPeerSourceSessionId(srcDb, targetAgentGroupId);
-    }
+    if (msg.in_reply_to) originSessionId = getInboundSourceSessionId(srcDb, msg.in_reply_to);
+    if (!originSessionId) originSessionId = getMostRecentPeerSourceSessionId(srcDb, targetAgentGroupId);
   } finally {
     srcDb.close();
   }
+  // Return-path / peer-affinity candidate — accept ONLY if it belongs to the
+  // same person. A candidate owned by a different person would be a cross-user
+  // leak; fall through to an owner-scoped session instead.
   if (originSessionId) {
     const candidate = getSession(originSessionId);
-    if (candidate && candidate.agent_group_id === targetAgentGroupId && candidate.status === 'active') {
+    if (
+      candidate &&
+      candidate.agent_group_id === targetAgentGroupId &&
+      candidate.status === 'active' &&
+      (candidate.owner_key || OWNER_PERSON_KEY) === ownerKey
+    ) {
       return candidate;
     }
   }
-  return resolveSession(targetAgentGroupId, null, null, 'agent-shared').session;
+  // Newest active session of the target group OWNED BY THIS PERSON.
+  const owned = getSessionsByAgentGroup(targetAgentGroupId)
+    .filter((s) => s.status === 'active' && (s.owner_key || OWNER_PERSON_KEY) === ownerKey)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  if (owned[0]) return owned[0];
+  // None yet — create a fresh session stamped with this owner_key. Use
+  // 'per-thread' + null thread, NOT 'agent-shared': the agent-shared branch
+  // reuses the newest active session of the group regardless of owner (via
+  // findSessionByAgentGroup), which would adopt another person's session.
+  // With messagingGroupId=null and sessionMode='per-thread', resolveSession
+  // skips all reuse branches and creates a fresh session stamped with ownerKey.
+  return resolveSession(targetAgentGroupId, null, null, 'per-thread', ownerKey).session;
 }
 
 export async function routeAgentMessage(msg: RoutableAgentMessage, session: Session): Promise<void> {
