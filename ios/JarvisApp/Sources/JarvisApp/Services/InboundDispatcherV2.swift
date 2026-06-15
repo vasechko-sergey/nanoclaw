@@ -10,6 +10,7 @@ protocol ContextCoordinatorV2 {
     func reminders(window: String) async throws -> V2.JSONValue
     func focus() async throws -> V2.JSONValue
     func motion() async throws -> V2.JSONValue
+    func weather() async throws -> V2.JSONValue
 }
 
 enum InboundDispatcherFieldError: Error, CustomStringConvertible, Equatable {
@@ -58,6 +59,7 @@ actor InboundDispatcherV2 {
                             v = try await coordinator.reminders(window: remWindow)
                         case "focus": v = try await coordinator.focus()
                         case "motion": v = try await coordinator.motion()
+                        case "weather": v = try await coordinator.weather()
                         default: throw InboundDispatcherFieldError.unsupported
                         }
                         return (f, .success(v))

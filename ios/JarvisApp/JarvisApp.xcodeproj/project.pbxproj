@@ -115,6 +115,7 @@
 		B59052A141F8B390FC9E2EE3 /* MotionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9AFF3AB31D1875F645F0BCD /* MotionManager.swift */; };
 		B88D79F57FB96DD1EE3F983E /* MiniOrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6BD1E4ABB502A83CDD29883 /* MiniOrbView.swift */; };
 		BA63D1A5A6AFDD559D9911A0 /* HeaderStatusDotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C051ECA1BBC173253E5FF4 /* HeaderStatusDotTests.swift */; };
+		BACB34B4E549EBB2B18F2A9B /* WeatherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94C4FD7DC9B25A4D39410CAF /* WeatherManager.swift */; };
 		BBB120F4935F0F45BA0CB826 /* DeliveryChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5420CA4F9BA4C813FF9E90B /* DeliveryChecks.swift */; };
 		BF081A3591467809EC839078 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF10B991F6600D17760B644 /* SettingsView.swift */; };
 		BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */; };
@@ -245,6 +246,7 @@
 		907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewSmokeTests.swift; sourceTree = "<group>"; };
 		90C036FF712D8EB7735FCBC7 /* HealthStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthStripView.swift; sourceTree = "<group>"; };
 		9143ED9DD7B640862D468B63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		94C4FD7DC9B25A4D39410CAF /* WeatherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherManager.swift; sourceTree = "<group>"; };
 		9592AD08ED6648DF9CCC7149 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		97D8CEE69D33E1581710A543 /* ConversationStoreV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2.swift; sourceTree = "<group>"; };
 		9B226A1DA1BA45112E46E3E8 /* StateBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateBoardView.swift; sourceTree = "<group>"; };
@@ -571,6 +573,7 @@
 				A07EC072A68CDC8A092D7A94 /* URLSessionWebSocket.swift */,
 				F4800B2F3554B52EE041BEAD /* VoiceLoopController.swift */,
 				B17C0619207CE65994BF0385 /* WatchConnectivityBridge.swift */,
+				94C4FD7DC9B25A4D39410CAF /* WeatherManager.swift */,
 				703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */,
 				FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */,
 				294C253860B67EF3201B2370 /* WorkoutInbound.swift */,
@@ -841,6 +844,7 @@
 				B274F6D0E73327D5E6CFF8E6 /* V2.swift in Sources */,
 				7DC25537E427E9625F7151DA /* VoiceLoopController.swift in Sources */,
 				E0C11524F945712AD1DD5BED /* WatchConnectivityBridge.swift in Sources */,
+				BACB34B4E549EBB2B18F2A9B /* WeatherManager.swift in Sources */,
 				04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */,
 				EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */,
 				63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */,

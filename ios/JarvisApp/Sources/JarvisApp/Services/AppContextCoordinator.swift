@@ -148,5 +148,11 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
         guard let activity = await manager.currentActivity() else { return .object([:]) }
         return .object(["activity": .string(activity)])
     }
+
+    func weather() async throws -> V2.JSONValue {
+        guard let loc = await MainActor.run(body: { locationManager?.lastLocation }) else { return .object([:]) }
+        guard let w = await WeatherManager().current(at: loc) else { return .object([:]) }
+        return .object(["temp_c": .double((w.tempC * 10).rounded() / 10), "condition": .string(w.condition)])
+    }
 }
 

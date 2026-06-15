@@ -64,6 +64,10 @@ describe('ContextFieldEnum', () => {
   it('includes motion context field', () => {
     expect(ContextFieldEnum.options).toContain('motion');
   });
+
+  it('includes weather context field', () => {
+    expect(ContextFieldEnum.options).toContain('weather');
+  });
 });
 
 const baseFor = (over: Record<string, unknown>) => ({
