@@ -19,7 +19,9 @@ import { registerChannelAdapter } from '../../channel-registry.js';
 import { adapterRouteToAgent } from '../../../adapter-route.js';
 import { readEnvFile } from '../../../env.js';
 import { log } from '../../../log.js';
-import { DATA_DIR, GROUPS_DIR } from '../../../config.js';
+import { DATA_DIR, GROUPS_DIR, OWNER_PERSON_KEY } from '../../../config.js';
+import { resolveIosToken, upsertIosToken } from './token-registry.js';
+import { upsertUser, getUser } from '../../../modules/permissions/db/users.js';
 import {
   getMessagingGroup,
   getMessagingGroupByPlatform,
@@ -381,23 +383,26 @@ function createV2Adapter(): ChannelAdapter | null {
       description: c.description,
     })),
     validateToken: async (clientToken) => {
-      // Single shared token model — same as legacy ios-app.ts. The client also
-      // sends platform_id alongside the token; we trust it once the token is
-      // valid (this matches v1 semantics).
-      // Per v2 protocol, the auth payload carries `device_id`. The platform_id
-      // is derived as `${CHANNEL_TYPE}:${device_id}` — but ws-handler already
-      // calls validateToken with just `payload.token`, so we need to resolve
-      // the device id elsewhere. v2 protocol spec stores it in the auth
-      // envelope; ws-handler passes only token. For now the platform_id we
-      // return is derived from the token assumption: one token = one device.
-      //
-      // Until the spec is wired through ws-handler, accept any token that
-      // equals IOS_APP_TOKEN and return a deterministic platform_id.
-      // Phase 7 hardening (and per-device tokens) will replace this.
-      if (clientToken !== token) return null;
-      // No device discrimination — single-device install. Multi-device support
-      // requires ws-handler to surface payload.device_id to validateToken.
-      return `${CHANNEL_TYPE}:default`;
+      // Per-person token model: the bearer token resolves (via the ios_tokens
+      // registry) to a platform_id + person_key. Unknown tokens are rejected.
+      // The owner's legacy IOS_APP_TOKEN is seeded into the registry in setup()
+      // so the single-token install keeps authenticating with zero manual steps.
+      const identity = resolveIosToken(clientToken);
+      if (!identity) return null;
+      // Ensure a users row keyed by the platform_id carries this device's
+      // person_key, so resolvePersonKey(senderId=platform_id) → person_key
+      // and adapter-route stamps session.owner_key correctly.
+      const existing = getUser(identity.platform_id);
+      if (!existing || existing.person_key !== identity.person_key) {
+        upsertUser({
+          id: identity.platform_id,
+          kind: CHANNEL_TYPE,
+          display_name: existing?.display_name ?? null,
+          person_key: identity.person_key,
+          created_at: new Date().toISOString(),
+        });
+      }
+      return identity.platform_id;
     },
   });
 
@@ -408,6 +413,27 @@ function createV2Adapter(): ChannelAdapter | null {
 
     async setup(config: ChannelSetup) {
       cfg = config;
+
+      // Back-compat: map the legacy shared IOS_APP_TOKEN → the owner's existing
+      // platform_id so the owner's device keeps authenticating after the cutover.
+      // New people get their own tokens via scripts/mint-ios-token.ts. Seeded
+      // here (not in the factory body) because setup() runs at host start, after
+      // the central DB is initialized — so getDb() is guaranteed valid.
+      // Idempotent: upsertIosToken clears any prior row for this platform_id.
+      if (token) {
+        try {
+          upsertIosToken({
+            rawToken: token,
+            platformId: `${CHANNEL_TYPE}:default`,
+            personKey: OWNER_PERSON_KEY,
+            label: 'owner (legacy IOS_APP_TOKEN)',
+          });
+        } catch (err) {
+          logV2Warn('failed to seed owner ios token', {
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
 
       // Resolve the agent group folder wired to a device's messaging group.
       // Multi-agent fan-out: take highest-priority wiring (the order

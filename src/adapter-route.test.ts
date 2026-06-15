@@ -4,10 +4,20 @@ import os from 'os';
 import fs from 'fs';
 
 import { initTestDb, closeDb, createAgentGroup, createMessagingGroup } from './db/index.js';
+import { createMessagingGroupAgent } from './db/messaging-groups.js';
 import { runMigrations } from './db/migrations/index.js';
-import { findSessionForAgent } from './db/sessions.js';
+import { findSessionForAgent, getSession } from './db/sessions.js';
 import { adapterRouteToAgent } from './adapter-route.js';
 import type { InboundEvent } from './channels/adapter.js';
+// Importing the permissions module installs the real sender resolver + access
+// gate (module-level singletons on router.ts). vitest isolates test files, so
+// this does not leak to other files — but within THIS file every test now runs
+// with the real gate. The shared mg below is therefore `public` (gate
+// short-circuits to allowed); the owner_key test uses a `strict` mg + addMember
+// to exercise the membership path the iOS owner-stamping relies on.
+import './modules/permissions/index.js';
+import { upsertUser } from './modules/permissions/db/users.js';
+import { addMember } from './modules/permissions/db/agent-group-members.js';
 
 function makeEvent(platformId: string, threadId: string | null, text: string): InboundEvent {
   return {
@@ -43,7 +53,9 @@ describe('adapterRouteToAgent', () => {
       platform_id: 'ios:test',
       name: 'iOS test',
       is_group: 0,
-      unknown_sender_policy: 'strict',
+      // public so the now-installed access gate allows the gate-agnostic tests
+      // below (which send no senderId → null userId).
+      unknown_sender_policy: 'public',
       created_at: new Date().toISOString(),
       denied_at: null,
     });
@@ -101,5 +113,73 @@ describe('adapterRouteToAgent', () => {
     expect(res.delivered).toBe(true);
     const sess = findSessionForAgent('ag-uuid-style', 'mg-test', null);
     expect(sess).toBeDefined();
+  });
+
+  it('adapterRouteToAgent stamps session.owner_key from the sender person_key', async () => {
+    // Person p2's device: a users row keyed by the platform_id carries
+    // person_key='p2' (what validateToken's upsert guarantees at runtime).
+    upsertUser({
+      id: 'ios-app-v2:p2',
+      kind: 'ios-app-v2',
+      display_name: null,
+      person_key: 'p2',
+      created_at: new Date().toISOString(),
+    });
+    createAgentGroup({
+      id: 'ag-jarvis',
+      name: 'Jarvis',
+      folder: 'jarvis',
+      agent_provider: null,
+      created_at: new Date().toISOString(),
+    });
+    createMessagingGroup({
+      id: 'mg-p2',
+      channel_type: 'ios-app-v2',
+      platform_id: 'ios-app-v2:p2',
+      name: 'p2 device',
+      is_group: 0,
+      // strict → the real access gate requires membership; addMember below
+      // makes p2 a known member so the gate allows the message through.
+      unknown_sender_policy: 'strict',
+      created_at: new Date().toISOString(),
+      denied_at: null,
+    });
+    createMessagingGroupAgent({
+      id: 'mga-p2',
+      messaging_group_id: 'mg-p2',
+      agent_group_id: 'ag-jarvis',
+      engage_mode: 'pattern',
+      engage_pattern: '.',
+      sender_scope: 'all',
+      ignored_message_policy: 'drop',
+      session_mode: 'shared',
+      priority: 0,
+      created_at: new Date().toISOString(),
+    });
+    addMember({
+      user_id: 'ios-app-v2:p2',
+      agent_group_id: 'ag-jarvis',
+      added_by: null,
+      added_at: new Date().toISOString(),
+    });
+
+    const res = await adapterRouteToAgent(
+      {
+        channelType: 'ios-app-v2',
+        platformId: 'ios-app-v2:p2',
+        threadId: null,
+        message: {
+          id: 'm1',
+          kind: 'chat',
+          content: JSON.stringify({ text: 'hi', senderId: 'ios-app-v2:p2' }),
+          timestamp: new Date().toISOString(),
+        },
+      },
+      'ag-jarvis',
+      { wake: false },
+    );
+
+    expect(res.delivered).toBe(true);
+    expect(getSession(res.sessionId!)?.owner_key).toBe('p2');
   });
 });

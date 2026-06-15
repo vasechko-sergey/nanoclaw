@@ -11,6 +11,7 @@ import { recordDroppedMessage } from './db/dropped-messages.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
 import { getSession } from './db/sessions.js';
 import { log } from './log.js';
+import { resolvePersonKey } from './person-key.js';
 import { getAccessGate, getSenderResolver } from './router.js';
 import { resolveSession, writeOutboundDirect, writeSessionMessage } from './session-manager.js';
 import { killContainer, wakeContainer, clearSessionContinuation, isContainerRunning } from './container-runner.js';
@@ -92,7 +93,13 @@ export async function adapterRouteToAgent(
       // container and wipe the persisted `continuation:%` so the next wake
       // starts a brand-new conversation (fresh CLAUDE.md, no replayed context).
       // Clear AFTER the container exits so the dying writer can't re-persist it.
-      const { session: target } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
+      const { session: target } = resolveSession(
+        agentGroup.id,
+        mg.id,
+        event.threadId,
+        sessionMode,
+        resolvePersonKey(userId),
+      );
       const clearContinuation = (): void => clearSessionContinuation(target.agent_group_id, target.id);
       const wasRunning = isContainerRunning(target.id);
       killContainer(target.id, '/new command', clearContinuation);
@@ -115,7 +122,13 @@ export async function adapterRouteToAgent(
       };
     }
     if (gate.action === 'deny') {
-      const { session: denySession } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
+      const { session: denySession } = resolveSession(
+        agentGroup.id,
+        mg.id,
+        event.threadId,
+        sessionMode,
+        resolvePersonKey(userId),
+      );
       writeOutboundDirect(denySession.agent_group_id, denySession.id, {
         id: `deny-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',
@@ -133,7 +146,7 @@ export async function adapterRouteToAgent(
     }
   }
 
-  const { session } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode);
+  const { session } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode, resolvePersonKey(userId));
   const wake = opts.wake !== false;
 
   writeSessionMessage(session.agent_group_id, session.id, {
