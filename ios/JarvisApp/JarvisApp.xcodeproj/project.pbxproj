@@ -58,6 +58,7 @@
 		57417098BF2204803672D9CA /* SetRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24639DA24B7C49D4F19F2A1 /* SetRowView.swift */; };
 		57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */; };
 		59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC64D6340917C38B04005455 /* SetLogQueueTests.swift */; };
+		5BE8DD4BBBBA8C9400311DF5 /* OrbHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9EEB60553133C1923FEBB57 /* OrbHub.swift */; };
 		5D14A252DCD5E3C28D7E12A4 /* GreetingBank.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */; };
 		5ED5035D7E3D50CCD815D5C7 /* HeaderStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */; };
 		5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0FFCD560E41761030820EB /* MessageTimeline.swift */; };
@@ -239,6 +240,7 @@
 		A08C410E0AB3268B2BF632EB /* ExerciseImageCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseImageCacheTests.swift; sourceTree = "<group>"; };
 		A74E0FAB0E7A0CB250C4C306 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateModelTests.swift; sourceTree = "<group>"; };
+		A9EEB60553133C1923FEBB57 /* OrbHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbHub.swift; sourceTree = "<group>"; };
 		AA42D336E93B35827195BBBB /* WorkoutModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutModelsTests.swift; sourceTree = "<group>"; };
 		ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionEngine.swift; sourceTree = "<group>"; };
 		AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbVoiceView.swift; sourceTree = "<group>"; };
@@ -396,6 +398,7 @@
 				8F8D87E938816ECB8B161DBD /* ContentView.swift */,
 				E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */,
 				B254569C52137C9E716B3DCD /* OrbHomeView.swift */,
+				A9EEB60553133C1923FEBB57 /* OrbHub.swift */,
 				AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */,
 				3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */,
 				3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */,
@@ -775,6 +778,7 @@
 				5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */,
 				B88D79F57FB96DD1EE3F983E /* MiniOrbView.swift in Sources */,
 				88708A700369B47D5472A1C2 /* OrbHomeView.swift in Sources */,
+				5BE8DD4BBBBA8C9400311DF5 /* OrbHub.swift in Sources */,
 				1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */,
 				E653E1C200C705930FF7958A /* OrbView.swift in Sources */,
 				E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */,

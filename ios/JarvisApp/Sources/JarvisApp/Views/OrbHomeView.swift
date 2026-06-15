@@ -14,7 +14,6 @@ struct OrbHomeView: View {
     @StateObject private var stateService = StateService()
     @State private var showStateBoard = false
 
-    @State private var showSatellites = false
     @State private var showVoiceFullscreen = false
 
     @State private var rightDrawerOpen = false
@@ -47,8 +46,6 @@ struct OrbHomeView: View {
             .font(.system(size: Theme.scaled(11), weight: .light))
             .tracking(2)
             .foregroundStyle(Theme.accentMedium.opacity(0.7))
-            .opacity(showSatellites ? 0.3 : 1)
-            .animation(.easeOut(duration: 0.2), value: showSatellites)
             .padding(.bottom, Theme.scaled(12))
             .accessibilityIdentifier("home-greeting")
     }
@@ -57,40 +54,48 @@ struct OrbHomeView: View {
         SuggestionEngine.suggestions(count: 4)
     }
 
-    // Action satellites (voice, text, camera, photo, file) — shown on long press
-    private var actionSatellites: [(icon: String, label: String, isChat: Bool, action: () -> Void)] {
-        var items: [(String, String, Bool, () -> Void)] = [
-            ("mic.fill", "Голос", false, {
-                onStartVoiceChat()
-            }),
-            ("keyboard", "Текст", false, {
-                onStartChat(nil)
-            }),
-        ]
-        if cameraAvailable {
-            items.append(("camera", "Камера", false, { showCamera = true }))
+    // Default ring satellites — always visible. Continues active chat when one exists.
+    private var satellites: [OrbSatellite] {
+        var items: [OrbSatellite] = contextualSuggestions.map { text in
+            OrbSatellite(
+                id: text,
+                icon: SuggestionEngine.icon(for: text),
+                label: text,
+                accent: Theme.accent,
+                isHighlighted: false,
+                action: {
+                    Theme.hapticSend()
+                    SuggestionEngine.recordUsage(text)
+                    onStartChat(text)
+                }
+            )
         }
-        items.append(contentsOf: [
-            ("photo", "Фото", false, { showPhotos = true }),
-            ("doc", "Файл", false, { showDoc = true }),
-        ])
+        if hasActiveChat {
+            items.append(OrbSatellite(
+                id: "Продолжить",
+                icon: "bubble.left.fill",
+                label: "Продолжить",
+                accent: Theme.accent,
+                isHighlighted: true,
+                action: { onContinueChat() }
+            ))
+        }
         return items
     }
 
-    // Default satellites — always visible. Continues active chat when one exists.
-    private var defaultSatellites: [(icon: String, label: String, isChat: Bool, action: () -> Void)] {
-        var items: [(String, String, Bool, () -> Void)] = contextualSuggestions.map { text in
-            (SuggestionEngine.icon(for: text), text, false, {
-                Theme.hapticSend()
-                SuggestionEngine.recordUsage(text)
-                onStartChat(text)
-            })
+    // Action ring satellites (voice, text, camera, photo, file) — revealed on long-press.
+    private var actionSatellites: [OrbSatellite] {
+        var items: [OrbSatellite] = [
+            OrbSatellite(id: "Голос",   icon: "mic.fill",  label: "Голос",  accent: Theme.accent, isHighlighted: false, action: { onStartVoiceChat() }),
+            OrbSatellite(id: "Текст",   icon: "keyboard",  label: "Текст",  accent: Theme.accent, isHighlighted: false, action: { onStartChat(nil) }),
+        ]
+        if cameraAvailable {
+            items.append(OrbSatellite(id: "Камера", icon: "camera", label: "Камера", accent: Theme.accent, isHighlighted: false, action: { showCamera = true }))
         }
-        if hasActiveChat {
-            items.append(("bubble.left.fill", "Продолжить", true, {
-                onContinueChat()
-            }))
-        }
+        items.append(contentsOf: [
+            OrbSatellite(id: "Фото", icon: "photo", label: "Фото", accent: Theme.accent, isHighlighted: false, action: { showPhotos = true }),
+            OrbSatellite(id: "Файл", icon: "doc",   label: "Файл", accent: Theme.accent, isHighlighted: false, action: { showDoc   = true }),
+        ])
         return items
     }
 
@@ -104,8 +109,12 @@ struct OrbHomeView: View {
                 VStack(spacing: 0) {
                     Spacer()
 
-                    orbCluster
-                        .offset(y: -Theme.headerHeight)
+                    OrbHub(
+                        satellites: satellites,
+                        actionSatellites: actionSatellites,
+                        onOrbTap: { showVoiceFullscreen = true }
+                    )
+                    .offset(y: -Theme.headerHeight)
 
                     Spacer()
 
@@ -237,141 +246,6 @@ struct OrbHomeView: View {
         }
     }
 
-    // MARK: – Orb cluster
-
-    private var orbCluster: some View {
-        ZStack {
-            // Default satellites (suggestions) — visible when action satellites are hidden
-            ForEach(Array(defaultSatellites.enumerated()), id: \.offset) { index, sat in
-                let count = defaultSatellites.count
-                let angle = -.pi / 2 + (2 * .pi / Double(count)) * Double(index)
-                let radius = Theme.scaled(defaultSatellites.count > 6 ? 150 : 130)
-                let x = cos(angle) * radius
-                let y = sin(angle) * radius
-
-                HomeSatelliteOrb(
-                    icon: sat.icon,
-                    label: sat.label,
-                    isChat: sat.isChat
-                ) {
-                    sat.action()
-                }
-                .offset(x: showSatellites ? 0 : x, y: showSatellites ? 0 : y)
-                .scaleEffect(showSatellites ? 0.3 : 1.0)
-                .opacity(showSatellites ? 0 : 1.0)
-                .allowsHitTesting(!showSatellites)
-                .animation(
-                    .spring(duration: 0.4, bounce: 0.25).delay(Double(index) * 0.06),
-                    value: showSatellites
-                )
-            }
-
-            // Action satellites (mic, camera, photo, file) — shown on long press
-            ForEach(Array(actionSatellites.enumerated()), id: \.offset) { index, sat in
-                let count = actionSatellites.count
-                let angle = -.pi / 2 + (2 * .pi / Double(count)) * Double(index)
-                let radius = Theme.scaled(defaultSatellites.count > 6 ? 150 : 130)
-                let x = cos(angle) * radius
-                let y = sin(angle) * radius
-
-                HomeSatelliteOrb(
-                    icon: sat.icon,
-                    label: sat.label,
-                    isChat: sat.isChat
-                ) {
-                    sat.action()
-                    withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
-                        showSatellites = false
-                    }
-                }
-                .offset(x: showSatellites ? x : 0, y: showSatellites ? y : 0)
-                .scaleEffect(showSatellites ? 1.0 : 0.3)
-                .opacity(showSatellites ? 1.0 : 0)
-                .allowsHitTesting(showSatellites)
-                .animation(
-                    // Skip animation in UITesting so satellites jump to final position
-                    // immediately — lets XCUITest tap them at the correct coordinate.
-                    JarvisApp.isUITesting ? nil : .spring(duration: 0.4, bounce: 0.25).delay(Double(index) * 0.06),
-                    value: showSatellites
-                )
-            }
-
-            // Central orb
-            VStack(spacing: Theme.scaled(8)) {
-                ZStack {
-                    OrbView(size: Theme.orbSize, mood: showSatellites ? .heroic : .welcoming)
-                        .scaleEffect(showSatellites ? 1.08 : 1.0)
-                        .animation(.spring(duration: 0.3), value: showSatellites)
-                        .onTapGesture {
-                            if showSatellites {
-                                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
-                                    showSatellites = false
-                                }
-                            } else {
-                                Theme.hapticSend()
-                                showVoiceFullscreen = true
-                            }
-                        }
-                        .onLongPressGesture(minimumDuration: 0.3) {
-                            Theme.hapticMedium()
-                            withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
-                                showSatellites.toggle()
-                            }
-                        }
-                        .accessibilityLabel("Начать диалог")
-                        .accessibilityIdentifier("home-orb")
-
-                    // UI-test-only: reliable Button tap target that opens the voice
-                    // fullscreen. The OrbView's `.onTapGesture` is not always picked
-                    // up by XCUITest (TimelineView + custom rendering + parent
-                    // identifier propagation interfere with hit-test discovery).
-                    if JarvisApp.isUITesting && !showSatellites {
-                        Button(action: {
-                            showVoiceFullscreen = true
-                        }) {
-                            Rectangle()
-                                .fill(Color.white.opacity(0.01))
-                                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                        }
-                        .accessibilityLabel("uitest-home-orb")
-                        .accessibilityIdentifier("home-orb-uitest")
-                    }
-                }
-            }
-
-            // UI-test-only: tap target to reveal action satellites.
-            // Offset off the central orb so taps on the orb itself (which open the
-            // voice fullscreen) are not intercepted by this overlay. Only present
-            // when satellites are hidden — once visible, action satellites must
-            // receive taps directly.
-            if JarvisApp.isUITesting && !showSatellites {
-                Button(action: {
-                    withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
-                        showSatellites = true
-                    }
-                }) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.01))
-                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-                }
-                .accessibilityLabel("Toggle satellite menu")
-                .accessibilityIdentifier("orb-satellites-toggle")
-                // Park near the top of the cluster, clear of the central orb's hit area.
-                .offset(y: -Theme.scaled(170))
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: Theme.scaled(360))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if showSatellites {
-                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
-                    showSatellites = false
-                }
-            }
-        }
-    }
-
     // MARK: – Drawer gestures
 
     private static let edgeSwipeZone: CGFloat = 40
@@ -425,61 +299,3 @@ struct OrbHomeView: View {
 
 }
 
-// MARK: – Home Satellite Orb
-
-private struct HomeSatelliteOrb: View {
-    let icon: String
-    let label: String
-    var isChat: Bool = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: Theme.scaled(6)) {
-                ZStack {
-                    // Outer glow
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    Theme.accent.opacity(isChat ? 0.12 : 0.06),
-                                    Color.clear
-                                ],
-                                center: .center,
-                                startRadius: Theme.scaled(20),
-                                endRadius: Theme.scaled(36)
-                            )
-                        )
-                        .frame(width: Theme.scaled(60), height: Theme.scaled(60))
-
-                    // Main circle
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Theme.surface.opacity(0.9),
-                                    Theme.background.opacity(0.7)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: Theme.scaled(50), height: Theme.scaled(50))
-                        .overlay(
-                            Circle().stroke(
-                                isChat ? Theme.accent.opacity(0.5) : Theme.accent.opacity(0.15),
-                                lineWidth: Theme.lineHairline
-                            )
-                        )
-                    Image(systemName: icon)
-                        .font(.system(size: Theme.scaled(20), weight: .light))
-                        .foregroundStyle(isChat ? Theme.accent : Theme.accentMedium.opacity(0.8))
-                }
-                Text(label)
-                    .font(.system(size: Theme.scaled(10), weight: .medium))
-                    .foregroundStyle(Theme.accentMedium.opacity(0.7))
-            }
-        }
-        .accessibilityLabel(label)
-    }
-}
