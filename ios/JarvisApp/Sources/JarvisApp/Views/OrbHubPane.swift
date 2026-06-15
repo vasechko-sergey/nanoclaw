@@ -78,6 +78,8 @@ struct OrbHubPane: View {
             // Health strip — wired to StateService; popover presents StateBoardView.
             HealthStripView(levels: stateService.state?.levels)
                 .onTapGesture { showStateBoard = true }
+                .accessibilityLabel("Здоровье")
+                .accessibilityAddTraits(.isButton)
                 .padding(.bottom, Theme.scaled(8))
         }
         .background(Theme.background)

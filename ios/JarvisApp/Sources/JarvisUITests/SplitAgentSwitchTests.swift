@@ -6,13 +6,10 @@ final class SplitAgentSwitchTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = false
+        XCUIDevice.shared.orientation = .landscapeLeft
     }
 
     func testTappingAgentSatelliteSwapsActiveAgent() {
-        // Orientation must be set before launch so LayoutMode.resolve sees
-        // regular-width on first render and returns .split immediately.
-        XCUIDevice.shared.orientation = .landscapeLeft
-
         let app = XCUIApplication()
         app.launchArguments += ["--uitesting"]
         app.launch()
