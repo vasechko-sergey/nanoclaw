@@ -37,12 +37,13 @@ describe('bootstrapTrio', () => {
   });
   afterEach(() => closeDb());
 
-  it('creates all four agent groups on first run', () => {
+  it('creates all five agent groups on first run', () => {
     bootstrapTrio();
     expect(getAgentGroupByFolder('jarvis')).toBeDefined();
     expect(getAgentGroupByFolder('payne')).toBeDefined();
     expect(getAgentGroupByFolder('greg')).toBeDefined();
     expect(getAgentGroupByFolder('gordon')).toBeDefined();
+    expect(getAgentGroupByFolder('scrooge')).toBeDefined();
   });
 
   it('is idempotent on repeated runs', () => {
@@ -52,7 +53,7 @@ describe('bootstrapTrio', () => {
     expect(getAllAgentGroups().length).toBe(firstCount);
   });
 
-  it('wires all three to any ios-app-v2 messaging group and eager-creates one session per agent', () => {
+  it('wires every team agent to any ios-app-v2 messaging group and eager-creates one session per agent', () => {
     createMessagingGroup({
       id: 'mg-ios',
       channel_type: 'ios-app-v2',
@@ -67,13 +68,13 @@ describe('bootstrapTrio', () => {
     const wired = getMessagingGroupAgents('mg-ios')
       .map((r) => r.agent_group_id)
       .sort();
-    expect(wired).toEqual(['gordon', 'greg', 'jarvis', 'payne']);
-    for (const slug of ['jarvis', 'payne', 'greg', 'gordon']) {
+    expect(wired).toEqual(['gordon', 'greg', 'jarvis', 'payne', 'scrooge']);
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon', 'scrooge']) {
       expect(findSessionForAgent(slug, 'mg-ios', null)).toBeDefined();
     }
   });
 
-  it('writes a trigger=0 bootstrap inbound for payne and greg but not jarvis', () => {
+  it('writes a trigger=0 bootstrap inbound for payne, greg, gordon, and scrooge but not jarvis', () => {
     createMessagingGroup({
       id: 'mg-ios2',
       channel_type: 'ios-app-v2',
@@ -86,7 +87,7 @@ describe('bootstrapTrio', () => {
     });
     bootstrapTrio();
     const agents = writeCalls.map((c) => c.agentGroupId).sort();
-    expect(agents).toEqual(['gordon', 'greg', 'payne']);
+    expect(agents).toEqual(['gordon', 'greg', 'payne', 'scrooge']);
     for (const c of writeCalls) {
       expect(c.trigger).toBe(0);
     }
@@ -125,12 +126,12 @@ describe('bootstrapTrio', () => {
       denied_at: null,
     });
     bootstrapTrio();
-    for (const slug of ['jarvis', 'payne', 'greg', 'gordon']) {
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon', 'scrooge']) {
       expect(getDestinationByTarget(slug, 'channel', 'mg-ios4')).toBeDefined();
     }
     // Idempotent: a second bootstrap must not throw on the PK or duplicate.
     bootstrapTrio();
-    for (const slug of ['jarvis', 'payne', 'greg', 'gordon']) {
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon', 'scrooge']) {
       expect(getDestinationByTarget(slug, 'channel', 'mg-ios4')).toBeDefined();
     }
   });
