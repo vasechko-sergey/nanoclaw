@@ -336,6 +336,15 @@ struct ChatView: View {
                 }
             }
             .ignoresSafeArea()
+
+            // ⌘↩ — send shortcut, embedded (split canvas) only.
+            // Placed here so sendCurrent() is in scope; disabled in fullscreen
+            // so the plain-Return / enterToSend behaviour is unchanged.
+            Button("") { sendCurrent() }
+                .keyboardShortcut(.return, modifiers: .command)
+                .opacity(0)
+                .accessibilityHidden(true)
+                .disabled(!embedded)
         }
         .fullScreenCover(item: Binding(
             get: { fullScreenImage.map { IdentifiableImage(image: $0) } },
