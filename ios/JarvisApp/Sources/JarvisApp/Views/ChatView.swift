@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 private struct IdentifiableImage: Identifiable {
     let id = UUID()
@@ -421,6 +422,43 @@ struct ChatView: View {
         }
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("chat-view")
+        // MARK: – Drag & drop onto the chat canvas (iPad pointer / Files)
+        // Accepts images (NSItemProviderReading via UIImage) and file URLs.
+        // Conversion mirrors AttachmentBar exactly: DraftAttachment.image / .file
+        // so the rest of the send flow (AttachmentChips → sendCurrent) is unchanged.
+        .dropDestination(for: URL.self) { urls, _ in
+            var added = false
+            for url in urls {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                // Try to load as image first; fall back to generic file.
+                if let data = try? Data(contentsOf: url),
+                   let img = UIImage(data: data),
+                   let draft = DraftAttachment.image(img, name: url.lastPathComponent) {
+                    drafts.append(draft)
+                    added = true
+                } else if let data = try? Data(contentsOf: url) {
+                    let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                        ?? "application/octet-stream"
+                    drafts.append(.file(data: data, name: url.lastPathComponent, mimeType: mime))
+                    added = true
+                }
+            }
+            if added { Theme.hapticSend() }
+            return added
+        }
+        .dropDestination(for: Data.self) { dataItems, _ in
+            var added = false
+            for data in dataItems {
+                if let img = UIImage(data: data),
+                   let draft = DraftAttachment.image(img, name: "dropped-image-\(Int(Date().timeIntervalSince1970)).jpg") {
+                    drafts.append(draft)
+                    added = true
+                }
+            }
+            if added { Theme.hapticSend() }
+            return added
+        }
     }
 
     // MARK: – Header

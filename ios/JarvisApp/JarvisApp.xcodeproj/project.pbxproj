@@ -38,6 +38,7 @@
 		3F712956E032728A955B67F8 /* HealthSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A055AF8989128A047D605C /* HealthSync.swift */; };
 		3F93C312099CA744A20CADA7 /* ConversationStoreV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97D8CEE69D33E1581710A543 /* ConversationStoreV2.swift */; };
 		3F96CFAAAC9E74E605B6D4B4 /* WebSocketClientV2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7AD4257FEF8E2B0DDBFA065 /* WebSocketClientV2Tests.swift */; };
+		3FB74219A130B8DADBCCB823 /* AgentShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 156CBE65A04435EB7C56DC6D /* AgentShortcuts.swift */; };
 		40BD7B10477CDAA66330969D /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A9578A316F0AB1F8247B95 /* Theme.swift */; };
 		42E66BF9F453D484DC371DC0 /* StateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4212E96E265F732C0CA6A0F /* StateModel.swift */; };
 		448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */; };
@@ -99,6 +100,7 @@
 		A19C0788C26EB264554E9F0B /* HomeViewSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */; };
 		A2C29BF4D8C4AEF8C0B41128 /* HealthBackgroundTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B40F32A70A80FF764EB592B /* HealthBackgroundTask.swift */; };
 		A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */; };
+		A58FEC7214597EA533C7C183 /* KeyboardShortcutMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B5A1DC6D7F28DEC66D92CAA /* KeyboardShortcutMapTests.swift */; };
 		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
 		AB14A705BBEB71BA032EC292 /* AppV2Bootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */; };
 		AFFBB9A3F440BF8A16D6FDCB /* AppV2BootstrapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */; };
@@ -167,6 +169,7 @@
 		0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbView.swift; sourceTree = "<group>"; };
 		0A66B39DC64995E5CA108A1B /* SplitAgentSwitchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitAgentSwitchTests.swift; sourceTree = "<group>"; };
 		0B48F479168B41727E62B105 /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
+		156CBE65A04435EB7C56DC6D /* AgentShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentShortcuts.swift; sourceTree = "<group>"; };
 		17900485123C543C21298F5A /* ExerciseImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseImageCache.swift; sourceTree = "<group>"; };
 		18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppV2BootstrapTests.swift; sourceTree = "<group>"; };
 		1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerOverlay.swift; sourceTree = "<group>"; };
@@ -179,6 +182,7 @@
 		2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HappyPathE2ETests.swift; sourceTree = "<group>"; };
 		2AF10B991F6600D17760B644 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2B40F32A70A80FF764EB592B /* HealthBackgroundTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBackgroundTask.swift; sourceTree = "<group>"; };
+		2B5A1DC6D7F28DEC66D92CAA /* KeyboardShortcutMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutMapTests.swift; sourceTree = "<group>"; };
 		2C635D17DBD6BF940C89E024 /* AttachmentBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentBar.swift; sourceTree = "<group>"; };
 		2D4B230E77EB04B73239A542 /* JarvisUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JarvisUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoopControllerTests.swift; sourceTree = "<group>"; };
@@ -375,6 +379,7 @@
 		40A764E96CD86A05C73ED4D1 /* Utility */ = {
 			isa = PBXGroup;
 			children = (
+				156CBE65A04435EB7C56DC6D /* AgentShortcuts.swift */,
 				3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */,
 				FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */,
 				5657B7C08E3A0B9E8E34233C /* LayoutMode.swift */,
@@ -454,6 +459,7 @@
 				C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */,
 				F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */,
 				3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */,
+				2B5A1DC6D7F28DEC66D92CAA /* KeyboardShortcutMapTests.swift */,
 				80BAD908A7CA1F4959432406 /* LayoutModeTests.swift */,
 				834E333F228FB23CEB38FB63 /* MessageMappingTests.swift */,
 				30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */,
@@ -749,6 +755,7 @@
 				7D71BB9752F92386B2FE07AA /* ActiveAgentState.swift in Sources */,
 				50C5C4BB9518C430E4CC3188 /* AgentIdentity.swift in Sources */,
 				FFDDDEDFC089BCE11984ECB6 /* AgentPickerInline.swift in Sources */,
+				3FB74219A130B8DADBCCB823 /* AgentShortcuts.swift in Sources */,
 				1091D28461A2EBCE460F25DD /* AppContextCoordinator.swift in Sources */,
 				F41988AFB951764121A3B9D6 /* AppCoordinator.swift in Sources */,
 				6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */,
@@ -853,6 +860,7 @@
 				C00FE8906E1739C80BA7568D /* HealthSyncTests.swift in Sources */,
 				57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */,
 				56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */,
+				A58FEC7214597EA533C7C183 /* KeyboardShortcutMapTests.swift in Sources */,
 				A05DBAD3F0A3B7F74751BFB6 /* LayoutModeTests.swift in Sources */,
 				44C86F549EEFDBA9707EDAF3 /* MessageMappingTests.swift in Sources */,
 				8531C905F9FA67452EC50A43 /* MessageTimelineTests.swift in Sources */,

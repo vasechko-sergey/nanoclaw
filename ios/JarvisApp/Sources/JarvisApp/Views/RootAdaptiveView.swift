@@ -68,6 +68,7 @@ private struct SplitRootView: View {
     var coordinator: AppCoordinator
     var width: CGFloat
 
+    @Environment(ActiveAgentState.self) private var active
     @State private var showProfile = false
 
     /// Hub pane width: 38% of available width, clamped to [360, 460] pt.
@@ -108,6 +109,30 @@ private struct SplitRootView: View {
                     }
                 }
             )
+        }
+        // MARK: – Hardware keyboard shortcuts (iPad)
+        // Hidden zero-opacity buttons carrying .keyboardShortcut so that UIKit
+        // responder chain picks them up regardless of which subview has focus.
+        // .accessibilityHidden(true) keeps them out of VoiceOver.
+        .background {
+            Group {
+                // ⌘1…⌘N — switch to agent N (by allCases order)
+                ForEach(1...AgentIdentity.allCases.count, id: \.self) { n in
+                    Button("") {
+                        if let a = AgentShortcuts.agent(forNumber: n) {
+                            active.active = a
+                        }
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
+                }
+                // ⌘N — new conversation for the currently-active agent
+                Button("") {
+                    coordinator.ws.sendNewConversation(agentId: active.active.rawValue)
+                }
+                .keyboardShortcut("n", modifiers: .command)
+            }
+            .opacity(0)
+            .accessibilityHidden(true)
         }
     }
 }

@@ -258,5 +258,7 @@ struct HomeSatelliteOrb: View {
             }
         }
         .accessibilityLabel(label)
+        // Pointer hover lift — harmless on touch-only devices.
+        .hoverEffect(.lift)
     }
 }
