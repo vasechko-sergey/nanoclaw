@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { projectPublicProfiles } from './public-profiles.js';
+import { projectPublicProfiles, projectAllPublicProfiles } from './public-profiles.js';
 
 let tmp: string;
 
@@ -52,5 +52,45 @@ describe('projectPublicProfiles', () => {
     writePublic('greg', 'v2');
     expect(projectPublicProfiles(tmp)).toBe(1);
     expect(fs.readFileSync(path.join(tmp, 'global', 'profiles', 'greg.md'), 'utf8')).toBe('v2');
+  });
+});
+
+describe('projectAllPublicProfiles', () => {
+  it('projects each person into their own global/profiles with per-person isolation', () => {
+    // Set up user-memory base with two person dirs
+    const userMemoryBase = path.join(tmp, 'user-memory');
+    fs.mkdirSync(userMemoryBase, { recursive: true });
+
+    // owner/greg/memories/public.md
+    const ownerGregDir = path.join(userMemoryBase, 'owner', 'greg', 'memories');
+    fs.mkdirSync(ownerGregDir, { recursive: true });
+    fs.writeFileSync(path.join(ownerGregDir, 'public.md'), '# greg owner\nreadiness: 80\n');
+
+    // p2/greg/memories/public.md — different content, same agent folder name
+    const p2GregDir = path.join(userMemoryBase, 'p2', 'greg', 'memories');
+    fs.mkdirSync(p2GregDir, { recursive: true });
+    fs.writeFileSync(path.join(p2GregDir, 'public.md'), '# greg p2\nreadiness: 60\n');
+
+    const n = projectAllPublicProfiles(userMemoryBase);
+    // Two fragments written (one per person)
+    expect(n).toBe(2);
+
+    // owner sees only owner's content
+    const ownerProfile = fs.readFileSync(path.join(userMemoryBase, 'owner', 'global', 'profiles', 'greg.md'), 'utf8');
+    expect(ownerProfile).toBe('# greg owner\nreadiness: 80\n');
+
+    // p2 sees only p2's content — proving per-person isolation
+    const p2Profile = fs.readFileSync(path.join(userMemoryBase, 'p2', 'global', 'profiles', 'greg.md'), 'utf8');
+    expect(p2Profile).toBe('# greg p2\nreadiness: 60\n');
+
+    // p2's content never leaked into owner's dir
+    expect(ownerProfile).not.toContain('p2');
+    // owner's content never leaked into p2's dir
+    expect(p2Profile).not.toContain('owner');
+  });
+
+  it('returns 0 when user-memory base does not exist', () => {
+    const missing = path.join(tmp, 'nonexistent-user-memory');
+    expect(projectAllPublicProfiles(missing)).toBe(0);
   });
 });

@@ -22,6 +22,30 @@ function sha(s: string): string {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
+/**
+ * Fan every person's per-agent public.md into THAT person's global/profiles,
+ * iterating the person dirs under `data/user-memory/`. Each person dir has the
+ * same shape as `groups/` (<agentFolder>/memories/public.md + global/profiles/),
+ * so we reuse projectPublicProfiles per person. Returns total fragments written.
+ *
+ * Per-person isolation: a person's public.md only ever lands in their OWN
+ * global/profiles — projectPublicProfiles is scoped to each person's root.
+ */
+export function projectAllPublicProfiles(userMemoryBase: string): number {
+  let persons: fs.Dirent[];
+  try {
+    persons = fs.readdirSync(userMemoryBase, { withFileTypes: true });
+  } catch {
+    return 0; // user-memory dir doesn't exist yet (pre-migration) — no-op
+  }
+  let written = 0;
+  for (const p of persons) {
+    if (!p.isDirectory()) continue;
+    written += projectPublicProfiles(path.join(userMemoryBase, p.name));
+  }
+  return written;
+}
+
 export function projectPublicProfiles(groupsDir: string): number {
   const profilesDir = path.join(groupsDir, 'global', 'profiles');
   let entries: fs.Dirent[];
