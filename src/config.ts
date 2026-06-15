@@ -12,12 +12,14 @@ const envConfig = readEnvFile([
   'CREDENTIAL_PROXY_PORT',
   'TZ',
   'OWNER_PERSON_KEY',
+  'HEALTH_AGENT_FOLDER',
 ]);
 
 export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER || envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
 export const OWNER_PERSON_KEY = process.env.OWNER_PERSON_KEY || envConfig.OWNER_PERSON_KEY || 'owner';
+export const HEALTH_AGENT_FOLDER = process.env.HEALTH_AGENT_FOLDER || envConfig.HEALTH_AGENT_FOLDER || 'greg';
 
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
