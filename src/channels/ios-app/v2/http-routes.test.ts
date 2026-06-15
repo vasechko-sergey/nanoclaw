@@ -4,13 +4,20 @@
 // bound to port 0 — no ws server, no env vars, no real DB. The handler is
 // the same one `setup()` wires into the live adapter, so coverage here is
 // representative of production behavior.
+//
+// Identity for every protected route comes from the bearer token via the
+// `resolveToken` stub — `tok-p2` resolves to person `p2`, everything else is
+// unknown (→ 401). Health uploads and /ios/state then resolve to that
+// person's user-memory tree under the real DATA_DIR (repo `data/`), so the
+// tests assert against `data/user-memory/p2/...` and clean it up in afterEach.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { DATA_DIR } from '../../../config.js';
+import { userMemoryRoot, userGlobalRoot } from '../../../user-memory.js';
 import { openTransportDb } from './transport-db.js';
 import { HealthRequestsStore } from './health-requests-store.js';
 import { createIosHttpHandler } from './http-handler.js';
@@ -20,23 +27,21 @@ import type { ChannelSetup } from '../../adapter.js';
 interface Harness {
   url: string;
   store: HealthRequestsStore;
-  groupsDir: string;
   inboundCalls: Array<{ pid: string; tid: string | null; msg: Record<string, unknown> }>;
   cfg: { current: ChannelSetup | null };
   close: () => Promise<void>;
 }
 
-const TOKEN = 'test-token';
+// Bearer token → identity. Only `tok-p2` is known (person `p2`); anything
+// else resolves to null (→ 401). Identity NEVER comes from body.platformId.
+const TOKEN = 'tok-p2';
+const PERSON = 'p2';
+const PLATFORM_ID = 'ios-app-v2:p2';
+const HEALTH_AGENT = 'greg';
 
-async function bootHarness(
-  opts: {
-    resolveAgentFolderForPlatform?: (pid: string) => string | null;
-    healthOverrideDir?: string | null;
-  } = {},
-): Promise<Harness> {
+async function bootHarness(): Promise<Harness> {
   const db = openTransportDb(':memory:');
   const store = new HealthRequestsStore(db);
-  const groupsDir = mkdtempSync(join(tmpdir(), 'ios-app-v2-routes-'));
   const inboundCalls: Harness['inboundCalls'] = [];
   const cfg: { current: ChannelSetup | null } = {
     current: {
@@ -48,12 +53,9 @@ async function bootHarness(
   };
 
   const handler = createIosHttpHandler({
-    token: TOKEN,
+    resolveToken: (raw) => (raw === TOKEN ? { platform_id: PLATFORM_ID, person_key: PERSON } : null),
     healthRequestsStore: store,
-    resolveAgentFolderForPlatform:
-      opts.resolveAgentFolderForPlatform ?? ((pid) => (pid === 'ios-app-v2:dev-1' ? 'jarvis' : null)),
-    groupsDir,
-    healthOverrideDir: opts.healthOverrideDir ?? null,
+    healthAgentFolder: HEALTH_AGENT,
     getChannelSetup: () => cfg.current,
     log: () => {},
     logWarn: () => {},
@@ -66,13 +68,11 @@ async function bootHarness(
   return {
     url: `http://127.0.0.1:${port}`,
     store,
-    groupsDir,
     inboundCalls,
     cfg,
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       db.raw.close();
-      rmSync(groupsDir, { recursive: true, force: true });
     },
   };
 }
@@ -116,12 +116,19 @@ function fetchJson(
   });
 }
 
+const personRoot = join(DATA_DIR, 'user-memory', PERSON);
+
 let h: Harness;
 beforeEach(async () => {
+  // Per-person paths are rooted at the real DATA_DIR (repo data/). Scrub the
+  // person subtree both before and after so a crashed prior run can't leak
+  // stale rows into this one, and so we never leave residue in the repo.
+  rmSync(personRoot, { recursive: true, force: true });
   h = await bootHarness();
 });
 afterEach(async () => {
   await h.close();
+  rmSync(personRoot, { recursive: true, force: true });
 });
 
 describe('GET /ios/health', () => {
@@ -134,33 +141,31 @@ describe('GET /ios/health', () => {
 
 describe('Bearer auth gate', () => {
   it('returns 401 when token is missing on protected routes', async () => {
-    const r = await fetchJson(`${h.url}/ios/health/requests?platformId=ios-app-v2:dev-1`, {
-      method: 'GET',
-    });
+    const r = await fetchJson(`${h.url}/ios/health/requests`, { method: 'GET' });
     expect(r.status).toBe(401);
     expect((r.json() as { error: string }).error).toBe('unauthorized');
   });
 
-  it('returns 401 when token is wrong', async () => {
-    const r = await fetchJson(`${h.url}/ios/health/requests?platformId=ios-app-v2:dev-1`, {
+  it('returns 401 when token is unknown', async () => {
+    const r = await fetchJson(`${h.url}/ios/health/requests`, {
       method: 'GET',
-      headers: { Authorization: 'Bearer wrong' },
+      headers: { Authorization: 'Bearer nope' },
+    });
+    expect(r.status).toBe(401);
+  });
+
+  it('returns 401 on a malformed (non-Bearer) Authorization header', async () => {
+    const r = await fetchJson(`${h.url}/ios/state`, {
+      method: 'GET',
+      headers: { Authorization: TOKEN },
     });
     expect(r.status).toBe(401);
   });
 });
 
 describe('GET /ios/health/requests', () => {
-  it('returns 400 when platformId is missing', async () => {
+  it('returns empty list initially for the token-derived device', async () => {
     const r = await fetchJson(`${h.url}/ios/health/requests`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    });
-    expect(r.status).toBe(400);
-  });
-
-  it('returns empty list initially', async () => {
-    const r = await fetchJson(`${h.url}/ios/health/requests?platformId=ios-app-v2:dev-1`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
@@ -168,12 +173,14 @@ describe('GET /ios/health/requests', () => {
     expect(r.json()).toEqual([]);
   });
 
-  it('returns enqueued entries scoped to the requesting device', async () => {
-    h.store.enqueue('ios-app-v2:dev-1', 'req-a', 7);
-    h.store.enqueue('ios-app-v2:dev-1', 'req-b', 14);
-    h.store.enqueue('ios-app-v2:dev-2', 'req-c', 30); // different device
+  it('scopes entries to the device derived from the token, ignoring any query param', async () => {
+    h.store.enqueue(PLATFORM_ID, 'req-a', 7);
+    h.store.enqueue(PLATFORM_ID, 'req-b', 14);
+    h.store.enqueue('ios-app-v2:someone-else', 'req-c', 30); // different device
 
-    const r = await fetchJson(`${h.url}/ios/health/requests?platformId=ios-app-v2:dev-1`, {
+    // Even with a misleading ?platformId= for another device, the token's
+    // platform_id is authoritative — we still get p2's two rows.
+    const r = await fetchJson(`${h.url}/ios/health/requests?platformId=ios-app-v2:someone-else`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
@@ -186,11 +193,13 @@ describe('GET /ios/health/requests', () => {
 });
 
 describe('POST /ios/health/upload', () => {
-  it('upserts rows into the wired agent group health.db and clears the request', async () => {
-    h.store.enqueue('ios-app-v2:dev-1', 'req-1', 3);
+  it("writes rows into the token-person's health agent health.db and clears the request", async () => {
+    h.store.enqueue(PLATFORM_ID, 'req-1', 3);
 
+    // body.platformId is deliberately a DIFFERENT id than the token's — it
+    // must be ignored for routing (token identity wins).
     const body = JSON.stringify({
-      platformId: 'ios-app-v2:dev-1',
+      platformId: 'ios-app-v2:client-local-id',
       requestId: 'req-1',
       days: [
         { date: '2026-05-29', steps: 8000 },
@@ -205,8 +214,9 @@ describe('POST /ios/health/upload', () => {
     expect(r.status).toBe(200);
     expect(r.json()).toEqual({ ok: true });
 
-    // Rows written to <groupsDir>/jarvis/health/health.db, sorted oldest→newest.
-    const dbPath = join(h.groupsDir, 'jarvis', 'health', 'health.db');
+    // Rows land under data/user-memory/p2/greg/health/health.db, oldest→newest.
+    const dbPath = join(userMemoryRoot(PERSON, HEALTH_AGENT), 'health', 'health.db');
+    expect(dbPath).toBe(join(DATA_DIR, 'user-memory', PERSON, HEALTH_AGENT, 'health', 'health.db'));
     const db = openHealthDb(dbPath);
     const rows = readHealthDays(db);
     db.close();
@@ -215,43 +225,12 @@ describe('POST /ios/health/upload', () => {
     expect(rows[1]).toMatchObject({ date: '2026-05-30', steps: 9500, restingHeartRate: 58 });
 
     // Request cleared.
-    expect(h.store.listForDevice('ios-app-v2:dev-1')).toHaveLength(0);
+    expect(h.store.listForDevice(PLATFORM_ID)).toHaveLength(0);
   });
 
-  it('returns 404 when the device has no wired agent group', async () => {
+  it('accepts an upload with no body platformId (routing is by token)', async () => {
     const body = JSON.stringify({
-      platformId: 'ios-app-v2:unknown',
-      requestId: 'req-x',
-      days: [{ date: '2026-05-30', steps: 1 }],
-    });
-    const r = await fetchJson(`${h.url}/ios/health/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-      body,
-    });
-    expect(r.status).toBe(404);
-  });
-
-  it('returns 400 when platformId is missing and no override is configured', async () => {
-    const r = await fetchJson(`${h.url}/ios/health/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days: [] }),
-    });
-    expect(r.status).toBe(400);
-  });
-
-  it('accepts missing platformId when healthOverrideDir is set and writes to the override folder', async () => {
-    await h.close();
-    const overrideRoot = mkdtempSync(join(tmpdir(), 'ios-app-v2-override-'));
-    const overrideDir = join(overrideRoot, 'greg', 'health');
-    h = await bootHarness({ healthOverrideDir: overrideDir });
-
-    const body = JSON.stringify({
-      days: [
-        { date: '2026-05-31', steps: 1234 },
-        { date: '2026-06-01', steps: 5678, restingHeartRate: 60 },
-      ],
+      days: [{ date: '2026-06-02', steps: 4321 }],
     });
     const r = await fetchJson(`${h.url}/ios/health/upload`, {
       method: 'POST',
@@ -260,22 +239,38 @@ describe('POST /ios/health/upload', () => {
     });
     expect(r.status).toBe(200);
 
-    // Rows written to the override folder's health.db, sorted oldest→newest.
-    const dbPath = join(overrideDir, 'health.db');
+    const dbPath = join(userMemoryRoot(PERSON, HEALTH_AGENT), 'health', 'health.db');
     const db = openHealthDb(dbPath);
     const rows = readHealthDays(db);
     db.close();
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ date: '2026-05-31', steps: 1234 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ date: '2026-06-02', steps: 4321 });
+  });
 
-    rmSync(overrideRoot, { recursive: true, force: true });
+  it('returns 401 for an unknown bearer token', async () => {
+    const body = JSON.stringify({ days: [{ date: '2026-05-30', steps: 1 }] });
+    const r = await fetchJson(`${h.url}/ios/health/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer nope', 'Content-Type': 'application/json' },
+      body,
+    });
+    expect(r.status).toBe(401);
+  });
+
+  it('returns 400 on an invalid body', async () => {
+    const r = await fetchJson(`${h.url}/ios/health/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days: 'not-an-array' }),
+    });
+    expect(r.status).toBe(400);
   });
 });
 
 describe('POST /ios/proactive', () => {
   it('feeds an inbound message with the proactive marker', async () => {
     const body = JSON.stringify({
-      platformId: 'ios-app-v2:dev-1',
+      platformId: PLATFORM_ID,
       trigger: 'geofence',
       ts: '2026-05-31T10:00:00Z',
       tz: 'Europe/Berlin',
@@ -291,19 +286,28 @@ describe('POST /ios/proactive', () => {
 
     expect(h.inboundCalls).toHaveLength(1);
     const call = h.inboundCalls[0];
-    expect(call.pid).toBe('ios-app-v2:dev-1');
+    expect(call.pid).toBe(PLATFORM_ID);
     expect(call.tid).toBeNull();
     const content = call.msg.content as { text: string; senderId: string };
-    expect(content.senderId).toBe('ios-app-v2:dev-1');
+    expect(content.senderId).toBe(PLATFORM_ID);
     expect(content.text).toContain('[proactive trigger=geofence ts=2026-05-31T10:00:00Z tz=Europe/Berlin]');
     expect(content.text).toContain('region=home');
+  });
+
+  it('returns 401 for an unknown bearer token', async () => {
+    const r = await fetchJson(`${h.url}/ios/proactive`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer nope', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platformId: PLATFORM_ID, trigger: 'hk' }),
+    });
+    expect(r.status).toBe(401);
   });
 
   it('returns 400 when trigger is missing', async () => {
     const r = await fetchJson(`${h.url}/ios/proactive`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platformId: 'ios-app-v2:dev-1' }),
+      body: JSON.stringify({ platformId: PLATFORM_ID }),
     });
     expect(r.status).toBe(400);
   });
@@ -313,15 +317,15 @@ describe('POST /ios/proactive', () => {
     const r = await fetchJson(`${h.url}/ios/proactive`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platformId: 'ios-app-v2:dev-1', trigger: 'hk' }),
+      body: JSON.stringify({ platformId: PLATFORM_ID, trigger: 'hk' }),
     });
     expect(r.status).toBe(503);
   });
 });
 
 describe('GET /ios/state', () => {
-  it('returns levels + ordered agent rows', async () => {
-    const profilesDir = join(h.groupsDir, 'global', 'profiles');
+  it("reads the token-person's profiles and returns levels + ordered agent rows", async () => {
+    const profilesDir = join(userGlobalRoot(PERSON), 'profiles');
     mkdirSync(profilesDir, { recursive: true });
     writeFileSync(
       join(profilesDir, 'greg.md'),

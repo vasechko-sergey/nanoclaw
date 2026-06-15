@@ -25,16 +25,16 @@ import { HealthUploadBody } from '../../../../shared/ios-app-protocol/index.js';
 import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
 import { sickDayCheck } from '../../../modules/health-trigger/sick-day.js';
 import { readEnvFile } from '../../../env.js';
+import { userMemoryRoot, userGlobalRoot } from '../../../user-memory.js';
 import { appendHealthHistory } from './health-ingest.js';
 import { openHealthDb, readHealthDays } from './health-db.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
 import { parseProfile } from './profiles.js';
-import type { PlatformId } from './types.js';
 
-function loadAllHealthRows(groupsDir: string, agentFolder: string): HealthUploadDay[] {
-  const path = join(groupsDir, agentFolder, 'health', 'health.db');
-  if (!existsSync(path)) return [];
-  const db = openHealthDb(path);
+function loadAllHealthRows(agentRoot: string): HealthUploadDay[] {
+  const dbPath = join(agentRoot, 'health', 'health.db');
+  if (!existsSync(dbPath)) return [];
+  const db = openHealthDb(dbPath);
   try {
     return readHealthDays(db); // already sorted oldest→newest by date
   } finally {
@@ -43,19 +43,19 @@ function loadAllHealthRows(groupsDir: string, agentFolder: string): HealthUpload
 }
 
 export interface HttpHandlerDeps {
-  token: string;
-  healthRequestsStore: HealthRequestsStore;
-  /** Returns the agent group folder wired to a device, or null. */
-  resolveAgentFolderForPlatform: (platformId: PlatformId) => string | null;
-  /** Where to write the resolved folder's `health/health.db`. */
-  groupsDir: string;
   /**
-   * Optional override directory — if set, ALL devices write to this single
-   * health folder (legacy back-compat for installs that pinned
-   * IOS_HEALTH_HISTORY_DIR). Absolute path; we split into root + leaf and
-   * reuse `appendHealthHistory`.
+   * Resolve a raw bearer token to its identity, or null if unknown. Identity
+   * for every protected route comes from here — NEVER from `body.platformId`
+   * or a query param (those are client-supplied and may not match the server's
+   * platform_id).
    */
-  healthOverrideDir?: string | null;
+  resolveToken: (rawToken: string) => { platform_id: string; person_key: string } | null;
+  healthRequestsStore: HealthRequestsStore;
+  /**
+   * Folder name of the agent that owns health data (e.g. `greg`). Health
+   * uploads land under `data/user-memory/<person>/<healthAgentFolder>`.
+   */
+  healthAgentFolder: string;
   /** Where proactive HTTP fallbacks go — same hook as the WS path. */
   getChannelSetup: () => ChannelSetup | null;
   log: (msg: string, ctx?: Record<string, unknown>) => void;
@@ -63,16 +63,7 @@ export interface HttpHandlerDeps {
 }
 
 export function createIosHttpHandler(deps: HttpHandlerDeps) {
-  const {
-    token,
-    healthRequestsStore,
-    resolveAgentFolderForPlatform,
-    groupsDir,
-    healthOverrideDir,
-    getChannelSetup,
-    log,
-    logWarn,
-  } = deps;
+  const { resolveToken, healthRequestsStore, healthAgentFolder, getChannelSetup, log, logWarn } = deps;
 
   const AGENT_META: Record<string, { title: string; icon: string }> = {
     greg: { title: 'Здоровье · Greg', icon: '🩺' },
@@ -83,13 +74,10 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
   };
   const AGENT_ORDER = ['greg', 'gordon', 'payne', 'scrooge', 'jarvis'];
 
-  const requireToken = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
+  const authIdentity = (req: http.IncomingMessage): { platform_id: string; person_key: string } | null => {
     const auth = req.headers.authorization ?? '';
-    if (auth !== `Bearer ${token}`) {
-      res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
-      return false;
-    }
-    return true;
+    if (!auth.startsWith('Bearer ')) return null;
+    return resolveToken(auth.slice('Bearer '.length));
   };
 
   const readBody = (req: http.IncomingMessage): Promise<string> =>
@@ -119,13 +107,14 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
     }
 
     if (req.method === 'GET' && url.pathname === '/ios/health/requests') {
-      if (!requireToken(req, res)) return;
-      const pid = url.searchParams.get('platformId');
-      if (!pid) {
-        res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"platformId required"}');
+      const id = authIdentity(req);
+      if (!id) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
         return;
       }
-      const rows = healthRequestsStore.listForDevice(pid).map((r) => ({
+      // Device is identified by the token, not the query param. Ignore any
+      // ?platformId= the client sends — the token's platform_id is canonical.
+      const rows = healthRequestsStore.listForDevice(id.platform_id).map((r) => ({
         requestId: r.request_id,
         days: r.days,
       }));
@@ -134,7 +123,11 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
     }
 
     if (req.method === 'POST' && url.pathname === '/ios/health/upload') {
-      if (!requireToken(req, res)) return;
+      const id = authIdentity(req);
+      if (!id) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
+        return;
+      }
       readBody(req)
         .then((body) => {
           const parsed = HealthUploadBody.safeParse(JSON.parse(body));
@@ -144,44 +137,18 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
               .end(JSON.stringify({ error: 'invalid body', issues: parsed.error.issues }));
             return;
           }
-          const pid = parsed.data.platformId;
+          // Routing is by TOKEN identity, never by body.platformId (which is
+          // the client's local id and may not match the server platform_id).
           const requestId = parsed.data.requestId;
           const days = parsed.data.days;
-          if (!pid && !healthOverrideDir) {
-            res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"platformId required"}');
-            return;
-          }
-          let writeRoot: string;
-          let writeFolder: string;
-          if (healthOverrideDir) {
-            // Legacy single-folder override mode.
-            const idx = healthOverrideDir.lastIndexOf('/');
-            writeRoot = idx > 0 ? healthOverrideDir.slice(0, idx) : '.';
-            writeFolder = idx > 0 ? healthOverrideDir.slice(idx + 1) : healthOverrideDir;
-            // appendHealthHistory adds a 'health' subdir under the folder,
-            // so a path like `.../groups/greg/health` is
-            // recreated by passing `groups` + `greg` here. For
-            // installs that set IOS_HEALTH_HISTORY_DIR to an exact path
-            // ending in `/health`, strip the trailing `/health` segment
-            // since appendHealthHistory re-adds it.
-            if (writeFolder === 'health') {
-              const idx2 = writeRoot.lastIndexOf('/');
-              writeFolder = idx2 > 0 ? writeRoot.slice(idx2 + 1) : writeRoot;
-              writeRoot = idx2 > 0 ? writeRoot.slice(0, idx2) : '.';
-            }
-          } else {
-            const agentFolder = resolveAgentFolderForPlatform(pid!);
-            if (!agentFolder) {
-              res.writeHead(404, { 'Content-Type': 'application/json' }).end('{"error":"no agent group"}');
-              return;
-            }
-            writeRoot = groupsDir;
-            writeFolder = agentFolder;
-          }
-          appendHealthHistory(writeRoot, writeFolder, days);
+          // The person's HEALTH agent folder under user-memory:
+          //   data/user-memory/<person>/<healthAgent>
+          const memHealthRoot = userMemoryRoot(id.person_key, healthAgentFolder);
+          appendHealthHistory(memHealthRoot, days);
           if (requestId) healthRequestsStore.clear(requestId);
           log('health_history (http)', {
-            platformId: pid,
+            personKey: id.person_key,
+            platformId: id.platform_id,
             count: days.length,
             requestId: requestId ?? null,
           });
@@ -192,7 +159,8 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
           // agent-group id of the Greg agent (i.e. "greg").
           // Unset = trigger is a no-op, safe default.
           try {
-            const allRows = loadAllHealthRows(writeRoot, writeFolder);
+            // Read the SAME per-person rows we just wrote.
+            const allRows = loadAllHealthRows(memHealthRoot);
             // Read from .env (process.env fallback for tests / explicit exports).
             // The host doesn't auto-load .env into process.env, so reading the
             // file directly is the canonical pattern (see src/env.ts).
@@ -220,7 +188,11 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
     }
 
     if (req.method === 'POST' && url.pathname === '/ios/proactive') {
-      if (!requireToken(req, res)) return;
+      const id = authIdentity(req);
+      if (!id) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
+        return;
+      }
       readBody(req)
         .then((body) => {
           const obj = JSON.parse(body) as {
@@ -276,8 +248,13 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
     }
 
     if (req.method === 'GET' && url.pathname === '/ios/state') {
-      if (!requireToken(req, res)) return;
-      const profilesDir = join(groupsDir, 'global', 'profiles');
+      const id = authIdentity(req);
+      if (!id) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
+        return;
+      }
+      // Per-person cross-agent profiles: data/user-memory/<person>/global/profiles
+      const profilesDir = join(userGlobalRoot(id.person_key), 'profiles');
       const parsed = new Map<string, ReturnType<typeof parseProfile>>();
       try {
         for (const f of readdirSync(profilesDir)) {

@@ -19,14 +19,10 @@ import { registerChannelAdapter } from '../../channel-registry.js';
 import { adapterRouteToAgent } from '../../../adapter-route.js';
 import { readEnvFile } from '../../../env.js';
 import { log } from '../../../log.js';
-import { DATA_DIR, GROUPS_DIR, OWNER_PERSON_KEY } from '../../../config.js';
+import { DATA_DIR, HEALTH_AGENT_FOLDER, OWNER_PERSON_KEY } from '../../../config.js';
 import { resolveIosToken, upsertIosToken } from './token-registry.js';
 import { upsertUser, getUser } from '../../../modules/permissions/db/users.js';
-import {
-  getMessagingGroup,
-  getMessagingGroupByPlatform,
-  getMessagingGroupAgents,
-} from '../../../db/messaging-groups.js';
+import { getMessagingGroup, getMessagingGroupByPlatform } from '../../../db/messaging-groups.js';
 import { getAgentGroup, getAgentGroupByFolder } from '../../../db/agent-groups.js';
 import { findSession, findSessionForAgent, getSession } from '../../../db/sessions.js';
 import { writeSessionMessage } from '../../../session-manager.js';
@@ -182,17 +178,10 @@ function createV2Adapter(): ChannelAdapter | null {
   const receipts = new ReceiptStore(db);
   const healthRequestsStore = new HealthRequestsStore(db);
 
-  // Where health daily aggregates land on disk. Defaults to GROUPS_DIR (so
-  // each device's wired agent group gets its own raw.jsonl); legacy installs
-  // pinned a single shared directory via IOS_HEALTH_HISTORY_DIR — honor that
-  // override for back-compat. Absolute paths supported; relative paths
-  // resolve against cwd.
-  const healthEnv = readEnvFile(['IOS_HEALTH_HISTORY_DIR']);
-  const healthOverrideDir = healthEnv.IOS_HEALTH_HISTORY_DIR
-    ? path.isAbsolute(healthEnv.IOS_HEALTH_HISTORY_DIR)
-      ? healthEnv.IOS_HEALTH_HISTORY_DIR
-      : path.resolve(process.cwd(), healthEnv.IOS_HEALTH_HISTORY_DIR)
-    : null;
+  // Health daily aggregates land under each person's HEALTH agent folder in
+  // user-memory: data/user-memory/<person>/<HEALTH_AGENT_FOLDER>/health/health.db.
+  // The HTTP handler resolves the person from the bearer token — no per-device
+  // folder lookup and no legacy IOS_HEALTH_HISTORY_DIR override anymore.
 
   let cfg: ChannelSetup | null = null;
   let httpServer: http.Server | null = null;
@@ -435,24 +424,12 @@ function createV2Adapter(): ChannelAdapter | null {
         }
       }
 
-      // Resolve the agent group folder wired to a device's messaging group.
-      // Multi-agent fan-out: take highest-priority wiring (the order
-      // getMessagingGroupAgents returns).
-      const resolveAgentFolderForPlatform = (platformId: PlatformId): string | null => {
-        const mg = getMessagingGroupByPlatform(CHANNEL_TYPE, platformId);
-        if (!mg) return null;
-        const wirings = getMessagingGroupAgents(mg.id);
-        if (wirings.length === 0) return null;
-        const agentGroup = getAgentGroup(wirings[0].agent_group_id);
-        return agentGroup?.folder ?? null;
-      };
-
       const httpHandler = createIosHttpHandler({
-        token,
+        // Identity for protected routes comes from the bearer token — same
+        // registry the WS path uses. Per-person paths derive from person_key.
+        resolveToken: resolveIosToken,
         healthRequestsStore,
-        resolveAgentFolderForPlatform,
-        groupsDir: GROUPS_DIR,
-        healthOverrideDir,
+        healthAgentFolder: HEALTH_AGENT_FOLDER,
         getChannelSetup: () => cfg,
         log: logV2,
         logWarn: logV2Warn,

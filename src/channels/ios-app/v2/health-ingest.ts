@@ -6,9 +6,9 @@ import { join } from 'node:path';
 import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
 import { openHealthDb, upsertHealthDays } from './health-db.js';
 
-export function appendHealthHistory(groupsDir: string, agentGroupFolder: string, days: HealthUploadDay[]): void {
+export function appendHealthHistory(agentRoot: string, days: HealthUploadDay[]): void {
   if (days.length === 0) return;
-  const db = openHealthDb(join(groupsDir, agentGroupFolder, 'health', 'health.db'));
+  const db = openHealthDb(join(agentRoot, 'health', 'health.db'));
   try {
     upsertHealthDays(db, days);
   } finally {

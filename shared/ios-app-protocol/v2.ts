@@ -354,9 +354,8 @@ export const HealthUploadDay = z.object({
 export type HealthUploadDay = z.infer<typeof HealthUploadDay>;
 
 export const HealthUploadBody = z.object({
-  // platformId is required when the server has no IOS_HEALTH_HISTORY_DIR
-  // override (it picks the wired agent group from the messaging group).
-  // In override mode it's just logged.
+  // platformId is the client's local device id. The server IGNORES it for
+  // routing — identity comes from the bearer token. Optional; not used server-side.
   platformId: z.string().optional(),
   // Echoed back from /ios/health/requests so the server can clear the
   // serviced request row.
