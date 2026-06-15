@@ -218,3 +218,17 @@ Therefore, on the VDS:
 - **Do not deploy phases 1–4 and run `migrate-owner-memory.ts` until the iOS health-ingest re-path (phase 5, §8.4) is also ready** — otherwise the owner's own Greg health data silently stops flowing. (Deploying 1–4 *requires* running the migration in the same window, because `buildMounts` reads `user-memory/<owner>/…` which is empty until migrated — so "deploy 1–4 but skip migration" is not a safe option either.)
 - Practically: since the second person needs iOS anyway, sequence the VDS rollout as **1–4 + 5 (at least §8.4 ingest re-path) together**, then migrate, then provision the second person.
 - Migration preconditions remain: **stop the service first** (so `initUserMemory` can't race in and pre-create empty targets that cause whole-subdir SKIPs), and **back up** `groups/` + `data/` (the script MOVEs, not copies).
+
+### 15.3 Resolved — phases 5–7 implemented (2026-06-16)
+
+Phases 5–7 (iOS multi-user, all 5 agents) are implemented + merged to `main`. The §15.1 gaps are closed and the §15.2 deploy hazard is resolved:
+
+- **§15.1 owner_key gaps — CLOSED.** `src/adapter-route.ts` now passes `resolvePersonKey(userId)` to all 3 `resolveSession` calls; `src/modules/health-trigger/sick-day.ts` now wakes only the uploading person's health session (find-owned-active-or-create-owner-stamped).
+- **§15.2 health re-path — DONE.** iOS HTTP routes resolve identity from the bearer token via the `ios_tokens` registry; health writes to `user-memory/<person>/<HEALTH_AGENT_FOLDER>/health/`; `IOS_HEALTH_HISTORY_DIR` is removed. Post-migration, the owner's iOS health lands exactly where the owner's Greg container reads it.
+- **Two extra findings from the phase-5–7 final review, both fixed:**
+  - **`/ios/proactive` cross-person injection (CRITICAL) — FIXED.** The route was token-gated but routed by `body.platformId`; now pinned to the bearer token's `platform_id` (identity never client-supplied).
+  - **Profile projection was owner-blind (deploy-blocking) — FIXED.** `projectPublicProfiles` ran over `groups/` but phases 1–4 moved memory per-person; `host-sweep` now calls `projectAllPublicProfiles(data/user-memory)`, fanning each person's `public.md` into that person's own `global/profiles/`. Without this the owner's morning brief, cross-agent reads, and `/ios/state` rings would all have gone empty post-migration.
+
+**Updated deploy sequence (single VDS window):** deploy `main` (phases 1–7) → stop service → back up `groups/`+`data/` → `migrate-owner-memory.ts` (dry-run first) → `set-person-key.ts <owner> <owner-handles>` → unset `IOS_HEALTH_HISTORY_DIR` in `.env` → set `OWNER_PERSON_KEY` (match the migration target) → set `cli_scope=disabled` on all groups + `SICK_DAY_TARGET_AGENT_GROUP_ID=greg`'s id → de-personalize `groups/*.md` (Plan 1 Task 8) → restart → verify owner unchanged → provision the 2nd person (`mint-ios-token.ts` + wire her iOS mg to all 5 groups + member + she enters the token in the app). Plan 1 Task 12 (Telegram two-handle isolation check) can run any time post-deploy.
+
+**Still NOT done (host code complete, these are operator/manual steps):** the VDS deploy + migration itself; Plan 1 Task 8 (de-personalize `groups/*.md` — installation files, not in git); Plan 1 Task 9 (`cli_scope=disabled` via host `ncl`); Plan 1 Task 12 (Telegram verification). The orphaned `.claude-shared` scaffolding in `group-init.ts` remains a low-priority cleanup.
