@@ -58,22 +58,17 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
         return .object(obj)
     }
 
-    func calendar() async throws -> V2.JSONValue {
+    func calendar(window: String = "today") async throws -> V2.JSONValue {
         guard let c = calendarManager else { return .array([]) }
-        // `nextEvent` is the only structured cache the legacy manager exposes.
-        // A full event-window query would require touching EKEventStore directly;
-        // defer that until the agent actually asks for it (TODO below).
-        let next: (title: String, start: Date)? = await MainActor.run { c.nextEvent }
-        guard let next else { return .array([]) }
-        let iso = ISO8601DateFormatter().string(from: next.start)
-        return .array([
+        let evs = await MainActor.run { c.events(window: window) }
+        let iso = ISO8601DateFormatter()
+        return .array(evs.map { e in
             .object([
-                "title": .string(next.title),
-                "start": .string(iso),
+                "title": .string(e.title),
+                "start": .string(iso.string(from: e.start)),
+                "end":   .string(iso.string(from: e.end)),
             ])
-        ])
-        // TODO: expose a multi-event window query on CalendarManager (next 24h)
-        //       and return the full list instead of the single cached next event.
+        })
     }
 
     func device() async throws -> V2.JSONValue {

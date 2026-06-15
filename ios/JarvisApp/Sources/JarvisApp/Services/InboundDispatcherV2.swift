@@ -2,7 +2,7 @@ import Foundation
 
 protocol ContextCoordinatorV2 {
     func health() async throws -> V2.JSONValue
-    func calendar() async throws -> V2.JSONValue
+    func calendar(window: String) async throws -> V2.JSONValue
     func device() async throws -> V2.JSONValue
     func nextEvent() async throws -> V2.JSONValue?
     func recentLocations(hours: Int) async throws -> V2.JSONValue
@@ -41,7 +41,9 @@ actor InboundDispatcherV2 {
                         let v: V2.JSONValue?
                         switch f {
                         case "health": v = try await coordinator.health()
-                        case "calendar": v = try await coordinator.calendar()
+                        case "calendar":
+                            let calWindow = Self.stringParam(params, key: "calendar_window") ?? "today"
+                            v = try await coordinator.calendar(window: calWindow)
                         case "device": v = try await coordinator.device()
                         case "next_event": v = try await coordinator.nextEvent()
                         case "recent_locations":
@@ -77,6 +79,13 @@ actor InboundDispatcherV2 {
         guard let v = obj[key] else { return nil }
         if case .int(let i) = v { return i }
         if case .double(let d) = v { return Int(d) }
+        return nil
+    }
+
+    private static func stringParam(_ params: V2.JSONValue?, key: String) -> String? {
+        guard case .object(let obj) = params else { return nil }
+        guard let v = obj[key] else { return nil }
+        if case .string(let s) = v { return s }
         return nil
     }
 }

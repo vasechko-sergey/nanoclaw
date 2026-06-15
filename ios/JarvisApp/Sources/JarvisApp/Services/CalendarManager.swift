@@ -36,6 +36,34 @@ final class CalendarManager: ObservableObject {
         }
     }
 
+    // MARK: - Window helpers
+
+    /// Returns the end date for a named calendar window starting at `start`.
+    /// - "next_7d"  → start + 7 days
+    /// - "next_30d" → start + 30 days
+    /// - anything else (incl. "today") → start + 24 hours
+    static func windowEnd(window: String, from start: Date) -> Date {
+        switch window {
+        case "next_7d":  return start.addingTimeInterval(7 * 24 * 3600)
+        case "next_30d": return start.addingTimeInterval(30 * 24 * 3600)
+        default:         return start.addingTimeInterval(24 * 3600)   // "today"
+        }
+    }
+
+    /// Returns all non-all-day events between now and the window end, sorted by start time.
+    /// Must be called on the main thread (reads from `EKEventStore` directly).
+    func events(window: String) -> [(title: String, start: Date, end: Date)] {
+        let now = Date()
+        let pred = store.predicateForEvents(
+            withStart: now,
+            end: Self.windowEnd(window: window, from: now),
+            calendars: nil
+        )
+        return store.events(matching: pred)
+            .sorted { $0.startDate < $1.startDate }
+            .map { ($0.title ?? "", $0.startDate, $0.endDate) }
+    }
+
     private func fetchNext() {
         let now = Date()
         guard let end = Calendar.current.date(byAdding: .hour, value: 18, to: now) else { return }
