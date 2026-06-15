@@ -433,23 +433,23 @@ struct ChatView: View {
         .accessibilityIdentifier("chat-view")
         // MARK: – Drag & drop onto the chat canvas (iPad pointer / Files)
         // Accepts images (NSItemProviderReading via UIImage) and file URLs.
-        // Conversion mirrors AttachmentBar exactly: DraftAttachment.image / .file
-        // so the rest of the send flow (AttachmentChips → sendCurrent) is unchanged.
+        // Mirrors the security-scoped-resource + MIME pattern from AttachmentBar:
+        // DraftAttachment.image / .file so the send flow (AttachmentChips → sendCurrent) is unchanged.
         .dropDestination(for: URL.self) { urls, _ in
             var added = false
             for url in urls {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                // Try to load as image first; fall back to generic file.
-                if let data = try? Data(contentsOf: url),
-                   let img = UIImage(data: data),
-                   let draft = DraftAttachment.image(img, name: url.lastPathComponent) {
-                    drafts.append(draft)
-                    added = true
-                } else if let data = try? Data(contentsOf: url) {
-                    let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
-                        ?? "application/octet-stream"
-                    drafts.append(.file(data: data, name: url.lastPathComponent, mimeType: mime))
+                // Read file once; probe for image first, fall back to generic file.
+                if let data = try? Data(contentsOf: url) {
+                    if let img = UIImage(data: data),
+                       let draft = DraftAttachment.image(img, name: url.lastPathComponent) {
+                        drafts.append(draft)
+                    } else {
+                        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                            ?? "application/octet-stream"
+                        drafts.append(.file(data: data, name: url.lastPathComponent, mimeType: mime))
+                    }
                     added = true
                 }
             }

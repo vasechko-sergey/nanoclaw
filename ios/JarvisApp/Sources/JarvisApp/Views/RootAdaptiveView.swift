@@ -117,7 +117,7 @@ private struct SplitRootView: View {
         .background {
             Group {
                 // ⌘1…⌘N — switch to agent N (by allCases order)
-                ForEach(1...AgentIdentity.allCases.count, id: \.self) { n in
+                ForEach(1...min(AgentIdentity.allCases.count, 9), id: \.self) { n in
                     Button("") {
                         if let a = AgentShortcuts.agent(forNumber: n) {
                             active.active = a
