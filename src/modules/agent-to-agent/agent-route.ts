@@ -181,7 +181,7 @@ export function resolveTargetSession(
   // Newest active session of the target group OWNED BY THIS PERSON.
   const owned = getSessionsByAgentGroup(targetAgentGroupId)
     .filter((s) => s.status === 'active' && (s.owner_key || OWNER_PERSON_KEY) === ownerKey)
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
   if (owned[0]) return owned[0];
   // None yet — create a fresh session stamped with this owner_key. Use
   // 'per-thread' + null thread, NOT 'agent-shared': the agent-shared branch

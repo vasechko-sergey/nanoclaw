@@ -567,4 +567,51 @@ describe('resolveTargetSession owner-scoping', () => {
     expect(picked.owner_key).toBe('p2');
     expect(picked.id).toBe('s-p2');
   });
+
+  it('creates a fresh owner-stamped session when the target group has no session for this owner', () => {
+    const tgt = 'ag-greg-fresh';
+    createAgentGroup({ id: tgt, name: 'GregF', folder: 'greg-fresh', agent_provider: null, created_at: now() });
+    // Source agent group + its inbound DB folder (resolveTargetSession opens it).
+    createAgentGroup({ id: 'ag-jarvis', name: 'Jarvis', folder: 'jarvis', agent_provider: null, created_at: now() });
+    initSessionFolder('ag-jarvis', 's-src2');
+
+    // Only a foreign-owner (sergei) active session exists in the target group.
+    createSession({
+      id: 's-owner-only',
+      agent_group_id: tgt,
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: 'sergei',
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: now(),
+    });
+
+    const sourceSession = {
+      id: 's-src2',
+      agent_group_id: 'ag-jarvis',
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: 'p2',
+      agent_provider: null,
+      status: 'active' as const,
+      container_status: 'stopped' as const,
+      last_active: null,
+      created_at: now(),
+    };
+
+    // No owned session exists for p2 → must create a fresh session, never
+    // adopt the sergei-owned session.
+    const picked = resolveTargetSession(
+      { id: 'm2', platform_id: tgt, content: '{}', in_reply_to: null },
+      sourceSession,
+      tgt,
+    );
+
+    expect(picked.owner_key).toBe('p2');
+    expect(picked.id).not.toBe('s-owner-only');
+    // All session dirs are under TEST_DIR (DATA_DIR mock), cleaned by afterEach.
+  });
 });
