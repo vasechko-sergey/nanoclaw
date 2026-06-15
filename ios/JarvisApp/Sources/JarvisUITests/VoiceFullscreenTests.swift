@@ -7,6 +7,11 @@ final class VoiceFullscreenTests: XCTestCase {
     }
 
     private func launchApp() -> XCUIApplication {
+        // Force portrait so RootAdaptiveView resolves to .stacked and the voice
+        // fullscreen path (home orb tap → OrbVoiceView) is reachable. In landscape
+        // on iPad the split layout is shown instead, and onOrbTap is a no-op in
+        // OrbHubPane; voice fullscreen is a stacked-flow feature only.
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments += ["--uitesting"]
         app.launch()

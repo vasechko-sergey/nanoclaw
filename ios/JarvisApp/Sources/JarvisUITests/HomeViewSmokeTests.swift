@@ -7,6 +7,10 @@ final class HomeViewSmokeTests: XCTestCase {
     }
 
     private func launchApp() -> XCUIApplication {
+        // Force portrait so RootAdaptiveView resolves to .stacked and orb-home appears.
+        // On iPad Pro 13-inch the default simulator orientation is landscape, which would
+        // trigger the split layout and never show orb-home.
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments += ["--uitesting"]
         app.launch()
