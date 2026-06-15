@@ -52,7 +52,7 @@ import {
   writeSessionRouting,
 } from './session-manager.js';
 import type { AgentGroup, Session } from './types.js';
-import { userMemoryRoot, userGlobalRoot, initUserMemory, MEMORY_SUBDIRS } from './user-memory.js';
+import { userMemoryRoot, userGlobalRoot, initUserMemory } from './user-memory.js';
 
 /** Active containers tracked by session ID. */
 const activeContainers = new Map<string, { process: ChildProcess; containerName: string }>();
@@ -395,41 +395,30 @@ export function buildMounts(
   initUserMemory(ownerKey, agentGroup.folder);
   const memRoot = userMemoryRoot(ownerKey, agentGroup.folder);
 
-  // Session folder at /workspace (inbound.db, outbound.db, outbox/). Per-session
-  // already, so naturally isolated.
+  // Session folder at /workspace (inbound.db, outbound.db, outbox/). Per-session.
   mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false });
 
-  // Shared code at /workspace/agent — READ-ONLY for every session. No agent
-  // edits its own behavior; behavior changes happen via host edits + redeploy.
-  mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: true });
+  // /workspace/agent — the per-person WRITABLE working dir. ALL agent data
+  // lives here: memories, conversations, health, scratch, AND anything the
+  // agent creates at runtime (e.g. Gordon's nutrition/). THIS is the isolation
+  // boundary — it resolves under user-memory/<owner_key>/<folder>, never
+  // another person's tree. Shared CODE is nested read-only on top (below).
+  mounts.push({ hostPath: memRoot, containerPath: '/workspace/agent', readonly: false });
 
-  // Docker cannot create a nested bind-mount target inside a read-only parent.
-  // /workspace/agent is mounted RO from the code dir, and the owner migration
-  // moved the real memory subdirs out — so ensure empty mountpoint dirs exist
-  // in the code dir for the per-person RW mounts (below) to overlay. Idempotent.
-  for (const sub of MEMORY_SUBDIRS) {
-    fs.mkdirSync(path.join(groupDir, sub), { recursive: true });
+  // Shared CODE — nested READ-ONLY on top of the writable agent dir, so the
+  // agent can read + run it but cannot modify its own behavior (behavior
+  // changes happen via host edits + redeploy). Docker auto-creates these
+  // mountpoints in the RW base, so no pre-creation is needed. Only mount items
+  // that exist in the code dir.
+  for (const item of ['CLAUDE.md', 'container.json', 'scripts', 'skills', 'agents']) {
+    const codePath = path.join(groupDir, item);
+    if (fs.existsSync(codePath)) {
+      mounts.push({ hostPath: codePath, containerPath: `/workspace/agent/${item}`, readonly: true });
+    }
   }
 
-  // Per-person writable memory, nested over the RO code dir at the same paths
-  // the agent already uses today.
-  for (const sub of MEMORY_SUBDIRS) {
-    mounts.push({ hostPath: path.join(memRoot, sub), containerPath: `/workspace/agent/${sub}`, readonly: false });
-  }
-
-  // container.json — RO nested (unchanged).
-  const containerJsonPath = path.join(groupDir, 'container.json');
-  if (fs.existsSync(containerJsonPath)) {
-    mounts.push({ hostPath: containerJsonPath, containerPath: '/workspace/agent/container.json', readonly: true });
-  }
-
-  // CLAUDE.md — RO nested (unchanged).
-  const claudeMdPath = path.join(groupDir, 'CLAUDE.md');
-  if (fs.existsSync(claudeMdPath)) {
-    mounts.push({ hostPath: claudeMdPath, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
-  }
-
-  // Shared INSTRUCTIONS.md — RO (unchanged).
+  // Shared INSTRUCTIONS.md — one static file under GROUPS_DIR, referenced by
+  // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. RO.
   const instructionsPath = path.join(GROUPS_DIR, 'INSTRUCTIONS.md');
   if (fs.existsSync(instructionsPath)) {
     mounts.push({ hostPath: instructionsPath, containerPath: '/workspace/agent/INSTRUCTIONS.md', readonly: true });

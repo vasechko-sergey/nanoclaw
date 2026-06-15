@@ -25,7 +25,7 @@ import path from 'path';
 import { DATA_DIR, GROUPS_DIR, OWNER_PERSON_KEY } from '../src/config.js';
 import { initDb } from '../src/db/connection.js';
 import { getAllAgentGroups } from '../src/db/agent-groups.js';
-import { MEMORY_SUBDIRS, userMemoryRoot, userGlobalRoot } from '../src/user-memory.js';
+import { userMemoryRoot, userGlobalRoot } from '../src/user-memory.js';
 
 const dryRun = process.argv.includes('--dry-run');
 // initDb requires the central DB path (it is not no-arg). getAllAgentGroups is
@@ -45,11 +45,19 @@ function move(src: string, dst: string): void {
 
 initDb(path.join(DATA_DIR, 'v2.db'));
 const key = OWNER_PERSON_KEY;
+// CODE stays shared (RO-overlaid by buildMounts at runtime); EVERYTHING ELSE in
+// a group dir is per-person agent DATA → move it. This is the full split:
+// memories/conversations/health/scratch AND any runtime dir the agent created
+// (e.g. nutrition/) AND stray files. Idempotent + re-runnable: already-moved
+// entries are absent from the source, and `move` skips when the target exists.
+const CODE_ITEMS = new Set(['CLAUDE.md', 'container.json', 'INSTRUCTIONS.md', '.env.example', 'scripts', 'skills', 'agents']);
 for (const ag of getAllAgentGroups()) {
   const groupDir = path.join(GROUPS_DIR, ag.folder);
   const memRoot = userMemoryRoot(key, ag.folder);
-  for (const sub of MEMORY_SUBDIRS) {
-    move(path.join(groupDir, sub), path.join(memRoot, sub));
+  const entries = fs.existsSync(groupDir) ? fs.readdirSync(groupDir) : [];
+  for (const entry of entries) {
+    if (CODE_ITEMS.has(entry)) continue;
+    move(path.join(groupDir, entry), path.join(memRoot, entry));
   }
   move(path.join(DATA_DIR, 'v2-sessions', ag.id, '.claude-shared'), path.join(memRoot, '.claude'));
 }

@@ -242,34 +242,43 @@ describe('buildMounts owner isolation', () => {
     fs.rmSync(path.join(DATA_DIR, 'v2-sessions', ISO_AG), { recursive: true, force: true });
   });
 
-  it('mounts memory + .claude from the session owner tree, never another person', () => {
+  it('mounts the agent dir (RW) + .claude from the session owner tree, never another person', () => {
     const mounts = mountsFor('p2');
     const p2Root = path.join(DATA_DIR, 'user-memory', 'p2');
-    const memMount = mounts.find((m) => m.containerPath === '/workspace/agent/memories');
-    expect(memMount?.hostPath).toBe(path.join(p2Root, ISO_FOLDER, 'memories'));
-    expect(memMount?.readonly).toBe(false);
+    // The whole /workspace/agent working dir is the per-person WRITABLE base —
+    // all agent data (memories, nutrition, anything it creates) lands here.
+    const agentMount = mounts.find((m) => m.containerPath === '/workspace/agent');
+    expect(agentMount?.hostPath).toBe(path.join(p2Root, ISO_FOLDER));
+    expect(agentMount?.readonly).toBe(false);
     const claudeMount = mounts.find((m) => m.containerPath === '/home/node/.claude');
     expect(claudeMount?.hostPath).toBe(path.join(p2Root, ISO_FOLDER, '.claude'));
+    // No mount may point under any OTHER person's tree.
     const ownerRoot = path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY);
     expect(mounts.some((m) => m.hostPath.startsWith(ownerRoot + path.sep))).toBe(false);
   });
 
-  it('mounts the shared code dir read-only for every session', () => {
+  it('nests shared code read-only on top of the writable agent dir', () => {
+    // Seed a code file so the nested RO mount is exercised.
+    fs.mkdirSync(path.join(GROUPS_DIR, ISO_FOLDER), { recursive: true });
+    fs.writeFileSync(path.join(GROUPS_DIR, ISO_FOLDER, 'CLAUDE.md'), '# code');
     const mounts = mountsFor('p2');
-    const codeMount = mounts.find((m) => m.containerPath === '/workspace/agent');
-    expect(codeMount?.hostPath).toBe(path.join(GROUPS_DIR, ISO_FOLDER));
-    expect(codeMount?.readonly).toBe(true);
-    // The nested per-person memory mounts target paths inside the RO code dir.
-    // Docker can't create a mountpoint inside a read-only parent at run time,
-    // so buildMounts must pre-create them in the code dir on the host.
-    for (const sub of ['memories', 'conversations', 'health', 'scratch']) {
-      expect(fs.existsSync(path.join(GROUPS_DIR, ISO_FOLDER, sub))).toBe(true);
-    }
+    // Base agent dir is writable (per-person), NOT read-only.
+    const agentMount = mounts.find((m) => m.containerPath === '/workspace/agent');
+    expect(agentMount?.readonly).toBe(false);
+    // CLAUDE.md is nested read-only from the shared code dir.
+    const claudeMd = mounts.find((m) => m.containerPath === '/workspace/agent/CLAUDE.md');
+    expect(claudeMd?.hostPath).toBe(path.join(GROUPS_DIR, ISO_FOLDER, 'CLAUDE.md'));
+    expect(claudeMd?.readonly).toBe(true);
+    // Every nested /workspace/agent/* mount (code) is read-only.
+    const nested = mounts.filter(
+      (m) => m.containerPath.startsWith('/workspace/agent/') && m.containerPath !== '/workspace/agent',
+    );
+    for (const m of nested) expect(m.readonly).toBe(true);
   });
 
   it('falls back to OWNER_PERSON_KEY when owner_key is null', () => {
     const mounts = mountsFor(null);
-    const memMount = mounts.find((m) => m.containerPath === '/workspace/agent/memories');
-    expect(memMount?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, ISO_FOLDER, 'memories'));
+    const agentMount = mounts.find((m) => m.containerPath === '/workspace/agent');
+    expect(agentMount?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, ISO_FOLDER));
   });
 });
