@@ -5,13 +5,12 @@ struct ContentView: View {
     @Environment(ActiveAgentState.self) private var active
     var coordinator: AppCoordinator
 
-    @State private var appPhase: AppPhase = .splash
-    @State private var showSetupOnSplash = false
+    @State private var appPhase: AppPhase = .home
     @State private var pendingMessage: String? = nil
     @State private var autoStartVoice = false
 
     enum AppPhase {
-        case splash, home, chat
+        case home, chat
     }
 
     var body: some View {
@@ -21,7 +20,7 @@ struct ContentView: View {
                 .opacity(appPhase == .chat ? 1 : 0)
                 .allowsHitTesting(appPhase == .chat)
 
-            // Home — orb hub
+            // Home — orb hub (always the initial phase; stacked flow starts here)
             if appPhase == .home {
                 OrbHomeView(
                     coordinator: coordinator,
@@ -50,28 +49,6 @@ struct ContentView: View {
                 .zIndex(0.5)
             }
 
-            // Splash overlay
-            if appPhase == .splash {
-                SplashView(
-                    coordinator: coordinator,
-                    settings: settings,
-                    showSetup: $showSetupOnSplash,
-                    onReady: {
-                        withAnimation(.easeOut(duration: 0.6)) {
-                            appPhase = .home
-                        }
-                    }
-                )
-                .transition(.opacity)
-                .zIndex(1)
-            }
-        }
-        .onAppear {
-            if settings.isConfigured {
-                coordinator.connect()
-            } else {
-                showSetupOnSplash = true
-            }
         }
     }
 

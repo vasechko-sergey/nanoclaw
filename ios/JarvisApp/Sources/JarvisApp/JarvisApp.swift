@@ -75,14 +75,14 @@ struct JarvisApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(coordinator: coordinator)
+            RootAdaptiveView(coordinator: coordinator)
                 .environment(settings)
                 .environment(coordinator)
                 .environment(activeAgent)
                 .onChange(of: scenePhase) { _, new in
                     if new == .active {
-                        Theme.refreshScale()
-                        Theme.refreshDrawerWidth()
+                        // Theme scale / drawer width are now driven by GeometryReader
+                        // in RootAdaptiveView; no UIScreen-based call needed here.
                         HealthSync.kickIfStale()
                     }
                     if new == .background {
