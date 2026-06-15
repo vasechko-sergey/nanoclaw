@@ -114,6 +114,7 @@ export function bootstrapTrio(): void {
           agent_group_id: canonicalId,
           messaging_group_id: mg.id,
           thread_id: null,
+          owner_key: null,
           agent_provider: null,
           status: 'active',
           container_status: 'stopped',

@@ -6,11 +6,12 @@ import { getContainerImageBase, getDefaultContainerImage, getInstallSlug } from 
 import { isValidTimezone } from './timezone.js';
 
 // Read config values from .env (falls back to process.env).
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'CREDENTIAL_PROXY_PORT', 'TZ']);
+const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'CREDENTIAL_PROXY_PORT', 'TZ', 'OWNER_PERSON_KEY']);
 
 export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER || envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
+export const OWNER_PERSON_KEY = process.env.OWNER_PERSON_KEY || envConfig.OWNER_PERSON_KEY || 'owner';
 
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();

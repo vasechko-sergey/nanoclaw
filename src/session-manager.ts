@@ -126,6 +126,7 @@ export function resolveSession(
     agent_group_id: agentGroupId,
     messaging_group_id: messagingGroupId,
     thread_id: lookupThreadId,
+    owner_key: null,
     agent_provider: null,
     status: 'active',
     container_status: 'stopped',

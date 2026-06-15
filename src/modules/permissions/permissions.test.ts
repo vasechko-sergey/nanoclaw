@@ -82,7 +82,7 @@ function seedAgentGroup(id: string): void {
 }
 
 function seedUser(id: string, kind: string): void {
-  createUser({ id, kind, display_name: null, created_at: now() });
+  createUser({ id, kind, display_name: null, person_key: null, created_at: now() });
 }
 
 describe('canAccessAgentGroup', () => {

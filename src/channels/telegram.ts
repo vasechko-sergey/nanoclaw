@@ -189,6 +189,7 @@ function createPairingInterceptor(
         id: pairedUserId,
         kind: 'telegram',
         display_name: null,
+        person_key: null,
         created_at: new Date().toISOString(),
       });
 

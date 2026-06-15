@@ -66,6 +66,7 @@ function seedAgentAndSession() {
     agent_group_id: TEST_AG,
     messaging_group_id: null,
     thread_id: null,
+    owner_key: null,
     agent_provider: null,
     status: 'active',
     container_status: 'stopped',

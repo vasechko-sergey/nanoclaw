@@ -96,6 +96,7 @@ function extractAndUpsertUser(event: InboundEvent): string | null {
       id: userId,
       kind: event.channelType,
       display_name: senderName ?? null,
+      person_key: null,
       created_at: new Date().toISOString(),
     });
   }

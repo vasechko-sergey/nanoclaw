@@ -4,8 +4,8 @@ import { getDb } from '../../../db/connection.js';
 export function createUser(user: User): void {
   getDb()
     .prepare(
-      `INSERT INTO users (id, kind, display_name, created_at)
-       VALUES (@id, @kind, @display_name, @created_at)`,
+      `INSERT INTO users (id, kind, display_name, person_key, created_at)
+       VALUES (@id, @kind, @display_name, @person_key, @created_at)`,
     )
     .run(user);
 }
@@ -13,12 +13,17 @@ export function createUser(user: User): void {
 export function upsertUser(user: User): void {
   getDb()
     .prepare(
-      `INSERT INTO users (id, kind, display_name, created_at)
-       VALUES (@id, @kind, @display_name, @created_at)
+      `INSERT INTO users (id, kind, display_name, person_key, created_at)
+       VALUES (@id, @kind, @display_name, @person_key, @created_at)
        ON CONFLICT(id) DO UPDATE SET
-         display_name = COALESCE(excluded.display_name, users.display_name)`,
+         display_name = COALESCE(excluded.display_name, users.display_name),
+         person_key   = COALESCE(excluded.person_key, users.person_key)`,
     )
     .run(user);
+}
+
+export function setPersonKey(userId: string, personKey: string): void {
+  getDb().prepare('UPDATE users SET person_key = ? WHERE id = ?').run(personKey, userId);
 }
 
 export function getUser(id: string): User | undefined {

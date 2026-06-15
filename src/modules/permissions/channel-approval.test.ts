@@ -74,7 +74,7 @@ beforeEach(async () => {
   // Base fixtures: one agent group + owner with a DM on 'telegram'.
   createAgentGroup({ id: 'ag-1', name: 'Andy', folder: 'andy', agent_provider: null, created_at: now() });
 
-  upsertUser({ id: 'telegram:owner', kind: 'telegram', display_name: 'Owner', created_at: now() });
+  upsertUser({ id: 'telegram:owner', kind: 'telegram', display_name: 'Owner', person_key: null, created_at: now() });
   grantRole({
     user_id: 'telegram:owner',
     role: 'owner',

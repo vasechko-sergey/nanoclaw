@@ -204,6 +204,7 @@ function fakeSession(): Session {
     agent_group_id: 'ag-test',
     messaging_group_id: null,
     thread_id: null,
+    owner_key: null,
     agent_provider: null,
     status: 'active',
     container_status: 'stopped',

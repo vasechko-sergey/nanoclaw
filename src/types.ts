@@ -62,6 +62,8 @@ export interface User {
   id: string;
   kind: string; // 'phone' | 'email' | 'discord' | 'telegram' | 'matrix' | ...
   display_name: string | null;
+  /** Stable per-human key above the channel handle. NULL until assigned. */
+  person_key: string | null;
   created_at: string;
 }
 
@@ -124,6 +126,8 @@ export interface Session {
   agent_group_id: string;
   messaging_group_id: string | null;
   thread_id: string | null;
+  /** Person whose memory this session reads/writes. NULL → OWNER_PERSON_KEY. */
+  owner_key: string | null;
   agent_provider: string | null;
   status: 'active' | 'closed';
   container_status: 'running' | 'idle' | 'stopped';
