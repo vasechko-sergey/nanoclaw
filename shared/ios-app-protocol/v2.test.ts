@@ -60,6 +60,10 @@ describe('ContextFieldEnum', () => {
   it('includes focus context field', () => {
     expect(ContextFieldEnum.options).toContain('focus');
   });
+
+  it('includes motion context field', () => {
+    expect(ContextFieldEnum.options).toContain('motion');
+  });
 });
 
 const baseFor = (over: Record<string, unknown>) => ({

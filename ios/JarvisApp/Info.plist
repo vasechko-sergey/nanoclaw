@@ -35,6 +35,8 @@
 	<string>Камера нужна, чтобы прикреплять снимки к сообщениям Jarvis</string>
 	<key>NSFocusStatusUsageDescription</key>
 	<string>Статус режима Фокуса передаётся агенту как контекст</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Тип активности (ходьба, бег, транспорт) передаётся агенту как контекст</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Данные активности и сна передаются агенту как контекст</string>
 	<key>NSHealthUpdateUsageDescription</key>

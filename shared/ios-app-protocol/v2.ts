@@ -33,7 +33,7 @@ export const InlineContext = z.object({
 export type InlineContext = z.infer<typeof InlineContext>;
 
 export const ContextFieldEnum = z.enum([
-  'health', 'calendar', 'device', 'next_event', 'recent_locations', 'screen_state', 'reminders', 'focus',
+  'health', 'calendar', 'device', 'next_event', 'recent_locations', 'screen_state', 'reminders', 'focus', 'motion',
 ]);
 export type ContextField = z.infer<typeof ContextFieldEnum>;
 

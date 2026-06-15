@@ -142,5 +142,11 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
         guard let isFocused = await manager.isFocused() else { return .object([:]) }
         return .object(["is_focused": .bool(isFocused)])
     }
+
+    func motion() async throws -> V2.JSONValue {
+        let manager = MotionManager()
+        guard let activity = await manager.currentActivity() else { return .object([:]) }
+        return .object(["activity": .string(activity)])
+    }
 }
 

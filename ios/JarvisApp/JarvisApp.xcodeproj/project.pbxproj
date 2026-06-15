@@ -112,6 +112,7 @@
 		B377A0764FF637C59A620237 /* HealthHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */; };
 		B53C92F62A47B0340DA0F933 /* ConnectivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6A33B378AA0CC36F2DE37A /* ConnectivityMonitor.swift */; };
 		B5715D361A0394CCB595AA15 /* RightDrawerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A1411D12B13E550ED69744 /* RightDrawerTests.swift */; };
+		B59052A141F8B390FC9E2EE3 /* MotionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9AFF3AB31D1875F645F0BCD /* MotionManager.swift */; };
 		B88D79F57FB96DD1EE3F983E /* MiniOrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6BD1E4ABB502A83CDD29883 /* MiniOrbView.swift */; };
 		BA63D1A5A6AFDD559D9911A0 /* HeaderStatusDotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C051ECA1BBC173253E5FF4 /* HeaderStatusDotTests.swift */; };
 		BBB120F4935F0F45BA0CB826 /* DeliveryChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5420CA4F9BA4C813FF9E90B /* DeliveryChecks.swift */; };
@@ -305,6 +306,7 @@
 		F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextCoordinator.swift; sourceTree = "<group>"; };
 		F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetectorTests.swift; sourceTree = "<group>"; };
 		F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthHistoryTests.swift; sourceTree = "<group>"; };
+		F9AFF3AB31D1875F645F0BCD /* MotionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionManager.swift; sourceTree = "<group>"; };
 		FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinator.swift; sourceTree = "<group>"; };
 		FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreetingBank.swift; sourceTree = "<group>"; };
 		FE1A573133241875D7269CED /* HealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthManager.swift; sourceTree = "<group>"; };
@@ -558,6 +560,7 @@
 				2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */,
 				C7F32FF80D3E90C60D06FDC3 /* InboundDispatcherV2.swift */,
 				BD51F238E46BCB805C742CEE /* LocationManager.swift */,
+				F9AFF3AB31D1875F645F0BCD /* MotionManager.swift */,
 				B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */,
 				8B288DE4478FD534ADB9C861 /* RestTimer.swift */,
 				E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */,
@@ -805,6 +808,7 @@
 				808F62D50A3B14CCF3E62EA5 /* MessageRow.swift in Sources */,
 				5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */,
 				B88D79F57FB96DD1EE3F983E /* MiniOrbView.swift in Sources */,
+				B59052A141F8B390FC9E2EE3 /* MotionManager.swift in Sources */,
 				88708A700369B47D5472A1C2 /* OrbHomeView.swift in Sources */,
 				5BE8DD4BBBBA8C9400311DF5 /* OrbHub.swift in Sources */,
 				246AA2A43B51943BF2845FB3 /* OrbHubPane.swift in Sources */,

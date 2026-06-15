@@ -25,6 +25,7 @@ final class TransportTestCoordinator: ContextCoordinatorV2, @unchecked Sendable 
     func screenState() async throws -> V2.JSONValue { .string("foreground") }
     func reminders(window: String) async throws -> V2.JSONValue { .array([]) }
     func focus() async throws -> V2.JSONValue { .object([:]) }
+    func motion() async throws -> V2.JSONValue { .object([:]) }
 }
 
 final class TransportV2Tests: XCTestCase {
