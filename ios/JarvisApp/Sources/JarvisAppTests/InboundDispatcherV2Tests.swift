@@ -3,7 +3,7 @@ import XCTest
 
 private final class MockCoordinator: ContextCoordinatorV2 {
     let healthHandler: () async throws -> V2.JSONValue
-    let calendarHandler: () async throws -> V2.JSONValue
+    let calendarHandler: (String) async throws -> V2.JSONValue
     let deviceHandler: () async throws -> V2.JSONValue
     let nextEventHandler: () async throws -> V2.JSONValue?
     let locationsHandler: (Int) async throws -> V2.JSONValue
@@ -11,7 +11,7 @@ private final class MockCoordinator: ContextCoordinatorV2 {
 
     init(
         health: @escaping () async throws -> V2.JSONValue = { .object([:]) },
-        calendar: @escaping () async throws -> V2.JSONValue = { .array([]) },
+        calendar: @escaping (String) async throws -> V2.JSONValue = { _ in .array([]) },
         device: @escaping () async throws -> V2.JSONValue = { .object([:]) },
         nextEvent: @escaping () async throws -> V2.JSONValue? = { nil },
         locations: @escaping (Int) async throws -> V2.JSONValue = { _ in .array([]) },
@@ -26,7 +26,7 @@ private final class MockCoordinator: ContextCoordinatorV2 {
     }
 
     func health() async throws -> V2.JSONValue { try await healthHandler() }
-    func calendar() async throws -> V2.JSONValue { try await calendarHandler() }
+    func calendar(window: String) async throws -> V2.JSONValue { try await calendarHandler(window) }
     func device() async throws -> V2.JSONValue { try await deviceHandler() }
     func nextEvent() async throws -> V2.JSONValue? { try await nextEventHandler() }
     func recentLocations(hours: Int) async throws -> V2.JSONValue {
@@ -39,7 +39,7 @@ final class InboundDispatcherV2Tests: XCTestCase {
     func testContextRequestProducesResponseWithRequestedFields() async throws {
         let coord = MockCoordinator(
             health: { .object(["steps": .int(4123)]) },
-            calendar: { .array([.object(["title": .string("Standup")])]) },
+            calendar: { _ in .array([.object(["title": .string("Standup")])]) },
             device: { .object(["battery": .double(0.5)]) }
         )
         let dispatcher = InboundDispatcherV2(coordinator: coord)
@@ -58,7 +58,7 @@ final class InboundDispatcherV2Tests: XCTestCase {
     func testFieldErrorsReportedSeparately() async throws {
         let coord = MockCoordinator(
             health: { throw InboundDispatcherFieldError.denied },
-            calendar: { .array([]) },
+            calendar: { _ in .array([]) },
             device: { .object(["battery": .double(0.5)]) },
             locations: { _ in .object([:]) }
         )

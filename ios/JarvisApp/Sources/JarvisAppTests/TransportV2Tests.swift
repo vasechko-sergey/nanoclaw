@@ -18,7 +18,7 @@ final class MockWebSocket: WebSocketLike, @unchecked Sendable {
 /// keep a separately-named clone here rather than promote it.
 final class TransportTestCoordinator: ContextCoordinatorV2, @unchecked Sendable {
     func health() async throws -> V2.JSONValue { .object(["steps_today": .int(42)]) }
-    func calendar() async throws -> V2.JSONValue { .array([]) }
+    func calendar(window: String) async throws -> V2.JSONValue { .array([]) }
     func device() async throws -> V2.JSONValue { .object(["model": .string("iPhone")]) }
     func nextEvent() async throws -> V2.JSONValue? { nil }
     func recentLocations(hours: Int) async throws -> V2.JSONValue { .array([]) }
