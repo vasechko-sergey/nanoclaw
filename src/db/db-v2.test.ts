@@ -462,3 +462,16 @@ describe('migration 016', () => {
     expect(sessionCols.map((c) => c.name)).toContain('owner_key');
   });
 });
+
+describe('migration 017 ios_tokens', () => {
+  beforeEach(() => {
+    const db = initTestDb();
+    runMigrations(db);
+  });
+  afterEach(() => closeDb());
+  it('creates ios_tokens with the expected columns', () => {
+    const cols = getDb().prepare('PRAGMA table_info(ios_tokens)').all() as { name: string }[];
+    const names = cols.map((c) => c.name).sort();
+    expect(names).toEqual(['created_at', 'label', 'person_key', 'platform_id', 'token_hash']);
+  });
+});
