@@ -403,6 +403,14 @@ export function buildMounts(
   // edits its own behavior; behavior changes happen via host edits + redeploy.
   mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: true });
 
+  // Docker cannot create a nested bind-mount target inside a read-only parent.
+  // /workspace/agent is mounted RO from the code dir, and the owner migration
+  // moved the real memory subdirs out — so ensure empty mountpoint dirs exist
+  // in the code dir for the per-person RW mounts (below) to overlay. Idempotent.
+  for (const sub of MEMORY_SUBDIRS) {
+    fs.mkdirSync(path.join(groupDir, sub), { recursive: true });
+  }
+
   // Per-person writable memory, nested over the RO code dir at the same paths
   // the agent already uses today.
   for (const sub of MEMORY_SUBDIRS) {

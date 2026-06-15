@@ -259,6 +259,12 @@ describe('buildMounts owner isolation', () => {
     const codeMount = mounts.find((m) => m.containerPath === '/workspace/agent');
     expect(codeMount?.hostPath).toBe(path.join(GROUPS_DIR, ISO_FOLDER));
     expect(codeMount?.readonly).toBe(true);
+    // The nested per-person memory mounts target paths inside the RO code dir.
+    // Docker can't create a mountpoint inside a read-only parent at run time,
+    // so buildMounts must pre-create them in the code dir on the host.
+    for (const sub of ['memories', 'conversations', 'health', 'scratch']) {
+      expect(fs.existsSync(path.join(GROUPS_DIR, ISO_FOLDER, sub))).toBe(true);
+    }
   });
 
   it('falls back to OWNER_PERSON_KEY when owner_key is null', () => {
