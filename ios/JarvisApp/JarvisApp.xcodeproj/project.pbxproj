@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294C253860B67EF3201B2370 /* WorkoutInbound.swift */; };
 		04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */; };
+		08C3BBDB0E3219AEE3DED6CE /* ThemeScaleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217842C927C5D1C4A6CF3F44 /* ThemeScaleTests.swift */; };
 		08FB138313D1EC3412C3F20E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3784B2D589C11B07F162E081 /* ChatView.swift */; };
 		0BFCBCBFAB94DCD9F3E01013 /* StateBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B226A1DA1BA45112E46E3E8 /* StateBoardView.swift */; };
 		1091D28461A2EBCE460F25DD /* AppContextCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */; };
@@ -163,6 +164,7 @@
 		1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerOverlay.swift; sourceTree = "<group>"; };
 		1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSynthesizer.swift; sourceTree = "<group>"; };
 		1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppV2Bootstrap.swift; sourceTree = "<group>"; };
+		217842C927C5D1C4A6CF3F44 /* ThemeScaleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeScaleTests.swift; sourceTree = "<group>"; };
 		24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryChecksTests.swift; sourceTree = "<group>"; };
 		2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingScenariosE2ETests.swift; sourceTree = "<group>"; };
 		294C253860B67EF3201B2370 /* WorkoutInbound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInbound.swift; sourceTree = "<group>"; };
@@ -445,6 +447,7 @@
 				72069FC546766200DF7310C7 /* StateBoardViewTests.swift */,
 				A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */,
 				9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */,
+				217842C927C5D1C4A6CF3F44 /* ThemeScaleTests.swift */,
 				0056A55985BB7DB31F765116 /* TransportV2Tests.swift */,
 				834FF3E88E233A898EDBA444 /* TransportV2WorkoutTests.swift */,
 				2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */,
@@ -834,6 +837,7 @@
 				7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */,
 				8B8DBA1244BFD9A7D1B54CF0 /* StateModelTests.swift in Sources */,
 				645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */,
+				08C3BBDB0E3219AEE3DED6CE /* ThemeScaleTests.swift in Sources */,
 				E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */,
 				3CBB91784B65C8CA4A702AF6 /* TransportV2WorkoutTests.swift in Sources */,
 				2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */,

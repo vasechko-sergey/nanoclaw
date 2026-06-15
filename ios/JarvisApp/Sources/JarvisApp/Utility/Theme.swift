@@ -16,6 +16,12 @@ enum Theme {
         _cachedScale = computeScale()
     }
 
+    /// Set the scale from an explicit available-area width (preferred — call
+    /// from RootAdaptiveView's GeometryReader). Same clamp as computeScale().
+    static func refreshScale(width: CGFloat) {
+        _cachedScale = min(max(width / 390, 0.92), 1.15)
+    }
+
     private static func computeScale() -> CGFloat {
         let width = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -99,6 +105,11 @@ enum Theme {
 
     static func refreshDrawerWidth() {
         _cachedDrawerWidth = computeDrawerWidth()
+    }
+
+    /// Set the drawer width from an explicit available-area width.
+    static func refreshDrawerWidth(width: CGFloat) {
+        _cachedDrawerWidth = width * 0.78
     }
 
     private static func computeDrawerWidth() -> CGFloat {
