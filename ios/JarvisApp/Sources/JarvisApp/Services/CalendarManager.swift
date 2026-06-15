@@ -77,6 +77,21 @@ final class CalendarManager: ObservableObject {
         }
     }
 
+    /// Incomplete reminders due on/before the window end. Empty if access denied.
+    func reminders(window: String = "today") async -> [(title: String, due: Date?)] {
+        let granted = (try? await store.requestFullAccessToReminders()) ?? false
+        guard granted else { return [] }
+        let pred = store.predicateForIncompleteReminders(
+            withDueDateStarting: nil,
+            ending: Self.windowEnd(window: window, from: Date()),
+            calendars: nil)
+        return await withCheckedContinuation { cont in
+            store.fetchReminders(matching: pred) { rems in
+                cont.resume(returning: (rems ?? []).map { ($0.title ?? "", $0.dueDateComponents?.date) })
+            }
+        }
+    }
+
     /// Schedule a silent local notification 15 minutes before the event start.
     /// On fire, the UNUserNotificationCenterDelegate routes to the proactive
     /// dispatcher and suppresses the system banner.

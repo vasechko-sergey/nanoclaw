@@ -8,6 +8,7 @@ private final class MockCoordinator: ContextCoordinatorV2 {
     let nextEventHandler: () async throws -> V2.JSONValue?
     let locationsHandler: (Int) async throws -> V2.JSONValue
     let screenStateHandler: () async throws -> V2.JSONValue
+    let remindersHandler: (String) async throws -> V2.JSONValue
 
     init(
         health: @escaping () async throws -> V2.JSONValue = { .object([:]) },
@@ -15,7 +16,8 @@ private final class MockCoordinator: ContextCoordinatorV2 {
         device: @escaping () async throws -> V2.JSONValue = { .object([:]) },
         nextEvent: @escaping () async throws -> V2.JSONValue? = { nil },
         locations: @escaping (Int) async throws -> V2.JSONValue = { _ in .array([]) },
-        screenState: @escaping () async throws -> V2.JSONValue = { .string("foreground") }
+        screenState: @escaping () async throws -> V2.JSONValue = { .string("foreground") },
+        reminders: @escaping (String) async throws -> V2.JSONValue = { _ in .array([]) }
     ) {
         self.healthHandler = health
         self.calendarHandler = calendar
@@ -23,6 +25,7 @@ private final class MockCoordinator: ContextCoordinatorV2 {
         self.nextEventHandler = nextEvent
         self.locationsHandler = locations
         self.screenStateHandler = screenState
+        self.remindersHandler = reminders
     }
 
     func health() async throws -> V2.JSONValue { try await healthHandler() }
@@ -33,6 +36,7 @@ private final class MockCoordinator: ContextCoordinatorV2 {
         try await locationsHandler(hours)
     }
     func screenState() async throws -> V2.JSONValue { try await screenStateHandler() }
+    func reminders(window: String) async throws -> V2.JSONValue { try await remindersHandler(window) }
 }
 
 final class InboundDispatcherV2Tests: XCTestCase {

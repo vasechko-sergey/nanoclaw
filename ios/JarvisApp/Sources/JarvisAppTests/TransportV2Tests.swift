@@ -23,6 +23,7 @@ final class TransportTestCoordinator: ContextCoordinatorV2, @unchecked Sendable 
     func nextEvent() async throws -> V2.JSONValue? { nil }
     func recentLocations(hours: Int) async throws -> V2.JSONValue { .array([]) }
     func screenState() async throws -> V2.JSONValue { .string("foreground") }
+    func reminders(window: String) async throws -> V2.JSONValue { .array([]) }
 }
 
 final class TransportV2Tests: XCTestCase {

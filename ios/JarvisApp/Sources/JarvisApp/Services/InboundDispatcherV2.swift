@@ -7,6 +7,7 @@ protocol ContextCoordinatorV2 {
     func nextEvent() async throws -> V2.JSONValue?
     func recentLocations(hours: Int) async throws -> V2.JSONValue
     func screenState() async throws -> V2.JSONValue
+    func reminders(window: String) async throws -> V2.JSONValue
 }
 
 enum InboundDispatcherFieldError: Error, CustomStringConvertible, Equatable {
@@ -50,6 +51,9 @@ actor InboundDispatcherV2 {
                             let hours = Self.intParam(params, key: "locations_hours") ?? 12
                             v = try await coordinator.recentLocations(hours: hours)
                         case "screen_state": v = try await coordinator.screenState()
+                        case "reminders":
+                            let remWindow = Self.stringParam(params, key: "calendar_window") ?? "today"
+                            v = try await coordinator.reminders(window: remWindow)
                         default: throw InboundDispatcherFieldError.unsupported
                         }
                         return (f, .success(v))

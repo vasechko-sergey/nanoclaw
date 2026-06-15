@@ -52,6 +52,10 @@ describe('ContextFieldEnum', () => {
     expect(() => ContextFieldEnum.parse('read_receipts')).toThrow();
     expect(() => ContextFieldEnum.parse('dialog_summary')).toThrow();
   });
+
+  it('includes reminders context field', () => {
+    expect(ContextFieldEnum.options).toContain('reminders');
+  });
 });
 
 const baseFor = (over: Record<string, unknown>) => ({

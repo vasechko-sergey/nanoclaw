@@ -125,5 +125,16 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
         let active = await MainActor.run { UIApplication.shared.applicationState == .active }
         return .string(active ? "foreground" : "background")
     }
+
+    func reminders(window: String = "today") async throws -> V2.JSONValue {
+        guard let c = calendarManager else { return .array([]) }
+        let items = await c.reminders(window: window)
+        let iso = ISO8601DateFormatter()
+        return .array(items.map { r in
+            var o: [String: V2.JSONValue] = ["title": .string(r.title)]
+            if let d = r.due { o["due"] = .string(iso.string(from: d)) }
+            return .object(o)
+        })
+    }
 }
 

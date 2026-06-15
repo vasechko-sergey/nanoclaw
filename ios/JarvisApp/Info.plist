@@ -41,6 +41,8 @@
 	<string>Геолокация передаётся агенту как контекст</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Микрофон нужен для голосового ввода сообщений Jarvis</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Список незавершённых напоминаний передаётся агенту как контекст</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Распознавание речи превращает ваш голос в текст сообщения</string>
 	<key>UIBackgroundModes</key>
