@@ -268,9 +268,8 @@ describe('POST /ios/health/upload', () => {
 });
 
 describe('POST /ios/proactive', () => {
-  it('feeds an inbound message with the proactive marker', async () => {
+  it('feeds an inbound message with the proactive marker (routing by token, no body platformId needed)', async () => {
     const body = JSON.stringify({
-      platformId: PLATFORM_ID,
       trigger: 'geofence',
       ts: '2026-05-31T10:00:00Z',
       tz: 'Europe/Berlin',
@@ -294,11 +293,39 @@ describe('POST /ios/proactive', () => {
     expect(content.text).toContain('region=home');
   });
 
+  it('routes by the bearer token, ignoring a body platformId for another person (no cross-person injection)', async () => {
+    // p2 (the authenticated caller) tries to spoof the owner's session by
+    // putting the victim's platform id in the body. The handler must route to
+    // p2's own platform id — both as the onInbound target AND as senderId —
+    // so resolvePersonKey downstream resolves p2, never the victim.
+    const body = JSON.stringify({
+      platformId: 'ios-app-v2:default', // victim/owner — must be ignored
+      trigger: 'geofence',
+      text: 'pretend this came from the owner',
+    });
+    const r = await fetchJson(`${h.url}/ios/proactive`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body,
+    });
+    expect(r.status).toBe(200);
+
+    expect(h.inboundCalls).toHaveLength(1);
+    const call = h.inboundCalls[0];
+    // The TOKEN's platform id — NOT the spoofed body.platformId. If someone
+    // reverted to body-routing this would be 'ios-app-v2:default' and fail.
+    expect(call.pid).toBe(PLATFORM_ID);
+    expect(call.pid).not.toBe('ios-app-v2:default');
+    const content = call.msg.content as { senderId: string };
+    expect(content.senderId).toBe(PLATFORM_ID);
+    expect(content.senderId).not.toBe('ios-app-v2:default');
+  });
+
   it('returns 401 for an unknown bearer token', async () => {
     const r = await fetchJson(`${h.url}/ios/proactive`, {
       method: 'POST',
       headers: { Authorization: 'Bearer nope', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platformId: PLATFORM_ID, trigger: 'hk' }),
+      body: JSON.stringify({ trigger: 'hk' }),
     });
     expect(r.status).toBe(401);
   });
@@ -307,7 +334,7 @@ describe('POST /ios/proactive', () => {
     const r = await fetchJson(`${h.url}/ios/proactive`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platformId: PLATFORM_ID }),
+      body: JSON.stringify({}),
     });
     expect(r.status).toBe(400);
   });
@@ -317,7 +344,7 @@ describe('POST /ios/proactive', () => {
     const r = await fetchJson(`${h.url}/ios/proactive`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platformId: PLATFORM_ID, trigger: 'hk' }),
+      body: JSON.stringify({ trigger: 'hk' }),
     });
     expect(r.status).toBe(503);
   });

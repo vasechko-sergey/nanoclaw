@@ -11,6 +11,9 @@
 //                                    serviced request. Bearer auth.
 //   POST /ios/proactive          — HTTP fallback for proactive triggers
 //                                    when the WS is offline. Bearer auth.
+//                                    Routes by the token's platform_id; any
+//                                    body.platformId is ignored (no cross-
+//                                    person injection).
 //
 // Extracted into a standalone factory so tests can mount it on a stub
 // `http.Server` without spinning up the full adapter (which requires env
@@ -197,7 +200,6 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
       readBody(req)
         .then((body) => {
           const obj = JSON.parse(body) as {
-            platformId?: string;
             threadId?: string | null;
             text?: string;
             trigger?: string;
@@ -205,12 +207,15 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
             tz?: string;
             payload?: Record<string, unknown>;
           };
-          const pid = obj.platformId;
+          // Routing is by TOKEN identity, never by body.platformId. A body
+          // platform id is client-supplied and could name a DIFFERENT person's
+          // session — accepting it would let an authenticated caller inject a
+          // proactive prompt into someone else's agent (confused deputy). We
+          // ignore it entirely; only `trigger` must be present in the body.
+          const pid = id.platform_id;
           const trigger = obj.trigger ?? null;
-          if (!pid || !trigger) {
-            res
-              .writeHead(400, { 'Content-Type': 'application/json' })
-              .end('{"error":"platformId and trigger required"}');
+          if (!trigger) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"trigger required"}');
             return;
           }
           const cfg = getChannelSetup();
