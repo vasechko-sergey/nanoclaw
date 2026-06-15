@@ -3,7 +3,7 @@ import SwiftUI
 /// App root: owns the splash / connection gate, then branches by layout mode.
 ///
 /// - `.stacked` → existing `ContentView` (phone-style splash→home→chat).
-/// - `.split`   → `SplitRootView` placeholder (real panes in Task 7).
+/// - `.split`   → `SplitRootView`: OrbHubPane (38%) | hairline | ChatView(embedded: true).
 ///
 /// `GeometryReader` feeds the real available width into `Theme.refreshScale`
 /// and `Theme.refreshDrawerWidth`, replacing the UIScreen-based call that
