@@ -1,6 +1,9 @@
 import XCTest
 @testable import Jarvis
 
+// These tests mutate Theme's process-global scale/drawer caches. Each test
+// sets the cache via refreshScale/refreshDrawerWidth before asserting, so order
+// independence holds; do not read Theme.scale here without setting it first.
 final class ThemeScaleTests: XCTestCase {
     func testExplicitWidthDrivesScaleClamped() {
         Theme.refreshScale(width: 390)

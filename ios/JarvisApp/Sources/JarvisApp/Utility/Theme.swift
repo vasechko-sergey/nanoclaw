@@ -19,7 +19,11 @@ enum Theme {
     /// Set the scale from an explicit available-area width (preferred — call
     /// from RootAdaptiveView's GeometryReader). Same clamp as computeScale().
     static func refreshScale(width: CGFloat) {
-        _cachedScale = min(max(width / 390, 0.92), 1.15)
+        _cachedScale = applyScale(width)
+    }
+
+    private static func applyScale(_ width: CGFloat) -> CGFloat {
+        min(max(width / 390, 0.92), 1.15)
     }
 
     private static func computeScale() -> CGFloat {
@@ -31,7 +35,7 @@ enum Theme {
                 .compactMap { $0 as? UIWindowScene }.first?
                 .screen.bounds.width
             ?? 390
-        return min(max(width / 390, 0.92), 1.15)
+        return applyScale(width)
     }
 
     /// 0.96 on 12 mini (375), 1.0 on 13 Pro (390), 1.01 on 16 Pro (393), 1.10 on Pro Max (430)
