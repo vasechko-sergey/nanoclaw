@@ -13,9 +13,10 @@
  * (sick-day.test.ts) and Bun-side test (analyze.test.js) both pin the
  * canonical 7%/0.4°C/15% values.
  */
-import { resolveSession, writeSessionMessage } from '../../session-manager.js';
+import { writeSessionMessage, resolveSession } from '../../session-manager.js';
 import { wakeContainer } from '../../container-runner.js';
-import { getSession } from '../../db/sessions.js';
+import { getSessionsByAgentGroup } from '../../db/sessions.js';
+import { OWNER_PERSON_KEY } from '../../config.js';
 import { log } from '../../log.js';
 import type { HealthUploadDay } from '../../../shared/ios-app-protocol/index.js';
 
@@ -91,22 +92,32 @@ export interface SickDayCheckArgs {
    *  this from env `SICK_DAY_TARGET_AGENT_GROUP_ID` (falls back to undefined,
    *  in which case this function is a no-op). */
   agentGroupId: string | undefined;
+  /** Person performing the upload. Only their owned session will be woken.
+   *  Uses OWNER_PERSON_KEY if not provided (single-user back-compat). */
+  ownerKey: string;
   allRows: HealthUploadDay[]; // entire raw.jsonl decoded, oldest→newest
 }
 
-export async function sickDayCheck({ agentGroupId, allRows }: SickDayCheckArgs): Promise<void> {
+export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayCheckArgs): Promise<void> {
   if (!agentGroupId) return; // not configured on this install
   const detection = detect(allRows);
   if (!detection) return;
 
-  const { session } = resolveSession(agentGroupId, null, null, 'agent-shared');
-  const fresh = getSession(session.id);
-  if (!fresh || fresh.status !== 'active') {
-    log.warn('sick-day trigger: target session not active, skipping wake', {
+  // Find an active session for agentGroupId that belongs to this person.
+  // Mirror the owner-scoping in agent-route.ts resolveTargetSession.
+  let fresh = getSessionsByAgentGroup(agentGroupId)
+    .filter((s) => s.status === 'active' && (s.owner_key || OWNER_PERSON_KEY) === ownerKey)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+
+  if (!fresh) {
+    // No active session for this person — create a fresh owner-stamped one.
+    // Proactive sick-day must fire even when the health agent is idle.
+    // 'per-thread' + null messagingGroupId skips all reuse branches and stamps owner_key.
+    log.info('sick-day trigger: no active session for person, creating owner-stamped session', {
       agentGroupId,
-      detected: detection,
+      ownerKey,
     });
-    return;
+    fresh = resolveSession(agentGroupId, null, null, 'per-thread', ownerKey).session;
   }
 
   const msgId = `sickday-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

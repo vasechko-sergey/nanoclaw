@@ -169,6 +169,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
               readEnvFile(['SICK_DAY_TARGET_AGENT_GROUP_ID']).SICK_DAY_TARGET_AGENT_GROUP_ID;
             void sickDayCheck({
               agentGroupId: targetAgentGroupId,
+              ownerKey: id.person_key,
               allRows,
             }).catch((err) => {
               logWarn('sick-day trigger failed', { err: err instanceof Error ? err.message : String(err) });
