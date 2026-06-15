@@ -9,6 +9,8 @@ struct OrbHubPane: View {
     var coordinator: AppCoordinator
     var onOpenProfile: () -> Void
 
+    @StateObject private var stateService = StateService()
+    @State private var showStateBoard = false
     @State private var showSatellites = false
 
     // MARK: – Static helpers (pure, headless-testable)
@@ -73,11 +75,16 @@ struct OrbHubPane: View {
 
             Spacer()
 
-            // Health strip — populated by StateService in Task 8; nil until then.
-            HealthStripView(levels: nil)
+            // Health strip — wired to StateService; popover presents StateBoardView.
+            HealthStripView(levels: stateService.state?.levels)
+                .onTapGesture { showStateBoard = true }
                 .padding(.bottom, Theme.scaled(8))
         }
         .background(Theme.background)
         .accessibilityIdentifier("orb-hub-pane")
+        .onAppear { stateService.refresh() }
+        .popover(isPresented: $showStateBoard) {
+            NavigationView { StateBoardView(service: stateService) }
+        }
     }
 }
