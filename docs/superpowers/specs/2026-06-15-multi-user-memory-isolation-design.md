@@ -194,3 +194,27 @@ Phases 1–4 deliver working isolation on Telegram (testable with a second Teleg
 - Per-person persona divergence (different name/tone per person) — shared code keeps one persona; revisit if needed via a per-person override later.
 - The second person's cron (brief / health-cycle) — added after on-request usage is validated.
 - Per-person secrets/credentials (OneCLI agent secret modes) — the second person's credentialed actions (if any) need their own OneCLI agent/secret scoping; out of scope for the memory-isolation work, flagged for when she uses credentialed tools.
+
+---
+
+## 15. Implementation findings (phase 1–4 → phase 5 seam)
+
+Surfaced by the final holistic review after phases 1–4 landed. Both are forward-looking (phase 5 / deploy), not defects in 1–4 — the Telegram-scope isolation is complete and verified.
+
+### 15.1 Session-creating paths that still need owner_key (phase 5)
+
+Phase 3 wired `owner_key` through the router (`src/router.ts`). Two other session-creating paths do NOT yet pass it — benign while iOS is single-token (they default to `OWNER_PERSON_KEY`, correct for the sole owner), but **they become isolation holes the moment a second person is on iOS**, so phase 5 MUST include them:
+
+- **`src/adapter-route.ts`** — the iOS inbound path. Its three `resolveSession(...)` calls omit the 5th `ownerKey` arg even though `userId` is resolved. Phase 5 must pass `resolvePersonKey(userId)` to all three, mirroring `router.ts`.
+- **`src/modules/health-trigger/sick-day.ts`** — headless health-trigger session creation; needs owner-awareness if Greg ever serves more than one person.
+
+Until then the spec §4 invariant ("owner_key comes solely from session.owner_key") is technically satisfied only because these paths' sessions resolve to the single owner.
+
+### 15.2 Deploy-ordering — DO NOT migrate before iOS health-ingest is re-pathed
+
+`scripts/migrate-owner-memory.ts` moves `groups/<folder>/health/` into `user-memory/<owner>/<folder>/health/` and `buildMounts` now mounts the group dir **read-only**. But the **host-side iOS health writer** (`src/channels/ios-app/v2/http-handler.ts` + `index.ts`, gated by `IOS_HEALTH_HISTORY_DIR`) still writes to the OLD `GROUPS_DIR/<folder>/health/health.db` — which the container no longer reads. **Consequence: after the migration, Greg stops receiving new HealthKit data until phase 5 re-paths the ingest** (spec §8.4: write to `user-memory/<person>/<folder>/health/`, remove `IOS_HEALTH_HISTORY_DIR`).
+
+Therefore, on the VDS:
+- **Do not deploy phases 1–4 and run `migrate-owner-memory.ts` until the iOS health-ingest re-path (phase 5, §8.4) is also ready** — otherwise the owner's own Greg health data silently stops flowing. (Deploying 1–4 *requires* running the migration in the same window, because `buildMounts` reads `user-memory/<owner>/…` which is empty until migrated — so "deploy 1–4 but skip migration" is not a safe option either.)
+- Practically: since the second person needs iOS anyway, sequence the VDS rollout as **1–4 + 5 (at least §8.4 ingest re-path) together**, then migrate, then provision the second person.
+- Migration preconditions remain: **stop the service first** (so `initUserMemory` can't race in and pre-create empty targets that cause whole-subdir SKIPs), and **back up** `groups/` + `data/` (the script MOVEs, not copies).
