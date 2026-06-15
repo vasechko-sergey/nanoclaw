@@ -10,8 +10,8 @@ enum Theme {
     /// `refreshScale()` when the host app sees a scene-phase change.
     private static var _cachedScale: CGFloat?
 
-    /// Force a re-read of the active window scene width. Call from the app's
-    /// scene observer when the active scene changes or rotates.
+    /// Force a re-read from the active window scene width. Retained as a
+    /// fallback; the app now drives scale via RootAdaptiveView's GeometryReader.
     static func refreshScale() {
         _cachedScale = computeScale()
     }
@@ -107,6 +107,8 @@ enum Theme {
     static let hairlineColor = Theme.accent.opacity(0.05)
     private static var _cachedDrawerWidth: CGFloat?
 
+    /// Force a re-read of the drawer width from the active window scene. Retained
+    /// as a fallback; the app now drives drawer width via RootAdaptiveView's GeometryReader.
     static func refreshDrawerWidth() {
         _cachedDrawerWidth = computeDrawerWidth()
     }

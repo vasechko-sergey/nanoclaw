@@ -38,7 +38,7 @@ struct RootAdaptiveView: View {
                     case .stacked:
                         ContentView(coordinator: coordinator)
                     case .split:
-                        SplitRootView(coordinator: coordinator)
+                        SplitRootView(coordinator: coordinator, width: geo.size.width)
                     }
                 }
             }
@@ -62,11 +62,52 @@ struct RootAdaptiveView: View {
     }
 }
 
-// MARK: – Split placeholder (Task 7 will replace this with real panes)
+// MARK: – Split layout: OrbHubPane | divider | ChatView(embedded:true)
 
 private struct SplitRootView: View {
     var coordinator: AppCoordinator
+    var width: CGFloat
+
+    @State private var showProfile = false
+
+    /// Hub pane width: 38% of available width, clamped to [360, 460] pt.
+    private var paneWidth: CGFloat { min(max(width * 0.38, 360), 460) }
+
     var body: some View {
-        ContentView(coordinator: coordinator)
+        HStack(spacing: 0) {
+            // Left pane: persistent agent navigator (orb hub).
+            // onOpenProfile routes to a sheet rather than the fullscreen
+            // right-edge drawer that ChatView uses in stacked mode.
+            OrbHubPane(coordinator: coordinator, onOpenProfile: { showProfile = true })
+                .frame(width: paneWidth)
+
+            // Hairline column divider using the accent colour at low opacity.
+            Rectangle()
+                .fill(Theme.accent.opacity(0.08))
+                .frame(width: 0.5)
+
+            // Right canvas: chat in embedded mode — own right-drawer is
+            // suppressed so it doesn't conflict with the hub pane.
+            ChatView(coordinator: coordinator,
+                     onGoHome: {},
+                     autoStartVoice: .constant(false),
+                     embedded: true)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("chat-canvas")
+        }
+        // Profile/settings sheet owned by this pane — the hub header dot
+        // triggers it; ChatView's own drawer is disabled when embedded.
+        .sheet(isPresented: $showProfile) {
+            RightDrawerContent(
+                isConnected: coordinator.ws.isConnected,
+                onReconnect: {
+                    coordinator.disconnect()
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(300))
+                        coordinator.connect()
+                    }
+                }
+            )
+        }
     }
 }

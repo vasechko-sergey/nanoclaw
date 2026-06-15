@@ -280,38 +280,44 @@ struct ChatView: View {
         // keyboard-avoidance offset, so the agent picker (which grows tall when
         // expanded) no longer drifts upward when the keyboard is open.
         .safeAreaInset(edge: .top, spacing: 0) { header }
+        // Right-edge swipe to open drawer. In embedded mode the gesture fires
+        // but all branches return early, so the drawer state is never mutated
+        // (the hub pane's sheet owns profile access in the split layout).
         .simultaneousGesture(rightEdgeSwipeGesture)
 
-        // Right drawer
-        if rightDrawerOpen {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture { withAnimation { rightDrawerOpen = false } }
-                .transition(.opacity)
-        }
-
-        RightDrawerContent(
-            isConnected: ws.isConnected,
-            onReconnect: {
-                coordinator.disconnect()
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(300))
-                    coordinator.connect()
-                }
+        // Right drawer — suppressed in embedded mode to avoid a duplicate
+        // profile route conflicting with the hub pane's sheet presentation.
+        if !embedded {
+            if rightDrawerOpen {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation { rightDrawerOpen = false } }
+                    .transition(.opacity)
             }
-        )
-        .frame(width: Theme.drawerWidth)
-        .offset(x: {
-                let screenWidth = UIScreen.main.bounds.width
-                if rightDrawerOpen {
-                    return min(screenWidth, screenWidth - Theme.drawerWidth + rightDrawerDragOffset)
-                } else {
-                    return screenWidth - max(0, min(-rightDrawerDragOffset, Theme.drawerWidth))
+
+            RightDrawerContent(
+                isConnected: ws.isConnected,
+                onReconnect: {
+                    coordinator.disconnect()
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(300))
+                        coordinator.connect()
+                    }
                 }
-            }())
-        .gesture(rightDrawerDragToClose)
-        .shadow(color: .black.opacity(rightDrawerOpen ? 0.4 : 0), radius: 12, x: -4)
-        .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: rightDrawerOpen)
+            )
+            .frame(width: Theme.drawerWidth)
+            .offset(x: {
+                    let screenWidth = UIScreen.main.bounds.width
+                    if rightDrawerOpen {
+                        return min(screenWidth, screenWidth - Theme.drawerWidth + rightDrawerDragOffset)
+                    } else {
+                        return screenWidth - max(0, min(-rightDrawerDragOffset, Theme.drawerWidth))
+                    }
+                }())
+            .gesture(rightDrawerDragToClose)
+            .shadow(color: .black.opacity(rightDrawerOpen ? 0.4 : 0), radius: 12, x: -4)
+            .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: rightDrawerOpen)
+        }
 
         } // ZStack
         .animation(.spring(duration: 0.4, bounce: 0.15), value: visibleMessages.isEmpty)
@@ -520,6 +526,8 @@ struct ChatView: View {
     private var rightEdgeSwipeGesture: some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
+                // In embedded (split) layout the hub pane owns profile; no drawer here.
+                guard !embedded else { return }
                 let screenWidth = UIScreen.main.bounds.width
                 if value.startLocation.x > screenWidth - Self.edgeSwipeZone
                     && value.translation.width < 0
@@ -529,6 +537,8 @@ struct ChatView: View {
                 }
             }
             .onEnded { value in
+                // In embedded (split) layout the hub pane owns profile; no drawer here.
+                guard !embedded else { return }
                 let screenWidth = UIScreen.main.bounds.width
                 let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
                 if !rightDrawerOpen

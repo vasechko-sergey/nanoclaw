@@ -47,6 +47,11 @@ targets:
         NSSpeechRecognitionUsageDescription: "Распознавание речи превращает ваш голос в текст сообщения"
         NSCalendarsUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
         NSCalendarsFullAccessUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     entitlements:
       path: JarvisApp.entitlements
       properties:
@@ -61,6 +66,7 @@ targets:
         DEVELOPMENT_TEAM: 24Z6S27D7U
         SWIFT_VERSION: "5.9"
         ENABLE_USER_SCRIPT_SANDBOXING: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
 
   JarvisUITests:
     type: bundle.ui-testing
