@@ -25,6 +25,8 @@ import path from 'path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { initTestDb, closeDb, runMigrations, createAgentGroup, createSession, getSession } from './db/index.js';
+import { updateSession } from './db/sessions.js';
+import { insertTask } from './modules/scheduling/db.js';
 import {
   sessionsBaseDir,
   sessionDir,
@@ -606,5 +608,86 @@ describe('resolveSession owner_key', () => {
     createAgentGroup({ id: TEST_AG, name: 'Test', folder: TEST_AG, agent_provider: null, created_at: now() });
     const { session } = resolveSession(TEST_AG, null, null, 'agent-shared');
     expect(session.owner_key).toBe(OWNER_PERSON_KEY);
+  });
+
+  it('a rotated session inherits the prior session owner_key when no owner is passed', () => {
+    createAgentGroup({ id: TEST_AG, name: 'Test', folder: TEST_AG, agent_provider: null, created_at: now() });
+    const first = resolveSession(TEST_AG, null, null, 'agent-shared', 'p2').session;
+    updateSession(first.id, { status: 'closed' });
+    const second = resolveSession(TEST_AG, null, null, 'agent-shared').session; // no owner arg
+    expect(second.owner_key).toBe('p2');
+  });
+});
+
+// ── resolveSession: cross-owner recurring-task migration guard (SECURITY) ──
+
+describe('resolveSession recurring-task migration owner gate', () => {
+  // Count live recurring tasks in a session's inbound.db — mirrors the read
+  // shape migrateRecurringTasks uses (kind='task', recurrence set, pending/paused).
+  function countRecurring(agentGroupId: string, sessionId: string): number {
+    const db = openInboundDb(agentGroupId, sessionId);
+    try {
+      const row = db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM messages_in WHERE kind = 'task' AND recurrence IS NOT NULL AND status IN ('pending', 'paused')",
+        )
+        .get() as { n: number };
+      return row.n;
+    } finally {
+      db.close();
+    }
+  }
+
+  // Seed one live recurring task into a session's inbound.db, using the
+  // scheduling module's insert helper (same path the agent's schedule tool uses).
+  function seedRecurringTask(agentGroupId: string, sessionId: string) {
+    const db = openInboundDb(agentGroupId, sessionId);
+    try {
+      insertTask(db, {
+        id: 'task-seed',
+        processAfter: new Date().toISOString(),
+        recurrence: '0 9 * * *',
+        platformId: null,
+        channelType: null,
+        threadId: null,
+        content: JSON.stringify({ prompt: 'morning brief' }),
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  it('does NOT migrate a foreign-owner prior session recurring tasks (security guard)', () => {
+    createAgentGroup({ id: TEST_AG, name: 'Test', folder: TEST_AG, agent_provider: null, created_at: now() });
+
+    // Prior session owned by `sergei`, carrying a live recurring task.
+    const prior = resolveSession(TEST_AG, null, null, 'agent-shared', 'sergei').session;
+    seedRecurringTask(TEST_AG, prior.id);
+    expect(countRecurring(TEST_AG, prior.id)).toBe(1); // sanity: seed landed
+    updateSession(prior.id, { status: 'closed' });
+
+    // Fresh session for a DIFFERENT owner `p2` (e.g. via a2a, which passes ownerKey).
+    const fresh = resolveSession(TEST_AG, null, null, 'agent-shared', 'p2').session;
+
+    expect(fresh.owner_key).toBe('p2');
+    // sergei's recurring task must NOT have leaked into p2's session.
+    expect(countRecurring(TEST_AG, fresh.id)).toBe(0);
+  });
+
+  it('DOES migrate recurring tasks on same-owner rotation (positive control)', () => {
+    createAgentGroup({ id: TEST_AG, name: 'Test', folder: TEST_AG, agent_provider: null, created_at: now() });
+
+    // Prior owned by `sergei` with a live recurring task.
+    const prior = resolveSession(TEST_AG, null, null, 'agent-shared', 'sergei').session;
+    seedRecurringTask(TEST_AG, prior.id);
+    expect(countRecurring(TEST_AG, prior.id)).toBe(1);
+    updateSession(prior.id, { status: 'closed' });
+
+    // Rotation with NO owner arg → effectiveOwnerKey inherits `sergei`.
+    const fresh = resolveSession(TEST_AG, null, null, 'agent-shared').session;
+
+    expect(fresh.owner_key).toBe('sergei');
+    // Legit same-owner rotation still carries the recurring task forward.
+    expect(countRecurring(TEST_AG, fresh.id)).toBe(1);
   });
 });

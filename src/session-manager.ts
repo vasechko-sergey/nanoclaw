@@ -122,12 +122,17 @@ export function resolveSession(
   const priorScopeMg = sessionMode === 'agent-shared' ? null : messagingGroupId;
   const prior = findLatestSession(agentGroupId, priorScopeMg, lookupThreadId);
 
+  // Owner of the fresh session: an explicit caller key wins (interactive +
+  // a2a always pass one); otherwise inherit the predecessor's owner (rotation
+  // keeps its person); else the owner. `??` so null prior owners fall through.
+  const effectiveOwnerKey = ownerKey ?? prior?.owner_key ?? OWNER_PERSON_KEY;
+
   const session: Session = {
     id,
     agent_group_id: agentGroupId,
     messaging_group_id: messagingGroupId,
     thread_id: lookupThreadId,
-    owner_key: ownerKey ?? OWNER_PERSON_KEY, // Task 11 will extend this to inherit prior?.owner_key
+    owner_key: effectiveOwnerKey,
     agent_provider: null,
     status: 'active',
     container_status: 'stopped',
@@ -138,7 +143,10 @@ export function resolveSession(
   createSession(session);
   initSessionFolder(agentGroupId, id);
 
-  if (prior && prior.id !== id) {
+  // Only inherit recurring tasks from a prior session OWNED BY THE SAME PERSON.
+  // A foreign-owner prior (newest of the group but a different person) must not
+  // leak its scheduled tasks into this owner's fresh session.
+  if (prior && prior.id !== id && (prior.owner_key ?? OWNER_PERSON_KEY) === effectiveOwnerKey) {
     try {
       const fromDb = openInboundDb(agentGroupId, prior.id);
       const toDb = openInboundDb(agentGroupId, id);
