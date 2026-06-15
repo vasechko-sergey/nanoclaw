@@ -359,6 +359,20 @@ final class WebSocketClientV2 {
         }
     }
 
+    /// Send a `new_conversation` envelope for the given agent. The server spawns
+    /// a fresh session container; the old thread_id is abandoned. A new UUID is
+    /// generated as the replacement thread_id.
+    func sendNewConversation(agentId: String = "jarvis") {
+        guard stack != nil else { return }
+        let payload = V2.NewConversation(thread_id: UUID().uuidString, agent_id: agentId)
+        Task { [weak self] in
+            await self?.stack.transport.sendControlEnvelope(
+                type: .newConversation,
+                payload: .newConversation(payload)
+            )
+        }
+    }
+
     func sendActionResponse(messageId: String, buttonId: String, buttonLabel: String) {
         guard stack != nil else { return }
         let payload = V2.ActionResponse(action_id: messageId, choice: buttonId)

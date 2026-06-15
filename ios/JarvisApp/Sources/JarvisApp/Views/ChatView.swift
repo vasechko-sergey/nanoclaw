@@ -27,6 +27,13 @@ struct ChatView: View {
     var coordinator: AppCoordinator
     var onGoHome: (() -> Void)? = nil
     @Binding var autoStartVoice: Bool
+    /// When `true`, ChatView is mounted as the right-hand canvas in the iPad split
+    /// layout. The home/back affordance (onGoHome long-press on the agent picker) is
+    /// hidden — the orb hub pane is always visible on the left — and a "new chat"
+    /// button is shown instead. All other chrome (agent name, status, timeline,
+    /// input bar) is identical to the fullscreen path. Default `false` preserves
+    /// the existing fullscreen behaviour byte-for-byte.
+    var embedded: Bool = false
 
     @State private var inputText       = ""
     @State private var inputViaVoice   = false
@@ -414,27 +421,47 @@ struct ChatView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            HeaderStatusDot(side: .left, isConnected: ws.isConnected, phase: orbMood) {
-                showVoiceFullscreen = true
-            } onLongPress: {
-                showVoiceFullscreen = true
-            }
-            .accessibilityIdentifier("orb-drawer-btn")
-            .accessibilityLabel(ws.isConnected ? "Голосовой режим. Подключено" : "Голосовой режим. Отключено")
-
-            Spacer()
-
-            AgentPickerInline(onLongPress: onGoHome)
-
-            Spacer()
-
-            HeaderStatusDot(side: .right, isConnected: ws.isConnected, phase: orbMood) {
-                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
-                    rightDrawerOpen = true
+            // Left status dot — voice mode in fullscreen; absent in embedded
+            // (the orb hub pane on the left owns voice access in split layout).
+            if !embedded {
+                HeaderStatusDot(side: .left, isConnected: ws.isConnected, phase: orbMood) {
+                    showVoiceFullscreen = true
+                } onLongPress: {
+                    showVoiceFullscreen = true
                 }
+                .accessibilityIdentifier("orb-drawer-btn")
+                .accessibilityLabel(ws.isConnected ? "Голосовой режим. Подключено" : "Голосовой режим. Отключено")
             }
-            .accessibilityIdentifier("right-drawer-btn")
-            .accessibilityLabel("Открыть профиль и настройки")
+
+            Spacer()
+
+            // Agent name + status. In fullscreen, long-press goes home.
+            // In embedded, there is no home phase — long-press is omitted.
+            AgentPickerInline(onLongPress: embedded ? nil : onGoHome)
+
+            Spacer()
+
+            // Right side: settings drawer in fullscreen; "new chat" in embedded.
+            if embedded {
+                Button {
+                    ws.sendNewConversation(agentId: active.active.rawValue)
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: Theme.scaled(18)))
+                        .foregroundStyle(Theme.accentMedium)
+                        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                }
+                .accessibilityLabel("Новый чат")
+                .accessibilityIdentifier("new-chat-btn")
+            } else {
+                HeaderStatusDot(side: .right, isConnected: ws.isConnected, phase: orbMood) {
+                    withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                        rightDrawerOpen = true
+                    }
+                }
+                .accessibilityIdentifier("right-drawer-btn")
+                .accessibilityLabel("Открыть профиль и настройки")
+            }
         }
         .padding(.horizontal, Theme.scaled(8))
         .frame(minHeight: Theme.headerHeight)
