@@ -5,8 +5,10 @@ import SwiftUI
 /// `UIScreen.main.bounds` or `UIDevice.orientation`, so it stays correct in
 /// Stage Manager, Split View, Slide Over, and rotation.
 enum LayoutMode: Equatable {
-    case split    // Orb Hub left pane + chat canvas right pane
-    case stacked  // current phone flow (splash -> home -> chat)
+    /// Orb Hub left pane + chat canvas right pane
+    case split
+    /// current phone flow (splash -> home -> chat)
+    case stacked
 
     /// Split only when the window is a wide landscape regular-width area.
     /// `width > height` detects a landscape *window* (works in Stage Manager,

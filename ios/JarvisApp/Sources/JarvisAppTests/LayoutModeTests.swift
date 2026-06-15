@@ -18,4 +18,11 @@ final class LayoutModeTests: XCTestCase {
     func testBelowMinWidthIsStacked() {
         XCTAssertEqual(LayoutMode.resolve(width: 880, height: 600, horizontalSizeClass: .regular), .stacked)
     }
+    func testNilSizeClassIsStacked() {
+        XCTAssertEqual(LayoutMode.resolve(width: 1200, height: 800, horizontalSizeClass: nil), .stacked)
+    }
+    func testBoundaryAt900() {
+        XCTAssertEqual(LayoutMode.resolve(width: 900, height: 600, horizontalSizeClass: .regular), .split)
+        XCTAssertEqual(LayoutMode.resolve(width: 899, height: 600, horizontalSizeClass: .regular), .stacked)
+    }
 }
