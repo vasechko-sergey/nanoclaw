@@ -87,7 +87,7 @@ final class CalendarManager: ObservableObject {
             calendars: nil)
         return await withCheckedContinuation { cont in
             store.fetchReminders(matching: pred) { rems in
-                cont.resume(returning: (rems ?? []).map { ($0.title ?? "", $0.dueDateComponents?.date) })
+                cont.resume(returning: (rems ?? []).map { ($0.title ?? "", $0.dueDateComponents.flatMap { Calendar.current.date(from: $0) }) })
             }
         }
     }
