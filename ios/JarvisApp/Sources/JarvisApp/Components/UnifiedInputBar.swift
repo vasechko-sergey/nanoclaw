@@ -65,6 +65,10 @@ struct UnifiedInputBar: View {
                         .tint(Theme.accent)
                         .padding(.trailing, Theme.messagePadH)
                         .padding(.vertical, Theme.messagePadV)
+                        .onKeyPress(.escape) {
+                            textFocused = false
+                            return .handled
+                        }
                         .onChange(of: text) {
                             if showCommands && !text.hasPrefix("/") { showCommands = false }
                             if enterToSend && text.contains("\n") {

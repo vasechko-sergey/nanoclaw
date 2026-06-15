@@ -124,6 +124,7 @@ struct OrbHub: View {
                             }
                         }
                         .onLongPressGesture(minimumDuration: 0.3) {
+                            guard !actionSatellites.isEmpty else { return }
                             Theme.hapticMedium()
                             withAnimation(.spring(duration: 0.4, bounce: 0.25)) {
                                 showSatellites.toggle()
