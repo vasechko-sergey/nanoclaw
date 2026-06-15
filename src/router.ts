@@ -459,7 +459,13 @@ async function deliverToAgent(
         updateSession(existing.id, { status: 'closed' });
         log.info('Session reset by /new', { oldSessionId: existing.id, agentGroupId: agent.agent_group_id });
       }
-      const { session: newSession } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode, resolvePersonKey(userId));
+      const { session: newSession } = resolveSession(
+        agent.agent_group_id,
+        mg.id,
+        event.threadId,
+        effectiveSessionMode,
+        resolvePersonKey(userId),
+      );
       writeOutboundDirect(newSession.agent_group_id, newSession.id, {
         id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',
@@ -497,7 +503,13 @@ async function deliverToAgent(
     }
   }
 
-  const { session, created } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode, resolvePersonKey(userId));
+  const { session, created } = resolveSession(
+    agent.agent_group_id,
+    mg.id,
+    event.threadId,
+    effectiveSessionMode,
+    resolvePersonKey(userId),
+  );
 
   writeSessionMessage(session.agent_group_id, session.id, {
     id: messageIdForAgent(event.message.id, agent.agent_group_id),

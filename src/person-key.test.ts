@@ -42,8 +42,20 @@ describe('resolvePersonKey', () => {
   });
 
   it('upsertUser with null person_key does not overwrite an existing key', () => {
-    upsertUser({ id: 'telegram:111', kind: 'telegram', display_name: null, person_key: 'sergei', created_at: new Date().toISOString() });
-    upsertUser({ id: 'telegram:111', kind: 'telegram', display_name: 'X', person_key: null, created_at: new Date().toISOString() });
+    upsertUser({
+      id: 'telegram:111',
+      kind: 'telegram',
+      display_name: null,
+      person_key: 'sergei',
+      created_at: new Date().toISOString(),
+    });
+    upsertUser({
+      id: 'telegram:111',
+      kind: 'telegram',
+      display_name: 'X',
+      person_key: null,
+      created_at: new Date().toISOString(),
+    });
     expect(resolvePersonKey('telegram:111')).toBe('sergei');
   });
 });
