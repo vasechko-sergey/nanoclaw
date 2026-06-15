@@ -136,5 +136,11 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
             return .object(o)
         })
     }
+
+    func focus() async throws -> V2.JSONValue {
+        let manager = FocusManager()
+        guard let isFocused = await manager.isFocused() else { return .object([:]) }
+        return .object(["is_focused": .bool(isFocused)])
+    }
 }
 

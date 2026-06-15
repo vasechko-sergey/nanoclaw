@@ -56,6 +56,10 @@ describe('ContextFieldEnum', () => {
   it('includes reminders context field', () => {
     expect(ContextFieldEnum.options).toContain('reminders');
   });
+
+  it('includes focus context field', () => {
+    expect(ContextFieldEnum.options).toContain('focus');
+  });
 });
 
 const baseFor = (over: Record<string, unknown>) => ({

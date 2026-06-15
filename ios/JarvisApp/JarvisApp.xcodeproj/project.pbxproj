@@ -66,6 +66,7 @@
 		5ED5035D7E3D50CCD815D5C7 /* HeaderStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */; };
 		5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0FFCD560E41761030820EB /* MessageTimeline.swift */; };
 		60A15D336161E4F7B01FCFDE /* RootAdaptiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4D726F40E1C0A68667B04D /* RootAdaptiveView.swift */; };
+		6186D5A132F83B496ACE888F /* FocusManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB045FEDE8DF92DA021B5344 /* FocusManager.swift */; };
 		634AE794B556552200D1D06A /* JarvisWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C75412A22FD477079ABB55 /* JarvisWatchApp.swift */; };
 		63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */; };
 		645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */; };
@@ -281,6 +282,7 @@
 		D4F5269F585666FD6D8F3D6F /* ChatViewAgentFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewAgentFilterTests.swift; sourceTree = "<group>"; };
 		D6B42F42A5AB27AFC0DD5943 /* UnifiedInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedInputBar.swift; sourceTree = "<group>"; };
 		D79D4272E5619C20A18D50D9 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
+		DB045FEDE8DF92DA021B5344 /* FocusManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusManager.swift; sourceTree = "<group>"; };
 		E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageView.swift; sourceTree = "<group>"; };
 		E1916FC4113359563C4205F1 /* SetLogQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetLogQueue.swift; sourceTree = "<group>"; };
 		E1E7FBAD4AE7AF8E526AC62E /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
@@ -546,6 +548,7 @@
 				D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */,
 				3C6A33B378AA0CC36F2DE37A /* ConnectivityMonitor.swift */,
 				17900485123C543C21298F5A /* ExerciseImageCache.swift */,
+				DB045FEDE8DF92DA021B5344 /* FocusManager.swift */,
 				2B40F32A70A80FF764EB592B /* HealthBackgroundTask.swift */,
 				3DC04EA76CC0F89FF14E7849 /* HealthHistory.swift */,
 				FE1A573133241875D7269CED /* HealthManager.swift */,
@@ -779,6 +782,7 @@
 				3BC3B261F475A3B3A3E3FF7B /* EmptyStateView.swift in Sources */,
 				F5926B33AF8C019BC3EEB826 /* ExerciseCardView.swift in Sources */,
 				7EED161B6F0BB654D4D9EC3C /* ExerciseImageCache.swift in Sources */,
+				6186D5A132F83B496ACE888F /* FocusManager.swift in Sources */,
 				3EB9B81E598895106D47F1DB /* FullScreenImageView.swift in Sources */,
 				5D14A252DCD5E3C28D7E12A4 /* GreetingBank.swift in Sources */,
 				5ED5035D7E3D50CCD815D5C7 /* HeaderStatusDot.swift in Sources */,

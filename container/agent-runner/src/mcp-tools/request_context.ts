@@ -37,7 +37,7 @@ import type { McpToolDefinition } from './types.js';
 // `shared/ios-app-protocol/v2.ts`; this list must stay in sync, and the
 // `satisfies` check below makes a drift a compile error.
 const CONTEXT_FIELDS = [
-  'health', 'calendar', 'device', 'next_event', 'recent_locations', 'screen_state', 'reminders',
+  'health', 'calendar', 'device', 'next_event', 'recent_locations', 'screen_state', 'reminders', 'focus',
 ] as const satisfies readonly ContextField[];
 
 // Bidirectional check: if shared adds a new ContextField, this assignment

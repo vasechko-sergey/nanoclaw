@@ -48,6 +48,7 @@ targets:
         NSCalendarsUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
         NSCalendarsFullAccessUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
         NSRemindersFullAccessUsageDescription: "Список незавершённых напоминаний передаётся агенту как контекст"
+        NSFocusStatusUsageDescription: "Статус режима Фокуса передаётся агенту как контекст"
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
