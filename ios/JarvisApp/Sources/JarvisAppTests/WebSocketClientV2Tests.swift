@@ -112,6 +112,21 @@ final class WebSocketClientV2Tests: XCTestCase {
         }
     }
 
+    func testSendNewConversationEmitsEnvelope() async throws {
+        client.sendNewConversation(agentId: "payne")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let envelopes = socket.sent.compactMap { try? JSONDecoder().decode(V2.Envelope.self, from: $0) }
+        guard let env = envelopes.first(where: { $0.type == .newConversation }) else {
+            XCTFail("expected a new_conversation envelope"); return
+        }
+        if case .newConversation(let n) = env.payload {
+            XCTAssertEqual(n.agent_id, "payne")
+            XCTAssertFalse(n.thread_id.isEmpty, "thread_id should be a non-empty UUID string")
+        } else {
+            XCTFail("payload mismatch")
+        }
+    }
+
     // MARK: - Status envelopes
 
     func testSendMessageReadEmitsStatusEnvelopeOnceWhenConnected() async throws {
