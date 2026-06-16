@@ -12,6 +12,7 @@ import type Database from 'better-sqlite3';
 import { getRunningSessions, getActiveSessions, createPendingQuestion } from './db/sessions.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
+import { renderVoice } from './modules/voice/tts-client.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
 import {
   getDueOutboundMessages,
@@ -373,6 +374,33 @@ async function deliverMessage(
     platformMsgId,
     fileCount: files?.length,
   });
+
+  // Voice note: if the session has voice_intent set and the reply has text,
+  // render via the TTS sidecar and deliver as a voice note. Runs after text
+  // delivery so a TTS failure never blocks the text reply from landing.
+  // renderVoice returns null when the sidecar is unreachable — skip silently.
+  const voiceRow = getDb()
+    .prepare('SELECT voice_intent FROM sessions WHERE id = ?')
+    .get(session.id) as { voice_intent: number } | undefined;
+  if (voiceRow?.voice_intent && content.text && typeof content.text === 'string' && content.text.trim()) {
+    try {
+      const opus = await renderVoice(content.text as string, 'jarvis');
+      if (opus) {
+        await deliveryAdapter.deliver(
+          msg.channel_type,
+          msg.platform_id,
+          msg.thread_id,
+          msg.kind,
+          JSON.stringify({ operation: 'send_voice' }),
+          [{ filename: 'reply.ogg', data: opus, operation: 'send_voice' as const }],
+          session.agent_group_id,
+        );
+        log.info('Voice note delivered', { id: msg.id, sessionId: session.id });
+      }
+    } catch (err) {
+      log.warn('Voice note delivery failed', { id: msg.id, sessionId: session.id, err });
+    }
+  }
 
   clearOutbox(session.agent_group_id, session.id, msg.id);
 
