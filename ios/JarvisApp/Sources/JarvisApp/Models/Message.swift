@@ -64,6 +64,7 @@ struct ChatMessage: Identifiable {
         case text(String)
         case image(UIImage, filename: String)
         case file(FileInfo)
+        case audio(FileInfo)   // server-rendered voice note (kind=="audio" or mime audio/*)
         case action(ActionInfo)
         case status(StatusInfo)
     }
@@ -75,8 +76,15 @@ struct ChatMessage: Identifiable {
         case .text(let t): return t
         case .action(let a): return a.text
         case .status(let s): return s.text
+        case .audio(let f): return f.name
         default: return ""
         }
+    }
+
+    /// The audio FileInfo if this message carries a server voice note.
+    var audioInfo: FileInfo? {
+        if case .audio(let f) = content { return f }
+        return nil
     }
 
     var isVisible: Bool {

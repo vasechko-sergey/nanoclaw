@@ -193,11 +193,33 @@ struct OrbVoiceView: View {
 
     private func handleNewAssistantMessage() {
         guard let msg = coordinator.ws.messages.last,
-              msg.role == .assistant,
-              !msg.text.isEmpty else { return }
-        controller.handleAssistantTextArrived(msg.text)
-        coordinator.speech.speak(msg.text)
-        observeSynthesizerFinish()
+              msg.role == .assistant else { return }
+
+        // Prefer server-rendered audio; fall back to on-device TTS.
+        if let audioInfo = msg.audioInfo,
+           let b64 = audioInfo.url,
+           let data = Data(base64Encoded: b64) {
+            controller.handleAssistantTextArrived(msg.text)
+            coordinator.audioPlayer.play(data: data)
+            observeAudioFinish()
+        } else {
+            guard !msg.text.isEmpty else { return }
+            controller.handleAssistantTextArrived(msg.text)
+            coordinator.speech.speak(msg.text)
+            observeSynthesizerFinish()
+        }
+    }
+
+    private func observeAudioFinish() {
+        Task { @MainActor in
+            while coordinator.audioPlayer.isPlaying {
+                try? await Task.sleep(for: .milliseconds(150))
+            }
+            controller.handleSynthesizerDidFinish(autoResume: settings.autoResumeListening)
+            if settings.autoResumeListening {
+                speech.start()
+            }
+        }
     }
 
     private func observeSynthesizerFinish() {

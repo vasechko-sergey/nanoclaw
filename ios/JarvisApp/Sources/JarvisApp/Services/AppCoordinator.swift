@@ -19,6 +19,8 @@ final class AppCoordinator {
     private(set) var health: HealthManager
     private(set) var calendar: CalendarManager
     private(set) var speech: SpeechSynthesizer
+    /// Plays server-rendered voice-note audio attachments.
+    private(set) var audioPlayer: AudioPlaybackService
     private(set) var proactiveDispatcher: ProactiveDispatcher!
     private(set) var watchBridge: WatchConnectivityBridge!
 
@@ -59,6 +61,7 @@ final class AppCoordinator {
         self.health = health
         self.calendar = calendar
         self.speech = SpeechSynthesizer()
+        self.audioPlayer = AudioPlaybackService()
         // Build the storage half of the v2 stack now so the MessageTimeline
         // can start observing before splash/home renders. Transport half is
         // built lazily on first `connect(settings:)` (URL/token aren't known
@@ -237,9 +240,15 @@ final class AppCoordinator {
             )
         }
 
-        // Auto-speak assistant text only when the triggering message was dictated
-        // and no server-rendered audio arrived (audio playback is handled by
-        // onAudioMessage; this fallback fires only when audio is absent).
+        // Server-rendered audio: play the voice note directly.
+        ws.onAudioMessage = { [weak self] base64 in
+            guard let self, let data = Data(base64Encoded: base64) else { return }
+            self.audioPlayer.play(data: data)
+        }
+
+        // Fallback TTS: fire only when the send was voice-mode and no audio
+        // attachment arrived (audio messages come through onAudioMessage above,
+        // not through this path — their content is .audio, not .text).
         ws.onSpeakableText = { [weak self] text in
             guard let self, self.settings.autoSpeak, self.lastSendWasVoice else { return }
             self.speech.speak(text)
