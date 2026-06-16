@@ -395,34 +395,34 @@ export function buildMounts(
   initUserMemory(ownerKey, agentGroup.folder);
   const memRoot = userMemoryRoot(ownerKey, agentGroup.folder);
 
+  // Sync shared CODE from the group dir into the per-person agent dir, so the
+  // agent's ENTIRE working dir (/workspace/agent) can be mounted writable while
+  // shared code still has a single source of truth in groups/<folder>. The
+  // owner edits code on the host (groups/), it propagates into every person's
+  // dir on the next spawn. DATA dirs (memories, conversations, health, scratch,
+  // nutrition, …) are NOT touched — they persist per-person. The agent may
+  // write anywhere (RW); its edits to code reset to the host source next spawn.
+  for (const item of ['CLAUDE.md', 'container.json', 'scripts', 'skills', 'agents']) {
+    const src = path.join(groupDir, item);
+    if (fs.existsSync(src)) {
+      fs.cpSync(src, path.join(memRoot, item), { recursive: true, force: true });
+    }
+  }
+  // Shared INSTRUCTIONS.md — one static file under GROUPS_DIR, referenced by
+  // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. Synced in like the rest.
+  const instructionsPath = path.join(GROUPS_DIR, 'INSTRUCTIONS.md');
+  if (fs.existsSync(instructionsPath)) {
+    fs.cpSync(instructionsPath, path.join(memRoot, 'INSTRUCTIONS.md'), { force: true });
+  }
+
   // Session folder at /workspace (inbound.db, outbound.db, outbox/). Per-session.
   mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false });
 
-  // /workspace/agent — the per-person WRITABLE working dir. ALL agent data
-  // lives here: memories, conversations, health, scratch, AND anything the
-  // agent creates at runtime (e.g. Gordon's nutrition/). THIS is the isolation
-  // boundary — it resolves under user-memory/<owner_key>/<folder>, never
-  // another person's tree. Shared CODE is nested read-only on top (below).
+  // /workspace/agent — the per-person WRITABLE working dir, FULLY read-write.
+  // Holds the synced code (above) + all agent data. THIS is the isolation
+  // boundary: it resolves under user-memory/<owner_key>/<folder>, never another
+  // person's tree. No nested read-only mounts — the agent's whole scope is RW.
   mounts.push({ hostPath: memRoot, containerPath: '/workspace/agent', readonly: false });
-
-  // Shared CODE — nested READ-ONLY on top of the writable agent dir, so the
-  // agent can read + run it but cannot modify its own behavior (behavior
-  // changes happen via host edits + redeploy). Docker auto-creates these
-  // mountpoints in the RW base, so no pre-creation is needed. Only mount items
-  // that exist in the code dir.
-  for (const item of ['CLAUDE.md', 'container.json', 'scripts', 'skills', 'agents']) {
-    const codePath = path.join(groupDir, item);
-    if (fs.existsSync(codePath)) {
-      mounts.push({ hostPath: codePath, containerPath: `/workspace/agent/${item}`, readonly: true });
-    }
-  }
-
-  // Shared INSTRUCTIONS.md — one static file under GROUPS_DIR, referenced by
-  // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. RO.
-  const instructionsPath = path.join(GROUPS_DIR, 'INSTRUCTIONS.md');
-  if (fs.existsSync(instructionsPath)) {
-    mounts.push({ hostPath: instructionsPath, containerPath: '/workspace/agent/INSTRUCTIONS.md', readonly: true });
-  }
 
   // Per-person global memory at /workspace/global. Writable only when this
   // person's writer agent (named in their global/.writer) is this folder.

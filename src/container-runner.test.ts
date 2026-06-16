@@ -236,44 +236,48 @@ describe('buildMounts owner isolation', () => {
   afterEach(() => {
     closeDb();
     fs.rmSync(path.join(GROUPS_DIR, ISO_FOLDER), { recursive: true, force: true });
-    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'p2', ISO_FOLDER), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER), { recursive: true, force: true });
     fs.rmSync(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, ISO_FOLDER), { recursive: true, force: true });
-    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'p2', 'global'), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'isomnt', 'global'), { recursive: true, force: true });
     fs.rmSync(path.join(DATA_DIR, 'v2-sessions', ISO_AG), { recursive: true, force: true });
   });
 
   it('mounts the agent dir (RW) + .claude from the session owner tree, never another person', () => {
-    const mounts = mountsFor('p2');
-    const p2Root = path.join(DATA_DIR, 'user-memory', 'p2');
+    const mounts = mountsFor('isomnt');
+    const isoRoot = path.join(DATA_DIR, 'user-memory', 'isomnt');
     // The whole /workspace/agent working dir is the per-person WRITABLE base —
     // all agent data (memories, nutrition, anything it creates) lands here.
     const agentMount = mounts.find((m) => m.containerPath === '/workspace/agent');
-    expect(agentMount?.hostPath).toBe(path.join(p2Root, ISO_FOLDER));
+    expect(agentMount?.hostPath).toBe(path.join(isoRoot, ISO_FOLDER));
     expect(agentMount?.readonly).toBe(false);
     const claudeMount = mounts.find((m) => m.containerPath === '/home/node/.claude');
-    expect(claudeMount?.hostPath).toBe(path.join(p2Root, ISO_FOLDER, '.claude'));
+    expect(claudeMount?.hostPath).toBe(path.join(isoRoot, ISO_FOLDER, '.claude'));
     // No mount may point under any OTHER person's tree.
     const ownerRoot = path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY);
     expect(mounts.some((m) => m.hostPath.startsWith(ownerRoot + path.sep))).toBe(false);
   });
 
-  it('nests shared code read-only on top of the writable agent dir', () => {
-    // Seed a code file so the nested RO mount is exercised.
+  it('makes the whole agent dir writable and syncs shared code into it', () => {
+    // Seed a code file in the shared group dir.
     fs.mkdirSync(path.join(GROUPS_DIR, ISO_FOLDER), { recursive: true });
     fs.writeFileSync(path.join(GROUPS_DIR, ISO_FOLDER, 'CLAUDE.md'), '# code');
-    const mounts = mountsFor('p2');
-    // Base agent dir is writable (per-person), NOT read-only.
+    const mounts = mountsFor('isomnt');
+    // The agent dir is writable (per-person), NOT read-only.
     const agentMount = mounts.find((m) => m.containerPath === '/workspace/agent');
     expect(agentMount?.readonly).toBe(false);
-    // CLAUDE.md is nested read-only from the shared code dir.
-    const claudeMd = mounts.find((m) => m.containerPath === '/workspace/agent/CLAUDE.md');
-    expect(claudeMd?.hostPath).toBe(path.join(GROUPS_DIR, ISO_FOLDER, 'CLAUDE.md'));
-    expect(claudeMd?.readonly).toBe(true);
-    // Every nested /workspace/agent/* mount (code) is read-only.
-    const nested = mounts.filter(
-      (m) => m.containerPath.startsWith('/workspace/agent/') && m.containerPath !== '/workspace/agent',
+    // There are NO nested read-only mounts under /workspace/agent — the agent's
+    // ENTIRE working scope is read-write.
+    const nestedRo = mounts.filter(
+      (m) =>
+        m.containerPath.startsWith('/workspace/agent/') &&
+        m.containerPath !== '/workspace/agent' &&
+        m.readonly,
     );
-    for (const m of nested) expect(m.readonly).toBe(true);
+    expect(nestedRo).toEqual([]);
+    // Shared code was COPIED into the per-person dir (not mounted), so the agent
+    // sees current host code while the whole dir stays writable.
+    const synced = path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER, 'CLAUDE.md');
+    expect(fs.readFileSync(synced, 'utf8')).toBe('# code');
   });
 
   it('falls back to OWNER_PERSON_KEY when owner_key is null', () => {
