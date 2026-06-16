@@ -184,6 +184,53 @@ describe('InboundDispatcher', () => {
     expect(bridgeCalls).toEqual([{ sid: 'sess-1', type: 'set_log' }]);
   });
 
+  it('resolves the workout session by payload agent_id (not the default) so set_log reaches payne', () => {
+    const resolvedFor: Array<string | undefined> = [];
+    const bridgeCalls: Array<{ sid: string; type: string }> = [];
+    const dispatcher = new InboundDispatcher({
+      db,
+      queue: q,
+      receipts,
+      resolveSessionForPlatform: (_pid, agent_id) => {
+        resolvedFor.push(agent_id);
+        return 'sess-payne';
+      },
+      defaultAgentSlug: 'jarvis',
+      routeToAgent: onInbound,
+      onContextResponse,
+      onAction,
+      onNewConversation,
+      onFeedback,
+      workoutBridge: {
+        handlesInbound: (t: string) => t === 'set_log',
+        handleInbound: (sid: string, e: any) => bridgeCalls.push({ sid, type: e.type }),
+      } as any,
+    });
+
+    dispatcher.dispatch(
+      pid,
+      env({
+        type: 'set_log',
+        kind: 'data',
+        payload: {
+          workout_id: 'w1',
+          exercise_slug: 'incline-db-press',
+          set_idx: 0,
+          reps: 10,
+          weight: 22.5,
+          reps_in_reserve: 3,
+          ts: '2026-06-09T19:05:00.000Z',
+          agent_id: 'payne',
+        },
+      }),
+    );
+
+    // The session must be resolved for 'payne' (the payload agent_id), NOT the
+    // default 'jarvis' — otherwise workout-mode never fires for Payne.
+    expect(resolvedFor).toEqual(['payne']);
+    expect(bridgeCalls).toEqual([{ sid: 'sess-payne', type: 'set_log' }]);
+  });
+
   it('routes a user message to the addressed agent when agent_id is present', () => {
     const calls: Array<{ platform_id: string; agent_group_id: string }> = [];
     const dispatcher = new InboundDispatcher({

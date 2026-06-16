@@ -74,14 +74,14 @@ export class InboundDispatcher {
         .run(platform_id, env.id, env.seq ?? 0, Date.now());
       if (env.seq != null) this.deps.db.advanceLastSeenOutbound(platform_id, env.seq);
 
-      // Payload-bearing envelope types may carry an optional `agent_id` slug
-      // so the device can target a specific agent on a fanned-out
-      // messaging_group. Stateless types (already short-circuited above)
-      // never reach this branch.
-      const inferredAgent =
-        env.type === 'message' || env.type === 'context_response' || env.type === 'new_conversation'
-          ? ((env.payload as { agent_id?: string }).agent_id ?? this.deps.defaultAgentSlug)
-          : this.deps.defaultAgentSlug;
+      // Payload-bearing envelope types may carry an optional `agent_id` slug so
+      // the device can target a specific agent on a fanned-out messaging_group.
+      // This covers message/context_response/new_conversation AND the workout
+      // envelopes (set_log, workout_start_request, …) which the iOS app stamps
+      // with `agent_id: "payne"` — without honoring it here those route to the
+      // default agent (jarvis) and Payne's workout-mode never fires. Stateless
+      // types already short-circuited above and never reach this branch.
+      const inferredAgent = (env.payload as { agent_id?: string } | undefined)?.agent_id ?? this.deps.defaultAgentSlug;
       const session_id = this.deps.resolveSessionForPlatform(platform_id, inferredAgent);
 
       // Workout bridge claims set_log / exercise_done / etc. — write to the
