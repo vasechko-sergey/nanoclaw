@@ -234,7 +234,9 @@ struct OrbVoiceView: View {
 
     private func sendIfReady() {
         guard controller.phase == .processing, !controller.transcript.isEmpty else { return }
-        coordinator.sendMessage(controller.transcript, viaVoice: true, agentId: active.active.rawValue)
+        // Orb fullscreen always wants a server voice reply — pass forceVoice: true so
+        // the autoSpeak gate in AppCoordinator is bypassed for this path.
+        coordinator.sendMessage(controller.transcript, viaVoice: true, forceVoice: true, agentId: active.active.rawValue)
     }
 
     private func handleNewAssistantMessage() {

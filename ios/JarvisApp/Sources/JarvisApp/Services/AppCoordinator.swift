@@ -157,7 +157,12 @@ final class AppCoordinator {
 
     // MARK: – Chat actions
 
-    func sendMessage(_ text: String, viaVoice: Bool = false, attachments: [DraftAttachment] = [], agentId: String = "jarvis") {
+    /// - Parameters:
+    ///   - viaVoice: true when the message was dictated (sets `lastSendWasVoice`).
+    ///   - forceVoice: true when the caller always wants a server voice reply regardless
+    ///     of `autoSpeak` (e.g. Orb fullscreen mode). Dictation without `autoSpeak` should
+    ///     NOT produce a voice note; Orb fullscreen always should.
+    func sendMessage(_ text: String, viaVoice: Bool = false, forceVoice: Bool = false, attachments: [DraftAttachment] = [], agentId: String = "jarvis") {
         lastSendWasVoice = viaVoice
         // Push a light inline context snapshot (location/health/calendar per the user's
         // privacy toggles) so the agent always has timezone + location + next event +
@@ -177,10 +182,10 @@ final class AppCoordinator {
             health: health,
             calendar: calendar
         )
-        // Request server-side TTS when: any voice-mode send (Orb fullscreen
-        // always sets viaVoice=true) or when the user has autoSpeak enabled
-        // for dictated messages. `lastSendWasVoice` == `viaVoice` at this point.
-        let wantVoiceReply = lastSendWasVoice
+        // Request server-side TTS when: Orb fullscreen forces it (forceVoice=true),
+        // OR when the user has autoSpeak enabled AND the message was dictated.
+        // Pure dictation with autoSpeak OFF does NOT produce a server voice note.
+        let wantVoiceReply = forceVoice || (settings.autoSpeak && lastSendWasVoice)
         ws.send(
             text: text,
             timezone: TimeZone.current.identifier,
