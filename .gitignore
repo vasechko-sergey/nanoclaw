@@ -53,3 +53,6 @@ ios/JarvisApp/.build/
 
 # Local worktrees for in-progress work
 .worktrees/
+
+# Rendered VDS nginx config (contains the real domain)
+deploy/vds/rendered/
