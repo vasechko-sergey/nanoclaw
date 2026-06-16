@@ -1,0 +1,17 @@
+# jarvis-tts.service — install to /etc/systemd/system/ (Linux VDS)
+[Unit]
+Description=Jarvis TTS sidecar
+After=network.target
+
+[Service]
+Type=simple
+User=nanoclaw
+Environment=JARVIS_TTS_ASSETS=/opt/jarvis-tts/assets
+Environment=JARVIS_TTS_PORT=8099
+WorkingDirectory=/opt/jarvis-tts/app
+ExecStart=/opt/jarvis-tts/app/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8099
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
