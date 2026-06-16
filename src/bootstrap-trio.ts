@@ -30,28 +30,28 @@ const TEAM = [
     name: 'Майор Пейн',
     folder: 'payne',
     bootstrap:
-      '[bootstrap] Прочитай INDEX.md и memories/self/profile.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса Сергея.',
+      '[bootstrap] Прочитай INDEX.md, /workspace/global/identity.md и memories/self/profile.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса пользователя.',
   },
   {
     id: 'greg',
     name: 'Dr House (Greg)',
     folder: 'greg',
     bootstrap:
-      '[bootstrap] Прочитай INDEX.md и memories/self/. Молчи до явного запроса Сергея или явной аномалии в данных.',
+      '[bootstrap] Прочитай INDEX.md, /workspace/global/identity.md и memories/self/. Молчи до явного запроса пользователя или явной аномалии в данных.',
   },
   {
     id: 'gordon',
     name: 'Гордон Рамзи',
     folder: 'gordon',
     bootstrap:
-      '[bootstrap] Прочитай memories/index.md и /workspace/global/about-sergei.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса Сергея.',
+      '[bootstrap] Прочитай memories/index.md, /workspace/global/identity.md и /workspace/global/about.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса пользователя.',
   },
   {
     id: 'scrooge',
     name: 'Scrooge',
     folder: 'scrooge',
     bootstrap:
-      '[bootstrap] Прочитай memories/index.md и /workspace/global/about-sergei.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса Сергея.',
+      '[bootstrap] Прочитай memories/index.md, /workspace/global/identity.md и /workspace/global/about.md. Дальше работай как обычно — без рапорта, без приветствия. Молчи до явного запроса пользователя.',
   },
 ] as const;
 
