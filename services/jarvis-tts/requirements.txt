@@ -1,0 +1,6 @@
+f5-tts==1.1.7
+ruaccent==1.5.8.3
+fastapi==0.115.6
+uvicorn==0.34.0
+soundfile==0.12.1
+certifi
