@@ -221,6 +221,22 @@ function createPairingInterceptor(
   };
 }
 
+export async function sendVoice(
+  token: string,
+  chatId: string,
+  voice: Buffer,
+  opts: { caption?: string; fetchImpl?: typeof fetch } = {},
+): Promise<string | undefined> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  form.append('voice', new Blob([voice], { type: 'audio/ogg' }), 'reply.ogg');
+  if (opts.caption) form.append('caption', opts.caption);
+  const res = await doFetch(`https://api.telegram.org/bot${token}/sendVoice`, { method: 'POST', body: form });
+  const json: any = await res.json();
+  return json?.result?.message_id != null ? String(json.result.message_id) : undefined;
+}
+
 registerChannelAdapter('telegram', {
   factory: () => {
     const env = readEnvFile(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_LEAVE_GROUP_CHATS']);
@@ -284,6 +300,29 @@ registerChannelAdapter('telegram', {
             return json.result?.message_id != null ? String(json.result.message_id) : undefined;
           } catch (e) {
             log.warn('Telegram sendPhoto failed', { platformId, err: e });
+            return undefined;
+          }
+        }
+
+        if (content.operation === 'send_voice' || message.files?.[0]?.operation === 'send_voice') {
+          if (!message.files || message.files.length === 0) {
+            log.warn('Telegram sendVoice: no file in message, dropping', { platformId });
+            return undefined;
+          }
+
+          const chatId = platformId.split(':').slice(1).join(':');
+          if (!chatId) {
+            log.warn('Telegram sendVoice: could not extract chatId', { platformId });
+            return bridge.deliver(platformId, threadId, message);
+          }
+
+          const file = message.files[0];
+          const caption = (content.caption as string) || undefined;
+
+          try {
+            return await sendVoice(token, chatId, file.data, { caption });
+          } catch (e) {
+            log.warn('Telegram sendVoice failed', { platformId, err: e });
             return undefined;
           }
         }
