@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 
 /// Embeddable settings form body — used by both `SettingsView` (sheet during
@@ -7,7 +6,6 @@ import SwiftUI
 struct SettingsFormBody: View {
     var isInitialSetup: Bool = false
     @Environment(AppSettings.self) var settings
-    @State private var previewSynth = SpeechSynthesizer()
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -71,24 +69,6 @@ struct SettingsFormBody: View {
                 if !isInitialSetup {
                     settingsSection(title: "Голос") {
                         settingsToggle(icon: "speaker.wave.2", label: "Озвучивать ответы на голос", isOn: $settings.autoSpeak)
-                        let voices = SpeechSynthesizer.russianVoices()
-                        if voices.isEmpty {
-                            settingsDivider()
-                            Text("Голосовые модули не обнаружены. Установите в Настройках iOS → Универсальный доступ → Устный контент → Голоса.")
-                                .font(.system(size: Theme.fontSmall))
-                                .foregroundStyle(Theme.textSecondary)
-                                .padding(.horizontal, Theme.hPadding)
-                                .padding(.vertical, Theme.scaled(10))
-                        } else {
-                            ForEach(voices, id: \.identifier) { v in
-                                settingsDivider()
-                                voiceRow(v)
-                            }
-                            settingsDivider()
-                            voiceSlider(icon: "tortoise", label: "Скорость", value: $settings.voiceRate, range: 0.30...0.60)
-                            settingsDivider()
-                            voiceSlider(icon: "waveform.path", label: "Тон", value: $settings.voicePitch, range: 0.70...1.20)
-                        }
                     }
                 }
 
@@ -254,65 +234,6 @@ struct SettingsFormBody: View {
             Toggle("", isOn: isOn)
                 .labelsHidden()
                 .tint(Theme.accent)
-        }
-        .padding(.horizontal, Theme.hPadding)
-        .frame(minHeight: Theme.minTapSize)
-    }
-
-    private func voiceLabel(_ v: AVSpeechSynthesisVoice) -> String {
-        let quality: String
-        switch v.quality {
-        case .premium:  quality = "Premium"
-        case .enhanced: quality = "Enhanced"
-        default:        quality = "Compact"
-        }
-        return "\(v.name) · \(quality)"
-    }
-
-    @ViewBuilder
-    private func voiceRow(_ v: AVSpeechSynthesisVoice) -> some View {
-        let selected = settings.voiceId == v.identifier
-        Button {
-            settings.voiceId = v.identifier
-            previewSynth.speak("Добрый день, сэр. Чем могу быть полезен?", voiceId: v.identifier)
-        } label: {
-            HStack(spacing: Theme.scaled(10)) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: Theme.fontCaption))
-                    .foregroundStyle(selected ? Theme.accent : Theme.accentMedium)
-                    .frame(width: Theme.scaled(20))
-                Text(voiceLabel(v))
-                    .font(.system(size: Theme.fontSubhead))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                Spacer()
-                Image(systemName: "play.circle")
-                    .font(.system(size: Theme.fontBody))
-                    .foregroundStyle(Theme.accentMedium)
-            }
-            .padding(.horizontal, Theme.hPadding)
-            .frame(minHeight: Theme.minTapSize)
-        }
-    }
-
-    private func voiceSlider(icon: String, label: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        HStack(spacing: Theme.scaled(10)) {
-            Image(systemName: icon)
-                .font(.system(size: Theme.fontCaption))
-                .foregroundStyle(Theme.accentMedium)
-                .frame(width: Theme.scaled(20))
-            Text(label)
-                .font(.system(size: Theme.fontSubhead))
-                .foregroundStyle(Theme.textSecondary)
-            Slider(value: value, in: range) { editing in
-                if !editing {
-                    previewSynth.speak("Добрый день, сэр. Чем могу быть полезен?",
-                                       voiceId: settings.voiceId,
-                                       rate: settings.voiceRate,
-                                       pitch: settings.voicePitch)
-                }
-            }
-            .tint(Theme.accent)
         }
         .padding(.horizontal, Theme.hPadding)
         .frame(minHeight: Theme.minTapSize)

@@ -196,10 +196,7 @@ struct OrbVoiceView: View {
               msg.role == .assistant,
               !msg.text.isEmpty else { return }
         controller.handleAssistantTextArrived(msg.text)
-        coordinator.speech.speak(msg.text,
-                                 voiceId: settings.voiceId,
-                                 rate: settings.voiceRate,
-                                 pitch: settings.voicePitch)
+        coordinator.speech.speak(msg.text)
         observeSynthesizerFinish()
     }
 

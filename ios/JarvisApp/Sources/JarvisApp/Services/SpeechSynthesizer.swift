@@ -33,14 +33,12 @@ import Foundation
         stop()
     }
 
-    /// Голоса для русского, отсортированы: Enhanced/Premium качество выше дефолтного.
-    static func russianVoices() -> [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("ru") }
-            .sorted { $0.quality.rawValue > $1.quality.rawValue }
-    }
+    // Fixed TTS defaults — voice is now rendered server-side; on-device TTS is
+    // a fallback only. Rate and pitch match the former user-facing defaults.
+    private static let defaultRate: Float  = 0.47
+    private static let defaultPitch: Float = 0.93
 
-    func speak(_ rawText: String, voiceId: String, rate: Double = 0.47, pitch: Double = 0.93) {
+    func speak(_ rawText: String) {
         let text = Self.clean(rawText)
         guard !text.isEmpty else { return }
 
@@ -50,16 +48,21 @@ import Foundation
         }
 
         let utterance = AVSpeechUtterance(string: text)
-        if !voiceId.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: voiceId) {
-            utterance.voice = voice
-        } else {
-            utterance.voice = Self.russianVoices().first
-                ?? AVSpeechSynthesisVoice(language: "ru-RU")
-        }
-        utterance.rate = Float(rate)
-        utterance.pitchMultiplier = Float(pitch)
+        // Pick the highest-quality available Russian voice; fall back to the
+        // system Russian locale if none are installed.
+        utterance.voice = Self.russianVoices().first
+            ?? AVSpeechSynthesisVoice(language: "ru-RU")
+        utterance.rate = Self.defaultRate
+        utterance.pitchMultiplier = Self.defaultPitch
         utterance.volume = 1.0
         synthesizer.speak(utterance)
+    }
+
+    /// Голоса для русского, отсортированы: Enhanced/Premium качество выше дефолтного.
+    static func russianVoices() -> [AVSpeechSynthesisVoice] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("ru") }
+            .sorted { $0.quality.rawValue > $1.quality.rawValue }
     }
 
     func stop() {

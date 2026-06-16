@@ -186,7 +186,7 @@ final class AppCoordinator {
 
     /// Speak arbitrary text on demand (manual "Проговорить" from a bubble).
     func speak(_ text: String) {
-        speech.speak(text, voiceId: settings.voiceId, rate: settings.voiceRate, pitch: settings.voicePitch)
+        speech.speak(text)
     }
 
     func sendFeedback(messageId: String, value: Bool, messageText: String) {
@@ -233,9 +233,11 @@ final class AppCoordinator {
         }
 
         // Auto-speak assistant text only when the triggering message was dictated
+        // and no server-rendered audio arrived (audio playback is handled by
+        // onAudioMessage; this fallback fires only when audio is absent).
         ws.onSpeakableText = { [weak self] text in
             guard let self, self.settings.autoSpeak, self.lastSendWasVoice else { return }
-            self.speech.speak(text, voiceId: self.settings.voiceId, rate: self.settings.voiceRate, pitch: self.settings.voicePitch)
+            self.speech.speak(text)
         }
 
         // Track connection state via callback (replaces Combine $isConnected sink)
