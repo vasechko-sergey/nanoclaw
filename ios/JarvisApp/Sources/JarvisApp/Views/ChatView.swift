@@ -14,13 +14,6 @@ private struct WorkoutPresentation: Identifiable {
     var id: String { plan.workoutId }
 }
 
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 struct ChatView: View {
     @Environment(AppSettings.self) var settings
     @Environment(ActiveAgentState.self) private var active
@@ -38,8 +31,9 @@ struct ChatView: View {
     @State private var scrollToBottomAction: (() -> Void)?
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
     @State private var rightDrawerOpen = false
-    @State private var pickerExpanded = false  // agent picker expand state (hoisted so an outside tap collapses it)
     @State private var rightDrawerDragOffset: CGFloat = 0
+    @State private var leftDrawerOpen = false
+    @State private var leftDrawerDragOffset: CGFloat = 0
     @State private var showVoiceFullscreen = false
     @AppStorage("v3MigrationShown") private var v3MigrationShown = false
     @State private var showingV3Toast = false
@@ -122,7 +116,7 @@ struct ChatView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 ZStack(alignment: .bottomTrailing) {
-                    GeometryReader { chatGeo in
+                    GeometryReader { _ in
                     ScrollViewReader { proxy in
                         ScrollView {
                             // LazyVStack so rows realize on demand as they
@@ -166,34 +160,29 @@ struct ChatView: View {
                                         .transition(.opacity.combined(with: .offset(y: 4)))
                                 }
 
-                                // Invisible anchor at bottom for scroll tracking
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: ScrollOffsetKey.self,
-                                        value: geo.frame(in: .named("chatScroll")).maxY
-                                    )
-                                }
-                                .frame(height: 1)
-                                .id("bottom")
+                                // Invisible bottom anchor. Its appear/disappear
+                                // drives the scroll-to-bottom FAB. A GeometryReader
+                                // preference does NOT work inside a LazyVStack — the
+                                // anchor recycles when scrolled away and stops
+                                // emitting, so the FAB never reappeared.
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id("bottom")
+                                    .onAppear {
+                                        withAnimation(.easeOut(duration: Theme.animFast)) {
+                                            isScrolledUp = false
+                                            unreadCount = 0
+                                        }
+                                    }
+                                    .onDisappear {
+                                        withAnimation(.easeOut(duration: Theme.animFast)) {
+                                            isScrolledUp = true
+                                            lastSeenCount = visibleMessages.count
+                                        }
+                                    }
                             }
                             .padding(.horizontal)
                             .padding(.top, Theme.scaled(8))
-                        }
-                        .coordinateSpace(name: "chatScroll")
-                        .onPreferenceChange(ScrollOffsetKey.self) { maxY in
-                            let threshold: CGFloat = 80
-                            let scrolledAway = maxY > chatGeo.size.height + threshold
-                            if scrolledAway != isScrolledUp {
-                                withAnimation(.easeOut(duration: Theme.animFast)) {
-                                    if scrolledAway {
-                                        isScrolledUp = true
-                                        lastSeenCount = visibleMessages.count
-                                    } else {
-                                        isScrolledUp = false
-                                        unreadCount = 0
-                                    }
-                                }
-                            }
                         }
                         .defaultScrollAnchor(.bottom)
                         .scrollDismissesKeyboard(.interactively)
@@ -323,19 +312,6 @@ struct ChatView: View {
                             onPinchOut: { showVoiceFullscreen = true })
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        // Tap anywhere in the chat body (outside the expanded agent picker,
-        // which lives in the header inset) to collapse it. Applied BEFORE the
-        // header inset below so the scrim covers only the content, never the
-        // picker rows — and only when expanded, so it's inert normally.
-        .overlay {
-            if pickerExpanded {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) { pickerExpanded = false }
-                    }
-            }
-        }
         // Header lives in a TOP safe-area inset rather than as the first child
         // of the VStack. The software keyboard insets only the BOTTOM safe
         // area; keeping the header in the top inset makes it immune to the
@@ -343,6 +319,35 @@ struct ChatView: View {
         // expanded) no longer drifts upward when the keyboard is open.
         .safeAreaInset(edge: .top, spacing: 0) { header }
         .simultaneousGesture(rightEdgeSwipeGesture)
+        .simultaneousGesture(leftEdgeSwipeGesture)
+
+        // Left drawer (agent switcher)
+        if leftDrawerOpen {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture { withAnimation { leftDrawerOpen = false } }
+                .transition(.opacity)
+        }
+
+        LeftDrawerContent(
+            onSelect: { agent in
+                active.active = agent
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    leftDrawerOpen = false
+                }
+            }
+        )
+        .frame(width: Theme.drawerWidth)
+        .offset(x: {
+                if leftDrawerOpen {
+                    return max(-Theme.drawerWidth, min(0, leftDrawerDragOffset))
+                } else {
+                    return -Theme.drawerWidth + max(0, min(leftDrawerDragOffset, Theme.drawerWidth))
+                }
+            }())
+        .gesture(leftDrawerDragToClose)
+        .shadow(color: .black.opacity(leftDrawerOpen ? 0.4 : 0), radius: 12, x: 4)
+        .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: leftDrawerOpen)
 
         // Right drawer
         if rightDrawerOpen {
@@ -501,15 +506,36 @@ struct ChatView: View {
 
             Spacer()
 
-            AgentPickerInline(
-                onLongPress: {
-                    // Collapse before leaving — otherwise the picker is still
-                    // expanded when we return to the chat from home.
-                    pickerExpanded = false
+            // Active-agent label. Tap opens the left drawer (agent switcher);
+            // long-press goes home (preserves the gesture AgentPickerInline used
+            // to host). `.simultaneousGesture` so the long-press doesn't suppress
+            // the Button's tap and vice versa.
+            Button {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    leftDrawerOpen = true
+                }
+            } label: {
+                Text(spaced(active.active.displayName))
+                    .font(.system(size: Theme.fontTitle, weight: .light))
+                    .tracking(Theme.titleTracking)
+                    .foregroundStyle(active.active.accentColor)
+                    .fixedSize()
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(active.active.accentColor.opacity(0.6))
+                            .frame(height: 1)
+                            .offset(y: 4)
+                    }
+                    .frame(minHeight: Theme.minTapSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                     onGoHome?()
-                },
-                externalExpanded: $pickerExpanded
+                }
             )
+            .accessibilityLabel("Активный агент: \(active.active.displayName), нажмите чтобы открыть выбор")
 
             Spacer()
 
@@ -620,6 +646,61 @@ struct ChatView: View {
                     withAnimation { rightDrawerDragOffset = 0 }
                 }
             }
+    }
+
+    /// Mirror of `rightEdgeSwipeGesture`, anchored to the LEFT screen edge:
+    /// a rightward swipe starting within `edgeSwipeZone` of the left edge opens
+    /// the left (agent-switcher) drawer.
+    private var leftEdgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 0
+                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
+                    && !leftDrawerOpen {
+                    leftDrawerDragOffset = min(value.translation.width, Theme.drawerWidth)
+                }
+            }
+            .onEnded { value in
+                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
+                if !leftDrawerOpen
+                    && value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 60
+                    && horizontal {
+                    withAnimation(.spring(duration: 0.3)) {
+                        leftDrawerOpen = true
+                        rightDrawerOpen = false
+                        leftDrawerDragOffset = 0
+                    }
+                } else if !leftDrawerOpen {
+                    withAnimation { leftDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var leftDrawerDragToClose: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if leftDrawerOpen && value.translation.width < 0 {
+                    leftDrawerDragOffset = value.translation.width
+                }
+            }
+            .onEnded { value in
+                if leftDrawerOpen && value.translation.width < -60 {
+                    withAnimation(.spring(duration: 0.3)) {
+                        leftDrawerOpen = false
+                        leftDrawerDragOffset = 0
+                    }
+                } else {
+                    withAnimation { leftDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    /// Insert U+2009 (thin space) between every character to match the
+    /// "J A R V I S" letter-spaced look (mirrors `AgentPickerInline`).
+    private func spaced(_ s: String) -> String {
+        s.uppercased().map { String($0) }.joined(separator: "\u{2009}\u{2009}")
     }
 
     // MARK: – Date separators

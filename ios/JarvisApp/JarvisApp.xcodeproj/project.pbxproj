@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294C253860B67EF3201B2370 /* WorkoutInbound.swift */; };
+		019B3D35D6FD41DEF8A1FCCF /* LeftDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 163CA94C66DC661EC836E607 /* LeftDrawerContent.swift */; };
 		04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */; };
 		08FB138313D1EC3412C3F20E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3784B2D589C11B07F162E081 /* ChatView.swift */; };
 		0BFCBCBFAB94DCD9F3E01013 /* StateBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B226A1DA1BA45112E46E3E8 /* StateBoardView.swift */; };
@@ -157,6 +158,7 @@
 		05AA5A25FF72A993B2BA61E6 /* ThinkingRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingRowTests.swift; sourceTree = "<group>"; };
 		0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbView.swift; sourceTree = "<group>"; };
 		0B48F479168B41727E62B105 /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
+		163CA94C66DC661EC836E607 /* LeftDrawerContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeftDrawerContent.swift; sourceTree = "<group>"; };
 		17900485123C543C21298F5A /* ExerciseImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseImageCache.swift; sourceTree = "<group>"; };
 		18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppV2BootstrapTests.swift; sourceTree = "<group>"; };
 		1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerOverlay.swift; sourceTree = "<group>"; };
@@ -387,6 +389,7 @@
 				3784B2D589C11B07F162E081 /* ChatView.swift */,
 				8F8D87E938816ECB8B161DBD /* ContentView.swift */,
 				E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */,
+				163CA94C66DC661EC836E607 /* LeftDrawerContent.swift */,
 				B254569C52137C9E716B3DCD /* OrbHomeView.swift */,
 				AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */,
 				3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */,
@@ -753,6 +756,7 @@
 				858C56E208CC44A2A7210E9B /* InboundDispatcherV2.swift in Sources */,
 				496C7C87D93A74983F21EF54 /* InputBar.swift in Sources */,
 				3502D3234561E8F256B9EAD5 /* JarvisApp.swift in Sources */,
+				019B3D35D6FD41DEF8A1FCCF /* LeftDrawerContent.swift in Sources */,
 				54243BCC1655A76DE5E1F02F /* LocationManager.swift in Sources */,
 				73B70554FE102A25FBBF7E6B /* Log.swift in Sources */,
 				1893E8E0527760F1BA33302A /* MarkdownText.swift in Sources */,
@@ -883,7 +887,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1129,7 +1133,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
