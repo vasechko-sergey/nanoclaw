@@ -13,8 +13,20 @@ import HealthKit
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
+    /// Authorization is requested once per process; subsequent calls skip the
+    /// (heavy) request and go straight to a throttled fetch.
+    @ObservationIgnored private var didRequestAuth = false
+    /// Last time queries actually ran — used to throttle `requestAndFetch`.
+    @ObservationIgnored private var lastFetch: Date?
+    private static let fetchThrottle: TimeInterval = 90
+
     func requestAndFetch() {
         guard isAvailable else { return }
+        if let lastFetch, Date().timeIntervalSince(lastFetch) < Self.fetchThrottle { return }
+        guard didRequestAuth == false else {
+            fetchToday()
+            return
+        }
         let types: Set<HKObjectType> = [
             HKQuantityType(.stepCount),
             HKQuantityType(.heartRate),
@@ -35,6 +47,7 @@ import HealthKit
             HKQuantityType(.bodyFatPercentage),
             HKQuantityType(.leanBodyMass),
         ]
+        didRequestAuth = true
         store.requestAuthorization(toShare: nil, read: types) { [weak self] ok, _ in
             guard ok else { return }
             self?.fetchToday()
@@ -42,6 +55,7 @@ import HealthKit
     }
 
     private func fetchToday() {
+        lastFetch = Date()
         let start = Calendar.current.startOfDay(for: Date())
         let pred  = HKQuery.predicateForSamples(withStart: start, end: Date())
         stat(.stepCount,          pred, .cumulativeSum, .count())       { [weak self] v in
@@ -146,10 +160,19 @@ import HealthKit
 
     private var observersInstalled = false
 
+    /// Per-observer debounce timestamps. An Apple Watch streams HR many times a
+    /// minute during a workout; without this each fire would launch a pair of
+    /// `HKSampleQuery` → query storm. Re-fires inside the window are dropped
+    /// BEFORE any query is issued.
+    @ObservationIgnored private var lastHandledHr: Date?
+    private static let observerDebounce: TimeInterval = 60
+
     private func installHrObserver(dispatcher: ProactiveDispatcher) {
         let hrType = HKQuantityType(.heartRate)
         let q = HKObserverQuery(sampleType: hrType, predicate: nil) { [weak self, weak dispatcher] _, _, error in
             guard error == nil, let self else { return }
+            if let last = self.lastHandledHr, Date().timeIntervalSince(last) < Self.observerDebounce { return }
+            self.lastHandledHr = Date()
             Task { @MainActor in
                 let samples = await self.recentHrSamples(window: 180)
                 let baseline = await self.recentRestingHR() ?? 70

@@ -91,11 +91,11 @@ final class AppCoordinator {
                 }
             }
         )
-        if storage != nil {
-            Task { @MainActor [weak self] in
-                try? await self?.timeline.start()
-            }
-        }
+        // NOTE: `timeline.start()` is intentionally NOT called. It opened a
+        // SECOND full-timeline GRDB ValueObservation (limit 500) on the same DB
+        // that no view consumes — ChatView reads `ws.messages`, which has its
+        // own observation. The duplicate fired a second 500-row re-fetch +
+        // array rebuild on the main thread on every message insert. Pure waste.
 
         let sink = WebSocketProactiveSink(ws: ws, settings: settings)
         self.proactiveDispatcher = ProactiveDispatcher(settings: settings, sink: sink)

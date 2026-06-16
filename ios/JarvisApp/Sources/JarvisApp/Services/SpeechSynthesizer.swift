@@ -66,6 +66,9 @@ import Foundation
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        // Release the .duckOthers session even on an interrupted / not-speaking
+        // stop — the didCancel/didFinish delegate callbacks may not fire.
+        deactivateSession()
     }
 
     private func configureSession() {

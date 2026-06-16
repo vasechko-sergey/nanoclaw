@@ -54,11 +54,34 @@ struct ChatView: View {
     /// `agentId` (pre-T7 storage) are treated as legacy `jarvis` traffic.
     /// Comparison goes through `AgentIdentity(rawValue:)` so folder-name
     /// aliases (e.g. `health-analyzer` → `.greg`) match correctly.
-    private var visibleMessages: [ChatMessage] {
+    ///
+    /// Cached in `@State` and recomputed only when `ws.messages` or the active
+    /// agent changes (see `recomputeVisibleMessages()`), rather than on every
+    /// `body` evaluation — the filter ran `AgentIdentity(rawValue:)` over the
+    /// whole message array and was referenced many times per render.
+    @State private var visibleMessages: [ChatMessage] = []
+
+    /// Recompute the cached visible-message list. Filtering semantics are
+    /// identical to the previous computed property.
+    private func computeVisibleMessages() -> [ChatMessage] {
         return ws.messages.filter { msg in
             guard msg.isVisible else { return false }
             let slug = msg.agentId ?? "jarvis"
             return AgentIdentity(rawValue: slug) == active.active
+        }
+    }
+
+    private func recomputeVisibleMessages() {
+        visibleMessages = computeVisibleMessages()
+    }
+
+    /// Lightweight `Equatable` digest of the full message set used to detect
+    /// when `visibleMessages` must be rebuilt. Changes on append, reorder, and
+    /// in-place mutation (delivery status / text). Avoids requiring
+    /// `ChatMessage: Equatable` (its `Content` holds `UIImage`/closures).
+    private var messagesFingerprint: [String] {
+        ws.messages.map { msg in
+            "\(msg.id)|\(msg.isVisible ? 1 : 0)|\(msg.agentId ?? "")|\(msg.deliveryStatus.rawValue)|\(msg.text)"
         }
     }
 
@@ -101,7 +124,10 @@ struct ChatView: View {
                     GeometryReader { chatGeo in
                     ScrollViewReader { proxy in
                         ScrollView {
-                            VStack(alignment: .leading, spacing: Theme.scaled(8)) {
+                            // LazyVStack so rows realize on demand as they
+                            // scroll into view rather than all at once — long
+                            // sessions otherwise build every MessageRow up front.
+                            LazyVStack(alignment: .leading, spacing: Theme.scaled(8)) {
                                 ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, msg in
                                     // Date separator
                                     if shouldShowDateSeparator(at: index, in: visibleMessages) {
@@ -186,6 +212,10 @@ struct ChatView: View {
                             }
                         }
                         .onChange(of: ws.messages.count) {
+                            // Refresh the cached list up front so unread-count /
+                            // scroll-to-last operate on the post-append set
+                            // regardless of `.onChange` ordering this tick.
+                            recomputeVisibleMessages()
                             if isScrolledUp {
                                 let newMessages = visibleMessages.count - lastSeenCount
                                 unreadCount = max(newMessages, 0)
@@ -410,6 +440,14 @@ struct ChatView: View {
                 Theme.hapticReceive()
             }
         }
+        // Cache the filtered message list (see `visibleMessages`). Recompute on
+        // initial appear and whenever the underlying message set or the active
+        // agent changes. `messagesFingerprint` captures appends, reorders, and
+        // in-place mutations (status/text) so cached output stays in sync with
+        // the previous per-render computed property.
+        .onAppear { recomputeVisibleMessages() }
+        .onChange(of: messagesFingerprint) { recomputeVisibleMessages() }
+        .onChange(of: active.active) { recomputeVisibleMessages() }
         .onChange(of: autoStartVoice) {
             // When entering chat with voice trigger from home, activate input bar
             if autoStartVoice && visibleMessages.isEmpty {

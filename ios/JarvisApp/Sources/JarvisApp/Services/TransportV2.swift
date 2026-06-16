@@ -27,7 +27,6 @@ actor TransportV2 {
     private let token: String
     private let contextCoordinator: ContextCoordinatorV2?
     private(set) var state: State = .idle
-    private var ackDeadlines: [String: Date] = [:]
     /// Scheduled retry tasks per envelope id; cancellation on ack.
     private var ackTasks: [String: Task<Void, Never>] = [:]
     /// In-flight auto-reconnect task; nil while connected or idle.
@@ -85,6 +84,11 @@ actor TransportV2 {
     }
 
     func connect() async throws {
+        // Reentrancy guard. connect() is called from ~6 view-appear sites + the
+        // reconnect loop + retry taps; without this each call stacks another
+        // socket open + auth handshake on the same instance, multiplying the
+        // reconnect churn. Already connecting/authed → no-op.
+        if state == .connecting || state == .authed { return }
         state = .connecting
         // Wire socket callbacks BEFORE opening the socket so the first inbound
         // frame can't race the assignment. The closures bounce back into the
@@ -254,6 +258,7 @@ actor TransportV2 {
         try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
         let agentId = message.agent_id ?? "jarvis"
         try store.insertInbound(envelope: envelope, message: message, agentId: agentId)
+        try? store.prune() // global retention; cheap no-op while under cap
         try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
         try await sendStatus(.delivered, ids: [envelope.id])
         if let seq = envelope.seq {
@@ -322,11 +327,30 @@ actor TransportV2 {
     }
 
     private func retryEnvelopeIfPending(id: String) async {
+        // Only retry while authed. Otherwise this self-rescheduling loop keeps
+        // re-sending on a dead socket every few seconds through a disconnect.
+        guard state == .authed else {
+            cancelAckRetry(id: id)
+            return
+        }
         guard let row = try? store.fetchById(id), row.status == .sending else { return }
         guard let seq = row.seq else { return }
         let env = makeMessageEnvelope(row: row, seq: seq)
         try? await sendEnvelope(env)
         scheduleAckRetry(for: id)
+    }
+
+    /// Tear down the connection + all background work. Idempotent. Cancels the
+    /// reconnect loop + every in-flight ack-retry task (which self-reschedule)
+    /// and closes the socket. Without this there is no way to stop the reconnect
+    /// churn once it starts.
+    func disconnect() {
+        state = .idle
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        for (_, t) in ackTasks { t.cancel() }
+        ackTasks.removeAll()
+        socket.close()
     }
 
     // MARK: - Reconnect
@@ -338,6 +362,10 @@ actor TransportV2 {
     /// counter is reset to 0 in `handleAuthOk` on successful auth.
     private func handleSocketClose(_ error: Error?) async {
         if case .reconnecting = state { return }
+        // Stop in-flight ack-retry tasks before reconnecting — they
+        // self-reschedule and would keep re-sending on the dead socket.
+        for (_, t) in ackTasks { t.cancel() }
+        ackTasks.removeAll()
         let delay = min(
             maxReconnectDelaySeconds,
             baseReconnectDelaySeconds * pow(2.0, Double(reconnectAttempt))

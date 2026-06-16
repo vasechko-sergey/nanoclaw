@@ -29,6 +29,12 @@ final class URLSessionWebSocket: NSObject, WebSocketLike, @unchecked Sendable {
     }
 
     func connect() async throws {
+        // Reconnects reuse this same instance. Tear down any prior session,
+        // task, and ping timer FIRST — otherwise each reconnect orphans a
+        // URLSession + a RunLoop-scheduled ping Timer that keep firing, which
+        // accumulates over a flaky-network session (memory/FD growth + a
+        // saturated main RunLoop). close() is idempotent.
+        close()
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
         self.session = session

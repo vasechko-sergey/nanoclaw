@@ -65,12 +65,35 @@ struct OrbView: View {
     // Cyan color matching ~#54BEC4 but slightly brighter for glow
     private let cyan = Color(red: 0.33, green: 0.86, blue: 0.90)
 
+    /// When the app isn't foreground-active, drop the per-frame
+    /// `TimelineView(.animation)` (it redraws every display frame even while
+    /// backgrounded/idle) and render one static frame instead.
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Fixed timestamp used to render a single static frame when the scene is
+    /// not active (mirrors the `TimelineView` draw at one instant).
+    private static let staticTime: Double = 0
+
     // MARK: - Body
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            Canvas { context, canvasSize in
+        Group {
+            if scenePhase == .active {
+                TimelineView(.animation) { timeline in
+                    orbCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
+                }
+            } else {
+                orbCanvas(t: Self.staticTime)
+            }
+        }
+        .frame(width: size, height: size)
+        .onAppear { snapToMood() }
+        .onChange(of: mood) { lerpToMood() }
+    }
+
+    @ViewBuilder
+    private func orbCanvas(t: Double) -> some View {
+        Canvas { context, canvasSize in
                 let cx = canvasSize.width / 2
                 let cy = canvasSize.height / 2
                 let r = min(canvasSize.width, canvasSize.height) / 2
@@ -166,10 +189,6 @@ struct OrbView: View {
                 drawFullCircle(context: &context, center: center, radius: r * 1.03,
                                lineWidth: 0.5, alpha: a * 0.25)
             }
-        }
-        .frame(width: size, height: size)
-        .onAppear { snapToMood() }
-        .onChange(of: mood) { lerpToMood() }
     }
 
     // MARK: - Drawing helpers

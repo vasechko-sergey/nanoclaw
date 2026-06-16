@@ -183,7 +183,33 @@ struct MarkdownText: View {
         case table([[String]])
     }
 
+    /// Box so parsed `[Block]` (a value type) can live in `NSCache`, which
+    /// requires class keys/values.
+    private final class BlockBox {
+        let blocks: [Block]
+        init(_ blocks: [Block]) { self.blocks = blocks }
+    }
+
+    /// Process-wide memoization of `parseBlocks` keyed by the raw input text.
+    /// `parseBlocks` ran `NSRegularExpression` (code-fence extraction) plus a
+    /// full line scan on every `body` evaluation; the parse is pure in `text`,
+    /// so the same input always yields the same blocks. `NSCache` is
+    /// thread-safe and evicts under memory pressure on its own.
+    private static let parseCache = NSCache<NSString, BlockBox>()
+
+    /// Memoized front door. Returns cached blocks on hit, otherwise parses
+    /// once and stores the result.
     private func parseBlocks(_ input: String) -> [Block] {
+        let key = input as NSString
+        if let cached = Self.parseCache.object(forKey: key) {
+            return cached.blocks
+        }
+        let blocks = computeBlocks(input)
+        Self.parseCache.setObject(BlockBox(blocks), forKey: key)
+        return blocks
+    }
+
+    private func computeBlocks(_ input: String) -> [Block] {
         // First extract code fences
         let codeFencePattern = "```(\\w*)\\n([\\s\\S]*?)```"
         guard let regex = try? NSRegularExpression(pattern: codeFencePattern) else {

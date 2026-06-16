@@ -4,6 +4,9 @@ import CoreLocation
     // Do not wake GPS more often than once every 15 minutes
     private static let freshThreshold: TimeInterval = 15 * 60
 
+    // Reverse-geocode at most this often; reuse the cached city otherwise.
+    private static let cityFreshThreshold: TimeInterval = 15 * 60
+
     @ObservationIgnored private let mgr = CLLocationManager()
     var lastLocation: CLLocation?
     var cityName: String?
@@ -12,6 +15,11 @@ import CoreLocation
     @ObservationIgnored private weak var dispatcher: ProactiveDispatcher?
     /// Last location anchor used to compute geofence deltas.
     @ObservationIgnored private var geofenceAnchor: CLLocation?
+    /// One reused geocoder — allocating a `CLGeocoder` per fix is wasteful and
+    /// significant-change updates can arrive in bursts.
+    @ObservationIgnored private let geocoder = CLGeocoder()
+    /// When `cityName` was last resolved — gates how often we reverse-geocode.
+    @ObservationIgnored private var cityResolvedAt: Date?
 
     override init() {
         super.init()
@@ -48,8 +56,16 @@ import CoreLocation
             } else if geofenceAnchor == nil {
                 geofenceAnchor = loc
             }
-            let placemarks = try? await CLGeocoder().reverseGeocodeLocation(loc)
-            cityName = placemarks?.first?.locality
+            // Only reverse-geocode when the cached city is empty or stale — not on
+            // every significant-change update.
+            let stale = cityResolvedAt.map { Date().timeIntervalSince($0) > Self.cityFreshThreshold } ?? true
+            if (cityName?.isEmpty ?? true) || stale, !geocoder.isGeocoding {
+                if let placemarks = try? await geocoder.reverseGeocodeLocation(loc),
+                   let city = placemarks.first?.locality {
+                    cityName = city
+                    cityResolvedAt = Date()
+                }
+            }
         }
     }
 

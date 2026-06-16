@@ -324,16 +324,19 @@ final class ConversationStoreV2 {
     /// Hard-cap retention, per agent. Deletes messages in this agent's bucket
     /// beyond `keep` newest, and any orphaned attachments rows. Called by
     /// `MessageTimeline` after each insert.
-    func prune(agentId: String = "jarvis", keep: Int = 500) throws {
+    /// Keep only the most recent `keep` messages across ALL agents — matches the
+    /// global 500-row timeline fetch. Was previously per-agent with a default
+    /// `agentId: "jarvis"`, so non-jarvis timelines (payne/greg/scrooge) were
+    /// never pruned and the table grew unbounded. Cheap no-op while under cap
+    /// (the count pre-check avoids the NOT IN scan in steady state).
+    func prune(keep: Int = 500) throws {
         try writer.write { db in
+            let count = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM messages") ?? 0
+            guard count > keep else { return }
             try db.execute(sql: """
                 DELETE FROM messages
-                WHERE agent_id = ?
-                  AND id NOT IN (
-                    SELECT id FROM messages WHERE agent_id = ?
-                    ORDER BY ts DESC LIMIT ?
-                  )
-            """, arguments: [agentId, agentId, keep])
+                WHERE id NOT IN (SELECT id FROM messages ORDER BY ts DESC LIMIT ?)
+            """, arguments: [keep])
             try db.execute(sql: """
                 DELETE FROM attachments
                 WHERE message_id NOT IN (SELECT id FROM messages)

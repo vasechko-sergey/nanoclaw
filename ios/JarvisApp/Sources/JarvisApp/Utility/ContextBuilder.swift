@@ -2,6 +2,10 @@ import Foundation
 import UIKit
 
 struct ContextBuilder {
+    /// Reused formatter — allocating `ISO8601DateFormatter()` per call is costly
+    /// and `build` runs on every context request (twice internally).
+    private static let iso = ISO8601DateFormatter()
+
     /// Собирает контекст по запросу агента (pull-модель). `fields` — какие
     /// разделы нужны: "location" | "health" | "device" | "calendar".
     /// Пустой набор трактуется как «все». Настройки приватности (useLocation и т.д.)
@@ -50,7 +54,7 @@ struct ContextBuilder {
         if want.contains("calendar"), settings.useCalendar, let ev = calendar.nextEvent {
             ctx["nextEvent"] = [
                 "title": ev.title,
-                "start": ISO8601DateFormatter().string(from: ev.start),
+                "start": iso.string(from: ev.start),
             ]
         }
 
@@ -58,7 +62,7 @@ struct ContextBuilder {
         if !emoji.isEmpty { ctx["status"] = emoji }
 
         // Device-side timestamp and timezone so the server renders the correct local time.
-        ctx["timestamp"] = ISO8601DateFormatter().string(from: Date())
+        ctx["timestamp"] = iso.string(from: Date())
         ctx["timezone"] = TimeZone.current.identifier
 
         return ctx

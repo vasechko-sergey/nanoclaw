@@ -7,6 +7,11 @@ struct MiniOrbView: View {
     var size: CGFloat = 36
     var mood: OrbMood = .calm
 
+    /// When the app isn't foreground-active, drop the per-frame
+    /// `TimelineView(.animation)` (it redraws every display frame even while
+    /// backgrounded/idle) and render one static frame instead.
+    @Environment(\.scenePhase) private var scenePhase
+
     // MARK: - Mood params (subset of OrbView)
 
     private struct Params {
@@ -59,84 +64,108 @@ struct MiniOrbView: View {
                     }
             }
 
-            TimelineView(.animation) { timeline in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                Canvas { ctx, sz in
-                    let cx = sz.width / 2
-                    let cy = sz.height / 2
-                    let r = min(sz.width, sz.height) / 2
-
-                    let a = curAlpha
-                    let breath = 1.0 + curBreathAmp * sin(t * 2.5)
-                    let center = CGPoint(x: cx, y: cy)
-
-                    // 1. Core glow
-                    let coreR = r * 0.22 * breath
-                    let glowR = coreR * 3.0
-                    let glowPath = Path(ellipseIn: CGRect(
-                        x: cx - glowR, y: cy - glowR,
-                        width: glowR * 2, height: glowR * 2))
-                    ctx.fill(glowPath, with: .radialGradient(
-                        Gradient(colors: [
-                            cyan.opacity(a * 0.35),
-                            cyan.opacity(a * 0.10),
-                            cyan.opacity(0)
-                        ]),
-                        center: center, startRadius: 0, endRadius: glowR
-                    ))
-                    let corePath = Path(ellipseIn: CGRect(
-                        x: cx - coreR, y: cy - coreR,
-                        width: coreR * 2, height: coreR * 2))
-                    ctx.fill(corePath, with: .radialGradient(
-                        Gradient(colors: [
-                            Color.white.opacity(a * 0.9),
-                            cyan.opacity(a * 0.6),
-                            cyan.opacity(0)
-                        ]),
-                        center: center, startRadius: 0, endRadius: coreR
-                    ))
-
-                    // 2. Inner arc (r=0.45): ~240 deg
-                    drawArc(ctx: &ctx, center: center, radius: r * 0.45,
-                            startDeg: 0, sweepDeg: 240,
-                            rotation: t * curSpeed * 0.8,
-                            lineWidth: 1.5, alpha: a * 0.7)
-
-                    // 3. Outer arcs (r=0.78): two segments ~140 deg each
-                    drawArc(ctx: &ctx, center: center, radius: r * 0.78,
-                            startDeg: 10, sweepDeg: 140,
-                            rotation: t * curSpeed * -0.6,
-                            lineWidth: 2.5, alpha: a * 0.55)
-                    drawArc(ctx: &ctx, center: center, radius: r * 0.78,
-                            startDeg: 190, sweepDeg: 130,
-                            rotation: t * curSpeed * -0.6,
-                            lineWidth: 2.5, alpha: a * 0.50)
+            // Main orb. While foreground-active, animate via TimelineView;
+            // otherwise render one static frame so we stop redrawing every
+            // display frame when backgrounded/idle. Visuals are identical
+            // while active.
+            if scenePhase == .active {
+                TimelineView(.animation) { timeline in
+                    orbCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
                 }
-                .frame(width: size, height: size)
+            } else {
+                orbCanvas(t: Self.staticTime)
             }
 
             // Particle overlay: 3 dots rotating around the orb, only for .processing at size >= 20
             if size >= 20 && mood == .processing {
-                TimelineView(.animation) { timeline in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    let angle = t * curSpeed * 1.5
-                    let orbit = size / 2 + 4
-
-                    ZStack {
-                        ForEach(0..<3, id: \.self) { i in
-                            let phase = angle + Double(i) * (2 * .pi / 3)
-                            Circle()
-                                .fill(cyan.opacity(0.7))
-                                .frame(width: 2.5, height: 2.5)
-                                .offset(x: cos(phase) * orbit, y: sin(phase) * orbit)
-                        }
+                if scenePhase == .active {
+                    TimelineView(.animation) { timeline in
+                        particleCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
                     }
-                    .frame(width: size + 12, height: size + 12)
+                } else {
+                    particleCanvas(t: Self.staticTime)
                 }
             }
         }
         .onAppear { snap() }
         .onChange(of: mood) { lerp() }
+    }
+
+    /// Fixed timestamp used to render a single static frame when the scene is
+    /// not active (mirrors the `TimelineView` draw at one instant).
+    private static let staticTime: Double = 0
+
+    @ViewBuilder
+    private func orbCanvas(t: Double) -> some View {
+        Canvas { ctx, sz in
+            let cx = sz.width / 2
+            let cy = sz.height / 2
+            let r = min(sz.width, sz.height) / 2
+
+            let a = curAlpha
+            let breath = 1.0 + curBreathAmp * sin(t * 2.5)
+            let center = CGPoint(x: cx, y: cy)
+
+            // 1. Core glow
+            let coreR = r * 0.22 * breath
+            let glowR = coreR * 3.0
+            let glowPath = Path(ellipseIn: CGRect(
+                x: cx - glowR, y: cy - glowR,
+                width: glowR * 2, height: glowR * 2))
+            ctx.fill(glowPath, with: .radialGradient(
+                Gradient(colors: [
+                    cyan.opacity(a * 0.35),
+                    cyan.opacity(a * 0.10),
+                    cyan.opacity(0)
+                ]),
+                center: center, startRadius: 0, endRadius: glowR
+            ))
+            let corePath = Path(ellipseIn: CGRect(
+                x: cx - coreR, y: cy - coreR,
+                width: coreR * 2, height: coreR * 2))
+            ctx.fill(corePath, with: .radialGradient(
+                Gradient(colors: [
+                    Color.white.opacity(a * 0.9),
+                    cyan.opacity(a * 0.6),
+                    cyan.opacity(0)
+                ]),
+                center: center, startRadius: 0, endRadius: coreR
+            ))
+
+            // 2. Inner arc (r=0.45): ~240 deg
+            drawArc(ctx: &ctx, center: center, radius: r * 0.45,
+                    startDeg: 0, sweepDeg: 240,
+                    rotation: t * curSpeed * 0.8,
+                    lineWidth: 1.5, alpha: a * 0.7)
+
+            // 3. Outer arcs (r=0.78): two segments ~140 deg each
+            drawArc(ctx: &ctx, center: center, radius: r * 0.78,
+                    startDeg: 10, sweepDeg: 140,
+                    rotation: t * curSpeed * -0.6,
+                    lineWidth: 2.5, alpha: a * 0.55)
+            drawArc(ctx: &ctx, center: center, radius: r * 0.78,
+                    startDeg: 190, sweepDeg: 130,
+                    rotation: t * curSpeed * -0.6,
+                    lineWidth: 2.5, alpha: a * 0.50)
+        }
+        .frame(width: size, height: size)
+    }
+
+    @ViewBuilder
+    private func particleCanvas(t: Double) -> some View {
+        let angle = t * curSpeed * 1.5
+        let orbit = size / 2 + 4
+
+        ZStack {
+            ForEach(0..<3, id: \.self) { i in
+                let phase = angle + Double(i) * (2 * .pi / 3)
+                Circle()
+                    .fill(cyan.opacity(0.7))
+                    .frame(width: 2.5, height: 2.5)
+                    .offset(x: cos(phase) * orbit, y: sin(phase) * orbit)
+            }
+        }
+        .frame(width: size + 12, height: size + 12)
     }
 
     // MARK: - Drawing

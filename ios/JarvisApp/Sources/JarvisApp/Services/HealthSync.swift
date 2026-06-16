@@ -24,13 +24,35 @@ enum HealthSync {
         HKQuantityType(.leanBodyMass),
     ]
 
+    /// Per-type debounce. An Apple Watch streams HR many times a minute during a
+    /// workout; each fire would otherwise trigger a 15-query fan-out + HTTP
+    /// upload. Coalesce re-fires within `observerDebounce` per sample type.
+    private static var lastHandled: [String: Date] = [:]
+    private static let debounceLock = NSLock()
+    private static let observerDebounce: TimeInterval = 60
+
+    /// Returns true if a fire for `key` should be handled (and stamps it),
+    /// false if it lands inside the debounce window. Thread-safe — observer
+    /// callbacks fire on arbitrary background queues, concurrently across types.
+    private static func shouldHandle(_ key: String, now: Date = Date()) -> Bool {
+        debounceLock.lock()
+        defer { debounceLock.unlock() }
+        if let last = lastHandled[key], now.timeIntervalSince(last) < observerDebounce {
+            return false
+        }
+        lastHandled[key] = now
+        return true
+    }
+
     static func start() {
         guard HKHealthStore.isHealthDataAvailable(), !started else { return }
         started = true
         for t in sampleTypes {
+            let key = t.identifier
             let q = HKObserverQuery(sampleType: t, predicate: nil) { _, completion, _ in
                 // On a background wake: drain any pending server fetch requests AND
                 // push recent days. Both over HTTP (no APNs).
+                guard shouldHandle(key) else { completion(); return }
                 HealthRequests.drain {
                     pushRecent { completion() }
                 }

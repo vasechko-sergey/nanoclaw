@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -221,9 +222,11 @@ final class WebSocketClientV2 {
         lastUserSentAt = nil
         lastAssistantAt = nil
         thinkingDetail = nil
-        // TransportV2 currently has no explicit close API; the socket close
-        // happens when the URLSessionWebSocketTask is torn down. Left as TODO
-        // until 5.x grows a teardown path.
+        sentReadIds.removeAll()
+        // Tear down the transport: cancel the reconnect loop + all in-flight
+        // ack-retry tasks and close the socket. Previously a no-op, which left
+        // the reconnect/ping/retry churn running for the whole process life.
+        Task { [weak self] in await self?.stack?.transport.disconnect() }
     }
 
     // MARK: - Send methods
@@ -264,6 +267,7 @@ final class WebSocketClientV2 {
                 context: inline,
                 agentId: agentId
             )
+            try? stack.store.prune() // global retention; cheap no-op under cap
             Task { [weak self] in
                 try? await self?.stack.transport.tickDispatcher()
             }
@@ -432,6 +436,40 @@ final class WebSocketClientV2 {
 
     // MARK: - Mapping
 
+    /// Bounded cache of decoded + downsampled chat images, keyed by row id.
+    /// Stops the ValueObservation from re-decoding the whole image history on
+    /// every insert and caps retained bitmap memory.
+    private static let imageCache: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = 80
+        return c
+    }()
+
+    /// Decode `base64` into a UIImage downsampled to ~720px on the longest edge
+    /// (chat bubbles render at ~240pt — full-res photos are pointless and cost
+    /// ~48MB each decoded). Result cached by `rowId` so repeated observation
+    /// rebuilds reuse the bitmap instead of re-decoding on the main thread.
+    private static func cachedDownsampledImage(rowId: String, base64: String) -> UIImage? {
+        let key = rowId as NSString
+        if let hit = imageCache.object(forKey: key) { return hit }
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        let maxPixel: CGFloat = 720
+        let img: UIImage?
+        if let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+           let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+               kCGImageSourceCreateThumbnailFromImageAlways: true,
+               kCGImageSourceCreateThumbnailWithTransform: true,
+               kCGImageSourceShouldCacheImmediately: true,
+               kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+           ] as CFDictionary) {
+            img = UIImage(cgImage: cg)
+        } else {
+            img = UIImage(data: data)
+        }
+        if let img { imageCache.setObject(img, forKey: key) }
+        return img
+    }
+
     // A single stored row may carry BOTH a text caption and an attachment
     // (e.g. "Держи выписку" + Statement.pdf). The ChatMessage.Content enum holds
     // only one of those, so such a row maps to TWO bubbles: the caption first,
@@ -459,10 +497,14 @@ final class WebSocketClientV2 {
             // Attachment bubble keeps the bare `row.id` so delivery-status
             // updates (looked up by the stored row id) still land on it.
             var attMsg: ChatMessage
-            if first.kind == "image",
-               let b64 = first.bytes_base64,
-               let imgData = Data(base64Encoded: b64),
-               let image = UIImage(data: imgData) {
+            // Decode through an id-keyed cache + downsample. Without the cache,
+            // the ValueObservation re-decoded EVERY image in the 500-row window
+            // on every insert (main-thread JPEG decode storm → hangs); without
+            // downsampling each decoded UIImage held its full-res bitmap
+            // (~48MB for a 12MP photo → memory jetsam). Row content is immutable
+            // for a given id, so caching by row.id is safe.
+            if first.kind == "image", let b64 = first.bytes_base64,
+               let image = cachedDownsampledImage(rowId: row.id, base64: b64) {
                 attMsg = ChatMessage.image(row.id, role: role, image: image, filename: first.name, timestamp: timestamp)
             } else {
                 let info = FileInfo(name: first.name, size: Int64(first.byte_size),
