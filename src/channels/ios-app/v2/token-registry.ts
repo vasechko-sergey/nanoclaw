@@ -41,3 +41,16 @@ export function resolveIosToken(rawToken: string): IosTokenIdentity | null {
     .get(hashToken(rawToken)) as IosTokenIdentity | undefined;
   return row ?? null;
 }
+
+/**
+ * Resolve a platform_id to the person_key that owns that device, or null if no
+ * token has been minted for it. Used at bootstrap to stamp eager-created
+ * sessions with their real owner (an ios-app-v2 mg ↔ one person), so a second
+ * person's sessions never fall back to OWNER_PERSON_KEY in buildMounts.
+ */
+export function personKeyForPlatform(platformId: string): string | null {
+  const row = getDb().prepare('SELECT person_key FROM ios_tokens WHERE platform_id = ?').get(platformId) as
+    | { person_key: string }
+    | undefined;
+  return row?.person_key ?? null;
+}

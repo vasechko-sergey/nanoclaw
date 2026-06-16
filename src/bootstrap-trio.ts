@@ -19,7 +19,9 @@ import {
   getAllMessagingGroups,
   getMessagingGroupAgentByPair,
 } from './db/messaging-groups.js';
-import { createSession, findSessionForAgent } from './db/sessions.js';
+import { createSession, findSessionForAgent, updateSession } from './db/sessions.js';
+import { personKeyForPlatform } from './channels/ios-app/v2/token-registry.js';
+import { OWNER_PERSON_KEY } from './config.js';
 import { initSessionFolder, writeSessionMessage } from './session-manager.js';
 import { log } from './log.js';
 
@@ -86,6 +88,13 @@ export function bootstrapTrio(): void {
 
   const ios = getAllMessagingGroups().filter((m) => m.channel_type === 'ios-app-v2');
   for (const mg of ios) {
+    // Owner of this device's sessions. An ios-app-v2 mg's platform_id maps 1:1
+    // to a person via the ios_tokens registry (minted at provisioning, before
+    // this bootstrap runs). Stamping owner_key here is the isolation boundary
+    // for eager-created sessions: without it they carry owner_key=null and
+    // buildMounts falls back to OWNER_PERSON_KEY, mounting the OWNER's memory
+    // into a second person's session. null (no token yet) keeps owner-fallback.
+    const deviceOwner = mg.platform_id ? personKeyForPlatform(mg.platform_id) : null;
     let priority = 0;
     for (const entry of TEAM) {
       const canonicalId = canonicalIdByFolder.get(entry.folder)!;
@@ -107,14 +116,27 @@ export function bootstrapTrio(): void {
         log.info('bootstrap-trio wired agent to mg', { mg: mg.id, agent: canonicalId });
       }
       const existing = findSessionForAgent(canonicalId, mg.id, null);
-      if (!existing) {
+      if (existing) {
+        // Backfill: a known non-owner person's eager session created before its
+        // token existed (null owner → would mount the owner's memory). Stamp the
+        // real owner so the next spawn isolates correctly. Owner's own device
+        // (deviceOwner === OWNER_PERSON_KEY) and tokenless mgs are left alone.
+        if (deviceOwner && deviceOwner !== OWNER_PERSON_KEY && existing.owner_key == null) {
+          updateSession(existing.id, { owner_key: deviceOwner });
+          log.info('bootstrap-trio backfilled eager session owner', {
+            session: existing.id,
+            owner: deviceOwner,
+            mg: mg.id,
+          });
+        }
+      } else {
         const newSessId = generateSessionId();
         createSession({
           id: newSessId,
           agent_group_id: canonicalId,
           messaging_group_id: mg.id,
           thread_id: null,
-          owner_key: null,
+          owner_key: deviceOwner,
           agent_provider: null,
           status: 'active',
           container_status: 'stopped',

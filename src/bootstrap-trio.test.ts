@@ -8,6 +8,7 @@ import { getMessagingGroupAgents } from './db/messaging-groups.js';
 import { findSessionForAgent } from './db/sessions.js';
 import { runMigrations } from './db/migrations/index.js';
 import { getDestinationByTarget } from './modules/agent-to-agent/db/agent-destinations.js';
+import { upsertIosToken } from './channels/ios-app/v2/token-registry.js';
 
 // Mock the session-manager so bootstrapTrio's writeSessionMessage /
 // initSessionFolder calls (used for the bootstrap inbound) don't touch
@@ -108,6 +109,66 @@ describe('bootstrapTrio', () => {
     const firstCount = writeCalls.length;
     bootstrapTrio();
     expect(writeCalls.length).toBe(firstCount);
+  });
+
+  it('stamps eager-session owner_key from the ios_tokens registry (second-person isolation)', () => {
+    // A second person's device: platform_id maps to her person_key via the
+    // token minted at provisioning, BEFORE this bootstrap runs.
+    upsertIosToken({ rawToken: 'raw-p2', platformId: 'ios-app-v2:p2', personKey: 'p2', label: null });
+    createMessagingGroup({
+      id: 'mg-p2',
+      channel_type: 'ios-app-v2',
+      platform_id: 'ios-app-v2:p2',
+      name: "Lena's iPhone",
+      is_group: 0,
+      unknown_sender_policy: 'strict',
+      created_at: new Date().toISOString(),
+      denied_at: null,
+    });
+    bootstrapTrio();
+    // Every eager session for her device must carry HER owner_key — otherwise
+    // buildMounts falls back to OWNER_PERSON_KEY and mounts the owner's memory.
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon', 'scrooge']) {
+      expect(findSessionForAgent(slug, 'mg-p2', null)?.owner_key).toBe('p2');
+    }
+  });
+
+  it('leaves owner_key null when the ios mg has no token (owner-fallback path)', () => {
+    createMessagingGroup({
+      id: 'mg-notoken',
+      channel_type: 'ios-app-v2',
+      platform_id: 'ios-app-v2:default',
+      name: 'iPhone',
+      is_group: 0,
+      unknown_sender_policy: 'strict',
+      created_at: new Date().toISOString(),
+      denied_at: null,
+    });
+    bootstrapTrio();
+    expect(findSessionForAgent('jarvis', 'mg-notoken', null)?.owner_key).toBeNull();
+  });
+
+  it('backfills a null-owner eager session once a non-owner token appears', () => {
+    // Footgun guard: mg created + bootstrapped BEFORE the token exists → eager
+    // sessions are null-owner. Minting the token then re-running bootstrap must
+    // stamp the real owner so the next spawn isolates correctly.
+    createMessagingGroup({
+      id: 'mg-late',
+      channel_type: 'ios-app-v2',
+      platform_id: 'ios-app-v2:p3',
+      name: "Late's iPhone",
+      is_group: 0,
+      unknown_sender_policy: 'strict',
+      created_at: new Date().toISOString(),
+      denied_at: null,
+    });
+    bootstrapTrio();
+    expect(findSessionForAgent('jarvis', 'mg-late', null)?.owner_key).toBeNull();
+    upsertIosToken({ rawToken: 'raw-p3', platformId: 'ios-app-v2:p3', personKey: 'p3', label: null });
+    bootstrapTrio();
+    for (const slug of ['jarvis', 'payne', 'greg', 'gordon', 'scrooge']) {
+      expect(findSessionForAgent(slug, 'mg-late', null)?.owner_key).toBe('p3');
+    }
   });
 
   it('wires every agent with a channel destination so replies resolve', () => {
