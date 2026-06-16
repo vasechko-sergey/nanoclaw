@@ -375,31 +375,48 @@ async function deliverMessage(
     fileCount: files?.length,
   });
 
-  // Voice note: if the session has voice_intent set and the reply has text,
-  // render via the TTS sidecar and deliver as a voice note. Runs after text
-  // delivery so a TTS failure never blocks the text reply from landing.
-  // renderVoice returns null when the sidecar is unreachable — skip silently.
-  const voiceRow = getDb()
-    .prepare('SELECT voice_intent FROM sessions WHERE id = ?')
-    .get(session.id) as { voice_intent: number } | undefined;
+  // Voice note: when the session has voice_intent and the reply has text,
+  // render it via the TTS sidecar and send it as a separate voice note.
+  // FIRE-AND-FORGET: a CPU render takes seconds-to-minutes, and this runs
+  // inside the sequential `for (msg of undelivered) { await deliverMessage }`
+  // loop — awaiting it here would stall delivery of every other message AND
+  // delay markDelivered() for the text reply, risking a duplicate text send on
+  // the next poll tick. The text reply is already delivered above; the voice
+  // note lands later. renderVoice returns null when the sidecar is unreachable,
+  // in which case we skip silently.
+  const voiceRow = getDb().prepare('SELECT voice_intent FROM sessions WHERE id = ?').get(session.id) as
+    | { voice_intent: number }
+    | undefined;
   if (voiceRow?.voice_intent && content.text && typeof content.text === 'string' && content.text.trim()) {
-    try {
-      const opus = await renderVoice(content.text as string, 'jarvis');
-      if (opus) {
-        await deliveryAdapter.deliver(
-          msg.channel_type,
-          msg.platform_id,
-          msg.thread_id,
-          msg.kind,
-          JSON.stringify({ operation: 'send_voice' }),
-          [{ filename: 'reply.ogg', data: opus, operation: 'send_voice' as const }],
-          session.agent_group_id,
-        );
-        log.info('Voice note delivered', { id: msg.id, sessionId: session.id });
+    // Capture narrowed values as locals: inside the deferred async closure below,
+    // TypeScript widens msg.* back to their declared (nullable) types, so freeze
+    // them here where control-flow narrowing from deliverMessage still applies.
+    const replyText = content.text as string;
+    const vChannelType = msg.channel_type;
+    const vPlatformId = msg.platform_id;
+    const vThreadId = msg.thread_id;
+    const vKind = msg.kind;
+    const vAgentGroupId = session.agent_group_id;
+    const vMsgId = msg.id;
+    void (async () => {
+      try {
+        const opus = await renderVoice(replyText, 'jarvis');
+        if (opus) {
+          await deliveryAdapter.deliver(
+            vChannelType,
+            vPlatformId,
+            vThreadId,
+            vKind,
+            JSON.stringify({ operation: 'send_voice' }),
+            [{ filename: 'reply.ogg', data: opus, operation: 'send_voice' as const }],
+            vAgentGroupId,
+          );
+          log.info('Voice note delivered', { id: vMsgId, sessionId: session.id });
+        }
+      } catch (err) {
+        log.warn('Voice note delivery failed', { id: vMsgId, sessionId: session.id, err });
       }
-    } catch (err) {
-      log.warn('Voice note delivery failed', { id: msg.id, sessionId: session.id, err });
-    }
+    })();
   }
 
   clearOutbox(session.agent_group_id, session.id, msg.id);
