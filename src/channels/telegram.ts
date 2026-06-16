@@ -9,6 +9,7 @@ import { BOT_COMMANDS } from '../commands.js';
 import { readEnvFile } from '../env.js';
 import { log } from '../log.js';
 import { createMessagingGroup, getMessagingGroupByPlatform, updateMessagingGroup } from '../db/messaging-groups.js';
+import { getDb } from '../db/connection.js';
 import { grantRole, hasAnyOwner } from '../modules/permissions/db/user-roles.js';
 import { upsertUser } from '../modules/permissions/db/users.js';
 import { createChatSdkBridge, type ReplyContext } from './chat-sdk-bridge.js';
@@ -16,6 +17,7 @@ import { sanitizeTelegramLegacyMarkdown } from './telegram-markdown-sanitize.js'
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup, InboundMessage, OutboundMessage } from './adapter.js';
 import { tryConsume } from './telegram-pairing.js';
+import { parseVoiceCommand } from '../modules/voice/voice-command.js';
 
 /**
  * Retry a one-shot operation that can fail on transient network errors at
@@ -152,6 +154,33 @@ function createPairingInterceptor(
         hostOnInbound(platformId, threadId, message);
         return;
       }
+
+      // Handle /voice on|off — toggle per-chat voice_mode; do NOT route to agent.
+      const voiceCmd = parseVoiceCommand(text);
+      if (voiceCmd.isCommand) {
+        const mg = getMessagingGroupByPlatform('telegram', platformId);
+        if (mg) {
+          getDb()
+            .prepare('UPDATE messaging_groups SET voice_mode = ? WHERE id = ?')
+            .run(voiceCmd.enable ? 1 : 0, mg.id);
+          log.info('Telegram /voice command applied', { platformId, enable: voiceCmd.enable, mgId: mg.id });
+        } else {
+          log.warn('Telegram /voice command: messaging group not found', { platformId });
+        }
+        const chatId = platformId.split(':').slice(1).join(':');
+        const replyText = voiceCmd.enable ? '🔊 Голосовой режим включён' : '🔇 Голосовой режим выключен';
+        try {
+          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text: replyText }),
+          });
+        } catch (err) {
+          log.warn('Telegram /voice confirmation failed', { platformId, err });
+        }
+        return;
+      }
+
       const consumed = await tryConsume({
         text,
         botUsername,
