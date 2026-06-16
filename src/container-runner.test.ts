@@ -257,27 +257,43 @@ describe('buildMounts owner isolation', () => {
     expect(mounts.some((m) => m.hostPath.startsWith(ownerRoot + path.sep))).toBe(false);
   });
 
-  it('makes the whole agent dir writable and syncs shared code into it', () => {
-    // Seed a code file in the shared group dir.
-    fs.mkdirSync(path.join(GROUPS_DIR, ISO_FOLDER), { recursive: true });
-    fs.writeFileSync(path.join(GROUPS_DIR, ISO_FOLDER, 'CLAUDE.md'), '# code');
+  it('makes the whole agent dir writable; syncs ALL shared code, excludes secrets', () => {
+    // Seed shared code: a top-level file, a ROOT code file (proves the whole dir
+    // is synced, not a fixed item-list), a secret .env, and a template.
+    const gdir = path.join(GROUPS_DIR, ISO_FOLDER);
+    fs.mkdirSync(path.join(gdir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(gdir, 'CLAUDE.md'), '# code');
+    fs.writeFileSync(path.join(gdir, 'analyze.js'), '// root code');
+    fs.writeFileSync(path.join(gdir, 'scripts', '.env'), 'SECRET=1');
+    fs.writeFileSync(path.join(gdir, 'scripts', '.env.example'), 'SECRET=');
     const mounts = mountsFor('isomnt');
-    // The agent dir is writable (per-person), NOT read-only.
+    // The agent dir is writable; NO nested read-only mounts — whole scope is RW.
     const agentMount = mounts.find((m) => m.containerPath === '/workspace/agent');
     expect(agentMount?.readonly).toBe(false);
-    // There are NO nested read-only mounts under /workspace/agent — the agent's
-    // ENTIRE working scope is read-write.
     const nestedRo = mounts.filter(
-      (m) =>
-        m.containerPath.startsWith('/workspace/agent/') &&
-        m.containerPath !== '/workspace/agent' &&
-        m.readonly,
+      (m) => m.containerPath.startsWith('/workspace/agent/') && m.containerPath !== '/workspace/agent' && m.readonly,
     );
     expect(nestedRo).toEqual([]);
-    // Shared code was COPIED into the per-person dir (not mounted), so the agent
-    // sees current host code while the whole dir stays writable.
-    const synced = path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER, 'CLAUDE.md');
-    expect(fs.readFileSync(synced, 'utf8')).toBe('# code');
+    const mem = path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER);
+    // All code synced (top-level AND root files), template kept.
+    expect(fs.readFileSync(path.join(mem, 'CLAUDE.md'), 'utf8')).toBe('# code');
+    expect(fs.readFileSync(path.join(mem, 'analyze.js'), 'utf8')).toBe('// root code');
+    expect(fs.existsSync(path.join(mem, 'scripts', '.env.example'))).toBe(true);
+    // Secret .env is NEVER synced from the shared source.
+    expect(fs.existsSync(path.join(mem, 'scripts', '.env'))).toBe(false);
+  });
+
+  it('never overwrites or leaks a per-person scripts/.env', () => {
+    const gdir = path.join(GROUPS_DIR, ISO_FOLDER);
+    fs.mkdirSync(path.join(gdir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(gdir, 'scripts', '.env'), 'OWNER_SECRET=1'); // owner's, in shared source
+    // A different person already has their OWN .env in their per-person tree.
+    const mem = path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER);
+    fs.mkdirSync(path.join(mem, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(mem, 'scripts', '.env'), 'HER_SECRET=1');
+    mountsFor('isomnt');
+    // Her .env is untouched — the shared (owner's) .env never overwrote it.
+    expect(fs.readFileSync(path.join(mem, 'scripts', '.env'), 'utf8')).toBe('HER_SECRET=1');
   });
 
   it('falls back to OWNER_PERSON_KEY when owner_key is null', () => {

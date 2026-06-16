@@ -397,19 +397,26 @@ export function buildMounts(
 
   // Sync shared CODE from the group dir into the per-person agent dir, so the
   // agent's ENTIRE working dir (/workspace/agent) can be mounted writable while
-  // shared code still has a single source of truth in groups/<folder>. The
-  // owner edits code on the host (groups/), it propagates into every person's
-  // dir on the next spawn. DATA dirs (memories, conversations, health, scratch,
-  // nutrition, …) are NOT touched — they persist per-person. The agent may
-  // write anywhere (RW); its edits to code reset to the host source next spawn.
-  for (const item of ['CLAUDE.md', 'container.json', 'scripts', 'skills', 'agents']) {
-    const src = path.join(groupDir, item);
-    if (fs.existsSync(src)) {
-      fs.cpSync(src, path.join(memRoot, item), { recursive: true, force: true });
-    }
+  // shared code keeps a single source of truth in groups/<folder>. The whole
+  // group dir is code — data was migrated out to user-memory — so copy it
+  // wholesale: cpSync MERGES, overwriting matching code but never deleting the
+  // per-person DATA dirs (memories, conversations, health, scratch, nutrition,
+  // …) that exist only under user-memory. The owner edits code on the host
+  // (groups/) and it propagates into every person's dir on the next spawn; the
+  // agent may write anywhere (RW), its code edits reset to the host source next
+  // spawn. SECRETS are excluded (isSecretEnv): each person's scripts/.env lives
+  // only under their own user-memory tree — it is never sourced from, reset by,
+  // or leaked through the shared group dir. `.env.example` (a template) stays.
+  const isSecretEnv = (p: string): boolean => {
+    const b = path.basename(p);
+    return b === '.env' || (b.startsWith('.env.') && b !== '.env.example');
+  };
+  if (fs.existsSync(groupDir)) {
+    fs.cpSync(groupDir, memRoot, { recursive: true, force: true, filter: (src) => !isSecretEnv(src) });
   }
   // Shared INSTRUCTIONS.md — one static file under GROUPS_DIR, referenced by
-  // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. Synced in like the rest.
+  // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. Synced in last so the
+  // shared copy wins over any per-agent placeholder copied above.
   const instructionsPath = path.join(GROUPS_DIR, 'INSTRUCTIONS.md');
   if (fs.existsSync(instructionsPath)) {
     fs.cpSync(instructionsPath, path.join(memRoot, 'INSTRUCTIONS.md'), { force: true });
