@@ -71,6 +71,15 @@ function mimeFromFilename(name: string): string {
       return 'text/markdown';
     case '.json':
       return 'application/json';
+    case '.ogg':
+    case '.opus':
+      return 'audio/ogg';
+    case '.m4a':
+      return 'audio/mp4';
+    case '.wav':
+      return 'audio/wav';
+    case '.mp3':
+      return 'audio/mpeg';
     default:
       return 'application/octet-stream';
   }
@@ -536,7 +545,7 @@ function createV2Adapter(): ChannelAdapter | null {
               const mime = mimeFromFilename(f.filename);
               return {
                 id: randomUUID(),
-                kind: mime.startsWith('image/') ? 'image' : 'file',
+                kind: mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : 'file',
                 name: f.filename,
                 mime_type: mime,
                 byte_size: f.data.length,
