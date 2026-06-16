@@ -20,6 +20,7 @@
 import { getChannelAdapter } from './channels/channel-registry.js';
 import { gateCommand } from './command-gate.js';
 import { getAgentGroup } from './db/agent-groups.js';
+import { getDb } from './db/connection.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import {
   createMessagingGroup,
@@ -28,6 +29,7 @@ import {
 } from './db/messaging-groups.js';
 import { findSessionByAgentGroup, findSessionForAgent, updateSession } from './db/sessions.js';
 import { startTypingRefresh, stopTypingRefresh } from './modules/typing/index.js';
+import { resolveVoiceIntent } from './modules/voice/voice-intent.js';
 import { log } from './log.js';
 import { resolvePersonKey } from './person-key.js';
 import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
@@ -510,6 +512,30 @@ async function deliverToAgent(
     effectiveSessionMode,
     resolvePersonKey(userId),
   );
+
+  // Compute and persist voice intent for this session. The intent is
+  // recalculated on every inbound message so a per-message ios_context flag
+  // always wins; group voice_mode acts as the group-level default.
+  try {
+    let parsedContent: { ios_context?: { respond_by_voice?: boolean } | null } = {};
+    try {
+      parsedContent = JSON.parse(event.message.content);
+    } catch {
+      // non-JSON content (plain text fallback) — ios_context absent
+    }
+    const iosContext = parsedContent.ios_context ?? null;
+    const mgVoiceRow = getDb()
+      .prepare('SELECT voice_mode FROM messaging_groups WHERE id = ?')
+      .get(mg.id) as { voice_mode: number } | undefined;
+    const groupVoiceMode = (mgVoiceRow?.voice_mode ?? 0) !== 0;
+    const voiceIntent = resolveVoiceIntent({ iosContext, groupVoiceMode });
+    getDb()
+      .prepare('UPDATE sessions SET voice_intent = ? WHERE id = ?')
+      .run(voiceIntent ? 1 : 0, session.id);
+  } catch (err) {
+    // Voice intent is best-effort — never block routing on a failure here.
+    log.warn('Failed to compute voice intent', { sessionId: session.id, err });
+  }
 
   writeSessionMessage(session.agent_group_id, session.id, {
     id: messageIdForAgent(event.message.id, agent.agent_group_id),
