@@ -72,7 +72,7 @@ targets:
         # reports both to the host on connect (auth envelope) — so the running
         # build is knowable server-side, not guessed. Run `xcodegen generate` after.
         MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: "3"
+        CURRENT_PROJECT_VERSION: "4"
 
   JarvisUITests:
     type: bundle.ui-testing

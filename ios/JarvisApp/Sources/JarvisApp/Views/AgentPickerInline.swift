@@ -9,8 +9,13 @@ struct AgentPickerInline: View {
     @Environment(ActiveAgentState.self) private var active
     /// Optional long-press action — e.g. ChatView passes onGoHome here.
     var onLongPress: (() -> Void)? = nil
+    /// Optional external control of the expanded state so a parent can collapse
+    /// the picker on an outside tap. Defaults to internal state — existing call
+    /// sites that don't pass it keep working unchanged.
+    var externalExpanded: Binding<Bool>? = nil
 
-    @State private var isExpanded = false
+    @State private var internalExpanded = false
+    private var expanded: Binding<Bool> { externalExpanded ?? $internalExpanded }
 
     var body: some View {
         @Bindable var active = active
@@ -23,14 +28,14 @@ struct AgentPickerInline: View {
         VStack(spacing: 4) {
             ForEach(AgentIdentity.allCases) { agent in
                 let isActive = agent == active.active
-                if isActive || isExpanded {
+                if isActive || expanded.wrappedValue {
                     row(for: agent, isActive: isActive) {
                         if isActive {
-                            withAnimation(.easeInOut(duration: 0.25)) { isExpanded.toggle() }
+                            withAnimation(.easeInOut(duration: 0.25)) { expanded.wrappedValue.toggle() }
                         } else {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 active.active = agent
-                                isExpanded = false
+                                expanded.wrappedValue = false
                             }
                         }
                     }

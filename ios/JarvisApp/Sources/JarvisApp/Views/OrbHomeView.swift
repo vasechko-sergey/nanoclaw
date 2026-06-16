@@ -19,6 +19,7 @@ struct OrbHomeView: View {
 
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
+    @State private var pickerExpanded = false  // agent picker expand state (outside tap collapses it)
 
     // Picker triggers
     @State private var showPhotos = false
@@ -112,6 +113,17 @@ struct OrbHomeView: View {
                     HealthStripView(levels: stateService.state?.levels)
                         .onTapGesture { showStateBoard = true }
                         .padding(.bottom, Theme.scaled(8))
+                }
+                // Tap the orb/content area to collapse the expanded agent
+                // picker (which lives in the header above). Inert when collapsed.
+                .overlay {
+                    if pickerExpanded {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.25)) { pickerExpanded = false }
+                            }
+                    }
                 }
             }
             .safeAreaInset(edge: .bottom) { greetingLabel }
@@ -214,7 +226,7 @@ struct OrbHomeView: View {
             Spacer()
 
             // Agent picker — same component as ChatView header, in app style.
-            AgentPickerInline()
+            AgentPickerInline(externalExpanded: $pickerExpanded)
 
             Spacer()
 

@@ -17,7 +17,14 @@ struct ContextBuilder {
         health: HealthManager,
         calendar: CalendarManager
     ) -> [String: Any] {
-        let want = fields.isEmpty ? ["location", "health", "device", "calendar"] : fields
+        // The per-message context (empty `fields`) is the CHEAP always-attached
+        // block: cached location, device, calendar, time. Health is deliberately
+        // excluded here — HealthKit reads are expensive and health flows to the
+        // agent two other ways: the on-demand pull `request_context(["health"])`
+        // (which lands in `fields` below) and the periodic health-upload to the
+        // host. So an explicit "health" request still returns it; the default
+        // does not.
+        let want = fields.isEmpty ? ["location", "device", "calendar"] : fields
         var ctx: [String: Any] = [:]
 
         if want.contains("location"), settings.useLocation, let loc = location.lastLocation,

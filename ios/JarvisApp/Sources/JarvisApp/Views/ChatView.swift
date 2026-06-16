@@ -38,6 +38,7 @@ struct ChatView: View {
     @State private var scrollToBottomAction: (() -> Void)?
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
     @State private var rightDrawerOpen = false
+    @State private var pickerExpanded = false  // agent picker expand state (hoisted so an outside tap collapses it)
     @State private var rightDrawerDragOffset: CGFloat = 0
     @State private var showVoiceFullscreen = false
     @AppStorage("v3MigrationShown") private var v3MigrationShown = false
@@ -322,6 +323,19 @@ struct ChatView: View {
                             onPinchOut: { showVoiceFullscreen = true })
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+        // Tap anywhere in the chat body (outside the expanded agent picker,
+        // which lives in the header inset) to collapse it. Applied BEFORE the
+        // header inset below so the scrim covers only the content, never the
+        // picker rows — and only when expanded, so it's inert normally.
+        .overlay {
+            if pickerExpanded {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.25)) { pickerExpanded = false }
+                    }
+            }
+        }
         // Header lives in a TOP safe-area inset rather than as the first child
         // of the VStack. The software keyboard insets only the BOTTOM safe
         // area; keeping the header in the top inset makes it immune to the
@@ -487,7 +501,7 @@ struct ChatView: View {
 
             Spacer()
 
-            AgentPickerInline(onLongPress: onGoHome)
+            AgentPickerInline(onLongPress: onGoHome, externalExpanded: $pickerExpanded)
 
             Spacer()
 

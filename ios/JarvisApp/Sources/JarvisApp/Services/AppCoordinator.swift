@@ -161,9 +161,11 @@ final class AppCoordinator {
         // status in-band. The pull model still works on top: the agent can fire
         // `context_request` for a fresher pull when it needs to.
         let emoji = settings.statusEmoji.trimmingCharacters(in: .whitespaces)
-        // Trigger lazy refreshes — the response from build() uses whatever's currently cached
+        // Trigger lazy refreshes of the CHEAP cached context fields only — the
+        // response from build() uses whatever's currently cached. Health is NOT
+        // refreshed per message (expensive HK queries); it's excluded from the
+        // default context and fetched only on an explicit request_context pull.
         if settings.useLocation { location.requestAndUpdate() }
-        if settings.useHealth   { health.requestAndFetch()    }
         if settings.useCalendar { calendar.requestAndFetch()  }
         let ctx = ContextBuilder.build(
             fields: [],
