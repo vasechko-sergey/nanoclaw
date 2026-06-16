@@ -258,6 +258,31 @@ struct ChatView: View {
                 .accessibilityLabel("Остановить")
             }
 
+            // MARK: – Payne workout starter. Kicks off the typed WorkoutView
+            // flow: send `workout_start_request` → Payne replies `workout_plan`
+            // → `workoutBus.planReceived` presents WorkoutView. Without this
+            // trigger there is no way to open the live workout UI (only chat).
+            if active.active == .payne {
+                Button {
+                    let df = DateFormatter()
+                    df.dateFormat = "yyyy-MM-dd"
+                    let today = df.string(from: Date())
+                    Task { try? await coordinator.ws.stack?.transport.sendWorkoutStartRequest(date: today) }
+                } label: {
+                    Label("Начать тренировку", systemImage: "figure.strengthtraining.traditional")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.scaled(10))
+                        .background(Theme.accent.opacity(0.18))
+                        .foregroundStyle(Theme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.inputRadius))
+                }
+                .padding(.horizontal, Theme.scaled(8))
+                .padding(.bottom, Theme.scaled(4))
+                .disabled(!ws.isConnected)
+                .accessibilityLabel("Начать тренировку")
+            }
+
             // MARK: – Input (always visible — empty state shows orb+satellites above)
             UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
                             commands: ws.commands, isDisabled: !ws.isConnected,
