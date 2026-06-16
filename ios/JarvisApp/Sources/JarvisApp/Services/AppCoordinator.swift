@@ -174,13 +174,18 @@ final class AppCoordinator {
             health: health,
             calendar: calendar
         )
+        // Request server-side TTS when: any voice-mode send (Orb fullscreen
+        // always sets viaVoice=true) or when the user has autoSpeak enabled
+        // for dictated messages. `lastSendWasVoice` == `viaVoice` at this point.
+        let wantVoiceReply = lastSendWasVoice
         ws.send(
             text: text,
             timezone: TimeZone.current.identifier,
             status: emoji.isEmpty ? nil : emoji,
             attachments: attachments,
             context: ctx,
-            agentId: agentId
+            agentId: agentId,
+            respondByVoice: wantVoiceReply
         )
     }
 

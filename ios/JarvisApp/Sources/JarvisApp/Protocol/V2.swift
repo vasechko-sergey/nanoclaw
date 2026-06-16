@@ -146,6 +146,10 @@ enum V2 {
         let timestamp: String
         let timezone: String
         let locality: String?
+        /// When true, asks the server to send back a voice-note audio attachment
+        /// instead of (or in addition to) a text reply. Optional — omit on
+        /// non-voice sends.
+        var respond_by_voice: Bool?
     }
 
     struct ContextRequest: Codable, Equatable {
