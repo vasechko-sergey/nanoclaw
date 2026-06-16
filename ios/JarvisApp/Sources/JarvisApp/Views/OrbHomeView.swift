@@ -19,7 +19,8 @@ struct OrbHomeView: View {
 
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
-    @State private var pickerExpanded = false  // agent picker expand state (outside tap collapses it)
+    @State private var leftDrawerOpen = false
+    @State private var leftDrawerDragOffset: CGFloat = 0
 
     // Picker triggers
     @State private var showPhotos = false
@@ -54,8 +55,8 @@ struct OrbHomeView: View {
             .accessibilityIdentifier("home-greeting")
     }
 
-    private var contextualSuggestions: [String] {
-        SuggestionEngine.suggestions(count: 4)
+    private var contextualSuggestions: [AgentSuggestion] {
+        active.active.suggestions
     }
 
     // Action satellites (voice, text, camera, photo, file) — shown on long press
@@ -80,11 +81,11 @@ struct OrbHomeView: View {
 
     // Default satellites — always visible. Continues active chat when one exists.
     private var defaultSatellites: [(icon: String, label: String, isChat: Bool, action: () -> Void)] {
-        var items: [(String, String, Bool, () -> Void)] = contextualSuggestions.map { text in
-            (SuggestionEngine.icon(for: text), text, false, {
+        var items: [(String, String, Bool, () -> Void)] = contextualSuggestions.map { suggestion in
+            (suggestion.icon, suggestion.text, false, {
                 Theme.hapticSend()
-                SuggestionEngine.recordUsage(text)
-                onStartChat(text)
+                SuggestionEngine.recordUsage(suggestion.text)
+                onStartChat(suggestion.text)
             })
         }
         if hasActiveChat {
@@ -113,17 +114,6 @@ struct OrbHomeView: View {
                     HealthStripView(levels: stateService.state?.levels)
                         .onTapGesture { showStateBoard = true }
                         .padding(.bottom, Theme.scaled(8))
-                }
-                // Tap the orb/content area to collapse the expanded agent
-                // picker (which lives in the header above). Inert when collapsed.
-                .overlay {
-                    if pickerExpanded {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.25)) { pickerExpanded = false }
-                            }
-                    }
                 }
             }
             .safeAreaInset(edge: .bottom) { greetingLabel }
@@ -156,6 +146,34 @@ struct OrbHomeView: View {
                     .padding(.bottom, Theme.scaled(4))
                 }
             }
+
+            // Left drawer (agent switcher) — mirrors ChatView.
+            if leftDrawerOpen {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation { leftDrawerOpen = false } }
+                    .transition(.opacity)
+            }
+
+            LeftDrawerContent(
+                onSelect: { agent in
+                    active.active = agent
+                    withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                        leftDrawerOpen = false
+                    }
+                }
+            )
+            .frame(width: Theme.drawerWidth)
+            .offset(x: {
+                    if leftDrawerOpen {
+                        return max(-Theme.drawerWidth, min(0, leftDrawerDragOffset))
+                    } else {
+                        return -Theme.drawerWidth + max(0, min(leftDrawerDragOffset, Theme.drawerWidth))
+                    }
+                }())
+            .gesture(leftDrawerDragToClose)
+            .shadow(color: .black.opacity(leftDrawerOpen ? 0.4 : 0), radius: 12, x: 4)
+            .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: leftDrawerOpen)
 
             // Shroud
             if rightDrawerOpen {
@@ -192,6 +210,7 @@ struct OrbHomeView: View {
             .animation(.spring(duration: Theme.animMedium, bounce: 0.05), value: rightDrawerOpen)
         }
         .simultaneousGesture(rightEdgeSwipeGesture)
+        .simultaneousGesture(leftEdgeSwipeGesture)
         .attachmentPickers(drafts: $drafts, showPhotos: $showPhotos, showCamera: $showCamera, showDoc: $showDoc)
         .onChange(of: drafts) {
             if !drafts.isEmpty {
@@ -225,8 +244,29 @@ struct OrbHomeView: View {
 
             Spacer()
 
-            // Agent picker — same component as ChatView header, in app style.
-            AgentPickerInline(externalExpanded: $pickerExpanded)
+            // Active-agent label. Tap opens the left drawer (agent switcher) —
+            // same pattern as ChatView's header.
+            Button {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    leftDrawerOpen = true
+                }
+            } label: {
+                Text(spaced(active.active.displayName))
+                    .font(.system(size: Theme.fontTitle, weight: .light))
+                    .tracking(Theme.titleTracking)
+                    .foregroundStyle(active.active.accentColor)
+                    .fixedSize()
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(active.active.accentColor.opacity(0.6))
+                            .frame(height: 1)
+                            .offset(y: 4)
+                    }
+                    .frame(minHeight: Theme.minTapSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Активный агент: \(active.active.displayName), нажмите чтобы открыть выбор")
 
             Spacer()
 
@@ -433,6 +473,61 @@ struct OrbHomeView: View {
                     withAnimation { rightDrawerDragOffset = 0 }
                 }
             }
+    }
+
+    /// Mirror of `rightEdgeSwipeGesture`, anchored to the LEFT screen edge:
+    /// a rightward swipe starting within `edgeSwipeZone` of the left edge opens
+    /// the left (agent-switcher) drawer.
+    private var leftEdgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 0
+                    && abs(value.translation.width) > abs(value.translation.height) * 1.2
+                    && !leftDrawerOpen {
+                    leftDrawerDragOffset = min(value.translation.width, Theme.drawerWidth)
+                }
+            }
+            .onEnded { value in
+                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.2
+                if !leftDrawerOpen
+                    && value.startLocation.x < Self.edgeSwipeZone
+                    && value.translation.width > 60
+                    && horizontal {
+                    withAnimation(.spring(duration: 0.3)) {
+                        leftDrawerOpen = true
+                        rightDrawerOpen = false
+                        leftDrawerDragOffset = 0
+                    }
+                } else if !leftDrawerOpen {
+                    withAnimation { leftDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    private var leftDrawerDragToClose: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if leftDrawerOpen && value.translation.width < 0 {
+                    leftDrawerDragOffset = value.translation.width
+                }
+            }
+            .onEnded { value in
+                if leftDrawerOpen && value.translation.width < -60 {
+                    withAnimation(.spring(duration: 0.3)) {
+                        leftDrawerOpen = false
+                        leftDrawerDragOffset = 0
+                    }
+                } else {
+                    withAnimation { leftDrawerDragOffset = 0 }
+                }
+            }
+    }
+
+    /// Insert U+2009 (thin space) between every character to match the
+    /// "J A R V I S" letter-spaced look (mirrors `ChatView`).
+    private func spaced(_ s: String) -> String {
+        s.uppercased().map { String($0) }.joined(separator: "\u{2009}\u{2009}")
     }
 
 }

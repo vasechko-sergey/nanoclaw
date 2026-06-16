@@ -4,10 +4,12 @@ import SwiftUI
 /// Mirrors `OrbHomeView`'s central hub: a large orb surrounded by suggestion satellites.
 /// The chat InputBar lives below this view, so no separate "Голосом"/"Текстом" pills are needed.
 struct EmptyStateView: View {
+    /// Curated starter chips for the active agent, supplied by `ChatView`
+    /// (which owns `ActiveAgentState`). Replaces the Jarvis-centric
+    /// `SuggestionEngine` defaults.
+    var suggestions: [AgentSuggestion]
     var onSuggestion: (String) -> Void
     var onStartVoice: () -> Void
-
-    @State private var suggestions: [String] = SuggestionEngine.suggestions(count: 4)
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -36,7 +38,7 @@ struct EmptyStateView: View {
         ZStack {
             // Suggestion satellites — laid out around the central orb the same way
             // OrbHomeView does it, just without the long-press action toggle.
-            ForEach(Array(suggestions.enumerated()), id: \.offset) { index, text in
+            ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
                 let count = suggestions.count
                 let angle = -.pi / 2 + (2 * .pi / Double(count)) * Double(index)
                 let radius = Theme.scaled(130)
@@ -44,12 +46,12 @@ struct EmptyStateView: View {
                 let y = sin(angle) * radius
 
                 EmptyStateSatelliteOrb(
-                    icon: SuggestionEngine.icon(for: text),
-                    label: text
+                    icon: suggestion.icon,
+                    label: suggestion.text
                 ) {
                     Theme.hapticSend()
-                    SuggestionEngine.recordUsage(text)
-                    onSuggestion(text)
+                    SuggestionEngine.recordUsage(suggestion.text)
+                    onSuggestion(suggestion.text)
                 }
                 .offset(x: x, y: y)
             }

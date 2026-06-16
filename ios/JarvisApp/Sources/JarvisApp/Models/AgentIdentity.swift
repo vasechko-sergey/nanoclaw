@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// One curated starter suggestion for an agent's home orb / empty-chat
+/// satellites. `text` is sent verbatim to the active agent on tap; `icon` is
+/// an SF Symbol name. `id == text` so a single agent never repeats a chip.
+struct AgentSuggestion: Identifiable, Equatable {
+    let text: String
+    let icon: String
+    var id: String { text }
+}
+
 /// Identity of one of the agent_groups multiplexed over a single iOS-app
 /// WebSocket. The `rawValue` must match the agent_group's `folder` slug on
 /// the host (the same value carried in the `agent_id` field of v2 envelopes
@@ -58,6 +67,50 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         case .greg:   return Color(red: 0.45, green: 0.70, blue: 0.62)  // sage #73B39E
         case .scrooge: return Color(red: 0.88, green: 0.72, blue: 0.30)  // muted gold #E0B84C
         case .gordon:  return Color(red: 0.80, green: 0.42, blue: 0.34)  // desaturated tomato #CC6B57
+        }
+    }
+
+    /// Curated per-agent starter chips for the home orb satellites and the
+    /// empty-chat state. Each agent gets a domain-relevant set rather than the
+    /// Jarvis-centric `SuggestionEngine` defaults. Tapping a chip sends `text`
+    /// verbatim to the active agent.
+    var suggestions: [AgentSuggestion] {
+        switch self {
+        case .jarvis:
+            return [
+                AgentSuggestion(text: "Погода",            icon: "cloud.sun"),
+                AgentSuggestion(text: "Расписание",        icon: "calendar"),
+                AgentSuggestion(text: "Новости",           icon: "newspaper"),
+                AgentSuggestion(text: "Итоги дня",         icon: "chart.bar"),
+            ]
+        case .payne:
+            return [
+                AgentSuggestion(text: "Начать тренировку", icon: "figure.strengthtraining.traditional"),
+                AgentSuggestion(text: "Моя программа",     icon: "list.bullet.clipboard"),
+                AgentSuggestion(text: "Прогресс",          icon: "chart.line.uptrend.xyaxis"),
+                AgentSuggestion(text: "Замена упражнения", icon: "arrow.triangle.2.circlepath"),
+            ]
+        case .greg:
+            return [
+                AgentSuggestion(text: "Как мой сон?",      icon: "bed.double"),
+                AgentSuggestion(text: "Готовность сегодня", icon: "bolt.heart"),
+                AgentSuggestion(text: "Тренды здоровья",   icon: "waveform.path.ecg"),
+                AgentSuggestion(text: "Пульс покоя",       icon: "heart"),
+            ]
+        case .gordon:
+            return [
+                AgentSuggestion(text: "Залогировать еду",  icon: "fork.knife"),
+                AgentSuggestion(text: "Что съесть?",       icon: "carrot"),
+                AgentSuggestion(text: "Белок за день",     icon: "chart.bar.doc.horizontal"),
+                AgentSuggestion(text: "Рекомпозиция",      icon: "figure.arms.open"),
+            ]
+        case .scrooge:
+            return [
+                AgentSuggestion(text: "Импорт выписки",    icon: "doc.text.magnifyingglass"),
+                AgentSuggestion(text: "Траты за месяц",    icon: "creditcard"),
+                AgentSuggestion(text: "Категории",         icon: "tag"),
+                AgentSuggestion(text: "Отчёт",             icon: "chart.pie"),
+            ]
         }
     }
 }

@@ -103,6 +103,7 @@ struct ChatView: View {
             // MARK: – Content
             if visibleMessages.isEmpty && !ws.isBusy && !emptyInputActive {
                 EmptyStateView(
+                    suggestions: active.active.suggestions,
                     onSuggestion: { suggestion in
                         coordinator.sendMessage(suggestion, agentId: active.active.rawValue)
                     },
