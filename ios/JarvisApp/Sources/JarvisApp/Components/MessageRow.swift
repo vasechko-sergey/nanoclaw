@@ -26,6 +26,11 @@ struct MessageRow: View {
                 imageRow(img)
             case .file(let info):
                 FileRow(info: info, isUser: isUser, isLast: isLast)
+            case .audio(let info):
+                // Audio note from server — render as a small file-style row with
+                // an audio icon. Actual playback is driven by AppCoordinator /
+                // OrbVoiceView; the row is display-only.
+                FileRow(info: info, isUser: isUser, isLast: isLast)
             case .action(let info):
                 ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast)
             case .status(let info):
@@ -213,6 +218,8 @@ struct MessageRow: View {
             return "\(role): изображение \(filename). \(time)"
         case .file(let info):
             return "\(role): файл \(info.name). \(time)"
+        case .audio(let info):
+            return "\(role): аудио \(info.name). \(time)"
         case .action(let info):
             return "Jarvis запрашивает: \(info.text). \(time)"
         case .status(let info):
