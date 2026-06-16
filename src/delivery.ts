@@ -192,9 +192,30 @@ async function drainSession(session: Session): Promise<void> {
     // Ensure platform_message_id column exists (migration for existing sessions)
     migrateDeliveredTable(inDb);
 
+    // Determine the id of the last user-facing text message in this batch so the
+    // voice block fires only once per turn rather than for every intermediate
+    // send_message ("on it", progress updates, etc.).
+    // Residual limitation: when a mid-turn update and the final reply land in
+    // separate poll cycles they are each "last in their batch" — acceptable cost;
+    // the sidecar serialisation lock (fix #4) bounds the worst case.
+    const lastUserFacingId = (() => {
+      for (let i = undelivered.length - 1; i >= 0; i--) {
+        const m = undelivered[i];
+        if (m.kind !== 'system' && m.channel_type !== 'agent') {
+          try {
+            const c = JSON.parse(m.content);
+            if (c.text && typeof c.text === 'string' && c.text.trim()) return m.id;
+          } catch {
+            // malformed content — skip
+          }
+        }
+      }
+      return null;
+    })();
+
     for (const msg of undelivered) {
       try {
-        const platformMsgId = await deliverMessage(msg, session, inDb);
+        const platformMsgId = await deliverMessage(msg, session, inDb, msg.id === lastUserFacingId);
         markDelivered(inDb, msg.id, platformMsgId ?? null);
         deliveryAttempts.delete(msg.id);
 
@@ -248,6 +269,7 @@ async function deliverMessage(
   },
   session: Session,
   inDb: Database.Database,
+  isFinalUserReply: boolean = false,
 ): Promise<string | undefined> {
   if (!deliveryAdapter) {
     log.warn('No delivery adapter configured, dropping message', { id: msg.id });
@@ -375,8 +397,9 @@ async function deliverMessage(
     fileCount: files?.length,
   });
 
-  // Voice note: when the session has voice_intent and the reply has text,
-  // render it via the TTS sidecar and send it as a separate voice note.
+  // Voice note: when the session has voice_intent and this is the FINAL user-facing
+  // text message of the turn, render it via the TTS sidecar and send as a voice note.
+  // Only fires for the Jarvis agent group (spec is Jarvis-only for now).
   // FIRE-AND-FORGET: a CPU render takes seconds-to-minutes, and this runs
   // inside the sequential `for (msg of undelivered) { await deliverMessage }`
   // loop — awaiting it here would stall delivery of every other message AND
@@ -384,10 +407,19 @@ async function deliverMessage(
   // the next poll tick. The text reply is already delivered above; the voice
   // note lands later. renderVoice returns null when the sidecar is unreachable,
   // in which case we skip silently.
+  const agentGroup = getAgentGroup(session.agent_group_id);
+  const isJarvis = agentGroup?.folder === 'jarvis';
   const voiceRow = getDb().prepare('SELECT voice_intent FROM sessions WHERE id = ?').get(session.id) as
     | { voice_intent: number }
     | undefined;
-  if (voiceRow?.voice_intent && content.text && typeof content.text === 'string' && content.text.trim()) {
+  if (
+    isFinalUserReply &&
+    isJarvis &&
+    voiceRow?.voice_intent &&
+    content.text &&
+    typeof content.text === 'string' &&
+    content.text.trim()
+  ) {
     // Capture narrowed values as locals: inside the deferred async closure below,
     // TypeScript widens msg.* back to their declared (nullable) types, so freeze
     // them here where control-flow narrowing from deliverMessage still applies.
