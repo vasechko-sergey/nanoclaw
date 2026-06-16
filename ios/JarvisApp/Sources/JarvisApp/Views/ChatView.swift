@@ -501,7 +501,15 @@ struct ChatView: View {
 
             Spacer()
 
-            AgentPickerInline(onLongPress: onGoHome, externalExpanded: $pickerExpanded)
+            AgentPickerInline(
+                onLongPress: {
+                    // Collapse before leaving — otherwise the picker is still
+                    // expanded when we return to the chat from home.
+                    pickerExpanded = false
+                    onGoHome?()
+                },
+                externalExpanded: $pickerExpanded
+            )
 
             Spacer()
 

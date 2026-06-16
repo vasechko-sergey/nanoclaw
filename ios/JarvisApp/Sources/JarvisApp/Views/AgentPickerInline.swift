@@ -39,7 +39,10 @@ struct AgentPickerInline: View {
                             }
                         }
                     }
-                    .simultaneousGesture(
+                    // highPriority (not simultaneous): a long press on the
+                    // active row must NOT also fire the Button's tap (which
+                    // would toggle the picker open right as we navigate home).
+                    .highPriorityGesture(
                         LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                             if isActive { onLongPress?() }
                         }
