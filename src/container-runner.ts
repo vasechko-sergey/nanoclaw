@@ -146,6 +146,49 @@ export function openContainerLogStream(
 }
 
 /**
+ * Copy each `node_modules` under the group dir into the per-person tree with
+ * `dereference: true`, so a pnpm symlink farm (whose entries resolve into
+ * sibling `.pnpm` dirs) becomes plain files. The default symlink-preserving
+ * `fs.cpSync` throws ERR_FS_CP_EINVAL ("cannot copy to a subdirectory of self")
+ * on such a layout, which — if done as part of the wholesale code sync — aborts
+ * the ENTIRE spawn and the agent goes silent. So node_modules is excluded from
+ * that copy (see buildMounts) and synced here instead.
+ *
+ * Best-effort PER directory: a failure logs and is skipped rather than aborting
+ * the spawn (the agent still runs; only that script's deps would be missing).
+ * Scans the group root + its immediate subdirs — covers
+ * `groups/<folder>/node_modules` and `groups/<folder>/scripts/node_modules`;
+ * deeper nesting isn't used today.
+ */
+function syncNodeModules(srcRoot: string, destRoot: string): void {
+  const dirs = [srcRoot];
+  try {
+    for (const e of fs.readdirSync(srcRoot, { withFileTypes: true })) {
+      if (e.isDirectory() && e.name !== 'node_modules') dirs.push(path.join(srcRoot, e.name));
+    }
+  } catch {
+    /* unreadable group dir — nothing to sync */
+  }
+  for (const dir of dirs) {
+    const srcNm = path.join(dir, 'node_modules');
+    if (!fs.existsSync(srcNm)) continue;
+    const destNm = path.join(destRoot, path.relative(srcRoot, srcNm));
+    try {
+      // Clear any prior (possibly half-copied symlink-farm) dest first: a stale
+      // dest symlink is exactly what makes cpSync resolve the dest inside the
+      // src and throw "subdirectory of self".
+      fs.rmSync(destNm, { recursive: true, force: true });
+      fs.cpSync(srcNm, destNm, { recursive: true, force: true, dereference: true });
+    } catch (err) {
+      log.warn('Failed to sync node_modules into per-person dir; script deps may be missing', {
+        src: srcNm,
+        err,
+      });
+    }
+  }
+}
+
+/**
  * Headless sessions (no messaging_group, no thread) are cron-only. They
  * exist purely to host recurring tasks (`schedule_task` rows) and should
  * NEVER accumulate SDK conversation state across fires — every wake is a
@@ -412,7 +455,16 @@ export function buildMounts(
     return b === '.env' || (b.startsWith('.env.') && b !== '.env.example');
   };
   if (fs.existsSync(groupDir)) {
-    fs.cpSync(groupDir, memRoot, { recursive: true, force: true, filter: (src) => !isSecretEnv(src) });
+    // node_modules is EXCLUDED here and synced separately (syncNodeModules):
+    // pnpm lays it out as a symlink farm that fs.cpSync's default copy can't
+    // traverse (ERR_FS_CP_EINVAL "cannot copy to a subdirectory of self"),
+    // which would throw and abort the whole spawn — leaving the agent silent.
+    fs.cpSync(groupDir, memRoot, {
+      recursive: true,
+      force: true,
+      filter: (src) => !isSecretEnv(src) && path.basename(src) !== 'node_modules',
+    });
+    syncNodeModules(groupDir, memRoot);
   }
   // Shared INSTRUCTIONS.md — one static file under GROUPS_DIR, referenced by
   // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. Synced in last so the
