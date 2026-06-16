@@ -16,6 +16,10 @@ struct OrbVoiceView: View {
     @State private var controller = VoiceLoopController()
     @State private var speech = SpeechManager()
     @State private var silenceTimer: Timer?
+    /// Text of the latest assistant reply (cached so it survives TTS / audio playback).
+    @State private var lastReplyText: String = ""
+    /// Whether the "показать текст" panel is currently visible.
+    @State private var showReplyText = false
 
     private var orbMood: OrbMood {
         switch controller.phase {
@@ -56,6 +60,13 @@ struct OrbVoiceView: View {
 
                 Spacer()
 
+                if showReplyText && !lastReplyText.isEmpty {
+                    replyTextPanel
+                        .padding(.horizontal, Theme.hPadding)
+                        .padding(.bottom, Theme.scaled(12))
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
                 bottomControls
                     .padding(.horizontal, Theme.hPadding)
                     .padding(.bottom, Theme.scaled(28))
@@ -95,6 +106,24 @@ struct OrbVoiceView: View {
             .animation(.easeOut(duration: 0.2), value: controller.transcript)
     }
 
+    private var replyTextPanel: some View {
+        ScrollView {
+            Text(lastReplyText)
+                .font(.system(size: Theme.scaled(14)))
+                .foregroundStyle(Theme.textPrimary.opacity(0.85))
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Theme.scaled(12))
+        }
+        .frame(maxHeight: Theme.scaled(160))
+        .background(Color.white.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
+                .stroke(Theme.accent.opacity(0.15), lineWidth: 0.5)
+        )
+    }
+
     private var bottomControls: some View {
         HStack {
             Button {
@@ -107,6 +136,22 @@ struct OrbVoiceView: View {
             .accessibilityIdentifier("voice-handoff-btn")
 
             Spacer()
+
+            if !lastReplyText.isEmpty {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showReplyText.toggle()
+                    }
+                } label: {
+                    Image(systemName: showReplyText ? "text.bubble.fill" : "text.bubble")
+                        .font(.system(size: Theme.scaled(22)))
+                        .foregroundStyle(showReplyText ? Theme.accent : Theme.accentMedium)
+                }
+                .accessibilityIdentifier("voice-show-text-btn")
+                .accessibilityLabel(showReplyText ? "Скрыть текст" : "Показать текст")
+
+                Spacer()
+            }
 
             Button {
                 handleClose()
@@ -138,6 +183,7 @@ struct OrbVoiceView: View {
     private func onDisappear() {
         speech.stop()
         coordinator.speech.stop()
+        coordinator.audioPlayer.stop()
         silenceTimer?.invalidate()
         silenceTimer = nil
         controller.stop()
@@ -194,6 +240,9 @@ struct OrbVoiceView: View {
     private func handleNewAssistantMessage() {
         guard let msg = coordinator.ws.messages.last,
               msg.role == .assistant else { return }
+
+        // Cache the reply text so «показать текст» can reveal it.
+        if !msg.text.isEmpty { lastReplyText = msg.text }
 
         // Prefer server-rendered audio; fall back to on-device TTS.
         if let audioInfo = msg.audioInfo,
