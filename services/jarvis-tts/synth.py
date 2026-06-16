@@ -1,4 +1,4 @@
-import logging, os, subprocess, tempfile
+import logging, os, subprocess, tempfile, threading
 import soundfile as sf
 from config import CKPT_FILE, VOCAB_FILE, MODEL_NAME, VOICES, CPU_THREADS
 from textprep import strip_markdown, chunk_text
@@ -7,6 +7,9 @@ log = logging.getLogger("jarvis-tts")
 _model = None
 _accent = None
 _ref_cache: dict[str, tuple[str, str]] = {}
+# FastAPI runs sync handlers in a threadpool; the F5 model is not thread-safe.
+# All synthesis calls serialise through this lock.
+_synth_lock = threading.Lock()
 
 def _lazy_init():
     global _model, _accent
@@ -30,30 +33,31 @@ def _ref(voice: str) -> tuple[str, str]:
 
 def synth_to_opus(text: str, voice: str, max_chars: int) -> bytes:
     """Render text -> opus (ogg) bytes. Raises on failure."""
-    _lazy_init()
-    if voice not in VOICES:
-        raise ValueError(f"unknown voice {voice!r}")
-    clean = strip_markdown(text)
-    if not clean:
-        raise ValueError("empty text after markdown strip")
-    ref_wav, ref_text = _ref(voice)
-    with tempfile.TemporaryDirectory() as td:
-        wav_path = os.path.join(td, "out.wav")
-        segments = []
-        sr_out = 24000
-        for chunk in chunk_text(clean, max_chars):
-            gen = _accent.process_all(chunk)
-            wav, sr, _ = _model.infer(ref_file=ref_wav, ref_text=ref_text, gen_text=gen)
-            sr_out = sr
-            segments.append(wav)
-        import numpy as np
-        full = np.concatenate(segments) if len(segments) > 1 else segments[0]
-        sf.write(wav_path, full, sr_out)
-        opus_path = os.path.join(td, "out.ogg")
-        subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", wav_path,
-             "-af", "loudnorm=I=-16:TP=-2", "-c:a", "libopus", "-b:a", "32k", opus_path],
-            check=True,
-        )
-        with open(opus_path, "rb") as f:
-            return f.read()
+    with _synth_lock:
+        _lazy_init()
+        if voice not in VOICES:
+            raise ValueError(f"unknown voice {voice!r}")
+        clean = strip_markdown(text)
+        if not clean:
+            raise ValueError("empty text after markdown strip")
+        ref_wav, ref_text = _ref(voice)
+        with tempfile.TemporaryDirectory() as td:
+            wav_path = os.path.join(td, "out.wav")
+            segments = []
+            sr_out = 24000
+            for chunk in chunk_text(clean, max_chars):
+                gen = _accent.process_all(chunk)
+                wav, sr, _ = _model.infer(ref_file=ref_wav, ref_text=ref_text, gen_text=gen)
+                sr_out = sr
+                segments.append(wav)
+            import numpy as np
+            full = np.concatenate(segments) if len(segments) > 1 else segments[0]
+            sf.write(wav_path, full, sr_out)
+            opus_path = os.path.join(td, "out.ogg")
+            subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-i", wav_path,
+                 "-af", "loudnorm=I=-16:TP=-2", "-c:a", "libopus", "-b:a", "32k", opus_path],
+                check=True,
+            )
+            with open(opus_path, "rb") as f:
+                return f.read()
