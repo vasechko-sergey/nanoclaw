@@ -103,6 +103,8 @@ actor TransportV2 {
         }
         try await socket.connect()
         let lastSeenInbound = try store.cursor(.lastSeenInbound)
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
         let authEnv = V2.Envelope(
             v: V2.protocolVersion,
             kind: .control,
@@ -110,7 +112,13 @@ actor TransportV2 {
             id: UUID().uuidString,
             seq: nil,
             ts: ISO8601DateFormatter().string(from: Date()),
-            payload: .auth(V2.Auth(token: token, last_seen_inbound_seq: lastSeenInbound, capabilities: []))
+            payload: .auth(V2.Auth(
+                token: token,
+                last_seen_inbound_seq: lastSeenInbound,
+                capabilities: [],
+                app_version: appVersion,
+                build: appBuild
+            ))
         )
         try await sendEnvelope(authEnv)
     }

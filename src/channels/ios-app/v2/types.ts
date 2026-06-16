@@ -7,6 +7,8 @@ export interface DeviceRow {
   last_seen_outbound_seq: number; // highest app→adapter seq we persisted
   last_emitted_inbound_seq: number; // highest adapter→app seq we allocated
   capabilities_json: string | null;
+  app_version: string | null; // CFBundleShortVersionString reported on auth
+  app_build: string | null; // CFBundleVersion reported on auth
   updated_at: number;
 }
 

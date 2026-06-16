@@ -91,6 +91,9 @@ enum V2 {
         let token: String
         let last_seen_inbound_seq: Int
         let capabilities: [String]
+        // Reported on connect so the host knows the installed build.
+        var app_version: String? = nil
+        var build: String? = nil
     }
 
     struct AuthOk: Codable, Equatable {

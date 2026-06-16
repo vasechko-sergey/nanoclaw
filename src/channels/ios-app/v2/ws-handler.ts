@@ -221,7 +221,13 @@ export class WsHandler {
   }
 
   private attachAuthed(ws: WebSocket, pid: PlatformId, auth: Extract<AnyEnvelope, { type: 'auth' }>): void {
-    this.deps.db.upsertDevice(pid, { capabilities: auth.payload.capabilities });
+    // Persist the reported app version/build so the installed build is knowable
+    // server-side (queryable from the devices row), not guessed.
+    this.deps.db.upsertDevice(pid, {
+      capabilities: auth.payload.capabilities,
+      app_version: auth.payload.app_version,
+      build: auth.payload.build,
+    });
     // Client tells us the highest inbound seq it has acked. Drop everything
     // up to and including that from the queue — no need to retransmit.
     this.deps.queue.ackUpTo(pid, auth.payload.last_seen_inbound_seq);

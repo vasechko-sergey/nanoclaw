@@ -29,6 +29,11 @@ targets:
     info:
       path: Info.plist
       properties:
+        # Version comes from the build settings below (MARKETING_VERSION /
+        # CURRENT_PROJECT_VERSION) — xcodegen writes these refs into Info.plist
+        # and Xcode substitutes at build. Bump the values in `settings.base`.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UIBackgroundModes:
@@ -61,6 +66,13 @@ targets:
         DEVELOPMENT_TEAM: 24Z6S27D7U
         SWIFT_VERSION: "5.9"
         ENABLE_USER_SCRIPT_SANDBOXING: YES
+        # Single source of truth for the app version. Info.plist references these
+        # via $(MARKETING_VERSION)/$(CURRENT_PROJECT_VERSION). Bump MARKETING_VERSION
+        # per feature, CURRENT_PROJECT_VERSION on every build you install. The app
+        # reports both to the host on connect (auth envelope) — so the running
+        # build is knowable server-side, not guessed. Run `xcodegen generate` after.
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "2"
 
   JarvisUITests:
     type: bundle.ui-testing

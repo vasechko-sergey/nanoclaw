@@ -45,6 +45,11 @@ export const Envelopes = {
       token: z.string(),
       last_seen_inbound_seq: z.number().int().nonnegative(),
       capabilities: z.array(z.string()),
+      // App version reported on connect so the host knows which build is
+      // actually installed (CFBundleShortVersionString + CFBundleVersion).
+      // Optional for back-compat with older clients that don't send them.
+      app_version: z.string().optional(),
+      build: z.string().optional(),
     }),
   }),
   AuthOk: EnvelopeBase.extend({

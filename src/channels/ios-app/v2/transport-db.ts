@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_pending_expires ON pending_context_requests (expi
 
 export interface TransportDb {
   raw: Database.Database;
-  upsertDevice(platform_id: string, opts: { capabilities?: string[] }): void;
+  upsertDevice(platform_id: string, opts: { capabilities?: string[]; app_version?: string; build?: string }): void;
   getDevice(platform_id: string): DeviceRow | undefined;
   advanceLastSeenOutbound(platform_id: string, seq: number): void;
   allocateInboundSeq(platform_id: string): number;
@@ -65,19 +65,38 @@ export function openTransportDb(path: string): TransportDb {
     }
   }
   db.exec(SCHEMA);
+  // Additive migration for pre-existing DBs: the app version reported on auth.
+  // CREATE TABLE IF NOT EXISTS won't add columns to an existing devices table.
+  for (const col of ['app_version', 'app_build']) {
+    try {
+      db.exec(`ALTER TABLE devices ADD COLUMN ${col} TEXT`);
+    } catch {
+      // column already exists — ignore
+    }
+  }
 
   return {
     raw: db,
     upsertDevice(platform_id, opts) {
       db.prepare(
         `
-        INSERT INTO devices (platform_id, capabilities_json, updated_at)
-        VALUES (?, ?, ?)
+        INSERT INTO devices (platform_id, capabilities_json, app_version, app_build, updated_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(platform_id) DO UPDATE SET
           capabilities_json = excluded.capabilities_json,
+          -- COALESCE: an older client that omits the version must not wipe a
+          -- previously-reported one.
+          app_version = COALESCE(excluded.app_version, devices.app_version),
+          app_build = COALESCE(excluded.app_build, devices.app_build),
           updated_at = excluded.updated_at
       `,
-      ).run(platform_id, JSON.stringify(opts.capabilities ?? null), Date.now());
+      ).run(
+        platform_id,
+        JSON.stringify(opts.capabilities ?? null),
+        opts.app_version ?? null,
+        opts.build ?? null,
+        Date.now(),
+      );
     },
     getDevice(platform_id) {
       return db.prepare(`SELECT * FROM devices WHERE platform_id = ?`).get(platform_id) as DeviceRow | undefined;
