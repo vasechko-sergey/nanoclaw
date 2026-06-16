@@ -223,27 +223,6 @@ struct SplashView: View {
 
     private var setupCard: some View {
         VStack(spacing: Theme.scaled(16)) {
-            // Server URL
-            VStack(alignment: .leading, spacing: Theme.scaled(4)) {
-                Text("Сервер")
-                    .font(.system(size: Theme.fontCaption))
-                    .foregroundStyle(Theme.accentMedium)
-                TextField("100.x.x.x:3001", text: $settings.serverURL)
-                    .font(.system(size: Theme.fontInput))
-                    .foregroundStyle(Theme.textPrimary)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .tint(Theme.accent)
-                    .padding(.horizontal, Theme.messagePadH)
-                    .padding(.vertical, Theme.messagePadV)
-                    .background(Theme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.cardRadius)
-                            .stroke(Theme.surfaceBorder, lineWidth: 0.5)
-                    )
-            }
-
             // Token
             VStack(alignment: .leading, spacing: Theme.scaled(4)) {
                 Text("Токен")

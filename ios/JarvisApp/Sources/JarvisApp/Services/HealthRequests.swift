@@ -10,8 +10,8 @@ enum HealthRequests {
 
     static func drain(completion: (() -> Void)? = nil) {
         let defaults = UserDefaults.standard
-        guard let server = defaults.string(forKey: "serverURL"), !server.isEmpty,
-              let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
+        let server = ServerConfig.url
+        guard let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
             completion?(); return
         }
         var base = server

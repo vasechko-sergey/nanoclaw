@@ -48,16 +48,6 @@ struct SettingsFormBody: View {
 
                 // Connection section
                 settingsSection(title: "Подключение") {
-                    settingsField(icon: "network", label: "Сервер") {
-                        TextField("100.x.x.x:3001", text: $settings.serverURL)
-                            .font(.system(size: Theme.fontSubhead))
-                            .foregroundStyle(Theme.textPrimary)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .multilineTextAlignment(.trailing)
-                            .tint(Theme.accent)
-                    }
-                    settingsDivider()
                     settingsField(icon: "key", label: "Токен") {
                         SecureField("Bearer token", text: $settings.bearerToken)
                             .font(.system(size: Theme.fontSubhead))

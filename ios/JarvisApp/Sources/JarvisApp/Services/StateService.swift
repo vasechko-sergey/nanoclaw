@@ -9,8 +9,8 @@ final class StateService: ObservableObject {
 
     func refresh() {
         let defaults = UserDefaults.standard
-        guard let server = defaults.string(forKey: "serverURL"), !server.isEmpty,
-              let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else { return }
+        let server = ServerConfig.url
+        guard let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else { return }
         var base = server
         if base.hasPrefix("wss://") { base = "https://" + base.dropFirst(6) }
         else if base.hasPrefix("ws://") { base = "http://" + base.dropFirst(5) }

@@ -4,7 +4,8 @@ import SwiftUI
 final class AppSettings {
     // @AppStorage properties need @ObservationIgnored because @AppStorage
     // handles its own SwiftUI observation; @Observable auto-tracking would conflict.
-    @ObservationIgnored @AppStorage("serverURL")     var serverURL    = ""
+    /// Fixed server endpoint — baked in, not user-editable (see ServerConfig).
+    var serverURL: String { ServerConfig.url }
     @ObservationIgnored @AppStorage("bearerToken")   var bearerToken  = ""
     @ObservationIgnored @AppStorage("agentName")     var agentName    = "Jarvis"
     @ObservationIgnored @AppStorage("useLocation")   var useLocation  = false
@@ -57,6 +58,6 @@ final class AppSettings {
     }
 
     var isConfigured: Bool {
-        JarvisApp.isUITesting || (!serverURL.isEmpty && !bearerToken.isEmpty)
+        JarvisApp.isUITesting || !bearerToken.isEmpty
     }
 }

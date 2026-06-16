@@ -1,7 +1,7 @@
 # JarvisApp — iOS
 
 SwiftUI-чат с агентом Jarvis (NanoClaw на VDS `148.253.211.164`).
-Транспорт: WebSocket через Tailscale (`100.94.184.60:3001`). Push через APNs когда WS не подключён.
+Транспорт: WebSocket на `wss://jarvis.vasechko.dev` (nginx+TLS на VDS → `127.0.0.1:3001`). URL захардкожен в `Utility/ServerConfig.swift` — НЕ редактируется в UI (поле убрано из Settings + онбординга); в настройках остаётся только токен. Tailscale (`100.94.184.60:3001`) — запасной путь. Push через APNs когда WS не подключён.
 
 ## Структура
 

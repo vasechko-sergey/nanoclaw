@@ -9,8 +9,8 @@ enum HealthUpload {
     static func upload(requestId: String?, days: [V2.HealthUpload.Day], completion: (() -> Void)? = nil) {
         guard !days.isEmpty else { completion?(); return }
         let defaults = UserDefaults.standard
-        guard let server = defaults.string(forKey: "serverURL"), !server.isEmpty,
-              let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
+        let server = ServerConfig.url
+        guard let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
             completion?(); return
         }
         let platformId = defaults.string(forKey: "platformId")
