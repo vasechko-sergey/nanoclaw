@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveVoiceIntent } from './voice-intent';
+import { resolveVoiceIntent } from './voice-intent.js';
 
 describe('resolveVoiceIntent', () => {
   it('true when iOS context requests voice', () => {

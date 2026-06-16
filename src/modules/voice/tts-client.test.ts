@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderVoice } from './tts-client';
+import { renderVoice } from './tts-client.js';
 
 describe('renderVoice', () => {
   it('returns a Buffer of opus bytes on 200', async () => {
