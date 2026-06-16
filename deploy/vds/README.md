@@ -10,9 +10,12 @@ Plan: ../../docs/superpowers/plans/2026-06-16-vds-subdomains-nginx-tls.md
 | jarvis.DOMAIN | 127.0.0.1:3001   | nanoclaw iOS endpoint (WS+HTTP) |
 | freq1.DOMAIN  | 127.0.0.1:8089   | freqtrade NFIX6                 |
 | freq2.DOMAIN  | 127.0.0.1:8088   | freqtrade NFIX7                 |
-| panel.DOMAIN  | 127.0.0.1:2096   | x-ui web panel                  |
+| panel.DOMAIN  | 127.0.0.1:8443   | x-ui web panel (basePath-gated) |
 
 Never exposed: 3002 (credential proxy), 10254 (OneCLI vault), xray VPN ports.
+Left public on purpose: 2096 (x-ui *subscription* service — VPN clients fetch sub-links),
+vless inbounds 41891/32889/50811. Panel (8443) and freqtrade (8088/8089) are
+localhost-bound; reach them only via their subdomains.
 
 ## Deploy
     DOMAIN=example.com ./render.sh

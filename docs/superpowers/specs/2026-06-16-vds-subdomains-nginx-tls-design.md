@@ -216,3 +216,21 @@ After nginx is confirmed serving each subdomain, make TLS the only door:
 
 Webhook endpoint (3000) exposure; OneCLI UI exposure; routing the xray VPN through
 nginx/443; global ufw.
+
+## As-Built (deployed 2026-06-16 — corrections from discovery)
+
+- **Domain:** `vasechko.dev` (Cloudflare Registrar + DNS). Wildcard `*.vasechko.dev`
+  (+apex) issued; expires 2026-09-14; certbot timer auto-renews.
+- **Panel port correction:** the x-ui **web panel is `8443`** (plain HTTP, basePath
+  `/ZN0G2hGXHqghXw0P92/`), **not `2096`**. `panel.vasechko.dev` proxies `127.0.0.1:8443`.
+  Port **`2096` is the x-ui *subscription* service** (VPN clients fetch sub-links) and
+  was left public on purpose. The real vless VPN inbounds are 41891/32889/50811 (public,
+  untouched).
+- **x-ui hardening method:** no `x-ui` CLI flag for listen-IP exists. Set `webListen =
+  127.0.0.1` in `/etc/x-ui/x-ui.db` `settings` (stop x-ui → edit → start, so the running
+  process can't clobber it); DB backed up to `x-ui.db.bak.20260616`.
+- **freqtrade hardening:** compose `ports:` use env-var form
+  `"${FREQTRADE__API_SERVER__LISTEN_PORT:-8080}:..."`; localhost-bound by prefixing
+  `127.0.0.1:`. Files `/opt/bot_x6`, `/opt/bot_x7` (backups `*.bak.20260616`).
+- **Verified:** 8088/8089/8443 refused externally; subdomains all serve over trusted TLS
+  (jarvis 401, freq1/2 200, panel 200); VPN inbounds + subscription still reachable.
