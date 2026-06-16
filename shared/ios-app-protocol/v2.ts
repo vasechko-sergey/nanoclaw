@@ -29,6 +29,7 @@ export const InlineContext = z.object({
   timestamp: z.string().datetime(),
   timezone: z.string(),
   locality: z.string().optional(),
+  respond_by_voice: z.boolean().optional(),
 });
 export type InlineContext = z.infer<typeof InlineContext>;
 
@@ -77,7 +78,7 @@ export const Envelopes = {
       text: z.string(),
       attachments: z.array(z.object({
         id: z.string().uuid(),
-        kind: z.enum(['image', 'file']),
+        kind: z.enum(['image', 'file', 'audio']),
         name: z.string(),
         mime_type: z.string(),
         byte_size: z.number().int().nonnegative(),
