@@ -21,6 +21,7 @@ import { DATA_DIR, OWNER_PERSON_KEY } from './config.js';
 import { getMessagingGroup } from './db/messaging-groups.js';
 import {
   createSession,
+  findActiveHeadlessSession,
   findLatestSession,
   findSessionByAgentGroup,
   findSessionForAgent,
@@ -166,6 +167,37 @@ export function resolveSession(
 
   log.info('Session created', { id, agentGroupId, messagingGroupId, threadId: lookupThreadId, sessionMode });
   return { session, created: true };
+}
+
+/**
+ * Resolve (or create) the agent's active headless session for an owner.
+ *
+ * Recurring scheduled tasks are routed here so cron fires in a session whose
+ * SDK continuation is wiped on every run (clearContinuationIfHeadless), never
+ * resuming a live chat continuation. Mirrors resolveSession's create path:
+ * createSession + initSessionFolder.
+ */
+export function resolveHeadlessSession(agentGroupId: string, ownerKey: string | null): Session {
+  const existing = findActiveHeadlessSession(agentGroupId, ownerKey);
+  if (existing) return existing;
+
+  const id = `sess-${agentGroupId}-headless-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const session: Session = {
+    id,
+    agent_group_id: agentGroupId,
+    messaging_group_id: null,
+    thread_id: null,
+    owner_key: ownerKey ?? null,
+    agent_provider: null,
+    status: 'active',
+    container_status: 'stopped',
+    last_active: null,
+    created_at: new Date().toISOString(),
+  };
+  createSession(session);
+  initSessionFolder(agentGroupId, id);
+  log.info('Created headless session', { agentGroupId, id, ownerKey });
+  return session;
 }
 
 /** Create the session folder and initialize both DBs. */

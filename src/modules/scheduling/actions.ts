@@ -12,13 +12,13 @@ import type Database from 'better-sqlite3';
 import { wakeContainer } from '../../container-runner.js';
 import { getSession } from '../../db/sessions.js';
 import { log } from '../../log.js';
-import { writeSessionMessage } from '../../session-manager.js';
+import { openInboundDb, resolveHeadlessSession, writeSessionMessage } from '../../session-manager.js';
 import type { Session } from '../../types.js';
 import { cancelTask, insertTask, pauseTask, resumeTask, updateTask, type TaskUpdate } from './db.js';
 
 export async function handleScheduleTask(
   content: Record<string, unknown>,
-  _session: Session,
+  session: Session,
   inDb: Database.Database,
 ): Promise<void> {
   const taskId = content.taskId as string;
@@ -27,7 +27,7 @@ export async function handleScheduleTask(
   const processAfter = content.processAfter as string;
   const recurrence = (content.recurrence as string) || null;
 
-  insertTask(inDb, {
+  const task = {
     id: taskId,
     processAfter,
     recurrence,
@@ -35,7 +35,33 @@ export async function handleScheduleTask(
     channelType: (content.channelType as string) ?? null,
     threadId: (content.threadId as string) ?? null,
     content: JSON.stringify({ prompt, script }),
-  });
+  };
+
+  // Recurring tasks scheduled from an INTERACTIVE session must land in the
+  // agent's headless session — host-sweep fans recurrence per active session,
+  // and an interactive session keeps its SDK continuation, so cron would
+  // resume the live chat (context bleed). Headless wipes continuation each
+  // fire. One-shot tasks stay in the emitting session (conversational
+  // follow-ups that reply in-thread). If we're already headless, no redirect.
+  if (recurrence && session.messaging_group_id != null) {
+    const headless = resolveHeadlessSession(session.agent_group_id, session.owner_key);
+    const headlessDb = openInboundDb(session.agent_group_id, headless.id);
+    try {
+      insertTask(headlessDb, task);
+    } finally {
+      headlessDb.close();
+    }
+    log.info('Scheduled recurring task routed to headless session', {
+      taskId,
+      from: session.id,
+      headlessId: headless.id,
+      processAfter,
+      recurrence,
+    });
+    return;
+  }
+
+  insertTask(inDb, task);
   log.info('Scheduled task created', { taskId, processAfter, recurrence });
 }
 

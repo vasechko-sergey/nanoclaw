@@ -60,6 +60,28 @@ export function findSessionByAgentGroup(agentGroupId: string): Session | undefin
 }
 
 /**
+ * Find the agent's active HEADLESS session (messaging_group_id IS NULL) for a
+ * given owner. Headless sessions back cron/a2a runs — they wipe their SDK
+ * continuation on every fire, so routing recurring tasks here keeps them from
+ * resuming an interactive chat continuation. Owner-scoped so per-person tasks
+ * stay in that person's headless session.
+ */
+export function findActiveHeadlessSession(agentGroupId: string, ownerKey: string | null): Session | undefined {
+  if (ownerKey == null) {
+    return getDb()
+      .prepare(
+        "SELECT * FROM sessions WHERE agent_group_id = ? AND messaging_group_id IS NULL AND owner_key IS NULL AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(agentGroupId) as Session | undefined;
+  }
+  return getDb()
+    .prepare(
+      "SELECT * FROM sessions WHERE agent_group_id = ? AND messaging_group_id IS NULL AND owner_key = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+    )
+    .get(agentGroupId, ownerKey) as Session | undefined;
+}
+
+/**
  * Most recent session for an agent + routing key, ANY status. Used to locate
  * the prior (just-closed) session so a freshly-created session can inherit its
  * recurring tasks. messagingGroupId === null → scope by agent only (agent-shared).
