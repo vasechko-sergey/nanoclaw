@@ -292,12 +292,14 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // Publish the batch's in_reply_to so MCP tools (send_message, send_file)
     // can stamp it on outbound rows — needed for a2a return-path routing.
     setCurrentInReplyTo(routing.inReplyTo);
+    let leaveForRetry = false;
     try {
       const result = await processQuery(query, routing, processingIds, config.providerName);
       if (result.continuation && result.continuation !== continuation) {
         continuation = result.continuation;
         setContinuation(config.providerName, continuation);
       }
+      leaveForRetry = result.transientError === true;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
 
@@ -310,13 +312,19 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
         clearContinuation(config.providerName);
       }
 
-      // Classify credential/auth failures distinctly. Since the host's
-      // credential proxy injects an OAuth token that EXPIRES, a 401/403 is
-      // an expected, recurring failure mode — surface it legibly:
-      //   - operator log marker (CREDENTIAL AUTH FAILURE) so it's greppable
-      //   - a plain user message instead of the raw "Error: 401 ... x-api-key"
-      //     dump, which leaks internals and tells the user nothing actionable.
-      if (isAuthError(errMsg)) {
+      // Transient upstream blip thrown out of the stream (overload/5xx/rate
+      // limit): leave the batch un-acked for the host to retry with backoff —
+      // no error spam to the user, no premature completion.
+      if (isTransientApiError(errMsg)) {
+        log(`Transient API error (thrown) — leaving batch for host retry: ${errMsg}`);
+        leaveForRetry = true;
+      } else if (isAuthError(errMsg)) {
+        // Classify credential/auth failures distinctly. Since the host's
+        // credential proxy injects an OAuth token that EXPIRES, a 401/403 is
+        // an expected, recurring failure mode — surface it legibly:
+        //   - operator log marker (CREDENTIAL AUTH FAILURE) so it's greppable
+        //   - a plain user message instead of the raw "Error: 401 ... x-api-key"
+        //     dump, which leaks internals and tells the user nothing actionable.
         log(`CREDENTIAL AUTH FAILURE — host token likely expired/invalid: ${errMsg}`);
         writeMessageOut({
           id: generateId(),
@@ -342,6 +350,16 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       }
     } finally {
       clearCurrentInReplyTo();
+    }
+
+    if (leaveForRetry) {
+      // Do NOT markCompleted: the batch stays 'processing'. When this container
+      // next goes idle and the host sees the stale claim, it resets the row to
+      // pending with backoff (+tries) and a fresh wake re-runs it. After
+      // MAX_TRIES the host force-completes a recurring task so its series still
+      // advances (see resetStuckProcessingRows in src/host-sweep.ts).
+      log(`Left ${processingIds.length} message(s) un-acked for host retry (transient API error)`);
+      continue;
     }
 
     // Ensure completed even if processQuery ended without a result event
@@ -417,6 +435,12 @@ function formatMessagesWithCommands(messages: MessageInRow[], nativeSlashCommand
 
 interface QueryResult {
   continuation?: string;
+  /**
+   * True when the turn ended in a transient upstream API failure (529/5xx/
+   * rate-limit). The caller leaves the batch un-acked so the host's stuck-reset
+   * retries it with backoff, instead of completing a task that did no work.
+   */
+  transientError?: boolean;
 }
 
 async function processQuery(
@@ -428,6 +452,10 @@ async function processQuery(
   let queryContinuation: string | undefined;
   let done = false;
   let unwrappedNudged = false;
+  // Set when the turn's `result` is a transient upstream API error (529/5xx/
+  // rate-limit) and nothing user-facing was delivered — the batch is left
+  // un-acked for the host to retry rather than completed.
+  let transientError = false;
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open avoids
@@ -704,6 +732,25 @@ async function processQuery(
         const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
         streamBuffer = remainder;
       } else if (event.type === 'result') {
+        // Transient upstream failure (529 overloaded / 5xx / rate-limit): the
+        // SDK exhausted its own retries and surfaced the error as the turn's
+        // result. Do NOT complete the batch — leave it 'processing' so the
+        // host's stuck-reset re-runs it with backoff, instead of silently
+        // finishing a task that did no work (e.g. a daily publish that never
+        // wrote its file). Gated on zero user-facing output this turn so a real
+        // answer with an unlucky trailing blip isn't re-run wholesale.
+        if (event.text && isTransientApiError(event.text) && getUserFacingDispatchCount() === 0) {
+          log(`Transient API error in result — leaving batch for host retry: ${event.text.slice(0, 120)}`);
+          transientError = true;
+          resultReceived = true;
+          inFlightTools.clear();
+          try {
+            query.abort();
+          } catch (err) {
+            log(`query.abort() threw: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          break;
+        }
         // A result — with or without text — means the turn is done. Mark
         // the initial batch completed now so the host sweep doesn't see
         // stale 'processing' claims while the query stays open for
@@ -760,7 +807,7 @@ async function processQuery(
     }
   }
 
-  return { continuation: queryContinuation };
+  return { continuation: queryContinuation, transientError };
 }
 
 function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
@@ -969,4 +1016,15 @@ export function isAuthError(message: string): boolean {
   return /\b401\b|\b403\b|unauthorized|forbidden|authentication|invalid[_\s-]?api[_\s-]?key|x-api-key|oauth.*(expired|invalid)|token.*(expired|invalid|rejected)/i.test(
     message,
   );
+}
+
+/**
+ * Heuristic: does an error/result string look like a TRANSIENT upstream API
+ * failure (overload / rate-limit / 5xx) worth retrying rather than completing
+ * the task as if it succeeded? The Claude SDK retries these internally but
+ * gives up after its own budget and surfaces the error as the turn's result;
+ * leaving the message un-acked lets the host re-run it once the overload clears.
+ */
+export function isTransientApiError(message: string): boolean {
+  return /\b429\b|\b50[0-9]\b|\b529\b|overloaded|rate[_\s-]?limit|too many requests|api error:\s*5/i.test(message);
 }

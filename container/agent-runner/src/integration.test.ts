@@ -325,10 +325,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 describe('poll loop — provider error recovery', () => {
-  it('writes error to outbound and continues loop on provider throw', async () => {
+  it('writes error to outbound and completes the batch on a non-transient provider throw', async () => {
     insertMessage('m1', { sender: 'Alice', text: 'trigger error' }, { platformId: 'chan-1', channelType: 'discord' });
 
-    const provider = new ThrowingProvider('API rate limit exceeded');
+    const provider = new ThrowingProvider('unexpected provider failure');
     const controller = new AbortController();
     const loopPromise = runPollLoopWithTimeout(provider as unknown as MockProvider, controller.signal, 2000);
 
@@ -338,11 +338,32 @@ describe('poll loop — provider error recovery', () => {
     const out = getUndeliveredMessages();
     expect(out).toHaveLength(1);
     expect(JSON.parse(out[0].content).text).toContain('Error:');
-    expect(JSON.parse(out[0].content).text).toContain('API rate limit exceeded');
+    expect(JSON.parse(out[0].content).text).toContain('unexpected provider failure');
 
     // Input message should be marked completed despite the error
     const pending = getPendingMessages();
     expect(pending).toHaveLength(0);
+
+    await loopPromise.catch(() => {});
+  });
+
+  it('leaves the batch un-acked (no error written) on a transient API throw', async () => {
+    insertMessage('m1', { sender: 'Alice', text: 'trigger transient' }, { platformId: 'chan-1', channelType: 'discord' });
+
+    // "overloaded" / "rate limit" / 5xx → transient: the SDK already exhausted
+    // its own retries. The runner must NOT write an error to the user or
+    // complete the batch — it leaves the row 'processing' so the host's
+    // stuck-reset retries it with backoff (see src/host-sweep.ts).
+    const provider = new ThrowingProvider('Overloaded: 529 server overloaded');
+    const controller = new AbortController();
+    const loopPromise = runPollLoopWithTimeout(provider as unknown as MockProvider, controller.signal, 1500);
+
+    // Let the loop claim + process the batch (it throws; we swallow it).
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    controller.abort();
+
+    // No "Error:" message to the user — silently left for the host to retry.
+    expect(getUndeliveredMessages()).toHaveLength(0);
 
     await loopPromise.catch(() => {});
   });
