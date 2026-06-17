@@ -301,12 +301,29 @@ function resetStuckProcessingRows(
     if (msg.processAfter && parseSqliteUtc(msg.processAfter) > now) continue;
 
     if (msg.tries >= MAX_TRIES) {
-      markMessageFailed(inDb, msg.id);
-      log.warn('Message marked as failed after max retries', {
-        messageId: msg.id,
-        sessionId: session.id,
-        reason,
-      });
+      // A recurring task that exhausted its retries must still ADVANCE: mark it
+      // completed so handleRecurrence schedules the next occurrence. Marking it
+      // 'failed' strands the series — handleRecurrence only fans out on
+      // completed+recurrence rows — so a publish/daily-cycle that kept hitting a
+      // transient API overload would silently stop firing forever.
+      const rec = inDb.prepare('SELECT recurrence FROM messages_in WHERE id = ?').get(msg.id) as
+        | { recurrence: string | null }
+        | undefined;
+      if (rec?.recurrence) {
+        inDb.prepare("UPDATE messages_in SET status = 'completed' WHERE id = ?").run(msg.id);
+        log.warn('Recurring task force-completed after max retries (series preserved)', {
+          messageId: msg.id,
+          sessionId: session.id,
+          reason,
+        });
+      } else {
+        markMessageFailed(inDb, msg.id);
+        log.warn('Message marked as failed after max retries', {
+          messageId: msg.id,
+          sessionId: session.id,
+          reason,
+        });
+      }
     } else {
       const backoffMs = BACKOFF_BASE_MS * Math.pow(2, msg.tries);
       const backoffSec = Math.floor(backoffMs / 1000);
