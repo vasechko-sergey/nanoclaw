@@ -233,40 +233,39 @@ struct OrbHomeView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
+            // Left orb opens the agent switcher (mirrors ChatView). Voice mode
+            // is intentionally off the header orbs for now.
             HeaderStatusDot(side: .left,
                             isConnected: coordinator.ws.isConnected,
                             phase: .calm) {
-                showVoiceFullscreen = true
-            } onLongPress: {
-                showVoiceFullscreen = true
-            }
-            .accessibilityLabel(coordinator.ws.isConnected ? "Голосовой режим. Подключено" : "Голосовой режим. Отключено")
-
-            Spacer()
-
-            // Active-agent label. Tap opens the left drawer (agent switcher) —
-            // same pattern as ChatView's header.
-            Button {
                 withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
                     leftDrawerOpen = true
                 }
-            } label: {
-                Text(spaced(active.active.displayName))
-                    .font(.system(size: Theme.fontTitle, weight: .light))
-                    .tracking(Theme.titleTracking)
-                    .foregroundStyle(active.active.accentColor)
-                    .fixedSize()
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(active.active.accentColor.opacity(0.6))
-                            .frame(height: 1)
-                            .offset(y: 4)
-                    }
-                    .frame(minHeight: Theme.minTapSize)
-                    .contentShape(Rectangle())
+            } onLongPress: {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    leftDrawerOpen = true
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Активный агент: \(active.active.displayName), нажмите чтобы открыть выбор")
+            .accessibilityLabel("Выбор агента")
+
+            Spacer()
+
+            // Active-agent label — display only on home. Agent switching lives on
+            // the left orb; the center "go home" tap (used in chat) is a no-op
+            // here since this IS the home screen.
+            Text(spaced(active.active.displayName))
+                .font(.system(size: Theme.fontTitle, weight: .light))
+                .tracking(Theme.titleTracking)
+                .foregroundStyle(active.active.accentColor)
+                .fixedSize()
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(active.active.accentColor.opacity(0.6))
+                        .frame(height: 1)
+                        .offset(y: 4)
+                }
+                .frame(minHeight: Theme.minTapSize)
+                .accessibilityLabel("Активный агент: \(active.active.displayName)")
 
             Spacer()
 
