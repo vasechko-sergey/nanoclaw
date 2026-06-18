@@ -300,22 +300,23 @@ private struct WaveformBars: View {
     var player: AudioPlaybackService?
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.05, paused: !active)) { _ in
-            GeometryReader { geo in
-                let progress = active ? (player?.playbackProgress() ?? 0) : 0
-                let n = max(1, peaks.count)
-                let spacing: CGFloat = 3
-                let barW = max(2, (geo.size.width - spacing * CGFloat(n - 1)) / CGFloat(n))
-                HStack(alignment: .center, spacing: spacing) {
-                    ForEach(0..<n, id: \.self) { i in
-                        let played = active && Double(i) / Double(max(1, n - 1)) <= progress
-                        Capsule()
-                            .fill(Theme.accent.opacity(played ? 1.0 : 0.32))
-                            .frame(width: barW, height: max(3, geo.size.height * peaks[i]))
-                    }
+        GeometryReader { geo in
+            // Reading `player.progress` only when active means idle bubbles don't
+            // subscribe to it — only the playing note re-renders as it advances.
+            let progress = active ? (player?.progress ?? 0) : 0
+            let n = max(1, peaks.count)
+            let spacing: CGFloat = 3
+            let barW = max(2, (geo.size.width - spacing * CGFloat(n - 1)) / CGFloat(n))
+            HStack(alignment: .center, spacing: spacing) {
+                ForEach(0..<n, id: \.self) { i in
+                    let played = active && Double(i) / Double(max(1, n - 1)) <= progress
+                    Capsule()
+                        .fill(Theme.accent.opacity(played ? 1.0 : 0.32))
+                        .frame(width: barW, height: max(3, geo.size.height * peaks[i]))
                 }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+            .animation(.linear(duration: 0.05), value: progress)
         }
     }
 }
