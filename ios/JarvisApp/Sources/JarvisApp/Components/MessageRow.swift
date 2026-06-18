@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Photos
+import AVFoundation
 
 /// Bubbleless message renderer. Replaces MessageBubble.
 struct MessageRow: View {
@@ -244,6 +245,10 @@ struct AudioNoteView: View {
     let messageId: String
     var player: AudioPlaybackService?
 
+    /// Real per-bucket amplitude of THIS note, extracted from the audio once it
+    /// loads (nil → show a flat placeholder profile meanwhile).
+    @State private var peaks: [CGFloat]? = nil
+
     private var isThisPlaying: Bool {
         player?.playingId == messageId && player?.isPlaying == true
     }
@@ -254,9 +259,9 @@ struct AudioNoteView: View {
                 Image(systemName: isThisPlaying ? "stop.fill" : "play.fill")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.accent)
-                WaveformBars(active: isThisPlaying)
+                WaveformBars(active: isThisPlaying, peaks: peaks ?? WaveformExtractor.placeholder, player: player)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 26)
+                    .frame(height: 28)
             }
             .padding(.vertical, 9)
             .padding(.horizontal, 14)
@@ -266,6 +271,13 @@ struct AudioNoteView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isThisPlaying ? "Остановить голос" : "Прослушать голос")
+        .task(id: messageId) {
+            guard peaks == nil, let b64 = info.url else { return }
+            let computed = await Task.detached(priority: .utility) {
+                WaveformExtractor.peaks(fromBase64: b64, id: messageId)
+            }.value
+            if let computed { peaks = computed }
+        }
     }
 
     private func toggle() {
@@ -278,39 +290,82 @@ struct AudioNoteView: View {
     }
 }
 
-/// A wide audio-track strip: a row of bars that ripple while playing and rest
-/// at a low static profile when idle. Driven by a paused TimelineView so only
-/// the currently-playing note animates.
+/// A wide audio-track strip whose bar heights match the actual audio (like a
+/// messenger voice note). While THIS note plays, the played portion fills in;
+/// the fill sweep is driven by a paused TimelineView so only the active note
+/// re-renders.
 private struct WaveformBars: View {
     let active: Bool
-
-    // Fixed pseudo-random base profile — a natural-looking waveform silhouette.
-    private static let profile: [CGFloat] = [
-        0.30, 0.55, 0.85, 0.45, 0.70, 1.0, 0.40, 0.65, 0.50, 0.80,
-        0.35, 0.60, 0.95, 0.48, 0.78, 0.58, 0.28, 0.68, 0.90, 0.52,
-        0.72, 0.42, 0.82, 0.60, 0.38, 0.66, 0.50, 0.76, 0.44, 0.88,
-    ]
+    let peaks: [CGFloat]
+    var player: AudioPlaybackService?
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.08, paused: !active)) { timeline in
+        TimelineView(.animation(minimumInterval: 0.05, paused: !active)) { _ in
             GeometryReader { geo in
-                let n = Self.profile.count
+                let progress = active ? (player?.playbackProgress() ?? 0) : 0
+                let n = max(1, peaks.count)
                 let spacing: CGFloat = 3
                 let barW = max(2, (geo.size.width - spacing * CGFloat(n - 1)) / CGFloat(n))
-                let t = timeline.date.timeIntervalSinceReferenceDate
                 HStack(alignment: .center, spacing: spacing) {
                     ForEach(0..<n, id: \.self) { i in
-                        let base = Self.profile[i]
-                        let h = active
-                            ? base * (0.45 + 0.55 * abs(sin(t * 6 + Double(i) * 0.55)))
-                            : base * 0.5
+                        let played = active && Double(i) / Double(max(1, n - 1)) <= progress
                         Capsule()
-                            .fill(Theme.accent.opacity(active ? 0.95 : 0.4))
-                            .frame(width: barW, height: max(3, geo.size.height * h))
+                            .fill(Theme.accent.opacity(played ? 1.0 : 0.32))
+                            .frame(width: barW, height: max(3, geo.size.height * peaks[i]))
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
             }
+        }
+    }
+}
+
+/// Decodes a voice note's audio (base64 m4a/aac) into a small array of
+/// normalized amplitude buckets for the waveform. Runs off the main actor;
+/// results are cached by message id so scrolling doesn't re-decode.
+enum WaveformExtractor {
+    /// Flat-ish placeholder shown until the real waveform is extracted.
+    static let placeholder: [CGFloat] = Array(repeating: 0.35, count: 40)
+
+    private static let cache = NSCache<NSString, NSArray>()
+
+    static func peaks(fromBase64 b64: String, id: String, buckets: Int = 40) -> [CGFloat]? {
+        if let hit = cache.object(forKey: id as NSString) as? [CGFloat] { return hit }
+        guard let data = Data(base64Encoded: b64) else { return nil }
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".m4a")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        do {
+            try data.write(to: tmp)
+            let file = try AVAudioFile(forReading: tmp)
+            let format = file.processingFormat
+            let frames = AVAudioFrameCount(file.length)
+            guard frames > 0,
+                  let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+            try file.read(into: buf)
+            guard let ch = buf.floatChannelData?[0] else { return nil }
+            let n = Int(buf.frameLength)
+            guard n > 0 else { return nil }
+            let bucket = max(1, n / buckets)
+            var out: [CGFloat] = []
+            out.reserveCapacity(buckets)
+            var i = 0
+            while i < n {
+                let end = min(i + bucket, n)
+                var peak: Float = 0
+                var j = i
+                while j < end { peak = max(peak, abs(ch[j])); j += 1 }
+                out.append(CGFloat(peak))
+                i = end
+            }
+            let maxP = out.max() ?? 1
+            if maxP > 0 { out = out.map { $0 / maxP } }
+            // Keep a visible floor so quiet stretches still show a sliver.
+            out = out.map { max(0.1, $0) }
+            cache.setObject(out as NSArray, forKey: id as NSString)
+            return out
+        } catch {
+            return nil
         }
     }
 }

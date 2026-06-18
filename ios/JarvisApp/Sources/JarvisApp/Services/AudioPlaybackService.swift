@@ -44,6 +44,14 @@ import Foundation
         deactivateSession()
     }
 
+    /// Playback position 0...1 of the current item, or 0 when idle. Reads the
+    /// AVAudioPlayer directly (not an observed property) — meant to be polled
+    /// from a ticking view (TimelineView) to drive a progress fill.
+    func playbackProgress() -> Double {
+        guard let p = player, p.duration > 0 else { return 0 }
+        return min(1, max(0, p.currentTime / p.duration))
+    }
+
     private func configureSession() {
         let s = AVAudioSession.sharedInstance()
         try? s.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
