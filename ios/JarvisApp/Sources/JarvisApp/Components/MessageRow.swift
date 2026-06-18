@@ -250,18 +250,19 @@ struct AudioNoteView: View {
 
     var body: some View {
         Button(action: toggle) {
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 Image(systemName: isThisPlaying ? "stop.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                Image(systemName: "waveform")
-                    .font(.system(size: 15))
-                    .symbolEffect(.variableColor.iterative, isActive: isThisPlaying)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+                WaveformBars(active: isThisPlaying)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 26)
             }
-            .foregroundStyle(Theme.accent)
-            .padding(.vertical, 7)
-            .padding(.horizontal, 12)
-            .background(Theme.accent.opacity(0.12))
-            .clipShape(Capsule())
+            .padding(.vertical, 9)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.accent.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isThisPlaying ? "Остановить голос" : "Прослушать голос")
@@ -273,6 +274,43 @@ struct AudioNoteView: View {
             player.stop()
         } else if let b64 = info.url, let data = Data(base64Encoded: b64) {
             player.play(data: data, id: messageId)
+        }
+    }
+}
+
+/// A wide audio-track strip: a row of bars that ripple while playing and rest
+/// at a low static profile when idle. Driven by a paused TimelineView so only
+/// the currently-playing note animates.
+private struct WaveformBars: View {
+    let active: Bool
+
+    // Fixed pseudo-random base profile — a natural-looking waveform silhouette.
+    private static let profile: [CGFloat] = [
+        0.30, 0.55, 0.85, 0.45, 0.70, 1.0, 0.40, 0.65, 0.50, 0.80,
+        0.35, 0.60, 0.95, 0.48, 0.78, 0.58, 0.28, 0.68, 0.90, 0.52,
+        0.72, 0.42, 0.82, 0.60, 0.38, 0.66, 0.50, 0.76, 0.44, 0.88,
+    ]
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.08, paused: !active)) { timeline in
+            GeometryReader { geo in
+                let n = Self.profile.count
+                let spacing: CGFloat = 3
+                let barW = max(2, (geo.size.width - spacing * CGFloat(n - 1)) / CGFloat(n))
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                HStack(alignment: .center, spacing: spacing) {
+                    ForEach(0..<n, id: \.self) { i in
+                        let base = Self.profile[i]
+                        let h = active
+                            ? base * (0.45 + 0.55 * abs(sin(t * 6 + Double(i) * 0.55)))
+                            : base * 0.5
+                        Capsule()
+                            .fill(Theme.accent.opacity(active ? 0.95 : 0.4))
+                            .frame(width: barW, height: max(3, geo.size.height * h))
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+            }
         }
     }
 }

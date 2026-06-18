@@ -31,8 +31,19 @@ def _ref(voice: str) -> tuple[str, str]:
         _ref_cache[voice] = (v["ref_wav"], _accent.process_all(ref_text))
     return _ref_cache[voice]
 
-def synth_to_opus(text: str, voice: str, max_chars: int) -> bytes:
-    """Render text -> opus (ogg) bytes. Raises on failure."""
+# ffmpeg encode args per output format. opus/ogg = Telegram voice notes;
+# m4a/AAC = iOS (AVAudioPlayer can't decode OGG/Opus, but plays AAC natively).
+_FMT = {
+    "opus": (["-c:a", "libopus", "-b:a", "32k"], "out.ogg"),
+    "m4a":  (["-c:a", "aac", "-b:a", "64k"], "out.m4a"),
+}
+
+
+def synth_to_opus(text: str, voice: str, max_chars: int, fmt: str = "opus") -> bytes:
+    """Render text -> encoded audio bytes (opus/ogg or m4a/aac). Raises on failure."""
+    if fmt not in _FMT:
+        raise ValueError(f"unknown format {fmt!r}")
+    enc_args, out_name = _FMT[fmt]
     with _synth_lock:
         _lazy_init()
         if voice not in VOICES:
@@ -53,11 +64,11 @@ def synth_to_opus(text: str, voice: str, max_chars: int) -> bytes:
             import numpy as np
             full = np.concatenate(segments) if len(segments) > 1 else segments[0]
             sf.write(wav_path, full, sr_out)
-            opus_path = os.path.join(td, "out.ogg")
+            out_path = os.path.join(td, out_name)
             subprocess.run(
                 ["ffmpeg", "-y", "-loglevel", "error", "-i", wav_path,
-                 "-af", "loudnorm=I=-16:TP=-2", "-c:a", "libopus", "-b:a", "32k", opus_path],
+                 "-af", "loudnorm=I=-16:TP=-2", *enc_args, out_path],
                 check=True,
             )
-            with open(opus_path, "rb") as f:
+            with open(out_path, "rb") as f:
                 return f.read()

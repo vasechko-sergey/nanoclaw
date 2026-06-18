@@ -123,7 +123,10 @@ struct ChatView: View {
     /// `ChatMessage: Equatable` (its `Content` holds `UIImage`/closures).
     private var messagesFingerprint: [String] {
         ws.messages.map { msg in
-            "\(msg.id)|\(msg.isVisible ? 1 : 0)|\(msg.agentId ?? "")|\(msg.deliveryStatus.rawValue)|\(msg.text)"
+            // Include attached-audio presence so a voice note merging onto an
+            // existing text row (same id/text/status) still triggers a rebuild.
+            let audio = msg.attachedAudio?.url?.count ?? 0
+            return "\(msg.id)|\(msg.isVisible ? 1 : 0)|\(msg.agentId ?? "")|\(msg.deliveryStatus.rawValue)|\(msg.text)|\(audio)"
         }
     }
 

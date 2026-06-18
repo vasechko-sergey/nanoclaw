@@ -2,6 +2,9 @@ export interface RenderOpts {
   endpoint?: string; // default from env JARVIS_TTS_URL
   timeoutMs?: number; // default 240000 (CPU render is slow)
   fetchImpl?: typeof fetch;
+  /** Output codec/container. 'opus' (ogg, Telegram voice notes) is the default;
+   *  'm4a' (aac) for iOS — AVAudioPlayer can't decode OGG/Opus but plays AAC. */
+  format?: 'opus' | 'm4a';
 }
 
 export async function renderVoice(text: string, voice = 'jarvis', opts: RenderOpts = {}): Promise<Buffer | null> {
@@ -14,7 +17,7 @@ export async function renderVoice(text: string, voice = 'jarvis', opts: RenderOp
     const res = await doFetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, voice }),
+      body: JSON.stringify({ text, voice, fmt: opts.format ?? 'opus' }),
       signal: ctrl.signal,
     });
     if (!res.ok) {

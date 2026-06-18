@@ -448,20 +448,25 @@ async function deliverMessage(
     const vKind = msg.kind;
     const vAgentGroupId = session.agent_group_id;
     const vMsgId = msg.id;
+    // iOS plays AAC/m4a (AVAudioPlayer can't decode OGG/Opus); Telegram voice
+    // notes need OGG/Opus. Pick codec + filename by channel.
+    const isIos = vChannelType === 'ios-app-v2';
+    const fmt: 'opus' | 'm4a' = isIos ? 'm4a' : 'opus';
+    const fname = isIos ? 'reply.m4a' : 'reply.ogg';
     void (async () => {
       try {
-        const opus = await renderVoice(replyText, 'jarvis');
-        if (opus) {
+        const audio = await renderVoice(replyText, 'jarvis', { format: fmt });
+        if (audio) {
           await deliveryAdapter.deliver(
             vChannelType,
             vPlatformId,
             vThreadId,
             vKind,
             JSON.stringify({ operation: 'send_voice', reply_to_id: vMsgId }),
-            [{ filename: 'reply.ogg', data: opus, operation: 'send_voice' as const }],
+            [{ filename: fname, data: audio, operation: 'send_voice' as const }],
             vAgentGroupId,
           );
-          log.info('Voice note delivered', { id: vMsgId, sessionId: session.id });
+          log.info('Voice note delivered', { id: vMsgId, sessionId: session.id, format: fmt });
         }
       } catch (err) {
         log.warn('Voice note delivery failed', { id: vMsgId, sessionId: session.id, err });
