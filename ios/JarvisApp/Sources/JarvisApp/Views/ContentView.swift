@@ -95,6 +95,11 @@ struct SplashView: View {
     @State private var statusOpacity: Double = 0
     @State private var orbMood: OrbMood = .calm
     @State private var timeoutTask: Task<Void, Never>?
+    // Local input for the setup card. bearerToken is @ObservationIgnored @AppStorage,
+    // so binding the field straight to it never re-evaluates the button's
+    // .disabled(!isConfigured) — the button stays greyed even with a token typed.
+    // Drive the field + button off this @State, commit to settings on connect.
+    @State private var tokenInput = ""
 
     private enum SplashPhase {
         case loading, connecting, ready, waitingSetup, failed
@@ -221,18 +226,37 @@ struct SplashView: View {
         }
     }
 
+    /// Commit the typed token (trimmed — pasted tokens often carry whitespace)
+    /// and start connecting. Single entry point for the button and field submit.
+    private func connectWithToken() {
+        let t = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        settings.bearerToken = t
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showSetup = false
+            phase = .connecting
+        }
+        coordinator.connect()
+        startTimeout()
+    }
+
     private var setupCard: some View {
-        VStack(spacing: Theme.scaled(16)) {
+        let canConnect = !tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(spacing: Theme.scaled(16)) {
             // Token
             VStack(alignment: .leading, spacing: Theme.scaled(4)) {
                 Text("Токен")
                     .font(.system(size: Theme.fontCaption))
                     .foregroundStyle(Theme.accentMedium)
-                SecureField("Bearer token", text: $settings.bearerToken)
+                SecureField("Bearer token", text: $tokenInput)
                     .font(.system(size: Theme.fontInput))
                     .foregroundStyle(Theme.textPrimary)
                     .textContentType(.none)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
                     .tint(Theme.accent)
+                    .submitLabel(.go)
+                    .onSubmit { connectWithToken() }
                     .padding(.horizontal, Theme.messagePadH)
                     .padding(.vertical, Theme.messagePadV)
                     .background(Theme.surface)
@@ -245,24 +269,19 @@ struct SplashView: View {
 
             // Connect button
             Button {
-                guard settings.isConfigured else { return }
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showSetup = false
-                    phase = .connecting
-                }
-                coordinator.connect()
-                startTimeout()
+                connectWithToken()
             } label: {
                 Text("Подключиться")
                     .font(.system(size: Theme.fontSubhead, weight: .medium))
-                    .foregroundStyle(settings.isConfigured ? Theme.background : Theme.accentMedium)
+                    .foregroundStyle(canConnect ? Theme.background : Theme.accentMedium)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.scaled(14))
-                    .background(settings.isConfigured ? Theme.accent : Theme.accent.opacity(0.1))
+                    .background(canConnect ? Theme.accent : Theme.accent.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
             }
-            .disabled(!settings.isConfigured)
+            .disabled(!canConnect)
         }
+        .onAppear { if tokenInput.isEmpty { tokenInput = settings.bearerToken } }
         .padding(Theme.hPadding)
         .background(Theme.background.opacity(0.95))
         .clipShape(RoundedRectangle(cornerRadius: Theme.scaled(20)))
