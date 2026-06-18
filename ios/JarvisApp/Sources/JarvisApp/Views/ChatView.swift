@@ -201,7 +201,6 @@ struct ChatView: View {
                                         onActionTap: { messageId, buttonId, buttonLabel in
                                             coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
                                         },
-                                        onSpeak: { text in coordinator.speak(text) },
                                         onRetry: { id in coordinator.ws.retrySend(id: id) }
                                     )
                                     .id(msg.id)

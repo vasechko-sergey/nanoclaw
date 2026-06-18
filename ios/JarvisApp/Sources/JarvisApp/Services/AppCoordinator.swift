@@ -197,11 +197,6 @@ final class AppCoordinator {
         )
     }
 
-    /// Speak arbitrary text on demand (manual "Проговорить" from a bubble).
-    func speak(_ text: String) {
-        speech.speak(text)
-    }
-
     func sendFeedback(messageId: String, value: Bool, messageText: String) {
         ws.sendFeedback(messageId: messageId, value: value, messageText: messageText)
     }
