@@ -412,6 +412,14 @@ async function deliverMessage(
   const voiceRow = getDb().prepare('SELECT voice_intent FROM sessions WHERE id = ?').get(session.id) as
     | { voice_intent: number }
     | undefined;
+  log.info('Voice delivery gate', {
+    id: msg.id,
+    sessionId: session.id,
+    isFinalUserReply,
+    isJarvis,
+    voiceIntent: voiceRow?.voice_intent ?? 0,
+    hasText: !!(content.text && typeof content.text === 'string' && content.text.trim()),
+  });
   if (
     isFinalUserReply &&
     isJarvis &&

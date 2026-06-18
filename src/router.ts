@@ -524,14 +524,23 @@ async function deliverToAgent(
       // non-JSON content (plain text fallback) — ios_context absent
     }
     const iosContext = parsedContent.ios_context ?? null;
-    const mgVoiceRow = getDb()
-      .prepare('SELECT voice_mode FROM messaging_groups WHERE id = ?')
-      .get(mg.id) as { voice_mode: number } | undefined;
+    const mgVoiceRow = getDb().prepare('SELECT voice_mode FROM messaging_groups WHERE id = ?').get(mg.id) as
+      | { voice_mode: number }
+      | undefined;
     const groupVoiceMode = (mgVoiceRow?.voice_mode ?? 0) !== 0;
     const voiceIntent = resolveVoiceIntent({ iosContext, groupVoiceMode });
     getDb()
       .prepare('UPDATE sessions SET voice_intent = ? WHERE id = ?')
       .run(voiceIntent ? 1 : 0, session.id);
+    log.info('Voice intent set', {
+      sessionId: session.id,
+      agentGroupId: agent.agent_group_id,
+      contentHead: String(event.message.content ?? '').slice(0, 200),
+      hasIosContext: !!iosContext,
+      respondByVoice: iosContext?.respond_by_voice ?? null,
+      groupVoiceMode,
+      voiceIntent,
+    });
   } catch (err) {
     // Voice intent is best-effort — never block routing on a failure here.
     log.warn('Failed to compute voice intent', { sessionId: session.id, err });
