@@ -63,6 +63,14 @@ def synth_to_opus(text: str, voice: str, max_chars: int, fmt: str = "opus") -> b
                 segments.append(wav)
             import numpy as np
             full = np.concatenate(segments) if len(segments) > 1 else segments[0]
+            full = np.asarray(full, dtype=np.float32)
+            # Soften the ending: F5 can cut at a non-zero sample (audible click /
+            # abrupt stop). Apply a short fade-out, then append trailing silence
+            # so the voice eases out instead of clipping off.
+            fade = min(int(sr_out * 0.04), full.shape[0])
+            if fade > 0:
+                full[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
+            full = np.concatenate([full, np.zeros(int(sr_out * 0.12), dtype=np.float32)])
             sf.write(wav_path, full, sr_out)
             out_path = os.path.join(td, out_name)
             subprocess.run(
