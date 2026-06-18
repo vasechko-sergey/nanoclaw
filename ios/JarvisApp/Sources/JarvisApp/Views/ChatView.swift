@@ -121,14 +121,6 @@ struct ChatView: View {
     /// when `visibleMessages` must be rebuilt. Changes on append, reorder, and
     /// in-place mutation (delivery status / text). Avoids requiring
     /// `ChatMessage: Equatable` (its `Content` holds `UIImage`/closures).
-    private var messagesFingerprint: [String] {
-        ws.messages.map { msg in
-            // Include attached-audio presence so a voice note merging onto an
-            // existing text row (same id/text/status) still triggers a rebuild.
-            let audio = msg.attachedAudio?.url?.count ?? 0
-            return "\(msg.id)|\(msg.isVisible ? 1 : 0)|\(msg.agentId ?? "")|\(msg.deliveryStatus.rawValue)|\(msg.text)|\(audio)"
-        }
-    }
 
     private var orbMood: OrbMood {
         if !ws.isConnected               { return .error }
@@ -546,11 +538,11 @@ struct ChatView: View {
         }
         // Cache the filtered message list (see `visibleMessages`). Recompute on
         // initial appear and whenever the underlying message set or the active
-        // agent changes. `messagesFingerprint` captures appends, reorders, and
-        // in-place mutations (status/text) so cached output stays in sync with
-        // the previous per-render computed property.
+        // agent changes. `ws.messagesVersion` bumps on every change (append,
+        // reorder, in-place status / audio-attach) in O(1) — far cheaper than
+        // digesting the whole list on each body pass.
         .onAppear { recomputeVisibleMessages() }
-        .onChange(of: messagesFingerprint) { recomputeVisibleMessages() }
+        .onChange(of: ws.messagesVersion) { recomputeVisibleMessages() }
         .onChange(of: active.active) { recomputeVisibleMessages() }
         .onChange(of: autoStartVoice) {
             // When entering chat with voice trigger from home, activate input bar

@@ -54,7 +54,11 @@ final class WebSocketClientV2 {
 
     // MARK: - Observable surface (mirrors legacy)
 
-    var messages: [ChatMessage] = []
+    var messages: [ChatMessage] = [] { didSet { messagesVersion &+= 1 } }
+    /// Bumped on every `messages` change (append, reorder, in-place status /
+    /// audio-attach update). Lets views detect "something changed" in O(1)
+    /// instead of digesting the whole list on each body pass.
+    private(set) var messagesVersion: Int = 0
     var isConnected = false { didSet { if isConnected != oldValue { onConnectionChanged?(isConnected) } } }
     var isTyping = false
     var commands: [BotCommand] = []
