@@ -9,7 +9,6 @@ struct MessageRow: View {
     var onImageTap: ((UIImage) -> Void)? = nil
     var onFeedback: ((String, Bool) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil
-    var onSpeak: ((String) -> Void)? = nil
     var onRetry: ((String) -> Void)? = nil
 
     @State private var feedback: FeedbackState = .none
@@ -184,9 +183,6 @@ struct MessageRow: View {
         }
         if !isUser {
             Divider()
-            Button {
-                onSpeak?(text)
-            } label: { Label("Проговорить", systemImage: "speaker.wave.2") }
             Button {
                 withAnimation(.easeOut(duration: 0.15)) {
                     feedback = feedback == .positive ? .none : .positive
