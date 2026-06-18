@@ -11,6 +11,7 @@ import { recordDroppedMessage } from './db/dropped-messages.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
 import { getSession } from './db/sessions.js';
 import { log } from './log.js';
+import { persistVoiceIntent } from './modules/voice/persist-intent.js';
 import { resolvePersonKey } from './person-key.js';
 import { getAccessGate, getSenderResolver } from './router.js';
 import { resolveSession, writeOutboundDirect, writeSessionMessage } from './session-manager.js';
@@ -148,6 +149,29 @@ export async function adapterRouteToAgent(
 
   const { session } = resolveSession(agentGroup.id, mg.id, event.threadId, sessionMode, resolvePersonKey(userId));
   const wake = opts.wake !== false;
+
+  // Persist voice intent for this session (shared helper with
+  // router.deliverToAgent). iOS-app messages arrive here, NOT via routeInbound,
+  // so this is the path where `respond_by_voice` lands and must be recorded —
+  // omitting it here was why iOS voice replies never fired. Best-effort.
+  try {
+    const vi = persistVoiceIntent({
+      sessionId: session.id,
+      messagingGroupId: mg.id,
+      content: event.message.content,
+    });
+    log.info('Voice intent set', {
+      sessionId: session.id,
+      agentGroupId: agentGroup.id,
+      path: 'adapter',
+      hasIosContext: vi.hasIosContext,
+      respondByVoice: vi.respondByVoice,
+      groupVoiceMode: vi.groupVoiceMode,
+      voiceIntent: vi.voiceIntent,
+    });
+  } catch (err) {
+    log.warn('Failed to compute voice intent', { sessionId: session.id, err });
+  }
 
   writeSessionMessage(session.agent_group_id, session.id, {
     id: event.message.id,

@@ -20,7 +20,6 @@
 import { getChannelAdapter } from './channels/channel-registry.js';
 import { gateCommand } from './command-gate.js';
 import { getAgentGroup } from './db/agent-groups.js';
-import { getDb } from './db/connection.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import {
   createMessagingGroup,
@@ -29,7 +28,7 @@ import {
 } from './db/messaging-groups.js';
 import { findSessionByAgentGroup, findSessionForAgent, updateSession } from './db/sessions.js';
 import { startTypingRefresh, stopTypingRefresh } from './modules/typing/index.js';
-import { resolveVoiceIntent } from './modules/voice/voice-intent.js';
+import { persistVoiceIntent } from './modules/voice/persist-intent.js';
 import { log } from './log.js';
 import { resolvePersonKey } from './person-key.js';
 import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
@@ -513,36 +512,27 @@ async function deliverToAgent(
     resolvePersonKey(userId),
   );
 
-  // Compute and persist voice intent for this session. The intent is
-  // recalculated on every inbound message so a per-message ios_context flag
-  // always wins; group voice_mode acts as the group-level default.
+  // Compute and persist voice intent for this session (shared with the iOS
+  // adapter path via persistVoiceIntent so the two inbound paths can't drift).
+  // Recalculated on every inbound message: a per-message ios_context flag wins,
+  // group voice_mode is the group-level default. Best-effort — never block
+  // routing on a failure here.
   try {
-    let parsedContent: { ios_context?: { respond_by_voice?: boolean } | null } = {};
-    try {
-      parsedContent = JSON.parse(event.message.content);
-    } catch {
-      // non-JSON content (plain text fallback) — ios_context absent
-    }
-    const iosContext = parsedContent.ios_context ?? null;
-    const mgVoiceRow = getDb().prepare('SELECT voice_mode FROM messaging_groups WHERE id = ?').get(mg.id) as
-      | { voice_mode: number }
-      | undefined;
-    const groupVoiceMode = (mgVoiceRow?.voice_mode ?? 0) !== 0;
-    const voiceIntent = resolveVoiceIntent({ iosContext, groupVoiceMode });
-    getDb()
-      .prepare('UPDATE sessions SET voice_intent = ? WHERE id = ?')
-      .run(voiceIntent ? 1 : 0, session.id);
+    const vi = persistVoiceIntent({
+      sessionId: session.id,
+      messagingGroupId: mg.id,
+      content: event.message.content,
+    });
     log.info('Voice intent set', {
       sessionId: session.id,
       agentGroupId: agent.agent_group_id,
-      contentHead: String(event.message.content ?? '').slice(0, 200),
-      hasIosContext: !!iosContext,
-      respondByVoice: iosContext?.respond_by_voice ?? null,
-      groupVoiceMode,
-      voiceIntent,
+      path: 'router',
+      hasIosContext: vi.hasIosContext,
+      respondByVoice: vi.respondByVoice,
+      groupVoiceMode: vi.groupVoiceMode,
+      voiceIntent: vi.voiceIntent,
     });
   } catch (err) {
-    // Voice intent is best-effort — never block routing on a failure here.
     log.warn('Failed to compute voice intent', { sessionId: session.id, err });
   }
 
