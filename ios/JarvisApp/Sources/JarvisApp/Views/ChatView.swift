@@ -73,8 +73,6 @@ struct ChatView: View {
     @State private var drafts: [DraftAttachment] = []
     @State private var fullScreenImage: UIImage? = nil
     @State private var isScrolledUp = false
-    @State private var unreadCount  = 0
-    @State private var lastSeenCount = 0
     @State private var scrollToBottomAction: (() -> Void)?
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
     @State private var rightDrawerOpen = false
@@ -141,16 +139,11 @@ struct ChatView: View {
 
     /// Update the scrolled-up state that drives the scroll-to-bottom FAB.
     /// Fed by `ScrolledUpDetector` (iOS-18 scroll geometry, or the pre-18
-    /// content-offset preference). Clears the unread badge + reseats the
-    /// last-seen count when the user returns to the bottom.
+    /// content-offset preference). Drives the scroll-to-bottom FAB visibility.
     private func setScrolledUp(_ up: Bool) {
         guard up != isScrolledUp else { return }
         withAnimation(.easeOut(duration: Theme.animFast)) {
             isScrolledUp = up
-            if !up {
-                unreadCount = 0
-                lastSeenCount = visibleMessages.count
-            }
         }
     }
 
@@ -248,7 +241,6 @@ struct ChatView: View {
                             }
                         )
                         .onAppear {
-                            lastSeenCount = visibleMessages.count
                             // Capture scroll action for FAB outside ScrollViewReader
                             scrollToBottomAction = {
                                 if let last = visibleMessages.last {
@@ -262,18 +254,13 @@ struct ChatView: View {
                             }
                         }
                         .onChange(of: ws.messages.count) {
-                            // Refresh the cached list up front so unread-count /
-                            // scroll-to-last operate on the post-append set
-                            // regardless of `.onChange` ordering this tick.
+                            // Refresh the cached list up front so scroll-to-last
+                            // operates on the post-append set regardless of
+                            // `.onChange` ordering this tick.
                             recomputeVisibleMessages()
-                            if isScrolledUp {
-                                let newMessages = visibleMessages.count - lastSeenCount
-                                unreadCount = max(newMessages, 0)
-                            } else {
-                                if let last = visibleMessages.last {
-                                    withAnimation(.spring(duration: 0.35, bounce: 0.1)) {
-                                        proxy.scrollTo(last.id, anchor: .bottom)
-                                    }
+                            if !isScrolledUp, let last = visibleMessages.last {
+                                withAnimation(.spring(duration: 0.35, bounce: 0.1)) {
+                                    proxy.scrollTo(last.id, anchor: .bottom)
                                 }
                             }
                         }
@@ -295,13 +282,11 @@ struct ChatView: View {
                             // ScrollView keeps its prior offset, so without an
                             // explicit reset it lands at an arbitrary spot in the
                             // new agent's thread. Jump to the bottom and clear the
-                            // scrolled-up / unread state that drives the FAB.
+                            // scrolled-up state that drives the FAB.
                             isScrolledUp = false
-                            unreadCount = 0
                             Task { @MainActor in
                                 try? await Task.sleep(for: .milliseconds(60))
                                 recomputeVisibleMessages()
-                                lastSeenCount = visibleMessages.count
                                 if let last = visibleMessages.last {
                                     proxy.scrollTo(last.id, anchor: .bottom)
                                 }
@@ -634,38 +619,21 @@ struct ChatView: View {
     // MARK: – Scroll-to-bottom FAB
 
     private var scrollToBottomFAB: some View {
-        ZStack {
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: Theme.scaled(32)))
-                .foregroundStyle(Theme.accent)
-                .background(
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: Theme.scaled(30), height: Theme.scaled(30))
-                )
-                .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
-
-            if unreadCount > 0 {
-                Text("\(unreadCount)")
-                    .font(.system(size: Theme.scaled(10), weight: .bold))
-                    .foregroundStyle(Theme.background)
-                    .padding(.horizontal, Theme.scaled(5))
-                    .padding(.vertical, Theme.scaled(1))
-                    .background(Theme.accent)
-                    .clipShape(Capsule())
-                    .offset(x: Theme.scaled(12), y: -Theme.scaled(12))
-                    .contentTransition(.numericText())
-            }
-        }
-        .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-        .contentShape(Circle())
-        .onTapGesture {
-            scrollToBottomAction?()
-            unreadCount = 0
-        }
-        .padding(.trailing, Theme.scaled(8))
-        .padding(.bottom, Theme.scaled(8))
-        .accessibilityLabel(unreadCount > 0 ? "Вниз, \(unreadCount) новых" : "Прокрутить вниз")
+        Image(systemName: "arrow.down.circle")
+            .font(.system(size: Theme.scaled(32)))
+            .foregroundStyle(Theme.accent)
+            .background(
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: Theme.scaled(30), height: Theme.scaled(30))
+            )
+            .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+            .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+            .contentShape(Circle())
+            .onTapGesture { scrollToBottomAction?() }
+            .padding(.trailing, Theme.scaled(8))
+            .padding(.bottom, Theme.scaled(8))
+            .accessibilityLabel("Прокрутить вниз")
     }
 
     // MARK: – Drawer gestures
