@@ -20,6 +20,8 @@ struct OrbVoiceView: View {
     @State private var lastReplyText: String = ""
     /// Whether the "показать текст" panel is currently visible.
     @State private var showReplyText = false
+    /// Pending wait for the asynchronous server voice note (see awaitServerVoice).
+    @State private var voiceWaitTask: Task<Void, Never>?
 
     private var orbMood: OrbMood {
         switch controller.phase {
@@ -186,6 +188,8 @@ struct OrbVoiceView: View {
         coordinator.audioPlayer.stop()
         silenceTimer?.invalidate()
         silenceTimer = nil
+        voiceWaitTask?.cancel()
+        voiceWaitTask = nil
         controller.stop()
     }
 
@@ -246,18 +250,42 @@ struct OrbVoiceView: View {
         // Cache the reply text so «показать текст» can reveal it.
         if !msg.text.isEmpty { lastReplyText = msg.text }
 
-        // Prefer server-rendered audio; fall back to on-device TTS.
         if let audioInfo = msg.audioInfo,
            let b64 = audioInfo.url,
            let data = Data(base64Encoded: b64) {
+            // Server-rendered Jarvis voice (the .audio message) — the real reply
+            // audio. Cancel any pending wait and play it.
+            voiceWaitTask?.cancel()
             controller.handleAssistantTextArrived(msg.text)
             coordinator.audioPlayer.play(data: data)
             observeAudioFinish()
+        } else if coordinator.lastSendWantedServerVoice {
+            // Text arrived first; the server voice note follows asynchronously as
+            // a separate .audio message (handled above). Do NOT fall back to
+            // on-device Apple TTS — voice is server-side now. Stay in .processing
+            // (orb keeps "thinking") and wait for the audio.
+            awaitServerVoice()
         } else {
+            // No server voice was requested for this reply — keep the on-device
+            // fallback so the orb still talks.
             guard !msg.text.isEmpty else { return }
             controller.handleAssistantTextArrived(msg.text)
             coordinator.speech.speak(msg.text)
             observeSynthesizerFinish()
+        }
+    }
+
+    /// Await the asynchronous server voice note. If it never lands (render
+    /// failure / sidecar down), park the loop after a timeout instead of
+    /// spinning on .processing forever. No on-device TTS — the text stays
+    /// readable via «показать текст».
+    private func awaitServerVoice() {
+        voiceWaitTask?.cancel()
+        voiceWaitTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(240))
+            guard !Task.isCancelled, controller.phase == .processing else { return }
+            controller.handleSynthesizerDidFinish(autoResume: settings.autoResumeListening)
+            if settings.autoResumeListening { speech.start() }
         }
     }
 

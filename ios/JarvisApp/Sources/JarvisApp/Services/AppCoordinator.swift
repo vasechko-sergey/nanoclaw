@@ -46,6 +46,11 @@ final class AppCoordinator {
     @ObservationIgnored private var settings: AppSettings
     /// Whether the last sent message was dictated — gates auto-speak of the reply.
     @ObservationIgnored private var lastSendWasVoice = false
+    /// Whether the last send asked the server to render a voice note. When true,
+    /// the Jarvis voice arrives asynchronously as a separate `.audio` message —
+    /// so on-device Apple TTS must NOT fire for that reply (it would double up
+    /// with, or pre-empt, the server voice). Read by OrbVoiceView too.
+    @ObservationIgnored private(set) var lastSendWantedServerVoice = false
 
     // MARK: – Haptic callback (keeps Service layer UI-free)
     @ObservationIgnored var onMessageReceived: (() -> Void)?
@@ -186,6 +191,7 @@ final class AppCoordinator {
         // OR when the user has autoSpeak enabled AND the message was dictated.
         // Pure dictation with autoSpeak OFF does NOT produce a server voice note.
         let wantVoiceReply = forceVoice || (settings.autoSpeak && lastSendWasVoice)
+        lastSendWantedServerVoice = wantVoiceReply
         ws.send(
             text: text,
             timezone: TimeZone.current.identifier,
@@ -246,11 +252,17 @@ final class AppCoordinator {
             self.audioPlayer.play(data: data)
         }
 
-        // Fallback TTS: fire only when the send was voice-mode and no audio
-        // attachment arrived (audio messages come through onAudioMessage above,
-        // not through this path — their content is .audio, not .text).
+        // On-device Apple TTS is a FALLBACK ONLY — voice is rendered server-side
+        // (the cloned Jarvis voice) and arrives as a separate `.audio` message
+        // handled by onAudioMessage above. Suppress local TTS whenever the send
+        // requested a server voice note (`lastSendWantedServerVoice`), otherwise
+        // the phone would speak the text in the system voice before / alongside
+        // the real Jarvis voice. With the current gate this means local TTS never
+        // fires for a voice-requested reply; the kept branch is a safety net for
+        // any future path that speaks without requesting a server voice.
         ws.onSpeakableText = { [weak self] text in
-            guard let self, self.settings.autoSpeak, self.lastSendWasVoice else { return }
+            guard let self, self.settings.autoSpeak, self.lastSendWasVoice,
+                  !self.lastSendWantedServerVoice else { return }
             self.speech.speak(text)
         }
 
