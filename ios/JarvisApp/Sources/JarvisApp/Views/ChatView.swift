@@ -14,6 +14,53 @@ private struct WorkoutPresentation: Identifiable {
     var id: String { plan.workoutId }
 }
 
+/// Carries the chat content's bottom edge (maxY) within the scroll view's
+/// coordinate space, so the scroll-to-bottom FAB is driven by the real scroll
+/// offset instead of a lazy anchor's unreliable appear/disappear.
+private struct ChatScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Reports whether the chat scroll view is scrolled up away from the bottom
+/// (beyond `threshold` points) — drives the scroll-to-bottom FAB. iOS 18+ reads
+/// it straight from scroll geometry (`onScrollGeometryChange`, the sanctioned,
+/// reliable API). Earlier iOS falls back to the `ChatScrollOffsetKey`
+/// content-offset preference measured against the viewport height. The old lazy
+/// "bottom" anchor's onAppear/onDisappear fired unreliably, and on iOS 18
+/// `onPreferenceChange`'s closure is `@Sendable` — so neither alone is
+/// trustworthy across versions.
+private struct ScrolledUpDetector: ViewModifier {
+    let threshold: CGFloat
+    let viewportHeight: CGFloat
+    let onChange: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: Bool.self) { geo in
+                // "Scrolled up" = the content's bottom edge sits more than
+                // `threshold` points above the bottom of the visible area.
+                // `visibleRect.maxY` is the actual visible content bottom (in
+                // content coordinates); at the bottom it equals contentSize.height
+                // (distance 0). This avoids the contentOffset-vs-(contentSize -
+                // containerSize) calc, which mis-fired against the bottom anchor
+                // / safe-area insets and left the FAB always on.
+                geo.contentSize.height - geo.visibleRect.maxY > threshold
+            } action: { _, scrolledUp in
+                onChange(scrolledUp)
+            }
+        } else {
+            content
+                .coordinateSpace(name: "chatScroll")
+                .onPreferenceChange(ChatScrollOffsetKey.self) { contentMaxY in
+                    onChange(contentMaxY - viewportHeight > threshold)
+                }
+        }
+    }
+}
+
 struct ChatView: View {
     @Environment(AppSettings.self) var settings
     @Environment(ActiveAgentState.self) private var active
@@ -97,6 +144,21 @@ struct ChatView: View {
         drafts = []
     }
 
+    /// Update the scrolled-up state that drives the scroll-to-bottom FAB.
+    /// Fed by `ScrolledUpDetector` (iOS-18 scroll geometry, or the pre-18
+    /// content-offset preference). Clears the unread badge + reseats the
+    /// last-seen count when the user returns to the bottom.
+    private func setScrolledUp(_ up: Bool) {
+        guard up != isScrolledUp else { return }
+        withAnimation(.easeOut(duration: Theme.animFast)) {
+            isScrolledUp = up
+            if !up {
+                unreadCount = 0
+                lastSeenCount = visibleMessages.count
+            }
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
         VStack(spacing: 0) {
@@ -117,7 +179,7 @@ struct ChatView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 ZStack(alignment: .bottomTrailing) {
-                    GeometryReader { _ in
+                    GeometryReader { geo in
                     ScrollViewReader { proxy in
                         ScrollView {
                             // LazyVStack so rows realize on demand as they
@@ -161,33 +223,35 @@ struct ChatView: View {
                                         .transition(.opacity.combined(with: .offset(y: 4)))
                                 }
 
-                                // Invisible bottom anchor. Its appear/disappear
-                                // drives the scroll-to-bottom FAB. A GeometryReader
-                                // preference does NOT work inside a LazyVStack — the
-                                // anchor recycles when scrolled away and stops
-                                // emitting, so the FAB never reappeared.
+                                // Scroll target for "jump to bottom" (proxy
+                                // scrolls to this id). The scrolled-up state that
+                                // drives the FAB is measured from the content
+                                // offset (ChatScrollOffsetKey) on the ScrollView —
+                                // the old onAppear/onDisappear on this lazy anchor
+                                // fired unreliably, so the FAB often never showed.
                                 Color.clear
                                     .frame(height: 1)
                                     .id("bottom")
-                                    .onAppear {
-                                        withAnimation(.easeOut(duration: Theme.animFast)) {
-                                            isScrolledUp = false
-                                            unreadCount = 0
-                                        }
-                                    }
-                                    .onDisappear {
-                                        withAnimation(.easeOut(duration: Theme.animFast)) {
-                                            isScrolledUp = true
-                                            lastSeenCount = visibleMessages.count
-                                        }
-                                    }
                             }
                             .padding(.horizontal)
                             .padding(.top, Theme.scaled(8))
+                            .background(
+                                GeometryReader { contentGeo in
+                                    Color.clear.preference(
+                                        key: ChatScrollOffsetKey.self,
+                                        value: contentGeo.frame(in: .named("chatScroll")).maxY
+                                    )
+                                }
+                            )
                         }
                         .defaultScrollAnchor(.bottom)
                         .scrollDismissesKeyboard(.interactively)
                         .scrollContentBackground(.hidden)
+                        .modifier(
+                            ScrolledUpDetector(threshold: 80, viewportHeight: geo.size.height) { up in
+                                setScrolledUp(up)
+                            }
+                        )
                         .onAppear {
                             lastSeenCount = visibleMessages.count
                             // Capture scroll action for FAB outside ScrollViewReader
@@ -228,6 +292,23 @@ struct ChatView: View {
                                     withAnimation(.spring(duration: 0.3)) {
                                         proxy.scrollTo("bottom", anchor: .bottom)
                                     }
+                                }
+                            }
+                        }
+                        .onChange(of: active.active) {
+                            // Switching agents swaps the entire message list. The
+                            // ScrollView keeps its prior offset, so without an
+                            // explicit reset it lands at an arbitrary spot in the
+                            // new agent's thread. Jump to the bottom and clear the
+                            // scrolled-up / unread state that drives the FAB.
+                            isScrolledUp = false
+                            unreadCount = 0
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(60))
+                                recomputeVisibleMessages()
+                                lastSeenCount = visibleMessages.count
+                                if let last = visibleMessages.last {
+                                    proxy.scrollTo(last.id, anchor: .bottom)
                                 }
                             }
                         }
@@ -497,24 +578,26 @@ struct ChatView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
+            // Left orb opens the agent switcher (the drawer slides from the
+            // left, so this is the natural trigger). Voice mode is intentionally
+            // off the header orbs for now — reachable from the chat input bar.
             HeaderStatusDot(side: .left, isConnected: ws.isConnected, phase: orbMood) {
-                showVoiceFullscreen = true
-            } onLongPress: {
-                showVoiceFullscreen = true
-            }
-            .accessibilityIdentifier("orb-drawer-btn")
-            .accessibilityLabel(ws.isConnected ? "Голосовой режим. Подключено" : "Голосовой режим. Отключено")
-
-            Spacer()
-
-            // Active-agent label. Tap opens the left drawer (agent switcher);
-            // long-press goes home (preserves the gesture AgentPickerInline used
-            // to host). `.simultaneousGesture` so the long-press doesn't suppress
-            // the Button's tap and vice versa.
-            Button {
                 withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
                     leftDrawerOpen = true
                 }
+            } onLongPress: {
+                withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
+                    leftDrawerOpen = true
+                }
+            }
+            .accessibilityIdentifier("agent-switch-btn")
+            .accessibilityLabel("Выбор агента")
+
+            Spacer()
+
+            // Active-agent label. Tap returns to the home screen.
+            Button {
+                onGoHome?()
             } label: {
                 Text(spaced(active.active.displayName))
                     .font(.system(size: Theme.fontTitle, weight: .light))
@@ -531,12 +614,7 @@ struct ChatView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                    onGoHome?()
-                }
-            )
-            .accessibilityLabel("Активный агент: \(active.active.displayName), нажмите чтобы открыть выбор")
+            .accessibilityLabel("Активный агент: \(active.active.displayName). Нажмите чтобы вернуться на главный")
 
             Spacer()
 

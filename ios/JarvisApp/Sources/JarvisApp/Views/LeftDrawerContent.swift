@@ -59,9 +59,14 @@ struct LeftDrawerContent: View {
             onSelect(agent)
         } label: {
             HStack(spacing: 8) {
-                Text(spaced(agent.displayName))
+                // Plain uppercase name — no per-letter thin-spaces. The chat
+                // header keeps the wide "J A R V I S" spacing (`spaced()` +
+                // titleTracking) because it's a single centered title; in a
+                // left-aligned list those gaps read as broken, so the rows use
+                // a tight uppercase + light tracking instead.
+                Text(agent.displayName.uppercased())
                     .font(.system(size: Theme.fontTitle, weight: .light))
-                    .tracking(Theme.titleTracking)
+                    .tracking(1)
                     .foregroundStyle(isActive
                                      ? agent.accentColor
                                      : agent.accentColor.opacity(0.55))
@@ -74,12 +79,6 @@ struct LeftDrawerContent: View {
         .buttonStyle(.plain)
         .accessibilityLabel(isActive ? "Активный агент: \(agent.displayName)"
                                      : "Переключиться на \(agent.displayName)")
-    }
-
-    /// Insert U+2009 (thin space) between every character to match the
-    /// existing "J A R V I S" letter-spaced look (mirrors `AgentPickerInline`).
-    private func spaced(_ s: String) -> String {
-        s.uppercased().map { String($0) }.joined(separator: "\u{2009}\u{2009}")
     }
 }
 

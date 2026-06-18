@@ -14,9 +14,6 @@ final class AppSettings {
     @ObservationIgnored @AppStorage("statusEmoji")   var statusEmoji  = ""
     @ObservationIgnored @AppStorage("enterToSend")   var enterToSend  = true
     @ObservationIgnored @AppStorage("autoSpeak")     var autoSpeak    = false
-    @ObservationIgnored @AppStorage("voiceId")       var voiceId      = ""
-    @ObservationIgnored @AppStorage("voiceRate")     var voiceRate    = 0.47
-    @ObservationIgnored @AppStorage("voicePitch")    var voicePitch   = 0.93
 
     // MARK: – Voice-fullscreen ("Glass") mode
     /// After TTS finishes reading the assistant reply, auto-resume the

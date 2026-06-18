@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EnvelopeBase, InlineContext, ContextFieldEnum, Envelopes, AnyEnvelope } from './v2';
+import { EnvelopeBase, InlineContext, ContextFieldEnum, Envelopes, AnyEnvelope } from './v2.js';
 
 describe('EnvelopeBase', () => {
   const ok = {
@@ -187,6 +187,22 @@ describe('agent_id field', () => {
       payload: { thread_id: 't1', agent_id: 'greg' },
     });
     expect(parsed.payload.agent_id).toBe('greg');
+  });
+});
+
+describe('v2 voice fields', () => {
+  it('InlineContext accepts respond_by_voice', () => {
+    const r = InlineContext.safeParse({ timestamp: new Date().toISOString(), timezone: 'Asia/Makassar', respond_by_voice: true });
+    expect(r.success).toBe(true);
+  });
+  it('attachment kind accepts audio', () => {
+    const r = Envelopes.Message.safeParse({
+      v: 2, kind: 'data', type: 'message',
+      id: '00000000-0000-4000-8000-000000000000',
+      seq: 0, ts: '2026-06-16T00:00:00.000Z',
+      payload: { thread_id: 't', text: '', attachments: [{ id: '00000000-0000-0000-0000-000000000000', kind: 'audio', name: 'reply.ogg', mime_type: 'audio/ogg', byte_size: 1 }] },
+    });
+    expect(r.success).toBe(true);
   });
 });
 

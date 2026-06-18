@@ -16,6 +16,10 @@ struct OrbVoiceView: View {
     @State private var controller = VoiceLoopController()
     @State private var speech = SpeechManager()
     @State private var silenceTimer: Timer?
+    /// Text of the latest assistant reply (cached so it survives TTS / audio playback).
+    @State private var lastReplyText: String = ""
+    /// Whether the "показать текст" panel is currently visible.
+    @State private var showReplyText = false
 
     private var orbMood: OrbMood {
         switch controller.phase {
@@ -56,6 +60,13 @@ struct OrbVoiceView: View {
 
                 Spacer()
 
+                if showReplyText && !lastReplyText.isEmpty {
+                    replyTextPanel
+                        .padding(.horizontal, Theme.hPadding)
+                        .padding(.bottom, Theme.scaled(12))
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
                 bottomControls
                     .padding(.horizontal, Theme.hPadding)
                     .padding(.bottom, Theme.scaled(28))
@@ -95,6 +106,24 @@ struct OrbVoiceView: View {
             .animation(.easeOut(duration: 0.2), value: controller.transcript)
     }
 
+    private var replyTextPanel: some View {
+        ScrollView {
+            Text(lastReplyText)
+                .font(.system(size: Theme.scaled(14)))
+                .foregroundStyle(Theme.textPrimary.opacity(0.85))
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Theme.scaled(12))
+        }
+        .frame(maxHeight: Theme.scaled(160))
+        .background(Color.white.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
+                .stroke(Theme.accent.opacity(0.15), lineWidth: 0.5)
+        )
+    }
+
     private var bottomControls: some View {
         HStack {
             Button {
@@ -107,6 +136,22 @@ struct OrbVoiceView: View {
             .accessibilityIdentifier("voice-handoff-btn")
 
             Spacer()
+
+            if !lastReplyText.isEmpty {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showReplyText.toggle()
+                    }
+                } label: {
+                    Image(systemName: showReplyText ? "text.bubble.fill" : "text.bubble")
+                        .font(.system(size: Theme.scaled(22)))
+                        .foregroundStyle(showReplyText ? Theme.accent : Theme.accentMedium)
+                }
+                .accessibilityIdentifier("voice-show-text-btn")
+                .accessibilityLabel(showReplyText ? "Скрыть текст" : "Показать текст")
+
+                Spacer()
+            }
 
             Button {
                 handleClose()
@@ -138,6 +183,7 @@ struct OrbVoiceView: View {
     private func onDisappear() {
         speech.stop()
         coordinator.speech.stop()
+        coordinator.audioPlayer.stop()
         silenceTimer?.invalidate()
         silenceTimer = nil
         controller.stop()
@@ -188,19 +234,43 @@ struct OrbVoiceView: View {
 
     private func sendIfReady() {
         guard controller.phase == .processing, !controller.transcript.isEmpty else { return }
-        coordinator.sendMessage(controller.transcript, viaVoice: true, agentId: active.active.rawValue)
+        // Orb fullscreen always wants a server voice reply — pass forceVoice: true so
+        // the autoSpeak gate in AppCoordinator is bypassed for this path.
+        coordinator.sendMessage(controller.transcript, viaVoice: true, forceVoice: true, agentId: active.active.rawValue)
     }
 
     private func handleNewAssistantMessage() {
         guard let msg = coordinator.ws.messages.last,
-              msg.role == .assistant,
-              !msg.text.isEmpty else { return }
-        controller.handleAssistantTextArrived(msg.text)
-        coordinator.speech.speak(msg.text,
-                                 voiceId: settings.voiceId,
-                                 rate: settings.voiceRate,
-                                 pitch: settings.voicePitch)
-        observeSynthesizerFinish()
+              msg.role == .assistant else { return }
+
+        // Cache the reply text so «показать текст» can reveal it.
+        if !msg.text.isEmpty { lastReplyText = msg.text }
+
+        // Prefer server-rendered audio; fall back to on-device TTS.
+        if let audioInfo = msg.audioInfo,
+           let b64 = audioInfo.url,
+           let data = Data(base64Encoded: b64) {
+            controller.handleAssistantTextArrived(msg.text)
+            coordinator.audioPlayer.play(data: data)
+            observeAudioFinish()
+        } else {
+            guard !msg.text.isEmpty else { return }
+            controller.handleAssistantTextArrived(msg.text)
+            coordinator.speech.speak(msg.text)
+            observeSynthesizerFinish()
+        }
+    }
+
+    private func observeAudioFinish() {
+        Task { @MainActor in
+            while coordinator.audioPlayer.isPlaying {
+                try? await Task.sleep(for: .milliseconds(150))
+            }
+            controller.handleSynthesizerDidFinish(autoResume: settings.autoResumeListening)
+            if settings.autoResumeListening {
+                speech.start()
+            }
+        }
     }
 
     private func observeSynthesizerFinish() {

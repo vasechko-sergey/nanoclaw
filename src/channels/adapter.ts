@@ -91,6 +91,8 @@ export interface InboundMessage {
 export interface OutboundFile {
   filename: string;
   data: Buffer;
+  /** When set, instructs the adapter to deliver this file as a platform voice note. */
+  operation?: 'send_voice';
 }
 
 /** Outbound message from host to adapter. */

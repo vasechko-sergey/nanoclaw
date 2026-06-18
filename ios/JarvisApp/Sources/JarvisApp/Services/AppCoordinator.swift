@@ -19,6 +19,8 @@ final class AppCoordinator {
     private(set) var health: HealthManager
     private(set) var calendar: CalendarManager
     private(set) var speech: SpeechSynthesizer
+    /// Plays server-rendered voice-note audio attachments.
+    private(set) var audioPlayer: AudioPlaybackService
     private(set) var proactiveDispatcher: ProactiveDispatcher!
     private(set) var watchBridge: WatchConnectivityBridge!
 
@@ -59,6 +61,7 @@ final class AppCoordinator {
         self.health = health
         self.calendar = calendar
         self.speech = SpeechSynthesizer()
+        self.audioPlayer = AudioPlaybackService()
         // Build the storage half of the v2 stack now so the MessageTimeline
         // can start observing before splash/home renders. Transport half is
         // built lazily on first `connect(settings:)` (URL/token aren't known
@@ -154,7 +157,12 @@ final class AppCoordinator {
 
     // MARK: – Chat actions
 
-    func sendMessage(_ text: String, viaVoice: Bool = false, attachments: [DraftAttachment] = [], agentId: String = "jarvis") {
+    /// - Parameters:
+    ///   - viaVoice: true when the message was dictated (sets `lastSendWasVoice`).
+    ///   - forceVoice: true when the caller always wants a server voice reply regardless
+    ///     of `autoSpeak` (e.g. Orb fullscreen mode). Dictation without `autoSpeak` should
+    ///     NOT produce a voice note; Orb fullscreen always should.
+    func sendMessage(_ text: String, viaVoice: Bool = false, forceVoice: Bool = false, attachments: [DraftAttachment] = [], agentId: String = "jarvis") {
         lastSendWasVoice = viaVoice
         // Push a light inline context snapshot (location/health/calendar per the user's
         // privacy toggles) so the agent always has timezone + location + next event +
@@ -174,19 +182,24 @@ final class AppCoordinator {
             health: health,
             calendar: calendar
         )
+        // Request server-side TTS when: Orb fullscreen forces it (forceVoice=true),
+        // OR when the user has autoSpeak enabled AND the message was dictated.
+        // Pure dictation with autoSpeak OFF does NOT produce a server voice note.
+        let wantVoiceReply = forceVoice || (settings.autoSpeak && lastSendWasVoice)
         ws.send(
             text: text,
             timezone: TimeZone.current.identifier,
             status: emoji.isEmpty ? nil : emoji,
             attachments: attachments,
             context: ctx,
-            agentId: agentId
+            agentId: agentId,
+            respondByVoice: wantVoiceReply
         )
     }
 
     /// Speak arbitrary text on demand (manual "Проговорить" from a bubble).
     func speak(_ text: String) {
-        speech.speak(text, voiceId: settings.voiceId, rate: settings.voiceRate, pitch: settings.voicePitch)
+        speech.speak(text)
     }
 
     func sendFeedback(messageId: String, value: Bool, messageText: String) {
@@ -232,10 +245,18 @@ final class AppCoordinator {
             )
         }
 
-        // Auto-speak assistant text only when the triggering message was dictated
+        // Server-rendered audio: play the voice note directly.
+        ws.onAudioMessage = { [weak self] base64 in
+            guard let self, let data = Data(base64Encoded: base64) else { return }
+            self.audioPlayer.play(data: data)
+        }
+
+        // Fallback TTS: fire only when the send was voice-mode and no audio
+        // attachment arrived (audio messages come through onAudioMessage above,
+        // not through this path — their content is .audio, not .text).
         ws.onSpeakableText = { [weak self] text in
             guard let self, self.settings.autoSpeak, self.lastSendWasVoice else { return }
-            self.speech.speak(text, voiceId: self.settings.voiceId, rate: self.settings.voiceRate, pitch: self.settings.voicePitch)
+            self.speech.speak(text)
         }
 
         // Track connection state via callback (replaces Combine $isConnected sink)
