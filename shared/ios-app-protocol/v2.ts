@@ -87,6 +87,10 @@ export const Envelopes = {
       })).optional(),
       context: InlineContext.optional(),
       agent_id: z.string().min(1).optional(),
+      // When set, this message's attachment (a server-rendered voice note)
+      // belongs to a previously-delivered text message with this id — the
+      // client attaches the audio to that bubble instead of showing it alone.
+      reply_to_id: z.string().min(1).optional(),
     }),
   }),
   ContextRequest: EnvelopeBase.extend({

@@ -256,6 +256,27 @@ actor TransportV2 {
             return
         }
         try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
+
+        // Voice-note merge: a message that carries a voice-note attachment and
+        // names the text message it replies to is attached onto that bubble
+        // (one combined audio+text bubble) rather than inserted as its own row.
+        // The id correlation is robust when several messages are in flight while
+        // a slow render completes. Falls back to a normal insert if the target
+        // row isn't stored yet (text is delivered before the audio, so rare).
+        if let replyTo = message.reply_to_id,
+           let audio = message.attachments?.first(where: {
+               $0.kind == "audio" || $0.mime_type.hasPrefix("audio/")
+           }),
+           try store.appendAttachment(toRowId: replyTo, attachment: audio) {
+            try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
+            try await sendStatus(.delivered, ids: [envelope.id])
+            if let seq = envelope.seq {
+                let current = try store.cursor(.lastSeenInbound)
+                if seq > current { try store.setCursor(.lastSeenInbound, seq) }
+            }
+            return
+        }
+
         let agentId = message.agent_id ?? "jarvis"
         try store.insertInbound(envelope: envelope, message: message, agentId: agentId)
         try? store.prune() // global retention; cheap no-op while under cap

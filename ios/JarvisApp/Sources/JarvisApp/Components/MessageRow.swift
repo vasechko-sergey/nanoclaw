@@ -10,6 +10,9 @@ struct MessageRow: View {
     var onFeedback: ((String, Bool) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil
     var onRetry: ((String) -> Void)? = nil
+    /// Shared player so a voice-note bubble can play/stop its own audio and
+    /// reflect which note is currently playing.
+    var audioPlayer: AudioPlaybackService? = nil
 
     @State private var feedback: FeedbackState = .none
 
@@ -47,17 +50,23 @@ struct MessageRow: View {
                 avatarDot
                 VStack(alignment: .leading, spacing: 4) {
                     metaRow
-                    Group {
-                        if isUser {
-                            Text(text).font(.system(size: 14))
-                        } else {
-                            MarkdownText(text, fontSize: 14)
-                        }
+                    // Voice note (server-rendered) sits ABOVE the text.
+                    if let audio = message.attachedAudio {
+                        AudioNoteView(info: audio, messageId: message.id, player: audioPlayer)
                     }
-                    .foregroundStyle(isUser ? .white : Theme.assistantText)
-                    .lineSpacing(2)
-                    .contextMenu {
-                        contextMenuButtons(text)
+                    if !(text.isEmpty && message.attachedAudio != nil) {
+                        Group {
+                            if isUser {
+                                Text(text).font(.system(size: 14))
+                            } else {
+                                MarkdownText(text, fontSize: 14)
+                            }
+                        }
+                        .foregroundStyle(isUser ? .white : Theme.assistantText)
+                        .lineSpacing(2)
+                        .contextMenu {
+                            contextMenuButtons(text)
+                        }
                     }
                 }
             }
@@ -220,6 +229,50 @@ struct MessageRow: View {
             return "Jarvis запрашивает: \(info.text). \(time)"
         case .status(let info):
             return "Система: \(info.text). \(time)"
+        }
+    }
+}
+
+// MARK: - Voice note (server-rendered)
+
+/// A compact play/stop control for a server-rendered voice note. No filename
+/// caption — just a tappable waveform. Playback goes through the shared
+/// `AudioPlaybackService` so only one note plays at a time and the button
+/// reflects whether THIS note is the one playing.
+struct AudioNoteView: View {
+    let info: FileInfo
+    let messageId: String
+    var player: AudioPlaybackService?
+
+    private var isThisPlaying: Bool {
+        player?.playingId == messageId && player?.isPlaying == true
+    }
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 8) {
+                Image(systemName: isThisPlaying ? "stop.fill" : "play.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "waveform")
+                    .font(.system(size: 15))
+                    .symbolEffect(.variableColor.iterative, isActive: isThisPlaying)
+            }
+            .foregroundStyle(Theme.accent)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .background(Theme.accent.opacity(0.12))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isThisPlaying ? "Остановить голос" : "Прослушать голос")
+    }
+
+    private func toggle() {
+        guard let player else { return }
+        if isThisPlaying {
+            player.stop()
+        } else if let b64 = info.url, let data = Data(base64Encoded: b64) {
+            player.play(data: data, id: messageId)
         }
     }
 }

@@ -201,7 +201,8 @@ struct ChatView: View {
                                         onActionTap: { messageId, buttonId, buttonLabel in
                                             coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
                                         },
-                                        onRetry: { id in coordinator.ws.retrySend(id: id) }
+                                        onRetry: { id in coordinator.ws.retrySend(id: id) },
+                                        audioPlayer: coordinator.audioPlayer
                                     )
                                     .id(msg.id)
                                     .onAppear {

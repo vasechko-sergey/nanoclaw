@@ -496,6 +496,25 @@ final class WebSocketClientV2 {
            let data = attJSON.data(using: .utf8),
            let atts = try? JSONDecoder().decode([V2.Attachment].self, from: data),
            let first = atts.first {
+
+            // Voice note → ONE combined bubble: a play control above the text,
+            // no filename caption. The server attaches the rendered voice note
+            // onto the text row it replies to, so a single row carries both.
+            if first.kind == "audio" || first.mime_type.hasPrefix("audio/") {
+                let audioInfo = FileInfo(
+                    name: first.name,
+                    size: Int64(first.byte_size),
+                    mimeType: first.mime_type,
+                    url: first.bytes_base64 ?? first.remote_id,
+                    thumbnail: nil
+                )
+                var combined = ChatMessage(id: row.id, role: role, content: .text(row.text), timestamp: timestamp)
+                combined.attachedAudio = audioInfo
+                combined.deliveryStatus = mapDelivery(row.status)
+                combined.agentId = row.agentId
+                return [combined]
+            }
+
             var out: [ChatMessage] = []
 
             // Caption bubble (if the user/agent typed text alongside the file).
@@ -519,19 +538,6 @@ final class WebSocketClientV2 {
             if first.kind == "image", let b64 = first.bytes_base64,
                let image = cachedDownsampledImage(rowId: row.id, base64: b64) {
                 attMsg = ChatMessage.image(row.id, role: role, image: image, filename: first.name, timestamp: timestamp)
-            } else if first.kind == "audio" || first.mime_type.hasPrefix("audio/") {
-                // Stash the raw base64 payload in the `url` field so the player
-                // can decode it inline without a download round-trip. When the
-                // server sends a remote URL instead, it arrives in `remote_id`.
-                let audioInfo = FileInfo(
-                    name: first.name,
-                    size: Int64(first.byte_size),
-                    mimeType: first.mime_type,
-                    url: first.bytes_base64 ?? first.remote_id,
-                    thumbnail: nil
-                )
-                attMsg = ChatMessage(id: row.id, role: role,
-                                     content: .audio(audioInfo), timestamp: timestamp)
             } else {
                 let info = FileInfo(name: first.name, size: Int64(first.byte_size),
                                     mimeType: first.mime_type, url: nil, thumbnail: nil)

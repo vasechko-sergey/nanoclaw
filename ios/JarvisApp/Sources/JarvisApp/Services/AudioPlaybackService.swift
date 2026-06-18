@@ -9,13 +9,17 @@ import Foundation
 /// calls it directly via `coordinator.audioPlayer`.
 @Observable final class AudioPlaybackService: NSObject {
     var isPlaying = false
+    /// Id of the message whose audio is currently playing — lets a per-bubble
+    /// play button show play vs stop for its own note. nil when idle.
+    private(set) var playingId: String?
 
     @ObservationIgnored private var player: AVAudioPlayer?
 
     /// Play raw audio `data`. The format is inferred by AVAudioPlayer from
     /// the data header — supports MP3, AAC, OGG/Opus (via Core Audio).
-    /// Replaces any currently playing audio immediately.
-    func play(data: Data) {
+    /// Replaces any currently playing audio immediately. `id` tags the message
+    /// the audio belongs to so the UI can reflect which bubble is playing.
+    func play(data: Data, id: String? = nil) {
         stop()
         configureSession()
         do {
@@ -25,6 +29,7 @@ import Foundation
             player = p
             p.play()
             isPlaying = true
+            playingId = id
         } catch {
             Log.warn(.ws, "AudioPlaybackService.play failed: \(error)")
             deactivateSession()
@@ -35,6 +40,7 @@ import Foundation
         player?.stop()
         player = nil
         isPlaying = false
+        playingId = nil
         deactivateSession()
     }
 
@@ -53,6 +59,7 @@ extension AudioPlaybackService: AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         DispatchQueue.main.async {
             self.isPlaying = false
+            self.playingId = nil
             self.deactivateSession()
         }
     }
@@ -61,6 +68,7 @@ extension AudioPlaybackService: AVAudioPlayerDelegate {
         Log.warn(.ws, "AudioPlaybackService decode error: \(error?.localizedDescription ?? "unknown")")
         DispatchQueue.main.async {
             self.isPlaying = false
+            self.playingId = nil
             self.deactivateSession()
         }
     }

@@ -189,6 +189,28 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Append an attachment to an existing message row. Used to merge a
+    /// server-rendered voice note onto the text bubble it replies to (one
+    /// combined bubble: audio + text) instead of inserting a separate row.
+    /// Returns false if no row with `id` exists yet — the caller then falls
+    /// back to a normal insert (the audio shows as its own bubble).
+    @discardableResult
+    func appendAttachment(toRowId id: String, attachment: V2.Attachment) throws -> Bool {
+        try writer.write { db in
+            guard let row = try Row.fetchOne(
+                db, sql: "SELECT attachments_json FROM messages WHERE id=?", arguments: [id]
+            ) else { return false }
+            var atts: [V2.Attachment] = []
+            if let json: String = row["attachments_json"], let data = json.data(using: .utf8) {
+                atts = (try? JSONDecoder().decode([V2.Attachment].self, from: data)) ?? []
+            }
+            atts.append(attachment)
+            let merged = String(data: try JSONEncoder().encode(atts), encoding: .utf8)
+            try db.execute(sql: "UPDATE messages SET attachments_json=? WHERE id=?", arguments: [merged, id])
+            return true
+        }
+    }
+
     func cursor(_ k: CursorKey) throws -> Int {
         try writer.read { db in
             try Int.fetchOne(db, sql: "SELECT v FROM cursors WHERE k=?",

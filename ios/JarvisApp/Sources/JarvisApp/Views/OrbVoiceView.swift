@@ -80,6 +80,12 @@ struct OrbVoiceView: View {
         .onChange(of: coordinator.ws.messages.last?.id) {
             handleNewAssistantMessage()
         }
+        // The voice note attaches onto the existing text row (id unchanged), so
+        // also react when the last message GAINS audio — that's the async note
+        // landing, which the await-loop is waiting for.
+        .onChange(of: coordinator.ws.messages.last?.audioInfo?.url) {
+            handleNewAssistantMessage()
+        }
     }
 
     // MARK: – Subviews

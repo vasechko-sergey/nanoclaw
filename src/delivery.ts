@@ -380,12 +380,22 @@ async function deliverMessage(
       ? readOutboxFiles(session.agent_group_id, session.id, msg.id, content.files as string[])
       : undefined;
 
+  // For the iOS app, stamp the outbound DB row id as the message id so the
+  // device stores the reply under a STABLE id. A voice note rendered later
+  // (fire-and-forget, below) references this same id via `reply_to_id`, letting
+  // the app attach the audio to the exact text bubble it belongs to — robust
+  // when the user fires several messages while a slow render is in flight.
+  // Other channels ignore content.id, so scope the rewrite to ios-app-v2.
+  const deliverContent =
+    msg.channel_type === 'ios-app-v2'
+      ? JSON.stringify({ ...(content as Record<string, unknown>), id: (content as { id?: string }).id ?? msg.id })
+      : msg.content;
   const platformMsgId = await deliveryAdapter.deliver(
     msg.channel_type,
     msg.platform_id,
     msg.thread_id,
     msg.kind,
-    msg.content,
+    deliverContent,
     files,
     session.agent_group_id,
   );
@@ -447,7 +457,7 @@ async function deliverMessage(
             vPlatformId,
             vThreadId,
             vKind,
-            JSON.stringify({ operation: 'send_voice' }),
+            JSON.stringify({ operation: 'send_voice', reply_to_id: vMsgId }),
             [{ filename: 'reply.ogg', data: opus, operation: 'send_voice' as const }],
             vAgentGroupId,
           );

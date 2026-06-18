@@ -117,12 +117,16 @@ enum V2 {
         let attachments: [Attachment]?
         let context: InlineContext?
         let agent_id: String?
-        init(thread_id: String, text: String, attachments: [Attachment]? = nil, context: InlineContext? = nil, agent_id: String? = nil) {
+        /// Set on a server-rendered voice note: the id of the text message this
+        /// audio belongs to. The client attaches the audio to that bubble.
+        let reply_to_id: String?
+        init(thread_id: String, text: String, attachments: [Attachment]? = nil, context: InlineContext? = nil, agent_id: String? = nil, reply_to_id: String? = nil) {
             self.thread_id = thread_id
             self.text = text
             self.attachments = attachments
             self.context = context
             self.agent_id = agent_id
+            self.reply_to_id = reply_to_id
         }
     }
 

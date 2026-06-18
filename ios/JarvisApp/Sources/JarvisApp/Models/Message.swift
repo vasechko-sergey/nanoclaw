@@ -57,6 +57,10 @@ struct ChatMessage: Identifiable {
     /// column. `nil` is treated as legacy jarvis traffic by `ChatView` so
     /// pre-T7 rows still render under the Jarvis chip.
     var agentId: String? = nil
+    /// A server-rendered voice note attached to this (text) message. Rendered as
+    /// a play control above the text in ONE combined bubble. Audio bytes are
+    /// base64 in `FileInfo.url`.
+    var attachedAudio: FileInfo? = nil
 
     enum Role { case user, assistant, system }
 
@@ -81,8 +85,11 @@ struct ChatMessage: Identifiable {
         }
     }
 
-    /// The audio FileInfo if this message carries a server voice note.
+    /// The audio FileInfo if this message carries a server voice note — either
+    /// attached to a text bubble (the normal case) or as a standalone `.audio`
+    /// message (fallback when the text row wasn't found for merging).
     var audioInfo: FileInfo? {
+        if let a = attachedAudio { return a }
         if case .audio(let f) = content { return f }
         return nil
     }
