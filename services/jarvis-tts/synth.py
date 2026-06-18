@@ -1,6 +1,6 @@
 import logging, os, subprocess, tempfile, threading
 import soundfile as sf
-from config import CKPT_FILE, VOCAB_FILE, MODEL_NAME, VOICES, CPU_THREADS
+from config import CKPT_FILE, VOCAB_FILE, MODEL_NAME, VOICES, CPU_THREADS, NFE_STEP
 from textprep import strip_markdown, chunk_text
 
 log = logging.getLogger("jarvis-tts")
@@ -47,7 +47,7 @@ def synth_to_opus(text: str, voice: str, max_chars: int) -> bytes:
             sr_out = 24000
             for chunk in chunk_text(clean, max_chars):
                 gen = _accent.process_all(chunk)
-                wav, sr, _ = _model.infer(ref_file=ref_wav, ref_text=ref_text, gen_text=gen)
+                wav, sr, _ = _model.infer(ref_file=ref_wav, ref_text=ref_text, gen_text=gen, nfe_step=NFE_STEP)
                 sr_out = sr
                 segments.append(wav)
             import numpy as np

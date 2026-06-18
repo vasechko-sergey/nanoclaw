@@ -4,3 +4,6 @@ fastapi==0.115.6
 uvicorn==0.34.0
 soundfile==0.12.1
 certifi
+# torchaudio>=2.9 routes load() through torchcodec; required at runtime.
+# Needs system ffmpeg libs. Install CPU build: uv pip install --torch-backend=cpu torch torchaudio torchcodec
+torchcodec
