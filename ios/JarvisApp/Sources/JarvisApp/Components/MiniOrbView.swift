@@ -45,6 +45,18 @@ struct MiniOrbView: View {
         mood == .listening || mood == .speaking
     }
 
+    /// Resting moods barely move. This orb lives in the always-mounted input
+    /// bar and idles at `.calm` the entire time the user types — animating it
+    /// per-frame there redrew the Canvas on the main thread for nothing and
+    /// starved touch handling. Render a single static frame unless the orb is
+    /// genuinely in motion (recording / thinking / speaking).
+    private var isAnimated: Bool {
+        switch mood {
+        case .listening, .speaking, .processing: true
+        default: false
+        }
+    }
+
     var body: some View {
         ZStack {
             // Pulsing ring when recording
@@ -68,8 +80,8 @@ struct MiniOrbView: View {
             // otherwise render one static frame so we stop redrawing every
             // display frame when backgrounded/idle. Visuals are identical
             // while active.
-            if scenePhase == .active {
-                TimelineView(.animation) { timeline in
+            if scenePhase == .active && isAnimated {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                     orbCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
                 }
             } else {
@@ -79,7 +91,7 @@ struct MiniOrbView: View {
             // Particle overlay: 3 dots rotating around the orb, only for .processing at size >= 20
             if size >= 20 && mood == .processing {
                 if scenePhase == .active {
-                    TimelineView(.animation) { timeline in
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                         particleCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
                     }
                 } else {

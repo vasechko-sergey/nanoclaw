@@ -31,6 +31,17 @@ enum HealthSync {
     private static let debounceLock = NSLock()
     private static let observerDebounce: TimeInterval = 60
 
+    /// Global gate that collapses the initial observer storm. All 12 observers
+    /// fire on first registration; each would otherwise independently fetch
+    /// 3 days × ALL types + upload. `pushRecent` already covers every type, so
+    /// one run suffices — simultaneous fires coalesce into a single fetch+upload
+    /// and a fresh-enough push is skipped entirely. Without this, cold launch
+    /// kicked ~12 concurrent fan-outs (CPU/memory spike → jettison risk).
+    private static var pushInFlight = false
+    private static var lastPushAt: Date?
+    private static let pushLock = NSLock()
+    private static let minPushInterval: TimeInterval = 90
+
     /// Returns true if a fire for `key` should be handled (and stamps it),
     /// false if it lands inside the debounce window. Thread-safe — observer
     /// callbacks fire on arbitrary background queues, concurrently across types.
@@ -51,14 +62,42 @@ enum HealthSync {
             let key = t.identifier
             let q = HKObserverQuery(sampleType: t, predicate: nil) { _, completion, _ in
                 // On a background wake: drain any pending server fetch requests AND
-                // push recent days. Both over HTTP (no APNs).
+                // push recent days. Both over HTTP (no APNs). Coalesced globally
+                // so simultaneous fires (e.g. all types at first registration)
+                // collapse into one fetch+upload.
                 guard shouldHandle(key) else { completion(); return }
-                HealthRequests.drain {
-                    pushRecent { completion() }
-                }
+                handleObserverFire(completion)
             }
             store.execute(q)
             store.enableBackgroundDelivery(for: t, frequency: .hourly) { _, _ in }
+        }
+    }
+
+    /// Globally-coalesced fetch+upload. Collapses near-simultaneous observer
+    /// fires (the first-registration storm across all sample types) into a
+    /// single run, and skips a fire entirely if a push ran within
+    /// `minPushInterval`. Always invokes `completion` so HealthKit's background
+    /// task isn't left hanging.
+    private static func handleObserverFire(_ completion: @escaping () -> Void) {
+        pushLock.lock()
+        let now = Date()
+        let recentlyPushed = lastPushAt.map { now.timeIntervalSince($0) < minPushInterval } ?? false
+        if pushInFlight || recentlyPushed {
+            pushLock.unlock()
+            completion()
+            return
+        }
+        pushInFlight = true
+        pushLock.unlock()
+
+        HealthRequests.drain {
+            pushRecent {
+                pushLock.lock()
+                pushInFlight = false
+                lastPushAt = Date()
+                pushLock.unlock()
+                completion()
+            }
         }
     }
 

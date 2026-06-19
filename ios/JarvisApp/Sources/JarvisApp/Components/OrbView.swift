@@ -79,7 +79,11 @@ struct OrbView: View {
     var body: some View {
         Group {
             if scenePhase == .active {
-                TimelineView(.animation) { timeline in
+                // Cap at 30fps. The Canvas rebuilds ~hundreds of path ops per
+                // frame on the main thread; at ProMotion's 120Hz that starved
+                // touch handling. 30fps is imperceptible for this slow rotation
+                // and cuts the per-second main-thread cost ~4×.
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                     orbCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
                 }
             } else {

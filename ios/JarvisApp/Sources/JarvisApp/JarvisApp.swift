@@ -13,12 +13,20 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-        // Passive background health sync (HealthKit background delivery → HTTP upload).
-        HealthSync.start()
         // Time-based morning backstop: a daily ~08:00 upload floor even when no
-        // new-sample wake fires. register() MUST run before launch finishes.
+        // new-sample wake fires. register() MUST run before launch finishes
+        // (BGTaskScheduler requirement), so it stays synchronous here.
         HealthBackgroundTask.register()
         HealthBackgroundTask.schedule()
+        // Passive background health sync (HealthKit background delivery → HTTP
+        // upload). Deferred OFF the launch critical path: registering 12
+        // observers + their first-fire fetch/upload fan-out at cold launch
+        // spiked CPU/memory and competed with first paint (slow starts +
+        // occasional launch jettison). Background delivery is unaffected —
+        // observers just register a moment after the UI is up.
+        Task.detached(priority: .utility) {
+            HealthSync.start()
+        }
         return true
     }
 
