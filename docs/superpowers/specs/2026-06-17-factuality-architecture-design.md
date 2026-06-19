@@ -110,9 +110,17 @@ writeMessageOut → host delivery
 
 **Phase 1 — Cheap core (highest impact, ≈free gate).** L0 prompt nudge + L1 tool-shaping for the pilot agent + L2 detector + **deterministic** L3 (numeric/currency/date match vs tool output) + L7 block/regenerate. Pilot on **Scrooge** with a Bybit-fee script: re-run the fee probe → must use the script or hedge, never fabricate. Covers structured/quantitative tool-derivable facts.
 
-**Phase 2 — Judge + forced-tool.** Haiku entailment in L3 for fuzzy/prose tool-derived claims; forced-tool enforcement (facts that should be checkable but no tool ran → block). Extend L1 scripts to the other agents' core domains. Roll the gate to all 5.
+**Phase 2 — Prose fact analysis (committed next increment — coverage moves from numbers to facts).** This is where "fact-checking" actually lands; Phase 1 numbers are only the foundation. Reuses the Phase 1 skeleton (grounding set, claim detect, gate-at-result, regenerate, flag) and adds:
+- **Judge-vs-tool-output (Haiku entailment):** for prose that *should* trace to a tool the agent ran this turn — verify the claim against that output; catches confident-wrong. Plus forced-tool enforcement (a checkable claim with no tool call → block).
+- Extend L1 scripts to every agent's core domains; roll the gate to all 5.
 
-**Phase 3 — Parametric coverage.** L5 factored CoVe for non-tool facts; shared web-search tool so open-domain becomes verifiable; sampling triage for cost. Closes the residual as far as structurally possible; remaining = confident-wrong open-domain with no source → hedge/abstain.
+**Phase 3 — Parametric prose + residual.** For prose with no this-turn source:
+- **Factored CoVe is the PRIMARY mechanism, not the judge.** Re-asks the atomic claim in an isolated prompt: confabulated prose flips (→ hedge), true facts survive (→ keep).
+- **Shared web-search tool** so high-stakes parametric prose becomes verifiable (→ tool-derived → judge).
+- **Sampling triage** to bound cost (which claims escalate).
+- Residual = confident-wrong open-domain prose with no source → hedge/abstain (structurally irreducible).
+
+**Prose design constraint (load-bearing).** NEVER gate prose by "must be grounded in this-turn output" alone — that flags *all* parametric prose as ungrounded, including true common knowledge ("Париж — столица Франции"), and forces needless hedging/lookup (the useless over-cautious agent). Prose correctness = CoVe (catch the unsure) + judge (verify the tool-derived) + web-search (look up the high-stakes), never blanket tool-grounding. (Numbers in Phase 1 don't have this problem — a number either matches a source or is genuinely suspect.)
 
 **Flag:** per-agent config `factuality_gate: off|deterministic|full` (default off), so rollout is staged and reversible.
 
