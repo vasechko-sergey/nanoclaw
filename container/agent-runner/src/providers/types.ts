@@ -114,8 +114,10 @@ export type ProviderEvent =
    * idle timer.
    */
   | { type: 'tool_use_start'; id: string }
-  /** Pair of `tool_use_start`. See that event's docs. */
-  | { type: 'tool_use_end'; id: string }
+  /** Pair of `tool_use_start`. See that event's docs. `output` carries the
+   *  tool_result text (when the provider can surface it) so the poll-loop can
+   *  build a per-turn grounding set for the factuality gate. */
+  | { type: 'tool_use_end'; id: string; output?: string }
   /**
    * Liveness signal. Providers MUST yield this on every underlying SDK
    * event (tool call, thinking, partial message, anything) so the
