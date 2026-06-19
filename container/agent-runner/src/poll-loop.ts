@@ -15,6 +15,9 @@ import {
 } from './formatter.js';
 import { onContextResponse } from './mcp-tools/request_context.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
+import type { FactualityGate } from './config.js';
+import { extractDataNumbers } from './verification/numbers.js';
+import { gateOutboundText } from './verification/poll-gate.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -40,6 +43,13 @@ const ACTIVE_POLL_INTERVAL_MS = 500;
  * turn (see the suppression in the abort branch below).
  */
 const STREAM_IDLE_TIMEOUT_MS = 240_000;
+
+/**
+ * Max times the factuality gate may bounce a turn back to the agent to
+ * re-ground an ungrounded number before giving up and delivering a hedged
+ * version. Keeps a stubborn fabricator from looping forever.
+ */
+const FACTUALITY_MAX_RETRIES = 2;
 
 function log(msg: string): void {
   console.error(`[poll-loop] ${msg}`);
@@ -117,6 +127,8 @@ export interface PollLoopConfig {
   systemContext?: {
     instructions?: string;
   };
+  /** Factuality gate mode for this agent. Default 'off' = no behavior change. */
+  factualityGate?: FactualityGate;
 }
 
 /**
@@ -271,6 +283,15 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
     log(`Processing ${keep.length} message(s), kinds: ${[...new Set(keep.map((m) => m.kind))].join(',')}`);
 
+    // Factuality gate: seed the per-turn grounding set with the numbers the
+    // user already supplied this turn (the prompt). Tool outputs get folded in
+    // as tool_use_end events arrive. When the gate is off this is unused.
+    const gateOn = (config.factualityGate ?? 'off') !== 'off';
+    const grounding = new Set<string>();
+    if (gateOn) {
+      for (const n of extractDataNumbers(prompt)) grounding.add(n);
+    }
+
     const query = config.provider.query({
       prompt,
       continuation,
@@ -294,7 +315,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     setCurrentInReplyTo(routing.inReplyTo);
     let leaveForRetry = false;
     try {
-      const result = await processQuery(query, routing, processingIds, config.providerName);
+      const result = await processQuery(query, routing, processingIds, config.providerName, gateOn, grounding);
       if (result.continuation && result.continuation !== continuation) {
         continuation = result.continuation;
         setContinuation(config.providerName, continuation);
@@ -448,6 +469,8 @@ async function processQuery(
   routing: RoutingContext,
   initialBatchIds: string[],
   providerName: string,
+  gateOn = false,
+  grounding: Set<string> = new Set(),
 ): Promise<QueryResult> {
   let queryContinuation: string | undefined;
   let done = false;
@@ -540,6 +563,10 @@ async function processQuery(
         resultReceived = false;
         resetUserFacingDispatch();
         query.push(prompt);
+        // Fold follow-up user numbers into the grounding set too.
+        if (gateOn) {
+          for (const n of extractDataNumbers(prompt)) grounding.add(n);
+        }
         markCompleted(keptIds);
       } catch (err) {
         // Without this catch the rejection escapes the void IIFE and Node
@@ -581,6 +608,9 @@ async function processQuery(
   // a misleading error after a perfectly fine answer. Reset to false on
   // every push() so a genuinely stalled follow-up still gets the fallback.
   let resultReceived = false;
+  // Factuality gate: how many times this turn has been bounced back to the
+  // agent to re-ground a number. Capped by FACTUALITY_MAX_RETRIES.
+  let factualityRetries = 0;
   // Tool-use ids that started but haven't reported back. While this set is
   // non-empty, the idle watchdog is in "tool-tolerant" mode: an idle
   // window means a long-running Bash/MCP call, not a wedged stream. The
@@ -701,6 +731,11 @@ async function processQuery(
         inFlightTools.add(event.id);
       } else if (event.type === 'tool_use_end') {
         inFlightTools.delete(event.id);
+        // Fold this tool's output into the per-turn grounding set so the
+        // factuality gate can trace the agent's numbers back to a source.
+        if (gateOn && event.output) {
+          for (const n of extractDataNumbers(event.output)) grounding.add(n);
+        }
       }
 
       if (event.type === 'init') {
@@ -729,8 +764,13 @@ async function processQuery(
         // Closed blocks recorded in `dispatchedKeys` so the result-side
         // pass below skips them — no duplicate user-facing messages.
         streamBuffer += event.text;
-        const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
-        streamBuffer = remainder;
+        // Factuality gate buffers the whole turn: blocks must be gated against
+        // the complete grounding set at `result`, so we cannot stream them out
+        // early. When the gate is off, dispatch streams as before.
+        if (!gateOn) {
+          const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+          streamBuffer = remainder;
+        }
       } else if (event.type === 'result') {
         // Transient upstream failure (529 overloaded / 5xx / rate-limit): the
         // SDK exhausted its own retries and surfaced the error as the turn's
@@ -769,24 +809,67 @@ async function processQuery(
           // result.text below covers the full turn and is the canonical
           // scratchpad source.
           streamBuffer = '';
-          const { hasUnwrapped } = dispatchResultText(event.text, routing, dispatchedKeys);
-          // Per-turn dedupe — drop the set now that the turn is fully
-          // closed so any follow-up push() can re-send identical content
-          // without being silently suppressed.
-          dispatchedKeys = new Set<string>();
-          if (hasUnwrapped && !unwrappedNudged) {
-            unwrappedNudged = true;
-            const destinations = getAllDestinations();
-            const names = destinations.map((d) => d.name).join(', ');
-            // Same reset as the channel-push path: the nudge starts a
-            // fresh turn, so the post-result fast-exit must re-arm.
-            resultReceived = false;
-            query.push(
-              `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
-                `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
-                `Your destinations: ${names}. ` +
-                `Please re-send your response with the correct wrapping.</system>`,
-            );
+          if (gateOn) {
+            // Factuality gate: every <message> block's numbers must trace to
+            // this turn's tool outputs or the user's message. Ungrounded →
+            // bounce back to the agent to verify/hedge (capped); on exhaustion
+            // deliver a hedged version so the user still gets a reply.
+            const verdict = gateOutboundText(event.text, grounding);
+            if (!verdict.grounded && factualityRetries < FACTUALITY_MAX_RETRIES) {
+              factualityRetries++;
+              log(
+                `Factuality gate: ungrounded [${verdict.ungrounded.join(', ')}] — bouncing (retry ${factualityRetries}/${FACTUALITY_MAX_RETRIES})`,
+              );
+              resultReceived = false; // a correction starts a fresh turn
+              query.push(
+                `<system>Your reply stated these numbers with no source this turn: ${verdict.ungrounded.join(', ')}. ` +
+                  `Do not state a number you did not get from a tool/script output or the user this turn. ` +
+                  `Call the right tool/script to verify it, or remove/hedge the number, then re-send your full reply.</system>`,
+              );
+            } else {
+              if (!verdict.grounded) {
+                log(
+                  `Factuality gate: retry budget exhausted — delivering hedged (ungrounded [${verdict.ungrounded.join(', ')}])`,
+                );
+              }
+              const finalText = verdict.grounded
+                ? event.text
+                : `${event.text}\n\n⚠️ Часть чисел выше я не смог подтвердить по источнику — перепроверь перед использованием.`;
+              const { hasUnwrapped } = dispatchResultText(finalText, routing, dispatchedKeys);
+              dispatchedKeys = new Set<string>();
+              if (hasUnwrapped && !unwrappedNudged) {
+                unwrappedNudged = true;
+                const destinations = getAllDestinations();
+                const names = destinations.map((d) => d.name).join(', ');
+                resultReceived = false;
+                query.push(
+                  `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
+                    `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
+                    `Your destinations: ${names}. ` +
+                    `Please re-send your response with the correct wrapping.</system>`,
+                );
+              }
+            }
+          } else {
+            const { hasUnwrapped } = dispatchResultText(event.text, routing, dispatchedKeys);
+            // Per-turn dedupe — drop the set now that the turn is fully
+            // closed so any follow-up push() can re-send identical content
+            // without being silently suppressed.
+            dispatchedKeys = new Set<string>();
+            if (hasUnwrapped && !unwrappedNudged) {
+              unwrappedNudged = true;
+              const destinations = getAllDestinations();
+              const names = destinations.map((d) => d.name).join(', ');
+              // Same reset as the channel-push path: the nudge starts a
+              // fresh turn, so the post-result fast-exit must re-arm.
+              resultReceived = false;
+              query.push(
+                `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
+                  `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
+                  `Your destinations: ${names}. ` +
+                  `Please re-send your response with the correct wrapping.</system>`,
+              );
+            }
           }
         }
       }
