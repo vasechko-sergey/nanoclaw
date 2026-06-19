@@ -9,6 +9,14 @@ import fs from 'fs';
 
 const CONFIG_PATH = '/workspace/agent/container.json';
 
+/** Factuality gate mode (see docs/superpowers/specs/2026-06-17-factuality-architecture-design.md). */
+export type FactualityGate = 'off' | 'deterministic' | 'full';
+
+/** Coerce a raw container.json value to a known gate mode; unknown → 'off'. */
+export function parseFactualityGate(raw: unknown): FactualityGate {
+  return raw === 'deterministic' || raw === 'full' ? raw : 'off';
+}
+
 export interface RunnerConfig {
   provider: string;
   assistantName: string;
@@ -18,6 +26,7 @@ export interface RunnerConfig {
   mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
   model?: string;
   effort?: string;
+  factualityGate: FactualityGate;
 }
 
 const DEFAULT_MAX_MESSAGES = 10;
@@ -47,6 +56,7 @@ export function loadConfig(): RunnerConfig {
     mcpServers: (raw.mcpServers as RunnerConfig['mcpServers']) || {},
     model: (raw.model as string) || undefined,
     effort: (raw.effort as string) || undefined,
+    factualityGate: parseFactualityGate(raw.factualityGate),
   };
 
   return _config;
