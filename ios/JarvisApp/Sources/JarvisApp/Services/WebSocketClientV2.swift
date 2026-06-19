@@ -409,7 +409,14 @@ final class WebSocketClientV2 {
         }
 
         // T10: subscribe to ALL agents' rows; ChatView filters by active chip.
+        // Map StoredMessage → ChatMessage (JSON-decode attachments + decode and
+        // downsample images) INSIDE the observation via `.map`, so it runs on
+        // GRDB's background reduce queue — NOT the main thread. Previously the
+        // flatMap ran in `onChange` on the main queue, so every emit decoded the
+        // photo history on main; image-heavy agents (e.g. Gordon) froze the UI
+        // on a blank screen. `onChange` now only assigns the already-mapped array.
         let observation = stack.store.observeAllMessages()
+            .map { rows in rows.flatMap(Self.toChatMessage) }
 
         observationCancellable = observation.start(
             in: stack.dbq,
@@ -417,9 +424,8 @@ final class WebSocketClientV2 {
             onError: { error in
                 Log.warn(.ws, "WebSocketClientV2 ValueObservation error: \(error)")
             },
-            onChange: { [weak self] rows in
+            onChange: { [weak self] mapped in
                 guard let self else { return }
-                let mapped = rows.flatMap(Self.toChatMessage)
                 // Detect new assistant arrivals for haptic + auto-speak hooks.
                 let oldIds = Set(self.messages.map { $0.id })
                 let newAssistant = mapped.filter {
@@ -458,7 +464,11 @@ final class WebSocketClientV2 {
     /// every insert and caps retained bitmap memory.
     private static let imageCache: NSCache<NSString, UIImage> = {
         let c = NSCache<NSString, UIImage>()
-        c.countLimit = 80
+        // Cost-bounded (bytes), not count-bounded: a count cap of 80 thrashed on
+        // photo-heavy agents (Gordon's food log), forcing constant re-decode.
+        // ~128MB of downsampled (720px ≈ 2MB) bitmaps ≈ 60 images; NSCache also
+        // evicts under real memory pressure.
+        c.totalCostLimit = 128 * 1024 * 1024
         return c
     }()
 
@@ -483,7 +493,10 @@ final class WebSocketClientV2 {
         } else {
             img = UIImage(data: data)
         }
-        if let img { imageCache.setObject(img, forKey: key) }
+        if let img {
+            let cost = Int(img.size.width * img.scale * img.size.height * img.scale) * 4
+            imageCache.setObject(img, forKey: key, cost: cost)
+        }
         return img
     }
 
