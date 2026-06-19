@@ -11,6 +11,26 @@ function log(msg: string): void {
   console.error(`[claude-provider] ${msg}`);
 }
 
+/**
+ * Pull plain text out of an SDK tool_result `content` field, which may be a
+ * string or an array of `{ type: 'text', text }` blocks. Feeds the factuality
+ * gate's per-turn grounding set (see verification/). Returns '' for shapes we
+ * can't read (images, structured blocks without text).
+ */
+export function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c) =>
+        c && typeof c === 'object' && 'text' in c && typeof (c as { text?: unknown }).text === 'string'
+          ? (c as { text: string }).text
+          : '',
+      )
+      .join('');
+  }
+  return '';
+}
+
 // Deferred SDK builtins that either sidestep nanoclaw's own scheduling or
 // don't fit our async message-passing model (they're designed for Claude
 // Code's interactive UI and would hang here).
@@ -357,9 +377,9 @@ export class ClaudeProvider implements AgentProvider {
           const content = (message as { message?: { content?: unknown[] } }).message?.content;
           if (Array.isArray(content)) {
             for (const part of content) {
-              const p = part as { type?: string; tool_use_id?: string };
+              const p = part as { type?: string; tool_use_id?: string; content?: unknown };
               if (p.type === 'tool_result' && typeof p.tool_use_id === 'string' && p.tool_use_id.length > 0) {
-                yield { type: 'tool_use_end', id: p.tool_use_id };
+                yield { type: 'tool_use_end', id: p.tool_use_id, output: extractToolResultText(p.content) };
               }
             }
           }
