@@ -511,12 +511,11 @@ final class WebSocketClientV2 {
 
         if let attJSON = row.attachmentsJSON,
            let data = attJSON.data(using: .utf8),
-           let atts = try? JSONDecoder().decode([V2.Attachment].self, from: data),
+           let atts = try? JSONDecoder().decode([StoredAttachment].self, from: data),
            let first = atts.first {
 
-            // Voice note → ONE combined bubble: a play control above the text,
-            // no filename caption. The server attaches the rendered voice note
-            // onto the text row it replies to, so a single row carries both.
+            // Voice note → ONE combined bubble (play control above text, no
+            // caption). Audio bytes stay inline in bytes_base64.
             if first.kind == "audio" || first.mime_type.hasPrefix("audio/") {
                 let audioInfo = FileInfo(
                     name: first.name,
@@ -534,7 +533,7 @@ final class WebSocketClientV2 {
 
             var out: [ChatMessage] = []
 
-            // Caption bubble (if the user/agent typed text alongside the file).
+            // Caption bubble (typed text alongside the attachment).
             let caption = row.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !caption.isEmpty {
                 var t = ChatMessage.text(row.id + "-text", role: role, text: row.text, timestamp: timestamp)
@@ -544,16 +543,17 @@ final class WebSocketClientV2 {
             }
 
             // Attachment bubble keeps the bare `row.id` so delivery-status
-            // updates (looked up by the stored row id) still land on it.
+            // updates (looked up by stored row id) still land on it.
             var attMsg: ChatMessage
-            // Decode through an id-keyed cache + downsample. Without the cache,
-            // the ValueObservation re-decoded EVERY image in the 500-row window
-            // on every insert (main-thread JPEG decode storm → hangs); without
-            // downsampling each decoded UIImage held its full-res bitmap
-            // (~48MB for a 12MP photo → memory jetsam). Row content is immutable
-            // for a given id, so caching by row.id is safe.
-            if first.kind == "image", let b64 = first.bytes_base64,
-               let image = cachedDownsampledImage(rowId: row.id, base64: b64) {
+            if first.kind == "image", let sha = first.sha256,
+               let thumb = ChatImageStore.shared.thumbnail(sha: sha) {
+                // New path: 480px thumbnail from the file store; tap resolves
+                // the full-res original via `imageSHA`.
+                attMsg = ChatMessage.image(row.id, role: role, image: thumb, filename: first.name, timestamp: timestamp)
+                attMsg.imageSHA = sha
+            } else if first.kind == "image", let b64 = first.bytes_base64,
+                      let image = cachedDownsampledImage(rowId: row.id, base64: b64) {
+                // Legacy un-migrated row: inline base64 → 720px decode (as before).
                 attMsg = ChatMessage.image(row.id, role: role, image: image, filename: first.name, timestamp: timestamp)
             } else {
                 let info = FileInfo(name: first.name, size: Int64(first.byte_size),
