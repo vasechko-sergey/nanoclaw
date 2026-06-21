@@ -61,6 +61,11 @@ struct ChatMessage: Identifiable {
     /// a play control above the text in ONE combined bubble. Audio bytes are
     /// base64 in `FileInfo.url`.
     var attachedAudio: FileInfo? = nil
+    /// sha256 of the full-resolution image in `ChatImageStore`, when this is an
+    /// image bubble backed by the store. Lets the tap handler load the sharp
+    /// original instead of the small row thumbnail. nil for legacy inline-image
+    /// rows (they fall back to the thumbnail in the full-screen view).
+    var imageSHA: String? = nil
 
     enum Role { case user, assistant, system }
 
