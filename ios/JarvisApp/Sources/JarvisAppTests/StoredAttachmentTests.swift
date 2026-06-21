@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import Jarvis
 
 final class StoredAttachmentTests: XCTestCase {
@@ -53,5 +54,23 @@ final class StoredAttachmentTests: XCTestCase {
         let json = String(data: try JSONEncoder().encode(stored), encoding: .utf8)!
         XCTAssertTrue(json.contains("\"sha256\":\"abc\""))
         XCTAssertFalse(json.contains("bytes_base64"))           // nil optional omitted
+    }
+
+    func test_insertOutbound_movesImageBytesToStore() throws {
+        let dbq = try DatabaseQueue()           // in-memory
+        try Schema.migrate(dbq)
+        let store = ConversationStoreV2(writer: dbq)
+        let wire = V2.Attachment(id: "x", kind: "image", name: "p.jpg",
+                                 mime_type: "image/jpeg", byte_size: 3,
+                                 bytes_base64: Data("abc".utf8).base64EncodedString(),
+                                 remote_id: nil)
+        try store.insertOutboundUserMessage(id: "m1", text: "hi", attachments: [wire], context: nil)
+
+        let stored = try store.fetchById("m1")!
+        let json = stored.attachmentsJSON!
+        XCTAssertFalse(json.contains("bytes_base64"), "bytes must not stay in the row")
+        XCTAssertTrue(json.contains("sha256"))
+        let atts = try JSONDecoder().decode([StoredAttachment].self, from: Data(json.utf8))
+        XCTAssertTrue(ChatImageStore.shared.has(sha: atts[0].sha256!))
     }
 }

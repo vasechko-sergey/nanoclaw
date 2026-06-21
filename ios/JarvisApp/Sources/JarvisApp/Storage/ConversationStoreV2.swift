@@ -41,7 +41,8 @@ final class ConversationStoreV2 {
             if attachments.isEmpty {
                 attachmentsJSON = nil
             } else {
-                attachmentsJSON = String(data: try encoder.encode(attachments), encoding: .utf8)
+                let stored = attachments.map(StoredAttachment.from)
+                attachmentsJSON = String(data: try encoder.encode(stored), encoding: .utf8)
             }
             let contextJSON: String?
             if let c = context {
