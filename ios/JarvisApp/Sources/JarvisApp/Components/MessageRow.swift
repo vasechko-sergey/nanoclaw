@@ -7,7 +7,7 @@ import AVFoundation
 struct MessageRow: View {
     let message: ChatMessage
     let isLast: Bool
-    var onImageTap: ((UIImage) -> Void)? = nil
+    var onImageTap: ((_ thumbnail: UIImage, _ sha: String?) -> Void)? = nil
     var onFeedback: ((String, Bool) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil
     var onRetry: ((String) -> Void)? = nil
@@ -99,7 +99,7 @@ struct MessageRow: View {
                         .scaledToFit()
                         .frame(maxWidth: 240)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSmall))
-                        .onTapGesture { onImageTap?(img) }
+                        .onTapGesture { onImageTap?(img, message.imageSHA) }
                         .contextMenu {
                             Button {
                                 UIPasteboard.general.image = img

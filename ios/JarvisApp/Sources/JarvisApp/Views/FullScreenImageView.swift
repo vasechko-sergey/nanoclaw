@@ -2,14 +2,28 @@ import SwiftUI
 import UIKit
 
 struct FullScreenImageView: View {
-    let image: UIImage
+    /// Resolve the sharp original from the store; fall back to the row thumbnail
+    /// when there's no store ref (legacy un-migrated rows) or the file is gone.
+    let sha: String?
+    let fallback: UIImage
     @Environment(\.dismiss) private var dismiss
+
+    /// Full-resolution original, decoded once and cached in @State. Until it
+    /// lands we show the already-in-memory thumbnail (`fallback`), so the cover
+    /// appears instantly and never re-decodes from disk on later body passes.
+    @State private var fullRes: UIImage?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Theme.background.ignoresSafeArea()
-            ZoomableScrollView(image: image)
-                .ignoresSafeArea()
+            Group {
+                if let fullRes {
+                    ZoomableScrollView(image: fullRes)
+                } else {
+                    ZoomableScrollView(image: fallback)
+                }
+            }
+            .ignoresSafeArea()
             Button { dismiss() } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: Theme.scaled(32)))
@@ -20,6 +34,12 @@ struct FullScreenImageView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .task {
+            // Decode the sharp original once when the cover appears; cached in
+            // @State so subsequent body passes reuse it (no per-frame re-decode).
+            guard fullRes == nil, let sha else { return }
+            fullRes = ChatImageStore.shared.fullImage(sha: sha, maxPixel: 2048)
+        }
     }
 }
 

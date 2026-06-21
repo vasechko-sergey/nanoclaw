@@ -1,9 +1,10 @@
 import SwiftUI
 import UIKit
 
-private struct IdentifiableImage: Identifiable {
+private struct FullScreenImagePresentation: Identifiable {
     let id = UUID()
-    let image: UIImage
+    let sha: String?
+    let fallback: UIImage
 }
 
 /// Identifiable wrapper for `fullScreenCover(item:)` so SwiftUI can track
@@ -71,7 +72,7 @@ struct ChatView: View {
     @State private var inputText       = ""
     @State private var inputViaVoice   = false
     @State private var drafts: [DraftAttachment] = []
-    @State private var fullScreenImage: UIImage? = nil
+    @State private var fullScreenImage: FullScreenImagePresentation? = nil
     @State private var isScrolledUp = false
     @State private var scrollToBottomAction: (() -> Void)?
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
@@ -192,7 +193,9 @@ struct ChatView: View {
                                     MessageRow(
                                         message: msg,
                                         isLast: index == visibleMessages.count - 1,
-                                        onImageTap: { img in fullScreenImage = img },
+                                        onImageTap: { thumb, sha in
+                                            fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
+                                        },
                                         onFeedback: { messageId, isPositive in
                                             coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: msg.text)
                                         },
@@ -473,11 +476,8 @@ struct ChatView: View {
             }
             .ignoresSafeArea()
         }
-        .fullScreenCover(item: Binding(
-            get: { fullScreenImage.map { IdentifiableImage(image: $0) } },
-            set: { fullScreenImage = $0?.image }
-        )) { item in
-            FullScreenImageView(image: item.image)
+        .fullScreenCover(item: $fullScreenImage) { item in
+            FullScreenImageView(sha: item.sha, fallback: item.fallback)
         }
         .fullScreenCover(isPresented: $showVoiceFullscreen) {
             OrbVoiceView(coordinator: coordinator, onHandoffToChat: nil)
