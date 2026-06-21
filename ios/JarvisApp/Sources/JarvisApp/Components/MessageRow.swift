@@ -284,7 +284,16 @@ struct AudioNoteView: View {
         guard let player else { return }
         if isThisPlaying {
             player.stop()
-        } else if let b64 = info.url, let data = Data(base64Encoded: b64) {
+            return
+        }
+        guard let b64 = info.url else { return }
+        // Decode the base64 audio off the main thread (large clips would freeze
+        // the tap), then hand the bytes to the player on the main actor.
+        Task { @MainActor in
+            let data = await Task.detached(priority: .userInitiated) {
+                Data(base64Encoded: b64)
+            }.value
+            guard let data else { return }
             player.play(data: data, id: messageId)
         }
     }

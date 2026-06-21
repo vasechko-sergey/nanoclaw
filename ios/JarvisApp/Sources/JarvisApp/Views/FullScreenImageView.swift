@@ -35,12 +35,24 @@ struct FullScreenImageView: View {
         }
         .preferredColorScheme(.dark)
         .task {
-            // Decode the sharp original once when the cover appears; cached in
-            // @State so subsequent body passes reuse it (no per-frame re-decode).
+            // Decode the sharp original once when the cover appears, OFF the main
+            // thread (disk read + 2048px decode is tens of ms for a big photo).
+            // Cached in @State so later body passes reuse it.
             guard fullRes == nil, let sha else { return }
-            fullRes = ChatImageStore.shared.fullImage(sha: sha, maxPixel: 2048)
+            let decoded = await Task.detached(priority: .userInitiated) { () -> SendableImage? in
+                ChatImageStore.shared.fullImage(sha: sha, maxPixel: 2048).map(SendableImage.init)
+            }.value
+            if let decoded { fullRes = decoded.image }
         }
     }
+}
+
+/// UIImage isn't `Sendable`; this box carries a decoded image from a detached
+/// task back to the main actor. The image is immutable after decode, so the
+/// unchecked conformance is safe.
+private struct SendableImage: @unchecked Sendable {
+    let image: UIImage
+    init(_ image: UIImage) { self.image = image }
 }
 
 private struct ZoomableScrollView: UIViewRepresentable {
