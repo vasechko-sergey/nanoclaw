@@ -24,8 +24,11 @@ final class SchemaV3MigrationTests: XCTestCase {
             XCTAssertTrue(cols.contains("ts"))
             XCTAssertFalse(cols.contains("conversation_id"), "messages must not have conversation_id")
 
-            // supporting tables present
-            for t in ["attachments", "inbound_dedup", "cursors"] {
+            // supporting tables present. NOTE: `attachments` is intentionally
+            // NOT here — migration v6 drops that dead table (image bytes now live
+            // in ChatImageStore on disk). Its removal is covered by
+            // AttachmentMigrationTests.test_dropsAttachmentsTable.
+            for t in ["inbound_dedup", "cursors"] {
                 let exists = try Bool.fetchOne(db, sql:
                     "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",
                     arguments: [t])!
