@@ -246,6 +246,7 @@ struct ChatView: View {
                             )
                         }
                         .defaultScrollAnchor(.bottom)
+                        .modifier(BottomSizeChangesAnchor())
                         // Tap anywhere in the chat to dismiss the keyboard.
                         // Scrolling/swiping NEVER dismisses it, so hiding the
                         // keyboard never drags or scrolls the message list.
@@ -258,7 +259,9 @@ struct ChatView: View {
                             }
                         )
                         .onAppear {
-                            // Capture scroll action for FAB outside ScrollViewReader
+                            // Capture scroll action for FAB outside ScrollViewReader.
+                            // Initial bottom positioning is handled by
+                            // defaultScrollAnchor(.bottom) — no manual scroll here.
                             scrollToBottomAction = {
                                 if let last = visibleMessages.last {
                                     withAnimation(.spring(duration: 0.35, bounce: 0.1)) {
@@ -266,31 +269,32 @@ struct ChatView: View {
                                     }
                                 }
                             }
-                            if let last = visibleMessages.last {
+                        }
+                        .onChange(of: ws.messages.count) {
+                            // Keep the cached list fresh on append. Staying pinned to
+                            // the bottom is handled by defaultScrollAnchor (iOS 18
+                            // sizeChanges) and the onChange(last) fallback below.
+                            recomputeVisibleMessages()
+                        }
+                        .onChange(of: visibleMessages.last?.id) {
+                            // Fallback for iOS 16/17 (no sizeChanges anchor): keep the
+                            // newest message in view unless the user scrolled up. On
+                            // iOS 18 this also fires alongside the sizeChanges anchor;
+                            // both target the bottom, so the redundancy is harmless.
+                            guard !isScrolledUp, let last = visibleMessages.last else { return }
+                            withAnimation(.spring(duration: 0.3)) {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
-                        .onChange(of: ws.messages.count) {
-                            // Refresh the cached list up front so scroll-to-last
-                            // operates on the post-append set regardless of
-                            // `.onChange` ordering this tick.
-                            recomputeVisibleMessages()
-                            if !isScrolledUp, let last = visibleMessages.last {
-                                withAnimation(.spring(duration: 0.35, bounce: 0.1)) {
-                                    proxy.scrollTo(last.id, anchor: .bottom)
-                                }
-                            }
-                        }
                         .onChange(of: ws.isBusy) {
-                            if ws.isBusy && !isScrolledUp {
-                                // Defer one tick so SwiftUI renders the ThinkingRow before we scroll
-                                // to it. Otherwise the "thinking" id isn't yet in the scroll-view's
-                                // registry and the scroll is a no-op, leaving the orb below the fold.
-                                Task { @MainActor in
-                                    try? await Task.sleep(for: .milliseconds(50))
-                                    withAnimation(.spring(duration: 0.3)) {
-                                        proxy.scrollTo("bottom", anchor: .bottom)
-                                    }
+                            // The ThinkingRow (id "thinking") lives outside
+                            // visibleMessages, so the last?.id fallback above won't
+                            // bring it into view. On iOS 18 the sizeChanges anchor
+                            // handles it; on iOS 16/17 scroll to it explicitly.
+                            guard ws.isBusy, !isScrolledUp else { return }
+                            if #unavailable(iOS 18.0) {
+                                withAnimation(.spring(duration: 0.3)) {
+                                    proxy.scrollTo("thinking", anchor: .bottom)
                                 }
                             }
                         }
@@ -302,6 +306,11 @@ struct ChatView: View {
                             // scrolled-up state that drives the FAB.
                             isScrolledUp = false
                             Task { @MainActor in
+                                // 60ms: let the ScrollView swap to the new agent's
+                                // content before scrollTo — the new list isn't in the
+                                // scroll registry until after this layout pass. (This
+                                // is the one deliberate sleep; the content-driven
+                                // scrolls were replaced by defaultScrollAnchor.)
                                 try? await Task.sleep(for: .milliseconds(60))
                                 recomputeVisibleMessages()
                                 if let last = visibleMessages.last {
@@ -309,16 +318,7 @@ struct ChatView: View {
                                 }
                             }
                         }
-                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                            Task { @MainActor in
-                                try? await Task.sleep(for: .milliseconds(50))
-                                if ws.isBusy {
-                                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-                                } else if let last = visibleMessages.last {
-                                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                                }
-                            }
-                        }
+
                     }
                     } // GeometryReader
 
@@ -802,3 +802,15 @@ private struct DateSeparator: View {
     }
 }
 
+/// iOS 18+ keeps the scroll pinned to the bottom as content size changes (new
+/// rows, late image decode, keyboard). A no-op below iOS 18, where the
+/// `onChange(last)` fallback in ChatView handles new content instead.
+private struct BottomSizeChangesAnchor: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.defaultScrollAnchor(.bottom, for: .sizeChanges)
+        } else {
+            content
+        }
+    }
+}
