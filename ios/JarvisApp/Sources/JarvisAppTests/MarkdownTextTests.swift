@@ -22,4 +22,25 @@ final class MarkdownTextTests: XCTestCase {
         XCTAssertEqual(MarkdownText.attributedParseMisses - before, 1,
                        "repeat parses of the same string must hit the cache (one real parse)")
     }
+
+    /// Startup prewarm must populate the inline cache for paragraph + table-cell
+    /// strings, so the first real render of that message is all cache hits.
+    func test_prewarm_warmsParagraphAndTableCells() {
+        let u = UUID().uuidString
+        let md = """
+        para \(u) **x**
+
+        | h-\(u) | b |
+        |---|---|
+        | c-\(u) | d |
+        """
+        MarkdownText.prewarm(md)
+        let afterPrewarm = MarkdownText.attributedParseMisses
+
+        // Rendering the same paragraph + a table cell must NOT add new parses.
+        _ = MarkdownText.attributedInline("para \(u) **x**")
+        _ = MarkdownText.attributedInline("c-\(u)")
+        XCTAssertEqual(MarkdownText.attributedParseMisses, afterPrewarm,
+                       "post-prewarm renders of warmed strings must be cache hits")
+    }
 }

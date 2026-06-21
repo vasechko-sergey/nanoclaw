@@ -81,6 +81,10 @@ final class AppCoordinator {
         }
         if let storage {
             self.timeline = storage.timeline
+            // Warm the chat render caches (markdown parse + inline AttributedString
+            // + image thumbnails) off-main during the splash, so the first open of
+            // any agent — and switching between agents — is instant.
+            ChatPrewarmer.warmAll(store: storage.store)
         }
         self.ws = WebSocketClientV2(
             location: location,

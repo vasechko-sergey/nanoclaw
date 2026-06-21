@@ -279,6 +279,29 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// All stored rows (across agents), for the startup cache prewarm. GRDB
+    /// serializes the read, so this is safe to call from a background task.
+    func allRows() throws -> [StoredMessage] {
+        try writer.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM messages").map { row in
+                StoredMessage(
+                    id: row["id"],
+                    dir: MessageDir(rawValue: row["dir"]) ?? .out,
+                    seq: row["seq"],
+                    text: row["text"],
+                    attachmentsJSON: row["attachments_json"],
+                    contextJSON: row["context_json"],
+                    status: MessageStatus(rawValue: row["status"]) ?? .queued,
+                    failureReason: row["failure_reason"],
+                    ts: row["ts"],
+                    serverTS: row["server_ts"],
+                    createdAt: row["created_at"],
+                    agentId: row["agent_id"] ?? "jarvis"
+                )
+            }
+        }
+    }
+
     // MARK: - Single-timeline observation + retention
 
     /// Live view of the last `limit` messages for a specific agent, ordered

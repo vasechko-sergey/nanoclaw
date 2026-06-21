@@ -13,7 +13,7 @@ struct MarkdownText: View {
     }
 
     var body: some View {
-        let parts = parseBlocks(text)
+        let parts = Self.parseBlocks(text)
         VStack(alignment: .leading, spacing: Theme.scaled(6)) {
             ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                 switch part {
@@ -100,7 +100,11 @@ struct MarkdownText: View {
     /// measurement pass and on every agent switch, so without this a screen of
     /// tables re-parses hundreds of cells each time — a multi-second main-thread
     /// freeze. Pure in the input, exactly like `parseCache`.
-    private static let attrCache = NSCache<NSString, AttrBox>()
+    private static let attrCache: NSCache<NSString, AttrBox> = {
+        let c = NSCache<NSString, AttrBox>()
+        c.countLimit = 4000   // bound growth when prewarming whole history
+        return c
+    }()
 
     /// Test-only: counts real parses (cache misses) so a unit test can prove
     /// the memoization is active.
@@ -120,6 +124,26 @@ struct MarkdownText: View {
         attributedParseMisses += 1
         attrCache.setObject(AttrBox(attr), forKey: key)
         return attr
+    }
+
+    /// Warm both caches (block parse + inline AttributedString) for a message's
+    /// text WITHOUT building any views. Walks the same strings `body` would
+    /// render — text/heading/quote runs, list items, every table cell — so a
+    /// later first render is all cache hits. Pure + static → safe to call off
+    /// the main thread at launch (see `ChatPrewarmer`).
+    static func prewarm(_ text: String) {
+        for block in parseBlocks(text) {
+            switch block {
+            case .text(let s), .heading(let s, _), .blockquote(let s):
+                _ = attributedInline(s)
+            case .bulletList(let items), .orderedList(let items):
+                for item in items { _ = attributedInline(item) }
+            case .table(let rows):
+                for row in rows { for cell in row { _ = attributedInline(cell) } }
+            case .code, .rule:
+                break
+            }
+        }
     }
 
     /// Pre-process inline markdown that AttributedString doesn't handle:
@@ -224,21 +248,26 @@ struct MarkdownText: View {
     /// full line scan on every `body` evaluation; the parse is pure in `text`,
     /// so the same input always yields the same blocks. `NSCache` is
     /// thread-safe and evicts under memory pressure on its own.
-    private static let parseCache = NSCache<NSString, BlockBox>()
+    private static let parseCache: NSCache<NSString, BlockBox> = {
+        let c = NSCache<NSString, BlockBox>()
+        c.countLimit = 2000   // bound growth when prewarming whole history
+        return c
+    }()
 
     /// Memoized front door. Returns cached blocks on hit, otherwise parses
-    /// once and stores the result.
-    private func parseBlocks(_ input: String) -> [Block] {
+    /// once and stores the result. Static + pure in `input` so the static
+    /// `prewarm` can call it off the main thread.
+    private static func parseBlocks(_ input: String) -> [Block] {
         let key = input as NSString
-        if let cached = Self.parseCache.object(forKey: key) {
+        if let cached = parseCache.object(forKey: key) {
             return cached.blocks
         }
         let blocks = computeBlocks(input)
-        Self.parseCache.setObject(BlockBox(blocks), forKey: key)
+        parseCache.setObject(BlockBox(blocks), forKey: key)
         return blocks
     }
 
-    private func computeBlocks(_ input: String) -> [Block] {
+    private static func computeBlocks(_ input: String) -> [Block] {
         // First extract code fences
         let codeFencePattern = "```(\\w*)\\n([\\s\\S]*?)```"
         guard let regex = try? NSRegularExpression(pattern: codeFencePattern) else {
@@ -272,7 +301,7 @@ struct MarkdownText: View {
     }
 
     /// Parse a text segment (no code fences) into block elements.
-    private func parseTextBlocks(_ input: String) -> [Block] {
+    private static func parseTextBlocks(_ input: String) -> [Block] {
         let lines = input.components(separatedBy: "\n")
         var blocks: [Block] = []
         var textLines: [String] = []
