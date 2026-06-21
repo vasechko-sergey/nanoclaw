@@ -83,12 +83,11 @@ final class ConversationStoreV2AgentTests: XCTestCase {
                 id: "p-\(i)", text: "p\(i)", attachments: [], context: nil, agentId: "payne"
             )
         }
-        // Prune jarvis to keep=2 — should only affect jarvis bucket.
-        try store.prune(agentId: "jarvis", keep: 2)
+        // Prune globally to keep=4 (5 jarvis + 2 payne = 7 total → trim to 4).
+        try store.prune(keep: 4)
         let jarvisQueue = try store.queuedOutbound(agentId: "jarvis", limit: 100)
         let payneQueue  = try store.queuedOutbound(agentId: "payne", limit: 100)
-        XCTAssertEqual(jarvisQueue.count, 2, "jarvis bucket trimmed to 2")
-        XCTAssertEqual(payneQueue.count, 2, "payne bucket untouched by jarvis prune")
+        XCTAssertEqual(jarvisQueue.count + payneQueue.count, 4, "global prune keeps 4 newest")
     }
 
     func test_queuedOutbound_nilAgentId_returnsAllAgents() throws {
