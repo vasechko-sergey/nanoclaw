@@ -158,6 +158,22 @@ struct ChatView: View {
         )
     }
 
+    /// On keyboard show/hide the viewport resizes; with image rows the bottom
+    /// anchor can overshoot into empty space (a black gap, "scroll runs off").
+    /// Re-pin to the last message after the inset settles — `proxy.scrollTo`
+    /// clamps to the valid range, so it can't overshoot. Skipped if the user has
+    /// deliberately scrolled up.
+    private func repinOnKeyboardChange(_ proxy: ScrollViewProxy) {
+        guard !isScrolledUp else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !isScrolledUp, let last = visibleMessages.last else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(last.id, anchor: .bottom)
+            }
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
         VStack(spacing: 0) {
@@ -254,7 +270,11 @@ struct ChatView: View {
                         .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
                         .scrollContentBackground(.hidden)
                         .modifier(
-                            ScrolledUpDetector(threshold: 80, viewportHeight: geo.size.height) { up in
+                            // 160, not 80: at rest (pinned to bottom) the content-bottom
+                            // vs visible-bottom gap on these layouts exceeds 80, so the
+                            // FAB was permanently showing. Raise the threshold so it only
+                            // appears once you've actually scrolled up.
+                            ScrolledUpDetector(threshold: 160, viewportHeight: geo.size.height) { up in
                                 setScrolledUp(up)
                             }
                         )
@@ -317,6 +337,12 @@ struct ChatView: View {
                                     proxy.scrollTo(last.id, anchor: .bottom)
                                 }
                             }
+                        }
+                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                            repinOnKeyboardChange(proxy)
+                        }
+                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                            repinOnKeyboardChange(proxy)
                         }
 
                     }
