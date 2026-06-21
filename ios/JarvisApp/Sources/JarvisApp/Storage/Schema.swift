@@ -129,6 +129,12 @@ enum Schema {
                 CREATE INDEX idx_set_log_pending ON set_log_queue (delivered, workout_id, set_idx);
             """)
         }
+        m.registerMigration("v6-drop-attachments-table") { db in
+            // The `attachments` table was created but never written to or read —
+            // all attachment data lived in `messages.attachments_json`. Image
+            // bytes now live in ChatImageStore (on disk). Drop the dead table.
+            try db.execute(sql: "DROP TABLE IF EXISTS attachments;")
+        }
         try m.migrate(writer)
     }
 }

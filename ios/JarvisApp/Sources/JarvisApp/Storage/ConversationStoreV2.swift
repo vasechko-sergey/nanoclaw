@@ -346,8 +346,7 @@ final class ConversationStoreV2 {
     }
 
     /// Hard-cap retention, per agent. Deletes messages in this agent's bucket
-    /// beyond `keep` newest, and any orphaned attachments rows. Called by
-    /// `MessageTimeline` after each insert.
+    /// beyond `keep` newest. Called by `MessageTimeline` after each insert.
     /// Keep only the most recent `keep` messages across ALL agents — matches the
     /// global 500-row timeline fetch. Was previously per-agent with a default
     /// `agentId: "jarvis"`, so non-jarvis timelines (payne/greg/scrooge) were
@@ -361,10 +360,6 @@ final class ConversationStoreV2 {
                 DELETE FROM messages
                 WHERE id NOT IN (SELECT id FROM messages ORDER BY ts DESC LIMIT ?)
             """, arguments: [keep])
-            try db.execute(sql: """
-                DELETE FROM attachments
-                WHERE message_id NOT IN (SELECT id FROM messages)
-            """)
         }
     }
 }
