@@ -37,7 +37,20 @@ enum AppV2Bootstrap {
         )
         let dbURL = docs.appendingPathComponent("jarvis-v2.sqlite")
         let dbq = try DatabaseQueue(path: dbURL.path)
+
+        // Point the shared image store at its on-disk home before the schema
+        // migration / one-shot data migration touch it.
+        ChatImageStore.shared = ChatImageStore(baseURL: ChatImageStore.defaultBaseURL())
+
         try Schema.migrate(dbq)
+
+        // One-shot: move any legacy inline-base64 image rows into the store.
+        // Guarded so it only walks the table once per install.
+        let flag = "didMigrateChatImagesToStore"
+        if !UserDefaults.standard.bool(forKey: flag) {
+            try? AttachmentMigration.run(writer: dbq, store: ChatImageStore.shared)
+            UserDefaults.standard.set(true, forKey: flag)
+        }
 
         let store = ConversationStoreV2(writer: dbq)
         let timeline = MessageTimeline(store: store, dbq: dbq)
