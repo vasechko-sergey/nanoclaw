@@ -97,4 +97,21 @@ final class StoredAttachmentTests: XCTestCase {
         let atts = try JSONDecoder().decode([StoredAttachment].self, from: Data(merged.utf8))
         XCTAssertEqual(atts.last?.bytes_base64, "YWJj")
     }
+
+    func test_hydrateForWire_loadsBytesFromStore() {
+        let sha = ChatImageStore.shared.write(Data("abc".utf8))
+        let stored = StoredAttachment(kind: "image", name: "p.jpg", mime_type: "image/jpeg",
+                                      byte_size: 3, sha256: sha, bytes_base64: nil, remote_id: nil)
+        let wire = TransportV2.hydrateForWire([stored])
+        XCTAssertEqual(wire.count, 1)
+        XCTAssertEqual(wire[0].bytes_base64, Data("abc".utf8).base64EncodedString())
+        XCTAssertEqual(wire[0].kind, "image")
+    }
+
+    func test_hydrateForWire_passesInlineBytesThrough() {
+        let stored = StoredAttachment(kind: "audio", name: "v.m4a", mime_type: "audio/m4a",
+                                      byte_size: 3, sha256: nil, bytes_base64: "YWJj", remote_id: nil)
+        let wire = TransportV2.hydrateForWire([stored])
+        XCTAssertEqual(wire[0].bytes_base64, "YWJj")
+    }
 }

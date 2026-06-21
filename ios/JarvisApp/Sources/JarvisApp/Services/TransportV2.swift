@@ -308,11 +308,25 @@ actor TransportV2 {
         try await sendEnvelope(env)
     }
 
+    /// Rebuild wire attachments from stored refs, loading image/file bytes back
+    /// out of `ChatImageStore`. Inline bytes (audio voice notes, legacy rows)
+    /// pass through untouched.
+    static func hydrateForWire(_ stored: [StoredAttachment]) -> [V2.Attachment] {
+        stored.map { s in
+            let b64 = s.bytes_base64
+                ?? s.sha256.flatMap { ChatImageStore.shared.bytes(sha: $0)?.base64EncodedString() }
+            return V2.Attachment(id: UUID().uuidString, kind: s.kind, name: s.name,
+                                 mime_type: s.mime_type, byte_size: s.byte_size,
+                                 bytes_base64: b64, remote_id: s.remote_id)
+        }
+    }
+
     private func makeMessageEnvelope(row: StoredMessage, seq: Int) -> V2.Envelope {
         // Decode attachments_json / context_json if present.
         let decoder = JSONDecoder()
-        let attachments: [V2.Attachment]? = row.attachmentsJSON
-            .flatMap { try? decoder.decode([V2.Attachment].self, from: Data($0.utf8)) }
+        let stored: [StoredAttachment]? = row.attachmentsJSON
+            .flatMap { try? decoder.decode([StoredAttachment].self, from: Data($0.utf8)) }
+        let attachments: [V2.Attachment]? = stored.map(Self.hydrateForWire)
         let context: V2.InlineContext? = row.contextJSON
             .flatMap { try? decoder.decode(V2.InlineContext.self, from: Data($0.utf8)) }
         return V2.Envelope(
