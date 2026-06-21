@@ -147,6 +147,16 @@ struct ChatView: View {
         }
     }
 
+    /// Resign first responder app-wide. Used for tap-to-dismiss and to force the
+    /// keyboard closed on agent switch — the chat hosts a SINGLE shared input
+    /// bar, so its `@FocusState` otherwise persists across agents and leaves the
+    /// next agent's chat rendered keyboard-open.
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
         VStack(spacing: 0) {
@@ -233,7 +243,11 @@ struct ChatView: View {
                             )
                         }
                         .defaultScrollAnchor(.bottom)
-                        .scrollDismissesKeyboard(.interactively)
+                        // Tap anywhere in the chat to dismiss the keyboard.
+                        // Scrolling/swiping NEVER dismisses it, so hiding the
+                        // keyboard never drags or scrolls the message list.
+                        .scrollDismissesKeyboard(.never)
+                        .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
                         .scrollContentBackground(.hidden)
                         .modifier(
                             ScrolledUpDetector(threshold: 80, viewportHeight: geo.size.height) { up in
@@ -528,7 +542,12 @@ struct ChatView: View {
         // digesting the whole list on each body pass.
         .onAppear { recomputeVisibleMessages() }
         .onChange(of: ws.messagesVersion) { recomputeVisibleMessages() }
-        .onChange(of: active.active) { recomputeVisibleMessages() }
+        .onChange(of: active.active) {
+            // Close the keyboard on switch so the shared input bar's focus state
+            // can't leave the next agent's chat rendered keyboard-open.
+            dismissKeyboard()
+            recomputeVisibleMessages()
+        }
         .onChange(of: autoStartVoice) {
             // When entering chat with voice trigger from home, activate input bar
             if autoStartVoice && visibleMessages.isEmpty {
