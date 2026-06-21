@@ -67,6 +67,7 @@
 		63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */; };
 		645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */; };
 		6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F4B9D1F796C301C15ED1A3D /* AppSettings.swift */; };
+		6D8495EB5E5BBEC56CF69D29 /* StoredAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D4FF344A7F45A86D8241127 /* StoredAttachment.swift */; };
 		71563F3FE9AB291D623066B4 /* HappyPathE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */; };
 		73B70554FE102A25FBBF7E6B /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79D4272E5619C20A18D50D9 /* Log.swift */; };
 		776CC332C08FABE24DB90627 /* AgentIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7602CA89C5703F581DB155 /* AgentIdentityTests.swift */; };
@@ -123,6 +124,7 @@
 		D9D85A8E3CB2F7583D9CCBB7 /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0295CB82FF20C8764842F6 /* CameraPicker.swift */; };
 		DEFAB6DF33649249BC9C24E7 /* ConversationStoreV2AgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9EB1688DB74A7280A71824 /* ConversationStoreV2AgentTests.swift */; };
 		E0C11524F945712AD1DD5BED /* WatchConnectivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17C0619207CE65994BF0385 /* WatchConnectivityBridge.swift */; };
+		E45B2D67CDD9B59EBFC1ADD3 /* StoredAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */; };
 		E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0056A55985BB7DB31F765116 /* TransportV2Tests.swift */; };
 		E653E1C200C705930FF7958A /* OrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */; };
 		E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */; };
@@ -197,6 +199,7 @@
 		48A9578A316F0AB1F8247B95 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		4A7602CA89C5703F581DB155 /* AgentIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIdentityTests.swift; sourceTree = "<group>"; };
 		4B444C288D4DEB267ABF3D02 /* V2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2.swift; sourceTree = "<group>"; };
+		4D4FF344A7F45A86D8241127 /* StoredAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredAttachment.swift; sourceTree = "<group>"; };
 		4DCBEC9BA80E9EC8768D5A6B /* Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Schema.swift; sourceTree = "<group>"; };
 		5114A888276D0E083FC387EB /* ContextBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilderTests.swift; sourceTree = "<group>"; };
 		554BF5C37C33D1542F61065C /* WatchTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
@@ -271,6 +274,7 @@
 		E24639DA24B7C49D4F19F2A1 /* SetRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetRowView.swift; sourceTree = "<group>"; };
 		E4D374490F6700DFE6CD2A40 /* RingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingView.swift; sourceTree = "<group>"; };
 		E5DD83E71D9C3008ACBE81F2 /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
+		E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredAttachmentTests.swift; sourceTree = "<group>"; };
 		E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFullscreenTests.swift; sourceTree = "<group>"; };
 		E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
 		EDC10BA9695C24F9819D51C2 /* CoachBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBannerView.swift; sourceTree = "<group>"; };
@@ -417,6 +421,7 @@
 				63F99A4953300541E52CE55B /* DraftAttachment.swift */,
 				9592AD08ED6648DF9CCC7149 /* Message.swift */,
 				F4212E96E265F732C0CA6A0F /* StateModel.swift */,
+				4D4FF344A7F45A86D8241127 /* StoredAttachment.swift */,
 				407AF8586506D0610BCD4DC7 /* Workout.swift */,
 			);
 			path = Models;
@@ -451,6 +456,7 @@
 				BC64D6340917C38B04005455 /* SetLogQueueTests.swift */,
 				72069FC546766200DF7310C7 /* StateBoardViewTests.swift */,
 				A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */,
+				E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */,
 				9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */,
 				0056A55985BB7DB31F765116 /* TransportV2Tests.swift */,
 				834FF3E88E233A898EDBA444 /* TransportV2WorkoutTests.swift */,
@@ -796,6 +802,7 @@
 				42E66BF9F453D484DC371DC0 /* StateModel.swift in Sources */,
 				EA5F7794D8CE0B26CC3A3D66 /* StateService.swift in Sources */,
 				4E3C2BC7DEE98EE4B972F929 /* StatusV2.swift in Sources */,
+				6D8495EB5E5BBEC56CF69D29 /* StoredAttachment.swift in Sources */,
 				974A0C8C09364FC532E6BEE1 /* SuggestionEngine.swift in Sources */,
 				8D619B38C4EE99D072145A51 /* SwapSheet.swift in Sources */,
 				40BD7B10477CDAA66330969D /* Theme.swift in Sources */,
@@ -845,6 +852,7 @@
 				59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */,
 				7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */,
 				8B8DBA1244BFD9A7D1B54CF0 /* StateModelTests.swift in Sources */,
+				E45B2D67CDD9B59EBFC1ADD3 /* StoredAttachmentTests.swift in Sources */,
 				645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */,
 				E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */,
 				3CBB91784B65C8CA4A702AF6 /* TransportV2WorkoutTests.swift in Sources */,
