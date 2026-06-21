@@ -73,4 +73,28 @@ final class StoredAttachmentTests: XCTestCase {
         let atts = try JSONDecoder().decode([StoredAttachment].self, from: Data(json.utf8))
         XCTAssertTrue(ChatImageStore.shared.has(sha: atts[0].sha256!))
     }
+
+    func test_insertInbound_movesImageBytes_keepsAudioInline() throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ConversationStoreV2(writer: dbq)
+
+        let img = V2.Attachment(id: "i", kind: "image", name: "p.jpg", mime_type: "image/jpeg",
+                                byte_size: 3, bytes_base64: Data("abc".utf8).base64EncodedString(), remote_id: nil)
+        let env = V2.Envelope(v: 2, kind: .data, type: .message, id: "in1", seq: 3,
+                              ts: "2026-06-21T00:00:00Z",
+                              payload: .message(V2.Message(thread_id: "t", text: "look", attachments: [img])))
+        try store.insertInbound(envelope: env, message: V2.Message(thread_id: "t", text: "look", attachments: [img]))
+        let json = try store.fetchById("in1")!.attachmentsJSON!
+        XCTAssertFalse(json.contains("bytes_base64"))
+        XCTAssertTrue(json.contains("sha256"))
+
+        // appendAttachment (audio voice-note merge) keeps the bytes inline.
+        let audio = V2.Attachment(id: "v", kind: "audio", name: "v.m4a", mime_type: "audio/m4a",
+                                  byte_size: 3, bytes_base64: "YWJj", remote_id: nil)
+        XCTAssertTrue(try store.appendAttachment(toRowId: "in1", attachment: audio))
+        let merged = try store.fetchById("in1")!.attachmentsJSON!
+        let atts = try JSONDecoder().decode([StoredAttachment].self, from: Data(merged.utf8))
+        XCTAssertEqual(atts.last?.bytes_base64, "YWJj")
+    }
 }

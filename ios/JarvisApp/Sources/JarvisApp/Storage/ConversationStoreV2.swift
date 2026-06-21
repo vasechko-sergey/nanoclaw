@@ -178,7 +178,8 @@ final class ConversationStoreV2 {
             let encoder = JSONEncoder()
             let attachmentsJSON: String?
             if let atts = message.attachments, !atts.isEmpty {
-                attachmentsJSON = String(data: try encoder.encode(atts), encoding: .utf8)
+                let stored = atts.map(StoredAttachment.from)
+                attachmentsJSON = String(data: try encoder.encode(stored), encoding: .utf8)
             } else {
                 attachmentsJSON = nil
             }
@@ -201,11 +202,11 @@ final class ConversationStoreV2 {
             guard let row = try Row.fetchOne(
                 db, sql: "SELECT attachments_json FROM messages WHERE id=?", arguments: [id]
             ) else { return false }
-            var atts: [V2.Attachment] = []
+            var atts: [StoredAttachment] = []
             if let json: String = row["attachments_json"], let data = json.data(using: .utf8) {
-                atts = (try? JSONDecoder().decode([V2.Attachment].self, from: data)) ?? []
+                atts = (try? JSONDecoder().decode([StoredAttachment].self, from: data)) ?? []
             }
-            atts.append(attachment)
+            atts.append(StoredAttachment.from(attachment))
             let merged = String(data: try JSONEncoder().encode(atts), encoding: .utf8)
             try db.execute(sql: "UPDATE messages SET attachments_json=? WHERE id=?", arguments: [merged, id])
             return true
