@@ -76,11 +76,7 @@ struct MarkdownText: View {
 
     @ViewBuilder
     private func inlineMarkdown(_ content: String) -> some View {
-        let processed = preprocessInline(content)
-        if let attributed = try? AttributedString(
-            markdown: processed,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        if let attributed = Self.attributedInline(content) {
             Text(attributed)
                 .font(.system(size: fontSize))
                 .tint(Theme.accent)
@@ -90,9 +86,45 @@ struct MarkdownText: View {
         }
     }
 
+    // MARK: – Memoized inline AttributedString
+
+    /// Box so a parsed `AttributedString` (a value type) can live in NSCache.
+    private final class AttrBox {
+        let value: AttributedString
+        init(_ value: AttributedString) { self.value = value }
+    }
+
+    /// Process-wide memoization of inline-markdown → AttributedString.
+    /// `AttributedString(markdown:)` builds a full CommonMark parser on every
+    /// call. Table cells and inline runs re-render on every `body` / Grid
+    /// measurement pass and on every agent switch, so without this a screen of
+    /// tables re-parses hundreds of cells each time — a multi-second main-thread
+    /// freeze. Pure in the input, exactly like `parseCache`.
+    private static let attrCache = NSCache<NSString, AttrBox>()
+
+    /// Test-only: counts real parses (cache misses) so a unit test can prove
+    /// the memoization is active.
+    static private(set) var attributedParseMisses = 0
+
+    /// Memoized inline markdown → AttributedString (nil if it won't parse).
+    /// Shared by `inlineMarkdown` and table cells so any given string is parsed
+    /// at most once process-wide.
+    static func attributedInline(_ raw: String) -> AttributedString? {
+        let key = raw as NSString
+        if let hit = attrCache.object(forKey: key) { return hit.value }
+        let processed = preprocessInline(raw)
+        guard let attr = try? AttributedString(
+            markdown: processed,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) else { return nil }
+        attributedParseMisses += 1
+        attrCache.setObject(AttrBox(attr), forKey: key)
+        return attr
+    }
+
     /// Pre-process inline markdown that AttributedString doesn't handle:
     /// ~~strikethrough~~ → ~text~ (CommonMark strikethrough)
-    private func preprocessInline(_ text: String) -> String {
+    private static func preprocessInline(_ text: String) -> String {
         guard text.contains("~~") else { return text }
         var result = text
         while let r = result.range(of: #"~~(.+?)~~"#, options: .regularExpression) {
@@ -137,10 +169,7 @@ struct MarkdownText: View {
     private func tableCell(_ cell: String, isHeader: Bool, isLastCol: Bool) -> some View {
         let size = max(fontSize - 2, 12)
         Group {
-            if let attributed = try? AttributedString(
-                markdown: preprocessInline(cell),
-                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-            ) {
+            if let attributed = Self.attributedInline(cell) {
                 Text(attributed)
             } else {
                 Text(cell)

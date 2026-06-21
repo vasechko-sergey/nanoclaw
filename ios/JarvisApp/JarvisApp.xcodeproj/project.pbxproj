@@ -22,6 +22,7 @@
 		1D26F1F3F0A2B7924261909D /* WorkoutCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */; };
 		1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B165040849DF187E7D1113C /* OrbInputBar.swift */; };
 		1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */; };
+		250E4BBF96D871228E8E7C41 /* MarkdownTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */; };
 		25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */; };
 		298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */; };
 		2B5AD345B9E6DD536F03540D /* UnifiedInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B42F42A5AB27AFC0DD5943 /* UnifiedInputBar.swift */; };
@@ -162,6 +163,7 @@
 
 /* Begin PBXFileReference section */
 		0056A55985BB7DB31F765116 /* TransportV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2Tests.swift; sourceTree = "<group>"; };
+		008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextTests.swift; sourceTree = "<group>"; };
 		00895EA002A4092BA433AF4C /* MessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRow.swift; sourceTree = "<group>"; };
 		05AA5A25FF72A993B2BA61E6 /* ThinkingRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingRowTests.swift; sourceTree = "<group>"; };
 		05ACC337A0C4A86AD116625D /* AttachmentMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMigrationTests.swift; sourceTree = "<group>"; };
@@ -455,6 +457,7 @@
 				C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */,
 				F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */,
 				3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */,
+				008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */,
 				834E333F228FB23CEB38FB63 /* MessageMappingTests.swift */,
 				30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */,
 				7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */,
@@ -854,6 +857,7 @@
 				C00FE8906E1739C80BA7568D /* HealthSyncTests.swift in Sources */,
 				57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */,
 				56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */,
+				250E4BBF96D871228E8E7C41 /* MarkdownTextTests.swift in Sources */,
 				44C86F549EEFDBA9707EDAF3 /* MessageMappingTests.swift in Sources */,
 				8531C905F9FA67452EC50A43 /* MessageTimelineTests.swift in Sources */,
 				BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */,
