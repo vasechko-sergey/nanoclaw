@@ -2,12 +2,11 @@ import Foundation
 
 /// One exercise as planned in `workout_plan.plan_json.exercises[]`.
 ///
-/// Lenient decoding: Payne's plan_json uses `slug` / `reps_in_reserve` /
-/// `rest_seconds`, and a cardio warmup may carry `target_sets: null` and
-/// `target_reps: ""`. Accept those (and the canonical `exercise_slug` /
-/// `target_rir` / `rest_sec`) and default any missing/null numeric so the whole
-/// plan still decodes — otherwise one warmup row sinks the entire card. Encode
-/// stays canonical (so the B2 persist→reload round-trip is stable).
+/// Keys are pinned to Payne's canonical plan_json vocab: `slug` /
+/// `reps_in_reserve` / `rest_seconds`. A cardio warmup may carry
+/// `target_sets: null` and `target_reps: ""`; default any missing/null numeric
+/// so the whole plan still decodes — otherwise one warmup row sinks the entire
+/// card. Encode is canon too, so the B2 persist→reload round-trip is stable.
 struct ExercisePlan: Codable, Equatable, Identifiable {
     let exerciseSlug: String
     let targetSets: Int
@@ -28,27 +27,21 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case exerciseSlug = "exercise_slug"
-        case slug                       // plan_json alias for exercise_slug
+        case exerciseSlug = "slug"
         case targetSets = "target_sets"
         case targetReps = "target_reps"
-        case targetRir = "target_rir"
-        case repsInReserve = "reps_in_reserve"  // plan_json alias for target_rir
-        case restSec = "rest_sec"
-        case restSeconds = "rest_seconds"        // plan_json alias for rest_sec
+        case targetRir = "reps_in_reserve"
+        case restSec = "rest_seconds"
         case notes
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        exerciseSlug = (try? c.decode(String.self, forKey: .exerciseSlug))
-            ?? (try? c.decode(String.self, forKey: .slug)) ?? ""
-        targetSets = (try? c.decode(Int.self, forKey: .targetSets)) ?? 0
+        exerciseSlug = (try? c.decode(String.self, forKey: .exerciseSlug)) ?? ""
+        targetSets = (try? c.decode(Int.self, forKey: .targetSets)) ?? 0   // null warmup → 0
         targetReps = (try? c.decode(String.self, forKey: .targetReps)) ?? ""
-        targetRir = (try? c.decode(Int.self, forKey: .targetRir))
-            ?? (try? c.decode(Int.self, forKey: .repsInReserve)) ?? 0
-        restSec = (try? c.decode(Int.self, forKey: .restSec))
-            ?? (try? c.decode(Int.self, forKey: .restSeconds)) ?? 0
+        targetRir = (try? c.decode(Int.self, forKey: .targetRir)) ?? 0     // null warmup → 0
+        restSec = (try? c.decode(Int.self, forKey: .restSec)) ?? 0
         notes = try? c.decode(String.self, forKey: .notes)
     }
 
@@ -63,8 +56,8 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
     }
 }
 
-/// Top-level plan handed to iOS at workout start. Lenient decode like
-/// `ExercisePlan` — Payne's plan_json names the intensity `week_label`.
+/// Top-level plan handed to iOS at workout start. Keys pinned to Payne's
+/// canonical plan_json vocab — the intensity field is `week_label`.
 struct WorkoutPlan: Codable, Equatable {
     let workoutId: String
     let dayName: String
@@ -92,8 +85,7 @@ struct WorkoutPlan: Codable, Equatable {
         case workoutId = "workout_id"
         case dayName = "day_name"
         case week
-        case intensityLabel = "intensity_label"
-        case weekLabel = "week_label"   // plan_json alias for intensity_label
+        case intensityLabel = "week_label"
         case exercises
         case imageManifest = "image_manifest"
     }
@@ -103,8 +95,7 @@ struct WorkoutPlan: Codable, Equatable {
         workoutId = (try? c.decode(String.self, forKey: .workoutId)) ?? ""
         dayName = (try? c.decode(String.self, forKey: .dayName)) ?? ""
         week = (try? c.decode(Int.self, forKey: .week)) ?? 0
-        intensityLabel = (try? c.decode(String.self, forKey: .intensityLabel))
-            ?? (try? c.decode(String.self, forKey: .weekLabel)) ?? ""
+        intensityLabel = (try? c.decode(String.self, forKey: .intensityLabel)) ?? ""
         exercises = (try? c.decode([ExercisePlan].self, forKey: .exercises)) ?? []
         imageManifest = (try? c.decode([ImageManifestEntry].self, forKey: .imageManifest)) ?? []
     }
