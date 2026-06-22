@@ -67,6 +67,10 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            // Run heavy prep (health observers, calendar, location, cache
+            // prewarm) now — while the splash is on screen — instead of at
+            // coordinator init (which ran before any UI appeared).
+            coordinator.startBackgroundPrep()
             if settings.isConfigured {
                 coordinator.connect()
             } else {

@@ -33,6 +33,11 @@ final class AppCoordinator {
     /// the v2 transport so misses turn into `image_request` envelopes.
     @ObservationIgnored private(set) var imageCache: ExerciseImageCache!
 
+    /// Held so the one-shot cache prewarm can run in `startBackgroundPrep()`
+    /// (after the splash appears) rather than at init (before any UI).
+    @ObservationIgnored private var chatStore: ConversationStoreV2?
+    @ObservationIgnored private var didStartPrep = false
+
     // MARK: – Connection state
     var connectionPhase: ConnectionPhase = .idle
 
@@ -81,10 +86,7 @@ final class AppCoordinator {
         }
         if let storage {
             self.timeline = storage.timeline
-            // Warm the chat render caches (markdown parse + inline AttributedString
-            // + image thumbnails) off-main during the splash, so the first open of
-            // any agent — and switching between agents — is instant.
-            ChatPrewarmer.warmAll(store: storage.store)
+            self.chatStore = storage.store   // prewarmed in startBackgroundPrep (post-splash)
         }
         self.ws = WebSocketClientV2(
             location: location,
@@ -112,15 +114,11 @@ final class AppCoordinator {
         let sink = WebSocketProactiveSink(ws: ws, settings: settings)
         self.proactiveDispatcher = ProactiveDispatcher(settings: settings, sink: sink)
 
-        // Wire trigger sources
+        // Wire the dispatcher (cheap). Heavy prep — health observers, calendar
+        // fetch, location monitoring, cache prewarm — is deferred to
+        // `startBackgroundPrep()`, run from the splash's onAppear so nothing
+        // fires before the loading screen.
         location.attachDispatcher(proactiveDispatcher)
-        // Always start sources — dispatcher.fire gates per-type opt-ins.
-        // The OS-level cost of significant-change monitoring is negligible.
-        location.startSignificantLocationMonitoring()
-        health.installObservers(dispatcher: proactiveDispatcher)
-
-        calendar.proactiveEnabled = settings.proactiveCalendarWarn
-        Task { await calendar.fetchAndScheduleProactive() }
 
         AppDelegate.dispatchProactive = { [weak self] type, payload in
             Task { @MainActor in
@@ -162,6 +160,20 @@ final class AppCoordinator {
     func disconnect() {
         ws.disconnect()
         connectionPhase = .idle
+    }
+
+    /// Heavy startup prep — health observers, calendar fetch, location
+    /// monitoring, chat-cache prewarm. Called from the splash's `onAppear` so it
+    /// runs WHILE the loading animation spins, never before the screen shows.
+    /// Idempotent.
+    func startBackgroundPrep() {
+        guard !didStartPrep else { return }
+        didStartPrep = true
+        location.startSignificantLocationMonitoring()
+        health.installObservers(dispatcher: proactiveDispatcher)
+        calendar.proactiveEnabled = settings.proactiveCalendarWarn
+        Task { await calendar.fetchAndScheduleProactive() }
+        if let chatStore { ChatPrewarmer.warmAll(store: chatStore) }
     }
 
     // MARK: – Chat actions
