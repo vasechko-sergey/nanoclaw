@@ -76,15 +76,21 @@ struct MessageListView: UIViewRepresentable {
                 var bg = UIBackgroundConfiguration.listCell()
                 bg.backgroundColor = .clear
                 cell.backgroundConfiguration = bg
-                // Un-flip the cell so its content is upright inside the inverted list.
-                cell.transform = CGAffineTransform(scaleX: 1, y: -1)
+                // The collection view is y-flipped (inverted list). Un-flip the
+                // CONTENT with a SwiftUI scaleEffect — doing it here (inside the
+                // hosted view) survives UICollectionView re-applying layout
+                // attributes mid-scroll, which would reset a `cell.transform`.
                 switch item {
                 case .date(let day):
-                    cell.contentConfiguration = UIHostingConfiguration { DateSeparator(date: day) }
-                        .margins(.all, 0)
+                    cell.contentConfiguration = UIHostingConfiguration {
+                        DateSeparator(date: day).scaleEffect(x: 1, y: -1)
+                    }
+                    .margins(.all, 0)
                 case .thinking:
-                    cell.contentConfiguration = UIHostingConfiguration { ThinkingRow(detail: nil) }
-                        .margins(.all, 0)
+                    cell.contentConfiguration = UIHostingConfiguration {
+                        ThinkingRow(detail: nil).scaleEffect(x: 1, y: -1)
+                    }
+                    .margins(.all, 0)
                 case .message(let id):
                     guard let msg = self.messagesById[id] else {
                         cell.contentConfiguration = nil
@@ -101,6 +107,7 @@ struct MessageListView: UIViewRepresentable {
                             onRetry: self.parent.onRetry,
                             audioPlayer: self.parent.audioPlayer
                         )
+                        .scaleEffect(x: 1, y: -1)
                     }
                     .margins(.all, 0)
                 }
