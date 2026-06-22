@@ -15,53 +15,6 @@ private struct WorkoutPresentation: Identifiable {
     var id: String { plan.workoutId }
 }
 
-/// Carries the chat content's bottom edge (maxY) within the scroll view's
-/// coordinate space, so the scroll-to-bottom FAB is driven by the real scroll
-/// offset instead of a lazy anchor's unreliable appear/disappear.
-private struct ChatScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-/// Reports whether the chat scroll view is scrolled up away from the bottom
-/// (beyond `threshold` points) — drives the scroll-to-bottom FAB. iOS 18+ reads
-/// it straight from scroll geometry (`onScrollGeometryChange`, the sanctioned,
-/// reliable API). Earlier iOS falls back to the `ChatScrollOffsetKey`
-/// content-offset preference measured against the viewport height. The old lazy
-/// "bottom" anchor's onAppear/onDisappear fired unreliably, and on iOS 18
-/// `onPreferenceChange`'s closure is `@Sendable` — so neither alone is
-/// trustworthy across versions.
-private struct ScrolledUpDetector: ViewModifier {
-    let threshold: CGFloat
-    let viewportHeight: CGFloat
-    let onChange: (Bool) -> Void
-
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.onScrollGeometryChange(for: Bool.self) { geo in
-                // "Scrolled up" = the content's bottom edge sits more than
-                // `threshold` points above the bottom of the visible area.
-                // `visibleRect.maxY` is the actual visible content bottom (in
-                // content coordinates); at the bottom it equals contentSize.height
-                // (distance 0). This avoids the contentOffset-vs-(contentSize -
-                // containerSize) calc, which mis-fired against the bottom anchor
-                // / safe-area insets and left the FAB always on.
-                geo.contentSize.height - geo.visibleRect.maxY > threshold
-            } action: { _, scrolledUp in
-                onChange(scrolledUp)
-            }
-        } else {
-            content
-                .coordinateSpace(name: "chatScroll")
-                .onPreferenceChange(ChatScrollOffsetKey.self) { contentMaxY in
-                    onChange(contentMaxY - viewportHeight > threshold)
-                }
-        }
-    }
-}
-
 struct ChatView: View {
     @Environment(AppSettings.self) var settings
     @Environment(ActiveAgentState.self) private var active
@@ -74,7 +27,7 @@ struct ChatView: View {
     @State private var drafts: [DraftAttachment] = []
     @State private var fullScreenImage: FullScreenImagePresentation? = nil
     @State private var isScrolledUp = false
-    @State private var scrollToBottomAction: (() -> Void)?
+    @State private var scrollToBottomToken = 0
     @State private var emptyInputActive = false  // user tapped orb/keyboard in empty state
     @State private var rightDrawerOpen = false
     @State private var rightDrawerDragOffset: CGFloat = 0
@@ -102,15 +55,6 @@ struct ChatView: View {
     /// whole message array and was referenced many times per render.
     @State private var visibleMessages: [ChatMessage] = []
 
-    /// The agent `visibleMessages` was last computed for. Set ATOMICALLY with
-    /// `visibleMessages` in `recomputeVisibleMessages`, and used as the
-    /// ScrollView's `.id` — so the scroll view is rebuilt only once its content
-    /// already reflects the new agent (no stale-data flash), and the rebuilt view
-    /// lands at the bottom via `defaultScrollAnchor` instead of inheriting the
-    /// previous agent's scroll offset (which left the chat blank until a manual
-    /// scroll forced a re-layout).
-    @State private var renderedAgent: AgentIdentity = .jarvis
-
     /// Recompute the cached visible-message list. Filtering semantics are
     /// identical to the previous computed property.
     private func computeVisibleMessages() -> [ChatMessage] {
@@ -123,7 +67,6 @@ struct ChatView: View {
 
     private func recomputeVisibleMessages() {
         visibleMessages = computeVisibleMessages()
-        renderedAgent = active.active
     }
 
     /// Lightweight `Equatable` digest of the full message set used to detect
@@ -172,22 +115,6 @@ struct ChatView: View {
         )
     }
 
-    /// On keyboard show/hide the viewport resizes; with image rows the bottom
-    /// anchor can overshoot into empty space (a black gap, "scroll runs off").
-    /// Re-pin to the last message after the inset settles — `proxy.scrollTo`
-    /// clamps to the valid range, so it can't overshoot. Skipped if the user has
-    /// deliberately scrolled up.
-    private func repinOnKeyboardChange(_ proxy: ScrollViewProxy) {
-        guard !isScrolledUp else { return }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-            guard !isScrolledUp, let last = visibleMessages.last else { return }
-            withAnimation(.easeOut(duration: 0.2)) {
-                proxy.scrollTo(last.id, anchor: .bottom)
-            }
-        }
-    }
-
     var body: some View {
         ZStack(alignment: .leading) {
         VStack(spacing: 0) {
@@ -208,156 +135,27 @@ struct ChatView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 ZStack(alignment: .bottomTrailing) {
-                    GeometryReader { geo in
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            // LazyVStack so rows realize on demand as they
-                            // scroll into view rather than all at once — long
-                            // sessions otherwise build every MessageRow up front.
-                            LazyVStack(alignment: .leading, spacing: Theme.scaled(8)) {
-                                ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, msg in
-                                    // Date separator
-                                    if shouldShowDateSeparator(at: index, in: visibleMessages) {
-                                        DateSeparator(date: msg.timestamp)
-                                    }
-                                    MessageRow(
-                                        message: msg,
-                                        isLast: index == visibleMessages.count - 1,
-                                        onImageTap: { thumb, sha in
-                                            fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
-                                        },
-                                        onFeedback: { messageId, isPositive in
-                                            coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: msg.text)
-                                        },
-                                        onActionTap: { messageId, buttonId, buttonLabel in
-                                            coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
-                                        },
-                                        onRetry: { id in coordinator.ws.retrySend(id: id) },
-                                        audioPlayer: coordinator.audioPlayer
-                                    )
-                                    .id(msg.id)
-                                    .onAppear {
-                                        if msg.role == .assistant {
-                                            ws.sendMessageRead(msg.id)
-                                        }
-                                    }
-                                    .transition(
-                                        .asymmetric(
-                                            insertion: .opacity.combined(with: .offset(y: 8)),
-                                            removal: .opacity
-                                        )
-                                    )
-                                }
-                                if activeBusy {
-                                    ThinkingRow(detail: ws.thinkingDetail)
-                                        .id("thinking")
-                                        .transition(.opacity.combined(with: .offset(y: 4)))
-                                }
+                    MessageListView(
+                        messages: visibleMessages,
+                        agentId: active.active.rawValue,
+                        isBusy: activeBusy,
+                        onImageTap: { thumb, sha in
+                            fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
+                        },
+                        onFeedback: { messageId, isPositive in
+                            coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: visibleMessages.first(where: { $0.id == messageId })?.text ?? "")
+                        },
+                        onActionTap: { messageId, buttonId, buttonLabel in
+                            coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
+                        },
+                        onRetry: { id in coordinator.ws.retrySend(id: id) },
+                        onMessageRead: { id in ws.sendMessageRead(id) },
+                        audioPlayer: coordinator.audioPlayer,
+                        isScrolledUp: $isScrolledUp,
+                        scrollToBottomToken: scrollToBottomToken
+                    )
+                    .ignoresSafeArea(.container, edges: .bottom)
 
-                                // Scroll target for "jump to bottom" (proxy
-                                // scrolls to this id). The scrolled-up state that
-                                // drives the FAB is measured from the content
-                                // offset (ChatScrollOffsetKey) on the ScrollView —
-                                // the old onAppear/onDisappear on this lazy anchor
-                                // fired unreliably, so the FAB often never showed.
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id("bottom")
-                            }
-                            .padding(.horizontal)
-                            .padding(.top, Theme.scaled(8))
-                            .background(
-                                GeometryReader { contentGeo in
-                                    Color.clear.preference(
-                                        key: ChatScrollOffsetKey.self,
-                                        value: contentGeo.frame(in: .named("chatScroll")).maxY
-                                    )
-                                }
-                            )
-                        }
-                        // Rebuild the scroll view per agent so it never inherits the
-                        // previous agent's scroll offset (which left the new agent's
-                        // chat blank until a manual scroll forced a re-layout). Keyed
-                        // on `renderedAgent` (set with `visibleMessages`) so the fresh
-                        // view already holds the new content and lands at the bottom.
-                        .id(renderedAgent)
-                        .defaultScrollAnchor(.bottom)
-                        .modifier(BottomSizeChangesAnchor())
-                        // Tap anywhere in the chat to dismiss the keyboard.
-                        // Scrolling/swiping NEVER dismisses it, so hiding the
-                        // keyboard never drags or scrolls the message list.
-                        .scrollDismissesKeyboard(.never)
-                        .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
-                        .scrollContentBackground(.hidden)
-                        .modifier(
-                            // 160, not 80: at rest (pinned to bottom) the content-bottom
-                            // vs visible-bottom gap on these layouts exceeds 80, so the
-                            // FAB was permanently showing. Raise the threshold so it only
-                            // appears once you've actually scrolled up.
-                            ScrolledUpDetector(threshold: 160, viewportHeight: geo.size.height) { up in
-                                setScrolledUp(up)
-                            }
-                        )
-                        .onAppear {
-                            // Capture scroll action for FAB outside ScrollViewReader.
-                            // Initial bottom positioning is handled by
-                            // defaultScrollAnchor(.bottom) — no manual scroll here.
-                            scrollToBottomAction = {
-                                if let last = visibleMessages.last {
-                                    withAnimation(.spring(duration: 0.35, bounce: 0.1)) {
-                                        proxy.scrollTo(last.id, anchor: .bottom)
-                                    }
-                                }
-                            }
-                        }
-                        .onChange(of: ws.messages.count) {
-                            // Keep the cached list fresh on append. Staying pinned to
-                            // the bottom is handled by defaultScrollAnchor (iOS 18
-                            // sizeChanges) and the onChange(last) fallback below.
-                            recomputeVisibleMessages()
-                        }
-                        .onChange(of: visibleMessages.last?.id) {
-                            // Fallback for iOS 16/17 (no sizeChanges anchor): keep the
-                            // newest message in view unless the user scrolled up. On
-                            // iOS 18 this also fires alongside the sizeChanges anchor;
-                            // both target the bottom, so the redundancy is harmless.
-                            guard !isScrolledUp, let last = visibleMessages.last else { return }
-                            withAnimation(.spring(duration: 0.3)) {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
-                        .onChange(of: activeBusy) {
-                            // The ThinkingRow (id "thinking") lives outside
-                            // visibleMessages, so the last?.id fallback above won't
-                            // bring it into view. On iOS 18 the sizeChanges anchor
-                            // handles it; on iOS 16/17 scroll to it explicitly.
-                            guard activeBusy, !isScrolledUp else { return }
-                            if #unavailable(iOS 18.0) {
-                                withAnimation(.spring(duration: 0.3)) {
-                                    proxy.scrollTo("thinking", anchor: .bottom)
-                                }
-                            }
-                        }
-                        .onChange(of: active.active) {
-                            // The scroll view is rebuilt per agent (`.id(renderedAgent)`)
-                            // and lands at the bottom via defaultScrollAnchor — no manual
-                            // scroll (or stale-offset workaround) needed. Just refresh the
-                            // cached list (which also updates `renderedAgent`) and reset
-                            // the FAB state.
-                            isScrolledUp = false
-                            recomputeVisibleMessages()
-                        }
-                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                            repinOnKeyboardChange(proxy)
-                        }
-                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-                            repinOnKeyboardChange(proxy)
-                        }
-
-                    }
-                    } // GeometryReader
-
-                    // Scroll-to-bottom FAB — outside ScrollViewReader, not blocked by scroll gestures
                     if isScrolledUp {
                         scrollToBottomFAB
                             .transition(.scale.combined(with: .opacity))
@@ -589,9 +387,6 @@ struct ChatView: View {
                 emptyInputActive = true
             }
         }
-        .onDisappear {
-            coordinator.disconnect()
-        }
         .onAppear {
             if !v3MigrationShown && !JarvisApp.isUITesting {
                 showingV3Toast = true
@@ -684,7 +479,7 @@ struct ChatView: View {
             .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
             .frame(width: Theme.minTapSize, height: Theme.minTapSize)
             .contentShape(Circle())
-            .onTapGesture { scrollToBottomAction?() }
+            .onTapGesture { scrollToBottomToken += 1 }
             .padding(.trailing, Theme.scaled(8))
             .padding(.bottom, Theme.scaled(8))
             .accessibilityLabel("Прокрутить вниз")
@@ -837,15 +632,3 @@ struct DateSeparator: View {
     }
 }
 
-/// iOS 18+ keeps the scroll pinned to the bottom as content size changes (new
-/// rows, late image decode, keyboard). A no-op below iOS 18, where the
-/// `onChange(last)` fallback in ChatView handles new content instead.
-private struct BottomSizeChangesAnchor: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.defaultScrollAnchor(.bottom, for: .sizeChanges)
-        } else {
-            content
-        }
-    }
-}
