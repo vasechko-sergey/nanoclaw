@@ -72,7 +72,7 @@ final class ConversationStoreV2AgentTests: XCTestCase {
 
     func test_prune_isPerAgent_doesNotEvictOtherAgentsMessages() throws {
         let store = try makeStore()
-        // Insert 5 jarvis messages and 2 payne messages.
+        // Chatty jarvis (5) + quiet payne (2).
         for i in 0..<5 {
             try store.insertOutboundUserMessage(
                 id: "j-\(i)", text: "j\(i)", attachments: [], context: nil, agentId: "jarvis"
@@ -83,11 +83,38 @@ final class ConversationStoreV2AgentTests: XCTestCase {
                 id: "p-\(i)", text: "p\(i)", attachments: [], context: nil, agentId: "payne"
             )
         }
-        // Prune globally to keep=4 (5 jarvis + 2 payne = 7 total → trim to 4).
-        try store.prune(keep: 4)
-        let jarvisQueue = try store.queuedOutbound(agentId: "jarvis", limit: 100)
-        let payneQueue  = try store.queuedOutbound(agentId: "payne", limit: 100)
-        XCTAssertEqual(jarvisQueue.count + payneQueue.count, 4, "global prune keeps 4 newest")
+        // Per-agent prune keep=3: jarvis trimmed to its 3 newest; payne (2 ≤ 3)
+        // is untouched — a chatty agent must NOT evict a quiet agent's history.
+        try store.prune(keep: 3)
+        XCTAssertEqual(try store.countMessages(agentId: "jarvis"), 3, "chatty agent trimmed to keep")
+        XCTAssertEqual(try store.countMessages(agentId: "payne"), 2, "quiet agent NOT evicted")
+    }
+
+    func test_windowedRows_isPerAgent_keepsQuietAgentInWindow() throws {
+        let queue = try DatabaseQueue() // in-memory
+        try Schema.migrate(queue)
+        let store = ConversationStoreV2(writer: queue)
+        // Chatty jarvis (10) + quiet payne (1). A GLOBAL newest-N window with a
+        // small N would drop payne entirely (the blank-chat bug); the per-agent
+        // window must keep payne present.
+        for i in 0..<10 {
+            try store.insertOutboundUserMessage(
+                id: "j-\(i)", text: "j\(i)", attachments: [], context: nil, agentId: "jarvis"
+            )
+        }
+        try store.insertOutboundUserMessage(
+            id: "p-0", text: "p0", attachments: [], context: nil, agentId: "payne"
+        )
+
+        let windowed = try queue.read { db in
+            try ConversationStoreV2.windowedRows(db, perAgent: 3)
+        }
+        XCTAssertEqual(windowed.filter { $0.agentId == "jarvis" }.count, 3,
+                       "chatty agent windowed to its newest `perAgent`")
+        XCTAssertEqual(windowed.filter { $0.agentId == "payne" }.count, 1,
+                       "quiet agent present in the window (not starved)")
+        XCTAssertEqual(windowed.map(\.ts), windowed.map(\.ts).sorted(),
+                       "rows returned oldest-first by ts")
     }
 
     func test_queuedOutbound_nilAgentId_returnsAllAgents() throws {

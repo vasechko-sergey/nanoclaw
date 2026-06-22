@@ -26,7 +26,7 @@ final class MessageTimeline {
     /// filtering happens in the view layer (`ChatView.visibleMessages`).
     func start() async throws {
         guard observationCancellable == nil else { return }
-        let observation = store.observeAllMessages(limit: retention)
+        let observation = store.observeAllMessages(perAgent: retention)
         // Seed synchronously so views render on first frame.
         self.messages = try await dbq.read { db in
             try Row.fetchAll(db, sql: """

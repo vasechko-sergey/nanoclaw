@@ -335,53 +335,73 @@ final class ConversationStoreV2 {
         }
     }
 
-    /// Observe the entire `messages` table across ALL agents. The chat view
-    /// renders one unified stream and filters per-agent at the view layer
-    /// (see `ChatView.visibleMessages`), so the timeline subscription must
-    /// not pre-filter by `agent_id`. Returns rows oldest-first to match
-    /// `observeMessages`.
-    func observeAllMessages(limit: Int = 500)
+    /// Observe each agent's own newest `perAgent` messages, unioned across all
+    /// agents into one stream (the chat view filters by the active chip). The
+    /// window is PER AGENT — not a single global newest-N — so a low-traffic
+    /// agent's history is never evicted from the window by a chatty agent (the
+    /// bug that left a rarely-used agent's chat blank). Rows are returned
+    /// oldest-first by `ts` to match the chat list order.
+    func observeAllMessages(perAgent: Int = 500)
         -> ValueObservation<ValueReducers.Fetch<[StoredMessage]>>
     {
         ValueObservation.tracking { db -> [StoredMessage] in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT * FROM messages
-                ORDER BY ts DESC
-                LIMIT ?
-            """, arguments: [limit])
-            return rows.reversed().map { row in
-                StoredMessage(
-                    id: row["id"],
-                    dir: MessageDir(rawValue: row["dir"]) ?? .out,
-                    seq: row["seq"],
-                    text: row["text"],
-                    attachmentsJSON: row["attachments_json"],
-                    contextJSON: row["context_json"],
-                    status: MessageStatus(rawValue: row["status"]) ?? .queued,
-                    failureReason: row["failure_reason"],
-                    ts: row["ts"],
-                    serverTS: row["server_ts"],
-                    createdAt: row["created_at"],
-                    agentId: row["agent_id"] ?? "jarvis"
-                )
-            }
+            try Self.windowedRows(db, perAgent: perAgent)
         }
     }
 
-    /// Hard-cap retention, per agent. Deletes messages in this agent's bucket
-    /// beyond `keep` newest. Called by `MessageTimeline` after each insert.
-    /// Keep only the most recent `keep` messages across ALL agents — matches the
-    /// global 500-row timeline fetch. Was previously per-agent with a default
-    /// `agentId: "jarvis"`, so non-jarvis timelines (payne/greg/scrooge) were
-    /// never pruned and the table grew unbounded. Cheap no-op while under cap
-    /// (the count pre-check avoids the NOT IN scan in steady state).
+    /// Each agent's newest `perAgent` rows (partitioned by `agent_id`),
+    /// oldest-first overall. Shared by the observation and unit tests. Uses a
+    /// window function (SQLite ≥ 3.25, well below the iOS floor).
+    static func windowedRows(_ db: Database, perAgent: Int) throws -> [StoredMessage] {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT * FROM (
+              SELECT *, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY ts DESC) AS _rn
+              FROM messages
+            )
+            WHERE _rn <= ?
+            ORDER BY ts ASC
+        """, arguments: [perAgent])
+        return rows.map(Self.mapRow)
+    }
+
+    /// Map a `messages` row to `StoredMessage`. Single source of truth for the
+    /// column decode (was duplicated across every fetch method).
+    static func mapRow(_ row: Row) -> StoredMessage {
+        StoredMessage(
+            id: row["id"],
+            dir: MessageDir(rawValue: row["dir"]) ?? .out,
+            seq: row["seq"],
+            text: row["text"],
+            attachmentsJSON: row["attachments_json"],
+            contextJSON: row["context_json"],
+            status: MessageStatus(rawValue: row["status"]) ?? .queued,
+            failureReason: row["failure_reason"],
+            ts: row["ts"],
+            serverTS: row["server_ts"],
+            createdAt: row["created_at"],
+            agentId: row["agent_id"] ?? "jarvis"
+        )
+    }
+
+    /// Hard-cap retention PER AGENT: keep only each agent's newest `keep`
+    /// messages. Per-agent (not global) so a chatty agent can't evict a quiet
+    /// agent's history out of the DB. Cheap no-op unless some agent actually
+    /// exceeds `keep` (the MAX-per-agent pre-check skips the window scan in
+    /// steady state). Called after each insert.
     func prune(keep: Int = 500) throws {
         try writer.write { db in
-            let count = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM messages") ?? 0
-            guard count > keep else { return }
+            let maxPerAgent = try Int.fetchOne(db, sql: """
+                SELECT MAX(c) FROM (SELECT COUNT(*) AS c FROM messages GROUP BY agent_id)
+            """) ?? 0
+            guard maxPerAgent > keep else { return }
             try db.execute(sql: """
-                DELETE FROM messages
-                WHERE id NOT IN (SELECT id FROM messages ORDER BY ts DESC LIMIT ?)
+                DELETE FROM messages WHERE id IN (
+                  SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY ts DESC) AS _rn
+                    FROM messages
+                  )
+                  WHERE _rn > ?
+                )
             """, arguments: [keep])
         }
     }
