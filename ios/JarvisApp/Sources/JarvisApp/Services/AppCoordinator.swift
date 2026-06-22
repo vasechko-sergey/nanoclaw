@@ -375,7 +375,7 @@ final class AppCoordinator {
     }
 
     /// Splice envelope-level workout_id + image_manifest with the plan_json
-    /// blob (which carries day_name / week / intensity_label / exercises) into
+    /// blob (which carries day_name / week / week_label / exercises) into
     /// the canonical iOS `WorkoutPlan` shape, then decode.
     static func decodeWorkoutPlan(payload p: V2.WorkoutPlan) throws -> WorkoutPlan {
         var wrapper: [String: Any] = [:]

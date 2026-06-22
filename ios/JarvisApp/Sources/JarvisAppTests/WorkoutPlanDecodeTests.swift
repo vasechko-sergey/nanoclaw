@@ -1,11 +1,11 @@
 import XCTest
 @testable import Jarvis
 
-/// Regression: Payne's `workout_plan.plan_json` uses field names that differ
-/// from the canonical model (`slug`/`reps_in_reserve`/`rest_seconds`/
-/// `week_label`) and a cardio warmup carries `target_sets: null`. The strict
-/// model never decoded it → the workout card/auto-open silently failed. These
-/// pin the lenient decode.
+/// Regression: the workout_plan never decoded on iOS because the model's keys
+/// drifted from Payne's `plan_json` (`slug`/`reps_in_reserve`/`rest_seconds`/
+/// `week_label`) and a cardio warmup carries `target_sets: null`. The schema is
+/// now pinned to that canonical vocab (with null-tolerance for the warmup);
+/// these pin the canonical decode + the shared-fixture bridge.
 final class WorkoutPlanDecodeTests: XCTestCase {
     func test_decodesPaynePlanJSON_withNullWarmup() throws {
         // Shape AppCoordinator.decodeWorkoutPlan feeds in: envelope workout_id +
