@@ -384,6 +384,8 @@ Replace with:
 
 - [ ] **Step 3: Add the judge to the result-branch (after the number check passes)**
 
+> **CORRECTION (applied during execution, commits `d69dc9e9`/`9f8d35e1`):** the `break`-based version below is WRONG — `break` exits the `while(true)` event loop and silently drops the reply. The Phase 1 number-bounce does NOT break; it pushes + sets `resultReceived=false` in an `if`, with delivery in the sibling `else`, and lets the loop continue naturally. The implemented version mirrors that: restructure the delivery `else` block with `let proseBounced=false; let proseHedge=false;`, run the judge first, on unsupported prose set `proseBounced=true` (push correction + `resultReceived=false`, NO break), on judge throw set `proseHedge=true`; then guard delivery with `if (!proseBounced)` and fold the prose-hedge into `finalText`. Also: `judgeProse`'s fetch carries `signal: AbortSignal.timeout(20_000)` so a hung proxy fails into the fail-closed-soft hedge instead of parking the turn (the at-result `await` runs with the idle watchdog disarmed). Read poll-loop.ts for the exact final shape.
+
 In the `result` event handler, Phase 1 runs `gateOutboundText` (numbers) and, when grounded, dispatches. Insert the prose judge between "numbers grounded" and "dispatch". Find the grounded path inside the `if (gateOn)` block — the branch that builds `finalText` when `verdict.grounded` is true. Replace the **grounded dispatch** portion:
 
 ```ts
