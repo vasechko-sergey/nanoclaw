@@ -102,6 +102,15 @@ struct ChatView: View {
     /// whole message array and was referenced many times per render.
     @State private var visibleMessages: [ChatMessage] = []
 
+    /// The agent `visibleMessages` was last computed for. Set ATOMICALLY with
+    /// `visibleMessages` in `recomputeVisibleMessages`, and used as the
+    /// ScrollView's `.id` — so the scroll view is rebuilt only once its content
+    /// already reflects the new agent (no stale-data flash), and the rebuilt view
+    /// lands at the bottom via `defaultScrollAnchor` instead of inheriting the
+    /// previous agent's scroll offset (which left the chat blank until a manual
+    /// scroll forced a re-layout).
+    @State private var renderedAgent: AgentIdentity = .jarvis
+
     /// Recompute the cached visible-message list. Filtering semantics are
     /// identical to the previous computed property.
     private func computeVisibleMessages() -> [ChatMessage] {
@@ -114,6 +123,7 @@ struct ChatView: View {
 
     private func recomputeVisibleMessages() {
         visibleMessages = computeVisibleMessages()
+        renderedAgent = active.active
     }
 
     /// Lightweight `Equatable` digest of the full message set used to detect
@@ -265,6 +275,12 @@ struct ChatView: View {
                                 }
                             )
                         }
+                        // Rebuild the scroll view per agent so it never inherits the
+                        // previous agent's scroll offset (which left the new agent's
+                        // chat blank until a manual scroll forced a re-layout). Keyed
+                        // on `renderedAgent` (set with `visibleMessages`) so the fresh
+                        // view already holds the new content and lands at the bottom.
+                        .id(renderedAgent)
                         .defaultScrollAnchor(.bottom)
                         .modifier(BottomSizeChangesAnchor())
                         // Tap anywhere in the chat to dismiss the keyboard.
@@ -323,24 +339,13 @@ struct ChatView: View {
                             }
                         }
                         .onChange(of: active.active) {
-                            // Switching agents swaps the entire message list. The
-                            // ScrollView keeps its prior offset, so without an
-                            // explicit reset it lands at an arbitrary spot in the
-                            // new agent's thread. Jump to the bottom and clear the
-                            // scrolled-up state that drives the FAB.
+                            // The scroll view is rebuilt per agent (`.id(renderedAgent)`)
+                            // and lands at the bottom via defaultScrollAnchor — no manual
+                            // scroll (or stale-offset workaround) needed. Just refresh the
+                            // cached list (which also updates `renderedAgent`) and reset
+                            // the FAB state.
                             isScrolledUp = false
-                            Task { @MainActor in
-                                // 60ms: let the ScrollView swap to the new agent's
-                                // content before scrollTo — the new list isn't in the
-                                // scroll registry until after this layout pass. (This
-                                // is the one deliberate sleep; the content-driven
-                                // scrolls were replaced by defaultScrollAnchor.)
-                                try? await Task.sleep(for: .milliseconds(60))
-                                recomputeVisibleMessages()
-                                if let last = visibleMessages.last {
-                                    proxy.scrollTo(last.id, anchor: .bottom)
-                                }
-                            }
+                            recomputeVisibleMessages()
                         }
                         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                             repinOnKeyboardChange(proxy)
