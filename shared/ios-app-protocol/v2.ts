@@ -38,6 +38,27 @@ export const ContextFieldEnum = z.enum([
 ]);
 export type ContextField = z.infer<typeof ContextFieldEnum>;
 
+export const PlanExerciseSchema = z.object({
+  slug: z.string().min(1),
+  name_ru: z.string().optional(),
+  target_sets: z.number().int().nonnegative().nullable(),
+  target_reps: z.string(),
+  reps_in_reserve: z.number().int().min(0).max(10).nullable(),
+  rest_seconds: z.number().int().nonnegative(),
+  duration_seconds: z.number().int().nonnegative().optional(),
+  weight_kg_target: z.number().nonnegative().optional(),
+  notes: z.string().optional(),
+});
+export type PlanExerciseSchema = z.infer<typeof PlanExerciseSchema>;
+
+export const PlanJsonSchema = z.object({
+  day_name: z.string(),
+  week: z.number().int().nonnegative(),
+  week_label: z.string(),
+  exercises: z.array(PlanExerciseSchema),
+});
+export type PlanJsonSchema = z.infer<typeof PlanJsonSchema>;
+
 export const Envelopes = {
   Auth: EnvelopeBase.extend({
     kind: z.literal('control'),
@@ -185,7 +206,7 @@ export const Envelopes = {
     type: z.literal('workout_plan'),
     payload: z.object({
       workout_id: z.string().min(1),
-      plan_json: z.record(z.string(), z.unknown()),
+      plan_json: PlanJsonSchema,
       image_manifest: z.array(z.object({
         slug: z.string().min(1),
         sha256: z.string().min(1),

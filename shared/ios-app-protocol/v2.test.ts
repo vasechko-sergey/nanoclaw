@@ -227,7 +227,7 @@ describe('workout envelopes', () => {
       ...base, kind: 'control', type: 'workout_plan',
       payload: {
         workout_id: '01J6Z8W3K2N5A7B9C1D3E5F7G9',
-        plan_json: { day_name: 'Верх A', exercises: [] },
+        plan_json: { day_name: 'Верх A', week: 1, week_label: 'лёгкая', exercises: [] },
         image_manifest: [{ slug: 'incline-db-press', sha256: 'abc' }],
         agent_id: 'payne',
       },

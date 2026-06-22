@@ -10,14 +10,14 @@
     "plan_json": {
       "day_name": "Верх A",
       "week": 2,
-      "intensity_label": "тяжёлая",
+      "week_label": "тяжёлая",
       "exercises": [
         {
-          "exercise_slug": "incline-db-press",
+          "slug": "incline-db-press",
           "target_sets": 4,
           "target_reps": "8-10",
-          "target_rir": 2,
-          "rest_sec": 120
+          "reps_in_reserve": 2,
+          "rest_seconds": 120
         }
       ]
     },
