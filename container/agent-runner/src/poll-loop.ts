@@ -335,10 +335,23 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
       // Transient upstream blip thrown out of the stream (overload/5xx/rate
       // limit): leave the batch un-acked for the host to retry with backoff —
-      // no error spam to the user, no premature completion.
+      // no error spam to the user, no premature completion. Gated on zero
+      // user-facing output this turn, mirroring the result-event path: when the
+      // gate is off, <message> blocks stream out during assistant_text events,
+      // so a transient thrown AFTER some blocks already shipped must NOT leave
+      // the batch for retry — a fresh container would re-run the turn and
+      // re-stream the same blocks, double-delivering to the user. With output
+      // already delivered, treat the turn as complete (fall through to
+      // markCompleted) instead.
       if (isTransientApiError(errMsg)) {
-        log(`Transient API error (thrown) — leaving batch for host retry: ${errMsg}`);
-        leaveForRetry = true;
+        if (getUserFacingDispatchCount() === 0) {
+          log(`Transient API error (thrown) — leaving batch for host retry: ${errMsg}`);
+          leaveForRetry = true;
+        } else {
+          log(
+            `Transient API error (thrown) but ${getUserFacingDispatchCount()} message(s) already delivered this turn — completing batch to avoid re-delivery: ${errMsg}`,
+          );
+        }
       } else if (isAuthError(errMsg)) {
         // Classify credential/auth failures distinctly. Since the host's
         // credential proxy injects an OAuth token that EXPIRES, a 401/403 is

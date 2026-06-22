@@ -378,6 +378,40 @@ describe('poll loop — provider error recovery', () => {
       .get() as { status: string } | undefined;
     expect(ack?.status).toBe('processing');
   });
+
+  it('completes the batch (no re-delivery) when a transient throw follows already-delivered output', async () => {
+    insertMessage('m1', { sender: 'Alice', text: 'partial then blip' }, { platformId: 'chan-1', channelType: 'discord' });
+
+    // Provider streams a real <message> block out (delivered to the user via the
+    // gate-off streaming path), THEN the SDK stream throws a transient 529. The
+    // thrown transient path must mirror the result-event guard: because output
+    // was already delivered this turn, leaving the batch un-acked would make the
+    // host re-run the whole turn and RE-STREAM the same block → the user gets
+    // the answer twice. Instead the turn is treated as complete.
+    const provider = new DispatchThenThrowProvider(
+      '<message to="discord-test">partial answer 42</message>',
+      'Overloaded: 529 server overloaded',
+    );
+    const controller = new AbortController();
+    const loopPromise = runPollLoopWithTimeout(provider as unknown as MockProvider, controller.signal, 2000);
+
+    await waitFor(() => getUndeliveredMessages().length > 0, 2000);
+    controller.abort();
+
+    // The streamed block was delivered exactly once — no duplicate outbound.
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0].content).text).toBe('partial answer 42');
+
+    // Batch is COMPLETED (not left 'processing') so the host will not re-run it
+    // and re-deliver the partial answer.
+    const ack = getOutboundDb()
+      .prepare(`SELECT status FROM processing_ack WHERE message_id = 'm1'`)
+      .get() as { status: string } | undefined;
+    expect(ack?.status).toBe('completed');
+
+    await loopPromise.catch(() => {});
+  });
 });
 
 describe('poll loop — stale session recovery', () => {
@@ -465,6 +499,42 @@ class ThrowingProvider {
       end() {},
       abort() {},
       events: (async function* () {
+        throw new Error(errorMessage);
+      })(),
+    };
+  }
+}
+
+/**
+ * Provider that streams one assistant_text block (so the gate-off poll loop
+ * dispatches it to outbound), THEN throws — simulating a transient upstream
+ * blip that arrives AFTER user-facing output already went out this turn.
+ */
+class DispatchThenThrowProvider {
+  readonly supportsNativeSlashCommands = false;
+  private text: string;
+  private errorMessage: string;
+
+  constructor(text: string, errorMessage: string) {
+    this.text = text;
+    this.errorMessage = errorMessage;
+  }
+
+  isSessionInvalid(): boolean {
+    return false;
+  }
+
+  query(_input: { prompt: string; cwd: string }) {
+    const text = this.text;
+    const errorMessage = this.errorMessage;
+    return {
+      push() {},
+      end() {},
+      abort() {},
+      events: (async function* () {
+        yield { type: 'activity' as const };
+        yield { type: 'init' as const, continuation: 'live-session' };
+        yield { type: 'assistant_text' as const, text };
         throw new Error(errorMessage);
       })(),
     };
