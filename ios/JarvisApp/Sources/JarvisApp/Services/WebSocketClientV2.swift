@@ -533,6 +533,18 @@ final class WebSocketClientV2 {
             return [m]
         }
 
+        // Inbound workout-plan card (Payne). Built before text/attachment so a
+        // plan row renders as a tappable card. The persisted `action_choice`
+        // restores the done-state after reload. Decode failure falls through.
+        if let wj = row.workoutPlanJSON, let data = wj.data(using: .utf8),
+           let plan = try? JSONDecoder().decode(WorkoutPlan.self, from: data) {
+            let info = WorkoutPlanCardInfo(plan: plan, done: row.actionChoice != nil, outcome: row.actionChoice)
+            var m = ChatMessage(id: row.id, role: role, content: .workoutPlan(info), timestamp: timestamp)
+            m.deliveryStatus = mapDelivery(row.status)
+            m.agentId = row.agentId
+            return [m]
+        }
+
         if let attJSON = row.attachmentsJSON,
            let data = attJSON.data(using: .utf8),
            let atts = try? JSONDecoder().decode([StoredAttachment].self, from: data),
