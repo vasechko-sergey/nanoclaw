@@ -132,6 +132,32 @@ final class ConversationStoreV2AgentTests: XCTestCase {
         XCTAssertEqual(Set(all.map(\.id)), Set(["j-1", "p-1", "g-1"]))
     }
 
+    func test_insertInbound_persistsActions_andMarkAnswered() throws {
+        let store = try makeStore()
+        let actions = [V2.Action(id: "yes", label: "Yes", style: "primary"),
+                       V2.Action(id: "no", label: "No", style: nil)]
+        let message = V2.Message(thread_id: "t1", text: "Proceed?", actions: actions)
+        let envelope = V2.Envelope(
+            v: V2.protocolVersion,
+            kind: .data,
+            type: .message,
+            id: "q1",
+            seq: 3,
+            ts: "2026-06-22T00:00:00Z",
+            payload: .message(message)
+        )
+
+        try store.insertInbound(envelope: envelope, message: message)
+
+        let row = try store.fetchById("q1")!
+        let stored = try JSONDecoder().decode([StoredAction].self, from: Data(row.actionsJSON!.utf8))
+        XCTAssertEqual(stored.map(\.id), ["yes", "no"])
+        XCTAssertNil(row.actionChoice)
+
+        try store.markActionAnswered(rowId: "q1", choice: "yes")
+        XCTAssertEqual(try store.fetchById("q1")!.actionChoice, "yes")
+    }
+
     func test_v4Migration_addsAgentIdColumn_andIndex() throws {
         let queue = try DatabaseQueue()
         try Schema.migrate(queue)

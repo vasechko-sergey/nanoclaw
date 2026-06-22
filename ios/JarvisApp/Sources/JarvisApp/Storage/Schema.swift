@@ -135,6 +135,12 @@ enum Schema {
             // bytes now live in ChatImageStore (on disk). Drop the dead table.
             try db.execute(sql: "DROP TABLE IF EXISTS attachments;")
         }
+        m.registerMigration("v7-message-actions") { db in
+            // Inbound action cards: persist the offered buttons (actions_json) and
+            // the answered choice (action_choice) so a card survives app reload.
+            try db.execute(sql: "ALTER TABLE messages ADD COLUMN actions_json TEXT;")
+            try db.execute(sql: "ALTER TABLE messages ADD COLUMN action_choice TEXT;")
+        }
         try m.migrate(writer)
     }
 }

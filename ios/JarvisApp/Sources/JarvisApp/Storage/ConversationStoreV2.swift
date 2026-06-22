@@ -21,6 +21,8 @@ struct StoredMessage: Equatable {
     var serverTS: Int?
     var createdAt: Int
     var agentId: String = "jarvis"
+    var actionsJSON: String? = nil
+    var actionChoice: String? = nil
 }
 
 final class ConversationStoreV2 {
@@ -87,7 +89,9 @@ final class ConversationStoreV2 {
                     ts: row["ts"],
                     serverTS: row["server_ts"],
                     createdAt: row["created_at"],
-                    agentId: row["agent_id"] ?? "jarvis"
+                    agentId: row["agent_id"] ?? "jarvis",
+                    actionsJSON: row["actions_json"],
+                    actionChoice: row["action_choice"]
                 )
             }
         }
@@ -183,11 +187,27 @@ final class ConversationStoreV2 {
             } else {
                 attachmentsJSON = nil
             }
+            let actionsJSON: String?
+            if let acts = message.actions, !acts.isEmpty {
+                let stored = acts.map(StoredAction.from)
+                actionsJSON = String(data: try encoder.encode(stored), encoding: .utf8)
+            } else {
+                actionsJSON = nil
+            }
             try db.execute(sql: """
                 INSERT INTO messages
-                  (id, dir, seq, text, attachments_json, status, ts, created_at, agent_id)
-                VALUES (?, 'in', ?, ?, ?, 'new', ?, ?, ?)
-            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, now, now, agentId])
+                  (id, dir, seq, text, attachments_json, actions_json, status, ts, created_at, agent_id)
+                VALUES (?, 'in', ?, ?, ?, ?, 'new', ?, ?, ?)
+            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, now, now, agentId])
+        }
+    }
+
+    /// Record the user's answer to an inbound action card. Persisted so the
+    /// answered state survives reload (the rendered card shows the chosen option).
+    func markActionAnswered(rowId: String, choice: String) throws {
+        try writer.write { db in
+            try db.execute(sql: "UPDATE messages SET action_choice=? WHERE id=?",
+                           arguments: [choice, rowId])
         }
     }
 
@@ -274,7 +294,9 @@ final class ConversationStoreV2 {
                 ts: row["ts"],
                 serverTS: row["server_ts"],
                 createdAt: row["created_at"],
-                agentId: row["agent_id"] ?? "jarvis"
+                agentId: row["agent_id"] ?? "jarvis",
+                actionsJSON: row["actions_json"],
+                actionChoice: row["action_choice"]
             )
         }
     }
@@ -296,7 +318,9 @@ final class ConversationStoreV2 {
                     ts: row["ts"],
                     serverTS: row["server_ts"],
                     createdAt: row["created_at"],
-                    agentId: row["agent_id"] ?? "jarvis"
+                    agentId: row["agent_id"] ?? "jarvis",
+                    actionsJSON: row["actions_json"],
+                    actionChoice: row["action_choice"]
                 )
             }
         }
@@ -329,7 +353,9 @@ final class ConversationStoreV2 {
                     ts: row["ts"],
                     serverTS: row["server_ts"],
                     createdAt: row["created_at"],
-                    agentId: row["agent_id"] ?? "jarvis"
+                    agentId: row["agent_id"] ?? "jarvis",
+                    actionsJSON: row["actions_json"],
+                    actionChoice: row["action_choice"]
                 )
             }
         }
@@ -379,7 +405,9 @@ final class ConversationStoreV2 {
             ts: row["ts"],
             serverTS: row["server_ts"],
             createdAt: row["created_at"],
-            agentId: row["agent_id"] ?? "jarvis"
+            agentId: row["agent_id"] ?? "jarvis",
+            actionsJSON: row["actions_json"],
+            actionChoice: row["action_choice"]
         )
     }
 
