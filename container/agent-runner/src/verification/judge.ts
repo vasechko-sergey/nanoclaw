@@ -36,6 +36,7 @@ export function parseJudgeVerdict(text: string): ProseVerdict {
 }
 
 const HAIKU_MODEL = 'claude-haiku-4-5';
+const JUDGE_TIMEOUT_MS = 20_000;
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -68,6 +69,7 @@ export async function judgeProse(
 
   const res = await fetchImpl(`${base}/v1/messages`, {
     method: 'POST',
+    signal: AbortSignal.timeout(JUDGE_TIMEOUT_MS),
     headers,
     body: JSON.stringify({
       model: HAIKU_MODEL,

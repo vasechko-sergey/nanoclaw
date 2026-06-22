@@ -54,3 +54,13 @@ test('judgeProse throws on non-200', async () => {
   const fakeFetch = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
   await expect(judgeProse('r', 's', fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' })).rejects.toThrow();
 });
+
+test('judgeProse passes an abort signal (timeout)', async () => {
+  let sig: unknown;
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    sig = init.signal;
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: '{"unsupported":[]}' }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await judgeProse('r', 's', fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
+  expect(sig).toBeInstanceOf(AbortSignal);
+});

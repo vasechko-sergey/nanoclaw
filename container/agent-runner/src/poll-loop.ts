@@ -870,13 +870,14 @@ async function processQuery(
               // fail-closed-soft hedge via finalText. Shares factualityRetries.
               let proseBounced = false;
               let proseHedge = false;
+              const sources = groundingText.join('\n');
               if (
                 verdict.grounded &&
-                shouldJudgeProse(gateMode, groundingText.join('\n'), event.text) &&
+                shouldJudgeProse(gateMode, sources, event.text) &&
                 factualityRetries < FACTUALITY_MAX_RETRIES
               ) {
                 try {
-                  const prose = await judgeProse(event.text, groundingText.join('\n'));
+                  const prose = await judgeProse(event.text, sources);
                   if (prose.unsupported.length > 0) {
                     factualityRetries++;
                     log(
