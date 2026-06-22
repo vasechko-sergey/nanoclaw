@@ -12,13 +12,8 @@
       "week": 2,
       "week_label": "тяжёлая",
       "exercises": [
-        {
-          "slug": "incline-db-press",
-          "target_sets": 4,
-          "target_reps": "8-10",
-          "reps_in_reserve": 2,
-          "rest_seconds": 120
-        }
+        { "slug": "hodba", "name_ru": "Ходьба", "target_sets": null, "target_reps": "", "reps_in_reserve": null, "rest_seconds": 0, "duration_seconds": 300, "notes": "разминка" },
+        { "slug": "incline-db-press", "target_sets": 4, "target_reps": "8-10", "reps_in_reserve": 2, "rest_seconds": 120 }
       ]
     },
     "image_manifest": [
