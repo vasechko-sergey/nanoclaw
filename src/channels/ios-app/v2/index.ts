@@ -93,6 +93,22 @@ function logV2Warn(msg: string, ctx?: Record<string, unknown>): void {
 }
 
 /**
+ * Resolve an agent_group_id to its canonical folder slug for the outbound
+ * `agent_id` stamp. Shared by the default-message build and the ask_question
+ * branch so the warn-on-lookup-failure log lives in exactly one place. Returns
+ * undefined when there's no agent_group_id, or the group/folder can't be
+ * resolved (caller then omits the agent_id field and the device falls back to
+ * its default-agent behavior).
+ */
+function resolveAgentFolder(agentGroupId: string | undefined): string | undefined {
+  if (!agentGroupId) return undefined;
+  const group = getAgentGroup(agentGroupId);
+  if (group?.folder) return group.folder;
+  logV2Warn('outbound agent_group not found, omitting agent_id', { agent_group_id: agentGroupId });
+  return undefined;
+}
+
+/**
  * Resolve `(platform_id, agent_id)` → active session id for THIS channel.
  *
  * Look up the messaging_group by (channel_type='ios-app-v2', platform_id).
@@ -525,6 +541,46 @@ function createV2Adapter(): ChannelAdapter | null {
         return undefined;
       }
 
+      // ask_question outbound — render as a v2 data:message carrying actions[].
+      // The envelope id == questionId so the device's action_response.action_id
+      // maps straight back to the pending question via the existing onAction
+      // router (no separate question envelope type needed). The agent_id stamp
+      // mirrors the default-message path below so the reply lands in the right
+      // per-agent thread.
+      if (contentType === 'ask_question') {
+        const questionId = String(content.questionId ?? content.id ?? randomUUID());
+        const qTitle = typeof content.title === 'string' ? content.title : '';
+        const qBody = typeof content.question === 'string' ? content.question : '';
+        const qText = qTitle ? `${qTitle}\n${qBody}` : qBody;
+        const options = Array.isArray(content.options) ? content.options : [];
+        const actions = options.map((o: { label: string; value?: string }) => ({
+          id: String(o.value ?? o.label),
+          label: String(o.label),
+          style: 'primary' as const,
+        }));
+
+        // Resolve the originating agent's folder slug exactly as the default
+        // path does, so the device can route the reply into the per-agent
+        // thread. Omit on lookup failure (device falls back to default agent).
+        const agentFolder = resolveAgentFolder(message.agentGroupId);
+
+        handler.sendEnvelopeToDevice(platformId, {
+          id: questionId,
+          kind: 'data',
+          type: 'message',
+          payload: {
+            thread_id: threadId ?? 'default',
+            text: qText,
+            // The wire schema requires actions[].min(1).optional() — a present
+            // but empty array fails device-side validation. Spread it only when
+            // we actually have options; otherwise omit the field entirely.
+            ...(actions.length > 0 ? { actions } : {}),
+            ...(agentFolder ? { agent_id: agentFolder } : {}),
+          },
+        });
+        return questionId;
+      }
+
       // Default outbound: enqueue as a v2 data:message envelope so the iOS
       // Codable mirror accepts it. WsHandler allocates the seq and flushes
       // to the device if the socket is live.
@@ -560,18 +616,7 @@ function createV2Adapter(): ChannelAdapter | null {
       // so the iOS app can route the reply into the per-agent thread. If the
       // lookup fails — group deleted, missing folder — log and omit the field
       // (device falls back to its default-agent behavior).
-      const agentGroupId = message.agentGroupId;
-      let agentFolder: string | undefined;
-      if (agentGroupId) {
-        const group = getAgentGroup(agentGroupId);
-        if (group?.folder) {
-          agentFolder = group.folder;
-        } else {
-          logV2Warn('outbound agent_group not found, omitting agent_id', {
-            agent_group_id: agentGroupId,
-          });
-        }
-      }
+      const agentFolder = resolveAgentFolder(message.agentGroupId);
 
       // A server-rendered voice note carries reply_to_id = the text reply's
       // message id, so the device attaches the audio to that exact bubble.
