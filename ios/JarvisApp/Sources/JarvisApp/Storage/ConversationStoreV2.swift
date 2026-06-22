@@ -23,6 +23,7 @@ struct StoredMessage: Equatable {
     var agentId: String = "jarvis"
     var actionsJSON: String? = nil
     var actionChoice: String? = nil
+    var workoutPlanJSON: String? = nil
 }
 
 final class ConversationStoreV2 {
@@ -91,7 +92,8 @@ final class ConversationStoreV2 {
                     createdAt: row["created_at"],
                     agentId: row["agent_id"] ?? "jarvis",
                     actionsJSON: row["actions_json"],
-                    actionChoice: row["action_choice"]
+                    actionChoice: row["action_choice"],
+                    workoutPlanJSON: row["workout_plan_json"]
                 )
             }
         }
@@ -202,6 +204,24 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Persist an inbound workout plan as a chat message. The plan JSON is
+    /// stored so the card (and the WorkoutView opened from it) survive reload.
+    /// Idempotent on `id` (= workoutId) so a duplicate `workout_plan` envelope
+    /// doesn't double the card. `text` holds a compact summary for the row's
+    /// fallback/voiceover; the card view renders its own layout from the plan.
+    func insertWorkoutPlan(id: String, agentId: String, plan: WorkoutPlan) throws {
+        try writer.write { db in
+            let now = Int(Date().timeIntervalSince1970 * 1000)
+            let json = String(data: try JSONEncoder().encode(plan), encoding: .utf8)
+            let summary = "🏋️ \(plan.dayName) · \(plan.intensityLabel) · \(plan.exercises.count) упр."
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO messages
+                  (id, dir, seq, text, status, ts, created_at, agent_id, workout_plan_json)
+                VALUES (?, 'in', NULL, ?, 'new', ?, ?, ?, ?)
+            """, arguments: [id, summary, now, now, agentId, json])
+        }
+    }
+
     /// Record the user's answer to an inbound action card. Persisted so the
     /// answered state survives reload (the rendered card shows the chosen option).
     func markActionAnswered(rowId: String, choice: String) throws {
@@ -296,7 +316,8 @@ final class ConversationStoreV2 {
                 createdAt: row["created_at"],
                 agentId: row["agent_id"] ?? "jarvis",
                 actionsJSON: row["actions_json"],
-                actionChoice: row["action_choice"]
+                actionChoice: row["action_choice"],
+                workoutPlanJSON: row["workout_plan_json"]
             )
         }
     }
@@ -320,7 +341,8 @@ final class ConversationStoreV2 {
                     createdAt: row["created_at"],
                     agentId: row["agent_id"] ?? "jarvis",
                     actionsJSON: row["actions_json"],
-                    actionChoice: row["action_choice"]
+                    actionChoice: row["action_choice"],
+                    workoutPlanJSON: row["workout_plan_json"]
                 )
             }
         }
@@ -355,7 +377,8 @@ final class ConversationStoreV2 {
                     createdAt: row["created_at"],
                     agentId: row["agent_id"] ?? "jarvis",
                     actionsJSON: row["actions_json"],
-                    actionChoice: row["action_choice"]
+                    actionChoice: row["action_choice"],
+                    workoutPlanJSON: row["workout_plan_json"]
                 )
             }
         }
@@ -407,7 +430,8 @@ final class ConversationStoreV2 {
             createdAt: row["created_at"],
             agentId: row["agent_id"] ?? "jarvis",
             actionsJSON: row["actions_json"],
-            actionChoice: row["action_choice"]
+            actionChoice: row["action_choice"],
+            workoutPlanJSON: row["workout_plan_json"]
         )
     }
 

@@ -158,6 +158,35 @@ final class ConversationStoreV2AgentTests: XCTestCase {
         XCTAssertEqual(try store.fetchById("q1")!.actionChoice, "yes")
     }
 
+    func test_insertWorkoutPlan_persistsPlanJSON_idempotent_andMarkDone() throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ConversationStoreV2(writer: dbq)
+
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "День груди", week: 3, intensityLabel: "средняя",
+            exercises: [
+                ExercisePlan(exerciseSlug: "bench", targetSets: 4, targetReps: "8-10", targetRir: 2, restSec: 120, notes: nil),
+                ExercisePlan(exerciseSlug: "fly", targetSets: 3, targetReps: "12-15", targetRir: 1, restSec: 90, notes: nil),
+            ],
+            imageManifest: [])
+
+        try store.insertWorkoutPlan(id: plan.workoutId, agentId: "payne", plan: plan)
+        let row = try store.fetchById("w1")!
+        XCTAssertNotNil(row.workoutPlanJSON)
+        XCTAssertEqual(row.agentId, "payne")
+        XCTAssertNil(row.actionChoice)
+        let decoded = try JSONDecoder().decode(WorkoutPlan.self, from: Data(row.workoutPlanJSON!.utf8))
+        XCTAssertEqual(decoded, plan)
+
+        try store.insertWorkoutPlan(id: plan.workoutId, agentId: "payne", plan: plan)
+        let count = try dbq.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM messages WHERE id=?", arguments: ["w1"]) }
+        XCTAssertEqual(count, 1)
+
+        try store.markActionAnswered(rowId: "w1", choice: "completed")
+        XCTAssertEqual(try store.fetchById("w1")!.actionChoice, "completed")
+    }
+
     func test_v4Migration_addsAgentIdColumn_andIndex() throws {
         let queue = try DatabaseQueue()
         try Schema.migrate(queue)

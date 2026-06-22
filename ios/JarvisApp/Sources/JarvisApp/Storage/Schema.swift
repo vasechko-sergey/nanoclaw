@@ -141,6 +141,9 @@ enum Schema {
             try db.execute(sql: "ALTER TABLE messages ADD COLUMN actions_json TEXT;")
             try db.execute(sql: "ALTER TABLE messages ADD COLUMN action_choice TEXT;")
         }
+        m.registerMigration("v8-workout-plan") { db in
+            try db.execute(sql: "ALTER TABLE messages ADD COLUMN workout_plan_json TEXT;")
+        }
         try m.migrate(writer)
     }
 }
