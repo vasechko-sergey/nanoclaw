@@ -18,6 +18,8 @@ import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types
 import type { FactualityGate } from './config.js';
 import { extractDataNumbers } from './verification/numbers.js';
 import { gateOutboundText } from './verification/poll-gate.js';
+import { judgeProse } from './verification/judge.js';
+import { shouldJudgeProse } from './verification/prose-trigger.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -286,8 +288,10 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // Factuality gate: seed the per-turn grounding set with the numbers the
     // user already supplied this turn (the prompt). Tool outputs get folded in
     // as tool_use_end events arrive. When the gate is off this is unused.
-    const gateOn = (config.factualityGate ?? 'off') !== 'off';
+    const gateMode = config.factualityGate ?? 'off';
+    const gateOn = gateMode !== 'off';
     const grounding = new Set<string>();
+    const groundingText: string[] = []; // raw tool outputs this turn (Phase 2)
     if (gateOn) {
       for (const n of extractDataNumbers(prompt)) grounding.add(n);
     }
@@ -315,7 +319,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     setCurrentInReplyTo(routing.inReplyTo);
     let leaveForRetry = false;
     try {
-      const result = await processQuery(query, routing, processingIds, config.providerName, gateOn, grounding);
+      const result = await processQuery(query, routing, processingIds, config.providerName, gateOn, grounding, gateMode, groundingText);
       if (result.continuation && result.continuation !== continuation) {
         continuation = result.continuation;
         setContinuation(config.providerName, continuation);
@@ -492,6 +496,8 @@ async function processQuery(
   providerName: string,
   gateOn = false,
   grounding: Set<string> = new Set(),
+  gateMode: import('./config.js').FactualityGate = 'off',
+  groundingText: string[] = [],
 ): Promise<QueryResult> {
   let queryContinuation: string | undefined;
   let done = false;
@@ -756,6 +762,10 @@ async function processQuery(
         // factuality gate can trace the agent's numbers back to a source.
         if (gateOn && event.output) {
           for (const n of extractDataNumbers(event.output)) grounding.add(n);
+          if (gateMode === 'full') {
+            const used = groundingText.reduce((a, s) => a + s.length, 0);
+            if (used < 8000) groundingText.push(event.output.slice(0, 8000 - used));
+          }
         }
       }
 
@@ -853,22 +863,58 @@ async function processQuery(
                   `Factuality gate: retry budget exhausted — delivering hedged (ungrounded [${verdict.ungrounded.join(', ')}])`,
                 );
               }
-              const finalText = verdict.grounded
-                ? event.text
-                : `${event.text}\n\n⚠️ Часть чисел выше я не смог подтвердить по источнику — перепроверь перед использованием.`;
-              const { hasUnwrapped } = dispatchResultText(finalText, routing, dispatchedKeys);
-              dispatchedKeys = new Set<string>();
-              if (hasUnwrapped && !unwrappedNudged) {
-                unwrappedNudged = true;
-                const destinations = getAllDestinations();
-                const names = destinations.map((d) => d.name).join(', ');
-                resultReceived = false;
-                query.push(
-                  `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
-                    `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
-                    `Your destinations: ${names}. ` +
-                    `Please re-send your response with the correct wrapping.</system>`,
-                );
+              // Phase 2: prose judge (full mode) — only when numbers are clean.
+              // Mirrors the number-bounce above: on unsupported prose, push a
+              // correction + re-arm and SKIP delivery (proseBounced) so the
+              // while-loop consumes the regenerated turn. Judge error →
+              // fail-closed-soft hedge via finalText. Shares factualityRetries.
+              let proseBounced = false;
+              let proseHedge = false;
+              if (
+                verdict.grounded &&
+                shouldJudgeProse(gateMode, groundingText.join('\n'), event.text) &&
+                factualityRetries < FACTUALITY_MAX_RETRIES
+              ) {
+                try {
+                  const prose = await judgeProse(event.text, groundingText.join('\n'));
+                  if (prose.unsupported.length > 0) {
+                    factualityRetries++;
+                    log(
+                      `Factuality judge: unsupported prose — bouncing (retry ${factualityRetries}/${FACTUALITY_MAX_RETRIES})`,
+                    );
+                    resultReceived = false; // a correction starts a fresh turn
+                    query.push(
+                      `<system>A fact-check found these claims in your reply unsupported by this turn's tool output: ` +
+                        prose.unsupported.map((u) => `"${u.claim}" (${u.why})`).join('; ') +
+                        `. Re-check the tool/script output and correct or remove them, then re-send your full reply.</system>`,
+                    );
+                    proseBounced = true;
+                  }
+                } catch (err) {
+                  proseHedge = true;
+                  log(`Factuality judge error (fail-closed-soft): ${err instanceof Error ? err.message : String(err)}`);
+                }
+              }
+              if (!proseBounced) {
+                const finalText = !verdict.grounded
+                  ? `${event.text}\n\n⚠️ Часть чисел выше я не смог подтвердить по источнику — перепроверь перед использованием.`
+                  : proseHedge
+                    ? `${event.text}\n\n⚠️ Факты не проверены (проверяльщик недоступен).`
+                    : event.text;
+                const { hasUnwrapped } = dispatchResultText(finalText, routing, dispatchedKeys);
+                dispatchedKeys = new Set<string>();
+                if (hasUnwrapped && !unwrappedNudged) {
+                  unwrappedNudged = true;
+                  const destinations = getAllDestinations();
+                  const names = destinations.map((d) => d.name).join(', ');
+                  resultReceived = false;
+                  query.push(
+                    `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
+                      `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
+                      `Your destinations: ${names}. ` +
+                      `Please re-send your response with the correct wrapping.</system>`,
+                  );
+                }
               }
             }
           } else {
