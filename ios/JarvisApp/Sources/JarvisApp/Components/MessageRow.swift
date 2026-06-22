@@ -10,6 +10,7 @@ struct MessageRow: View {
     var onImageTap: ((_ thumbnail: UIImage, _ sha: String?) -> Void)? = nil
     var onFeedback: ((String, Bool) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil
+    var onWorkoutStart: ((WorkoutPlan, String) -> Void)? = nil
     var onRetry: ((String) -> Void)? = nil
     /// Shared player so a voice-note bubble can play/stop its own audio and
     /// reflect which note is currently playing.
@@ -36,6 +37,8 @@ struct MessageRow: View {
                 FileRow(info: info, isUser: isUser, isLast: isLast)
             case .action(let info):
                 ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast)
+            case .workoutPlan(let info):
+                WorkoutPlanRow(messageId: message.id, info: info, onStart: onWorkoutStart, isLast: isLast)
             case .status(let info):
                 StatusRow(info: info)
             }
@@ -228,6 +231,8 @@ struct MessageRow: View {
             return "\(role): аудио \(info.name). \(time)"
         case .action(let info):
             return "Jarvis запрашивает: \(info.text). \(time)"
+        case .workoutPlan(let info):
+            return "Payne: тренировка \(info.dayName), \(info.intensityLabel), \(info.exerciseCount) упражнений. \(time)"
         case .status(let info):
             return "Система: \(info.text). \(time)"
         }
@@ -559,6 +564,80 @@ struct ActionRow: View {
         case .primary:   return Theme.accent.opacity(0.3)
         case .danger:    return Theme.offline.opacity(0.3)
         case .secondary: return Theme.surfaceBorder
+        }
+    }
+}
+
+// MARK: - Workout-plan row
+
+struct WorkoutPlanRow: View {
+    let messageId: String
+    let info: WorkoutPlanCardInfo
+    var onStart: ((WorkoutPlan, String) -> Void)?
+    let isLast: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 10) {
+                Circle()
+                    .fill(Theme.accent)
+                    .frame(width: Theme.avatarDotSize, height: Theme.avatarDotSize)
+                    .shadow(color: Theme.accent.opacity(0.5), radius: 3)
+                    .padding(.top, 7)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("PAYNE")
+                        .font(Theme.metaFont)
+                        .tracking(0.5)
+                        .foregroundStyle(Theme.accentMedium)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "figure.strengthtraining.traditional")
+                            .font(.system(size: 13))
+                        Text("\(info.dayName) · \(info.intensityLabel) · \(info.exerciseCount) упр.")
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .foregroundStyle(Theme.assistantText)
+
+                    Button {
+                        Theme.hapticSend()
+                        onStart?(info.plan, messageId)
+                    } label: {
+                        HStack(spacing: 5) {
+                            if info.done {
+                                CheckmarkShape()
+                                    .stroke(Theme.textSecondary.opacity(0.6), style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
+                                    .frame(width: 9, height: 6)
+                            }
+                            Text("Начать тренировку")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundStyle(info.done ? Theme.textSecondary.opacity(0.6) : Theme.accent)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(info.done ? Color.clear : Theme.accent.opacity(0.16))
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule().stroke(
+                                info.done ? Theme.surfaceBorder.opacity(0.5) : Theme.accent.opacity(0.35),
+                                lineWidth: info.done ? Theme.lineHairline : Theme.lineAccent
+                            )
+                        )
+                        .opacity(info.done ? 0.6 : 1)
+                    }
+                    .disabled(info.done)
+                    .animation(.easeOut(duration: 0.2), value: info.done)
+                }
+            }
+            .padding(.horizontal, Theme.rowPadH)
+            .padding(.vertical, Theme.rowPadV)
+
+            if !isLast {
+                Rectangle()
+                    .fill(Theme.hairlineColor)
+                    .frame(height: 0.5)
+                    .padding(.horizontal, Theme.rowPadH)
+            }
         }
     }
 }

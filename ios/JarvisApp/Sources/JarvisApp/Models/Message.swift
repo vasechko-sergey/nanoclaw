@@ -30,6 +30,19 @@ struct ActionInfo: Equatable {
     var selectedId: String? = nil   // which button was tapped
 }
 
+/// Inbound workout-plan card (Payne). Carries the full decoded plan so tapping
+/// "Начать тренировку" can open WorkoutView from the held plan (no round-trip).
+/// `done`/`outcome` mirror the B1 answered visual, set when the workout ends.
+struct WorkoutPlanCardInfo: Equatable {
+    let plan: WorkoutPlan
+    var done: Bool = false
+    var outcome: String? = nil   // "completed" | "aborted"
+
+    var dayName: String { plan.dayName }
+    var intensityLabel: String { plan.intensityLabel }
+    var exerciseCount: Int { plan.exercises.count }
+}
+
 struct StatusInfo: Equatable {
     let text: String
     let level: Level
@@ -75,6 +88,7 @@ struct ChatMessage: Identifiable {
         case file(FileInfo)
         case audio(FileInfo)   // server-rendered voice note (kind=="audio" or mime audio/*)
         case action(ActionInfo)
+        case workoutPlan(WorkoutPlanCardInfo)
         case status(StatusInfo)
     }
 
@@ -86,6 +100,7 @@ struct ChatMessage: Identifiable {
         case .action(let a): return a.text
         case .status(let s): return s.text
         case .audio(let f): return f.name
+        case .workoutPlan(let w): return "🏋️ \(w.dayName) · \(w.intensityLabel) · \(w.exerciseCount) упр."
         default: return ""
         }
     }
