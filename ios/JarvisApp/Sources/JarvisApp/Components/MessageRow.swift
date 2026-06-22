@@ -487,37 +487,43 @@ struct ActionRow: View {
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.assistantText)
 
-                    if info.answered, let sid = info.selectedId,
-                       let btn = info.buttons.first(where: { $0.id == sid }) {
-                        HStack(spacing: 6) {
-                            CheckmarkShape()
-                                .stroke(Theme.accent, style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
-                                .frame(width: 10, height: 6)
-                            Text(btn.label)
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Theme.accent.opacity(0.12))
-                        .clipShape(Capsule())
-                    } else {
-                        FlowLayoutRow(spacing: 8) {
-                            ForEach(info.buttons) { btn in
-                                Button {
-                                    Theme.hapticSend()
-                                    onTap?(messageId, btn.id, btn.label)
-                                } label: {
+                    // Buttons stay visible after the tap. The chosen one keeps its
+                    // accent fill + a checkmark + a thicker outline; the rest go
+                    // grey/cleared/dimmed; all become non-tappable. So it's clear
+                    // which option was picked (and what the alternatives were).
+                    FlowLayoutRow(spacing: 8) {
+                        ForEach(info.buttons) { btn in
+                            let isSelected = info.selectedId == btn.id
+                            let dimmed = info.answered && !isSelected
+                            Button {
+                                Theme.hapticSend()
+                                onTap?(messageId, btn.id, btn.label)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    if info.answered && isSelected {
+                                        CheckmarkShape()
+                                            .stroke(foregroundFor(btn.style), style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
+                                            .frame(width: 9, height: 6)
+                                    }
                                     Text(btn.label)
                                         .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(foregroundFor(btn.style))
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 8)
-                                        .background(backgroundFor(btn.style))
-                                        .clipShape(Capsule())
-                                        .overlay(Capsule().stroke(borderFor(btn.style), lineWidth: Theme.lineHairline))
                                 }
+                                .foregroundStyle(dimmed ? Theme.textSecondary.opacity(0.6) : foregroundFor(btn.style))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(dimmed ? Color.clear : backgroundFor(btn.style))
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule().stroke(
+                                        (info.answered && isSelected) ? foregroundFor(btn.style)
+                                            : (dimmed ? Theme.surfaceBorder.opacity(0.5) : borderFor(btn.style)),
+                                        lineWidth: (info.answered && isSelected) ? Theme.lineAccent : Theme.lineHairline
+                                    )
+                                )
+                                .opacity(dimmed ? 0.6 : 1)
                             }
+                            .disabled(info.answered)
+                            .animation(.easeOut(duration: 0.2), value: info.answered)
                         }
                     }
                 }
