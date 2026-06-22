@@ -234,6 +234,12 @@ final class AppCoordinator {
         try? chatStore?.markActionAnswered(rowId: rowId, choice: choice)
     }
 
+    /// Persist an inbound workout plan as a chat card. No-op if the store isn't
+    /// built yet. (Plan also pre-fetched into the image cache by the caller.)
+    func insertWorkoutPlan(_ plan: WorkoutPlan) {
+        try? chatStore?.insertWorkoutPlan(id: plan.workoutId, agentId: "payne", plan: plan)
+    }
+
     // MARK: – Wiring
 
     private func wireUp() {
@@ -327,7 +333,7 @@ final class AppCoordinator {
             //    halves together in a Dictionary, then run JSONDecoder.
             do {
                 let plan = try Self.decodeWorkoutPlan(payload: p)
-                workoutBus.events.send(.planReceived(plan))
+                insertWorkoutPlan(plan)
             } catch {
                 Log.warn(.ws, "workout_plan decode failed: \(error)")
             }

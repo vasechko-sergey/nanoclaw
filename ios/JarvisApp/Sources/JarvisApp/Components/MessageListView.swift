@@ -16,6 +16,7 @@ struct MessageListView: UIViewRepresentable {
     var onImageTap: (UIImage, String?) -> Void
     var onFeedback: (String, Bool) -> Void
     var onActionTap: (String, String, String) -> Void
+    var onWorkoutStart: ((WorkoutPlan, String) -> Void)? = nil
     var onRetry: (String) -> Void
     var onMessageRead: (String) -> Void
     var audioPlayer: AudioPlaybackService?
@@ -104,6 +105,7 @@ struct MessageListView: UIViewRepresentable {
                             onImageTap: self.parent.onImageTap,
                             onFeedback: self.parent.onFeedback,
                             onActionTap: self.parent.onActionTap,
+                            onWorkoutStart: self.parent.onWorkoutStart,
                             onRetry: self.parent.onRetry,
                             audioPlayer: self.parent.audioPlayer
                         )

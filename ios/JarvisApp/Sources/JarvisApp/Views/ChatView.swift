@@ -12,6 +12,7 @@ private struct FullScreenImagePresentation: Identifiable {
 private struct WorkoutPresentation: Identifiable {
     let plan: WorkoutPlan
     let coord: WorkoutCoordinator
+    let messageId: String?
     var id: String { plan.workoutId }
 }
 
@@ -95,6 +96,17 @@ struct ChatView: View {
         drafts = []
     }
 
+    /// Open the live WorkoutView for a plan delivered as a chat card. Holds the
+    /// originating message id so the card can be marked done on close.
+    private func startWorkout(_ plan: WorkoutPlan, messageId: String) {
+        guard let queue = coordinator.ws.stack?.setLogQueue else {
+            Log.warn(.ws, "start workout but stack not built — dropping")
+            return
+        }
+        let wc = WorkoutCoordinator(plan: plan, queue: queue)
+        activeWorkout = WorkoutPresentation(plan: plan, coord: wc, messageId: messageId)
+    }
+
     /// Update the scrolled-up state that drives the scroll-to-bottom FAB. Called
     /// from `MessageListView` (via `onScrolledUpChange`) when the list's at-bottom
     /// state flips; wraps the change in an animation so the FAB fades/scales.
@@ -149,6 +161,7 @@ struct ChatView: View {
                             coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
                             coordinator.markActionAnswered(rowId: messageId, choice: buttonId)
                         },
+                        onWorkoutStart: { plan, messageId in startWorkout(plan, messageId: messageId) },
                         onRetry: { id in coordinator.ws.retrySend(id: id) },
                         onMessageRead: { id in ws.sendMessageRead(id) },
                         audioPlayer: coordinator.audioPlayer,
@@ -189,31 +202,6 @@ struct ChatView: View {
                     .padding(.top, Theme.scaled(6))
                 }
                 .accessibilityLabel("Остановить")
-            }
-
-            // MARK: – Payne workout starter. Kicks off the typed WorkoutView
-            // flow: send `workout_start_request` → Payne replies `workout_plan`
-            // → `workoutBus.planReceived` presents WorkoutView. Without this
-            // trigger there is no way to open the live workout UI (only chat).
-            if active.active == .payne {
-                Button {
-                    let df = DateFormatter()
-                    df.dateFormat = "yyyy-MM-dd"
-                    let today = df.string(from: Date())
-                    Task { try? await coordinator.ws.stack?.transport.sendWorkoutStartRequest(date: today) }
-                } label: {
-                    Label("Начать тренировку", systemImage: "figure.strengthtraining.traditional")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Theme.scaled(10))
-                        .background(Theme.accent.opacity(0.18))
-                        .foregroundStyle(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.inputRadius))
-                }
-                .padding(.horizontal, Theme.scaled(8))
-                .padding(.bottom, Theme.scaled(4))
-                .disabled(!ws.isConnected)
-                .accessibilityLabel("Начать тренировку")
             }
 
             // MARK: – Input (always visible — empty state shows orb+satellites above)
@@ -339,6 +327,9 @@ struct ChatView: View {
                             )
                         }
                     }
+                    if let mid = presentation.messageId {
+                        coordinator.markActionAnswered(rowId: mid, choice: session != nil ? "completed" : "aborted")
+                    }
                     activeWorkout = nil
                 },
                 onSwap: { _ in
@@ -350,13 +341,10 @@ struct ChatView: View {
         }
         .onReceive(coordinator.workoutBus.events) { event in
             switch event {
-            case .planReceived(let plan):
-                guard let queue = coordinator.ws.stack?.setLogQueue else {
-                    Log.warn(.ws, "workout_plan arrived but stack not built — dropping")
-                    return
-                }
-                let wc = WorkoutCoordinator(plan: plan, queue: queue)
-                activeWorkout = WorkoutPresentation(plan: plan, coord: wc)
+            case .planReceived:
+                // Plans now render as inline cards (persisted via insertWorkoutPlan);
+                // the live WorkoutView opens from the card's Start button. No auto-open.
+                break
             case .coachMessage, .swapOptions, .programUpdated:
                 // Banner + sheet wiring lives in WorkoutView itself once it
                 // subscribes to the bus directly (T17 follow-up).
