@@ -45,6 +45,16 @@ struct MessageListView: UIViewRepresentable {
         // FAB provides jump-to-bottom).
         cv.showsVerticalScrollIndicator = false
         cv.delegate = context.coordinator
+        // Tap-to-dismiss: tapping the chat area (not the keyboard) resigns the
+        // input bar's first responder. cancelsTouchesInView=false + simultaneous
+        // recognition (delegate) so cell taps — action buttons, images, the
+        // workout card — still fire. The UIKit list otherwise swallows the taps
+        // that a SwiftUI .onTapGesture used to catch before the rewrite.
+        let tap = UITapGestureRecognizer(target: context.coordinator,
+                                         action: #selector(Coordinator.handleDismissTap))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        cv.addGestureRecognizer(tap)
         context.coordinator.configureDataSource(cv)
         context.coordinator.observeKeyboard()
         return cv
@@ -58,7 +68,7 @@ struct MessageListView: UIViewRepresentable {
         coordinator.teardown()
     }
 
-    final class Coordinator: NSObject, UICollectionViewDelegate {
+    final class Coordinator: NSObject, UICollectionViewDelegate, UIGestureRecognizerDelegate {
         private var parent: MessageListView
         private var dataSource: UICollectionViewDiffableDataSource<Int, ChatListItem>!
         private weak var collectionView: UICollectionView?
@@ -197,5 +207,22 @@ struct MessageListView: UIViewRepresentable {
         }
 
         func teardown() { NotificationCenter.default.removeObserver(self) }
+
+        // MARK: Tap-to-dismiss keyboard
+
+        /// Resign first responder app-wide. The input bar's TextField lives in a
+        /// separate SwiftUI hierarchy (not under the collection view), so an
+        /// app-wide resign is what reaches it — same as ChatView.dismissKeyboard.
+        @objc func handleDismissTap() {
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+
+        /// Fire alongside cell/scroll gestures so the tap-to-dismiss never blocks
+        /// a button, image, or the workout card from also handling the touch.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
     }
 }
