@@ -1,0 +1,16 @@
+{
+  "v": 2,
+  "kind": "data",
+  "type": "message",
+  "id": "00000000-0000-0000-0000-000000000123",
+  "seq": 7,
+  "ts": "2026-06-22T10:00:00Z",
+  "payload": {
+    "thread_id": "ios:default",
+    "text": "Pick one",
+    "actions": [
+      { "id": "yes", "label": "Yes", "style": "primary" },
+      { "id": "no", "label": "No", "style": "secondary" }
+    ]
+  }
+}

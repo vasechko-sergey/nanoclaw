@@ -120,14 +120,22 @@ enum V2 {
         /// Set on a server-rendered voice note: the id of the text message this
         /// audio belongs to. The client attaches the audio to that bubble.
         let reply_to_id: String?
-        init(thread_id: String, text: String, attachments: [Attachment]? = nil, context: InlineContext? = nil, agent_id: String? = nil, reply_to_id: String? = nil) {
+        let actions: [Action]?
+        init(thread_id: String, text: String, attachments: [Attachment]? = nil, context: InlineContext? = nil, agent_id: String? = nil, reply_to_id: String? = nil, actions: [Action]? = nil) {
             self.thread_id = thread_id
             self.text = text
             self.attachments = attachments
             self.context = context
             self.agent_id = agent_id
             self.reply_to_id = reply_to_id
+            self.actions = actions
         }
+    }
+
+    struct Action: Codable, Equatable {
+        let id: String
+        let label: String
+        let style: String?   // "primary" | "danger" | "secondary"
     }
 
     struct Attachment: Codable, Equatable {

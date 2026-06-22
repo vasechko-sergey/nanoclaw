@@ -91,6 +91,11 @@ export const Envelopes = {
       // belongs to a previously-delivered text message with this id — the
       // client attaches the audio to that bubble instead of showing it alone.
       reply_to_id: z.string().min(1).optional(),
+      actions: z.array(z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        style: z.enum(['primary', 'danger', 'secondary']).optional(),
+      })).min(1).optional(),
     }),
   }),
   ContextRequest: EnvelopeBase.extend({
