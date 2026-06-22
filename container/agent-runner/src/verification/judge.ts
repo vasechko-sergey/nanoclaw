@@ -34,3 +34,53 @@ export function parseJudgeVerdict(text: string): ProseVerdict {
     .map((x) => ({ claim: x.claim, why: typeof x.why === 'string' ? x.why : '' }));
   return { unsupported };
 }
+
+const HAIKU_MODEL = 'claude-haiku-4-5';
+
+type EnvLike = Record<string, string | undefined>;
+
+/**
+ * One-shot prose-grounding judge. Raw Messages API call through the host
+ * credential proxy (NOT the Agent SDK). fetchImpl + env are injectable for tests.
+ * Throws on network error, non-200, or unparseable body — caller applies
+ * fail-closed-soft.
+ */
+export async function judgeProse(
+  replyText: string,
+  sourcesText: string,
+  fetchImpl: typeof fetch = globalThis.fetch,
+  env: EnvLike = process.env,
+): Promise<ProseVerdict> {
+  const base = env.ANTHROPIC_BASE_URL;
+  if (!base) throw new Error('judge: ANTHROPIC_BASE_URL not set');
+  const { system, user } = buildJudgePrompt(replyText, sourcesText);
+
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'anthropic-version': '2023-06-01',
+  };
+  if (env.ANTHROPIC_API_KEY) {
+    headers['x-api-key'] = env.ANTHROPIC_API_KEY; // proxy re-injects the real key
+  } else {
+    headers['authorization'] = `Bearer ${env.CLAUDE_CODE_OAUTH_TOKEN ?? env.ANTHROPIC_AUTH_TOKEN ?? 'placeholder'}`;
+    headers['anthropic-beta'] = 'oauth-2025-04-20'; // proxy swaps the Bearer token
+  }
+
+  const res = await fetchImpl(`${base}/v1/messages`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: HAIKU_MODEL,
+      max_tokens: 1024,
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
+  });
+  if (!res.ok) throw new Error(`judge: HTTP ${res.status}`);
+  const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+  const text = (data.content ?? [])
+    .filter((b) => b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text as string)
+    .join('');
+  return parseJudgeVerdict(text);
+}
