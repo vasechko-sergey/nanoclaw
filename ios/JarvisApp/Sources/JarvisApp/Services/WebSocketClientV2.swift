@@ -62,17 +62,19 @@ final class WebSocketClientV2 {
     var isConnected = false { didSet { if isConnected != oldValue { onConnectionChanged?(isConnected) } } }
     var isTyping = false
     var commands: [BotCommand] = []
-    var lastUserSentAt: Date? = nil
-    var lastAssistantAt: Date? = nil
+    /// Per-agent busy timestamps, keyed by `agent_id`. Busy is PER AGENT —
+    /// messaging one agent must not show "thinking" in every other agent's chat.
+    var lastUserSentAt: [String: Date] = [:]
+    var lastAssistantAt: [String: Date] = [:]
     var thinkingDetail: String? = nil
 
-    /// Persistent "agent is busy" — derived state.
-    /// True if: user sent < 5min ago and no later assistant reply.
-    /// (No typing signal in v2, so `isTyping` is permanently false here.)
-    var isBusy: Bool {
+    /// Per-agent "agent is busy" — derived state. True if the user sent to THIS
+    /// agent < 5min ago with no later assistant reply from it. (No typing signal
+    /// in v2, so `isTyping` is permanently false here.)
+    func isBusy(agentId: String) -> Bool {
         if isTyping { return true }
-        guard let sent = lastUserSentAt else { return false }
-        if let got = lastAssistantAt, got >= sent { return false }
+        guard let sent = lastUserSentAt[agentId] else { return false }
+        if let got = lastAssistantAt[agentId], got >= sent { return false }
         return Date().timeIntervalSince(sent) < Self.busyTimeoutSeconds
     }
 
@@ -226,8 +228,8 @@ final class WebSocketClientV2 {
     func disconnect() {
         isConnected = false
         isTyping = false
-        lastUserSentAt = nil
-        lastAssistantAt = nil
+        lastUserSentAt = [:]
+        lastAssistantAt = [:]
         thinkingDetail = nil
         sentReadIds.removeAll()
         // Tear down the transport: cancel the reconnect loop + all in-flight
@@ -262,7 +264,7 @@ final class WebSocketClientV2 {
         }
         let clientMsgId = UUID().uuidString
         let ts = Date()
-        lastUserSentAt = ts
+        lastUserSentAt[agentId] = ts
 
         let inline = makeInlineContext(timezone: timezone, status: status, raw: context,
                                        respondByVoice: respondByVoice ? true : nil)
@@ -432,12 +434,13 @@ final class WebSocketClientV2 {
                     $0.role == .assistant && !oldIds.contains($0.id)
                 }
                 self.messages = mapped
-                if !newAssistant.isEmpty {
-                    // Use wall-clock instead of the row's stored ts so the
-                    // `lastAssistantAt >= lastUserSentAt` comparison in
-                    // `isBusy` isn't tripped by millisecond truncation when
-                    // send + inbound land in the same millisecond.
-                    self.lastAssistantAt = Date()
+                // Clear per-agent busy for each agent that just got a reply. Use
+                // wall-clock (not the row's stored ts) so the `lastAssistantAt >=
+                // lastUserSentAt` check in `isBusy` isn't tripped by millisecond
+                // truncation when send + inbound land in the same millisecond.
+                let now = Date()
+                for msg in newAssistant {
+                    self.lastAssistantAt[msg.agentId ?? "jarvis"] = now
                 }
                 for msg in newAssistant {
                     self.onAssistantMessage?()

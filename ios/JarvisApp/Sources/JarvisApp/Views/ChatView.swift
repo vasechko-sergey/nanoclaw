@@ -121,9 +121,13 @@ struct ChatView: View {
     /// in-place mutation (delivery status / text). Avoids requiring
     /// `ChatMessage: Equatable` (its `Content` holds `UIImage`/closures).
 
+    /// Busy state of the CURRENTLY-ACTIVE agent. Busy is per-agent, so sending
+    /// to one agent no longer shows "thinking" in every other agent's chat.
+    private var activeBusy: Bool { ws.isBusy(agentId: active.active.rawValue) }
+
     private var orbMood: OrbMood {
         if !ws.isConnected               { return .error }
-        if ws.isBusy                     { return .processing }
+        if activeBusy                    { return .processing }
         if coordinator.speech.isSpeaking { return .speaking }
         return .calm
     }
@@ -178,7 +182,7 @@ struct ChatView: View {
         ZStack(alignment: .leading) {
         VStack(spacing: 0) {
             // MARK: – Content
-            if visibleMessages.isEmpty && !ws.isBusy && !emptyInputActive {
+            if visibleMessages.isEmpty && !activeBusy && !emptyInputActive {
                 EmptyStateView(
                     suggestions: active.active.suggestions,
                     onSuggestion: { suggestion in
@@ -234,7 +238,7 @@ struct ChatView: View {
                                         )
                                     )
                                 }
-                                if ws.isBusy {
+                                if activeBusy {
                                     ThinkingRow(detail: ws.thinkingDetail)
                                         .id("thinking")
                                         .transition(.opacity.combined(with: .offset(y: 4)))
@@ -306,12 +310,12 @@ struct ChatView: View {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
-                        .onChange(of: ws.isBusy) {
+                        .onChange(of: activeBusy) {
                             // The ThinkingRow (id "thinking") lives outside
                             // visibleMessages, so the last?.id fallback above won't
                             // bring it into view. On iOS 18 the sizeChanges anchor
                             // handles it; on iOS 16/17 scroll to it explicitly.
-                            guard ws.isBusy, !isScrolledUp else { return }
+                            guard activeBusy, !isScrolledUp else { return }
                             if #unavailable(iOS 18.0) {
                                 withAnimation(.spring(duration: 0.3)) {
                                     proxy.scrollTo("thinking", anchor: .bottom)

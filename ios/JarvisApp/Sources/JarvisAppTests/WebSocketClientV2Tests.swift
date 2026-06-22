@@ -51,14 +51,23 @@ final class WebSocketClientV2Tests: XCTestCase {
     }
 
     func testSendUpdatesLastUserSentAt() {
-        XCTAssertNil(client.lastUserSentAt)
-        client.send(text: "hi", timezone: "UTC", status: nil)
-        XCTAssertNotNil(client.lastUserSentAt)
+        XCTAssertNil(client.lastUserSentAt["jarvis"])
+        client.send(text: "hi", timezone: "UTC", status: nil)   // default agentId "jarvis"
+        XCTAssertNotNil(client.lastUserSentAt["jarvis"])
+    }
+
+    /// The fix: busy is per-agent. Sending to one agent must NOT mark others busy
+    /// (previously a global flag lit "thinking" in every agent's chat).
+    func testBusyIsPerAgent() {
+        client.send(text: "hi payne", timezone: "UTC", status: nil, agentId: "payne")
+        XCTAssertTrue(client.isBusy(agentId: "payne"), "the messaged agent is busy")
+        XCTAssertFalse(client.isBusy(agentId: "jarvis"), "other agents are NOT busy")
+        XCTAssertFalse(client.isBusy(agentId: "greg"), "other agents are NOT busy")
     }
 
     func testIsBusyTrueAfterSendFalseAfterAssistantReply() async throws {
         client.send(text: "hi", timezone: "UTC", status: nil)
-        XCTAssertTrue(client.isBusy, "should be busy right after sending")
+        XCTAssertTrue(client.isBusy(agentId: "jarvis"), "should be busy right after sending")
 
         // Simulate inbound assistant message arriving via the transport.
         let inbound = V2.Envelope(
@@ -73,11 +82,11 @@ final class WebSocketClientV2Tests: XCTestCase {
         // ValueObservation propagation is async; poll until propagated or
         // timeout. Simulator can be slow under suite load.
         let deadline = Date().addingTimeInterval(2.0)
-        while client.lastAssistantAt == nil && Date() < deadline {
+        while client.lastAssistantAt["jarvis"] == nil && Date() < deadline {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        XCTAssertNotNil(client.lastAssistantAt)
-        XCTAssertFalse(client.isBusy, "assistant reply should clear busy")
+        XCTAssertNotNil(client.lastAssistantAt["jarvis"])
+        XCTAssertFalse(client.isBusy(agentId: "jarvis"), "assistant reply should clear busy")
     }
 
     // MARK: - Control envelopes
