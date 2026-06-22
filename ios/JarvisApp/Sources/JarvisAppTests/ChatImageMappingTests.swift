@@ -46,6 +46,21 @@ final class ChatImageMappingTests: XCTestCase {
         guard case .file = msgs[0].content else { return XCTFail("expected file content") }
     }
 
+    func test_toChatMessage_buildsActionContent_fromActionsJSON() throws {
+        let actionsJSON = "[{\"id\":\"yes\",\"label\":\"Yes\",\"style\":\"primary\"},{\"id\":\"no\",\"label\":\"No\"}]"
+        let row = StoredMessage(id: "q1", dir: .in_, seq: 1, text: "Pick", attachmentsJSON: nil,
+                                contextJSON: nil, status: .delivered, failureReason: nil,
+                                ts: 1_700_000_000_000, serverTS: nil, createdAt: 1_700_000_000_000,
+                                agentId: "jarvis", actionsJSON: actionsJSON, actionChoice: "yes")
+        let msgs = WebSocketClientV2.toChatMessage(row)
+        XCTAssertEqual(msgs.count, 1)
+        guard case .action(let info) = msgs[0].content else { return XCTFail("expected .action") }
+        XCTAssertEqual(info.text, "Pick")
+        XCTAssertEqual(info.buttons.map(\.id), ["yes", "no"])
+        XCTAssertTrue(info.answered)
+        XCTAssertEqual(info.selectedId, "yes")
+    }
+
     private func jpeg() -> Data {
         let r = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
         return r.image { ctx in UIColor.blue.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }

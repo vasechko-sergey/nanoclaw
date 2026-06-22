@@ -227,6 +227,13 @@ final class AppCoordinator {
         ws.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
     }
 
+    /// Persist the user's answer to an inbound action card so the rendered card
+    /// stays resolved after reload. Forwards to the GRDB store; no-op if the
+    /// store isn't built yet.
+    func markActionAnswered(rowId: String, choice: String) {
+        try? chatStore?.markActionAnswered(rowId: rowId, choice: choice)
+    }
+
     // MARK: – Wiring
 
     private func wireUp() {

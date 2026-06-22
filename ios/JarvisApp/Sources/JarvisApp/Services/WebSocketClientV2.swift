@@ -512,6 +512,27 @@ final class WebSocketClientV2 {
         let timestamp = Date(timeIntervalSince1970: TimeInterval(row.ts) / 1000)
         let role: ChatMessage.Role = row.dir == .out ? .user : .assistant
 
+        // Inbound action card (ask_user_question). Built before the text/
+        // attachment paths so a question row renders as a tappable .action.
+        // A persisted `action_choice` (Task 3) restores the answered state so
+        // the card stays resolved after reload.
+        if let aj = row.actionsJSON, let data = aj.data(using: .utf8),
+           let stored = try? JSONDecoder().decode([StoredAction].self, from: data), !stored.isEmpty {
+            let buttons = stored.map { s -> ActionButton in
+                let style = ActionButton.Style(rawValue: s.style ?? "primary") ?? .primary
+                return ActionButton(id: s.id, label: s.label, style: style)
+            }
+            var info = ActionInfo(text: row.text, buttons: buttons)
+            if let choice = row.actionChoice {
+                info.answered = true
+                info.selectedId = choice
+            }
+            var m = ChatMessage(id: row.id, role: role, content: .action(info), timestamp: timestamp)
+            m.deliveryStatus = mapDelivery(row.status)
+            m.agentId = row.agentId
+            return [m]
+        }
+
         if let attJSON = row.attachmentsJSON,
            let data = attJSON.data(using: .utf8),
            let atts = try? JSONDecoder().decode([StoredAttachment].self, from: data),

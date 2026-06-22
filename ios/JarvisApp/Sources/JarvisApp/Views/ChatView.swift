@@ -147,6 +147,7 @@ struct ChatView: View {
                         },
                         onActionTap: { messageId, buttonId, buttonLabel in
                             coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
+                            coordinator.markActionAnswered(rowId: messageId, choice: buttonId)
                         },
                         onRetry: { id in coordinator.ws.retrySend(id: id) },
                         onMessageRead: { id in ws.sendMessageRead(id) },
