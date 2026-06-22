@@ -102,6 +102,16 @@ async function main(): Promise<void> {
     systemContext: { instructions },
     factualityGate: config.factualityGate,
   });
+
+  // runPollLoop runs forever and returns ONLY to request a clean container
+  // exit — it does this after leaving a batch un-acked on a transient upstream
+  // API error (529/5xx/rate-limit), so the host's crashed-container path resets
+  // the claim with backoff and re-wakes a fresh container promptly (see the
+  // leaveForRetry branch in poll-loop.ts). Exit explicitly: lingering MCP /
+  // provider handles could otherwise keep the event loop alive, so the host
+  // would never observe the container as dead and the fast-retry never fires.
+  log('Poll loop returned — exiting container for prompt host-side retry');
+  process.exit(0);
 }
 
 main().catch((err) => {

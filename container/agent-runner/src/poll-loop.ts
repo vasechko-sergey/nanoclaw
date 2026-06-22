@@ -374,13 +374,21 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     }
 
     if (leaveForRetry) {
-      // Do NOT markCompleted: the batch stays 'processing'. When this container
-      // next goes idle and the host sees the stale claim, it resets the row to
-      // pending with backoff (+tries) and a fresh wake re-runs it. After
-      // MAX_TRIES the host force-completes a recurring task so its series still
-      // advances (see resetStuckProcessingRows in src/host-sweep.ts).
-      log(`Left ${processingIds.length} message(s) un-acked for host retry (transient API error)`);
-      continue;
+      // Do NOT markCompleted: the batch stays 'processing'. EXIT the loop
+      // (and the container, via index.ts) instead of continuing to poll. The
+      // host only resets a stale claim when the container is NOT alive
+      // (resetStuckProcessingRows, host-sweep step 4). If we looped back here
+      // the container would stay "alive but idle": the host could reclaim the
+      // row solely via the 30-minute absolute ceiling — turning a brief
+      // upstream blip into 30-min retry cycles. (The idle poll never touches
+      // .heartbeat either, so the faster claim-stuck check can't fire.) By
+      // returning, the next sweep (≤60s) sees the dead container, resets the
+      // row to pending with backoff (+tries), and re-wakes a fresh container
+      // promptly. After MAX_TRIES the host force-completes a recurring task so
+      // its series still advances (see resetStuckProcessingRows in
+      // src/host-sweep.ts).
+      log(`Left ${processingIds.length} message(s) un-acked — exiting for prompt host retry (transient API error)`);
+      return;
     }
 
     // Ensure completed even if processQuery ended without a result event

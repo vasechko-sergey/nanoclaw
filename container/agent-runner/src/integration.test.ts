@@ -347,25 +347,36 @@ describe('poll loop — provider error recovery', () => {
     await loopPromise.catch(() => {});
   });
 
-  it('leaves the batch un-acked (no error written) on a transient API throw', async () => {
+  it('exits the loop and leaves the batch un-acked on a transient API throw', async () => {
     insertMessage('m1', { sender: 'Alice', text: 'trigger transient' }, { platformId: 'chan-1', channelType: 'discord' });
 
     // "overloaded" / "rate limit" / 5xx → transient: the SDK already exhausted
     // its own retries. The runner must NOT write an error to the user or
-    // complete the batch — it leaves the row 'processing' so the host's
-    // stuck-reset retries it with backoff (see src/host-sweep.ts).
+    // complete the batch — it leaves the row 'processing' AND returns from the
+    // loop so index.ts exits the container. Exiting is load-bearing: the host
+    // resets a stale claim only when the container is NOT alive, so an
+    // idle-polling container would be reclaimed solely via the 30-min absolute
+    // ceiling. The old behavior (`continue` into idle-poll) would hang here.
     const provider = new ThrowingProvider('Overloaded: 529 server overloaded');
-    const controller = new AbortController();
-    const loopPromise = runPollLoopWithTimeout(provider as unknown as MockProvider, controller.signal, 1500);
 
-    // Let the loop claim + process the batch (it throws; we swallow it).
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    controller.abort();
+    await expect(
+      Promise.race([
+        runPollLoop({ provider: provider as unknown as MockProvider, providerName: 'mock', cwd: '/tmp' }),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('loop did not exit — still idle-polling')), 2000),
+        ),
+      ]),
+    ).resolves.toBeUndefined();
 
     // No "Error:" message to the user — silently left for the host to retry.
     expect(getUndeliveredMessages()).toHaveLength(0);
 
-    await loopPromise.catch(() => {});
+    // Batch left 'processing' (un-acked), NOT completed — the host's
+    // resetStuckProcessingRows path reclaims and retries it with backoff.
+    const ack = getOutboundDb()
+      .prepare(`SELECT status FROM processing_ack WHERE message_id = 'm1'`)
+      .get() as { status: string } | undefined;
+    expect(ack?.status).toBe('processing');
   });
 });
 
