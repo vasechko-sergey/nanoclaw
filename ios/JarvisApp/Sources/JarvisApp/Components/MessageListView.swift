@@ -1,12 +1,14 @@
 import SwiftUI
 import UIKit
 
-/// UIKit-backed chat message list. A `UICollectionView` (list layout) with a
-/// diffable data source whose cells host the existing SwiftUI `MessageRow` /
-/// `DateSeparator` / `ThinkingRow` via `UIHostingConfiguration`. Replaces the
-/// SwiftUI `ScrollView` + `LazyVStack`, which could not reliably bottom-pin tall
-/// rows on agent switch (blank-until-scroll). UIKit gives precise `contentOffset`
-/// control: switch = apply snapshot (no animation) + scroll to bottom instantly.
+/// UIKit-backed chat list, **inverted** (transform-flipped) so the newest message
+/// sits at content-offset 0 — the visual bottom. Inversion makes "scroll to
+/// bottom" a content-offset reset that needs NO knowledge of content size, so the
+/// list lands on the newest message instantly even with self-sizing cells whose
+/// heights settle after layout — eliminating the top→bottom scroll/slide a
+/// non-inverted jump-to-bottom hit on tall-content (big-table) agents. Cells host
+/// the existing SwiftUI `MessageRow` / `DateSeparator` / `ThinkingRow` via
+/// `UIHostingConfiguration`; each cell is un-flipped so its content is upright.
 struct MessageListView: UIViewRepresentable {
     let messages: [ChatMessage]
     let agentId: String
@@ -17,8 +19,8 @@ struct MessageListView: UIViewRepresentable {
     var onRetry: (String) -> Void
     var onMessageRead: (String) -> Void
     var audioPlayer: AudioPlaybackService?
-    /// Called (on the main thread) when the at-bottom state flips. The parent
-    /// wraps the actual state write in an animation, so the FAB animates in/out.
+    /// Called (main thread) when the at-bottom state flips. The parent wraps the
+    /// state write in an animation so the FAB animates in/out.
     var onScrolledUpChange: (Bool) -> Void
     /// Incremented by the FAB tap to request an animated jump to the bottom.
     var scrollToBottomToken: Int
@@ -35,6 +37,12 @@ struct MessageListView: UIViewRepresentable {
         cv.keyboardDismissMode = .none
         cv.alwaysBounceVertical = true
         cv.contentInsetAdjustmentBehavior = .always
+        // Inverted: flip vertically so item 0 (newest) renders at the bottom and
+        // the bottom is the MINIMUM content offset.
+        cv.transform = CGAffineTransform(scaleX: 1, y: -1)
+        // A flipped vertical indicator would sit on the wrong side; hide it (the
+        // FAB provides jump-to-bottom).
+        cv.showsVerticalScrollIndicator = false
         cv.delegate = context.coordinator
         context.coordinator.configureDataSource(cv)
         context.coordinator.observeKeyboard()
@@ -68,6 +76,8 @@ struct MessageListView: UIViewRepresentable {
                 var bg = UIBackgroundConfiguration.listCell()
                 bg.backgroundColor = .clear
                 cell.backgroundConfiguration = bg
+                // Un-flip the cell so its content is upright inside the inverted list.
+                cell.transform = CGAffineTransform(scaleX: 1, y: -1)
                 switch item {
                 case .date(let day):
                     cell.contentConfiguration = UIHostingConfiguration { DateSeparator(date: day) }
@@ -80,7 +90,7 @@ struct MessageListView: UIViewRepresentable {
                         cell.contentConfiguration = nil
                         return
                     }
-                    let isLast = (self.messagesById.count > 0) && (self.parent.messages.last?.id == id)
+                    let isLast = (self.parent.messages.last?.id == id)
                     cell.contentConfiguration = UIHostingConfiguration {
                         MessageRow(
                             message: msg,
@@ -103,53 +113,46 @@ struct MessageListView: UIViewRepresentable {
         func update(parent: MessageListView, collectionView cv: UICollectionView) {
             self.parent = parent
             self.messagesById = Dictionary(parent.messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            let items = buildChatItems(parent.messages, isBusy: parent.isBusy)
+            // Inverted list → newest first (index 0 = visual bottom). Reversing the
+            // oldest-first builder output keeps date separators correctly placed
+            // (a separator ends up just above the first message of its day on screen).
+            let items = Array(buildChatItems(parent.messages, isBusy: parent.isBusy).reversed())
             let agentChanged = (lastAgentId != parent.agentId)
             if agentChanged { lastAgentId = parent.agentId }
             let tokenChanged = (parent.scrollToBottomToken != lastToken)
             if tokenChanged { lastToken = parent.scrollToBottomToken }
-            wasAtBottom = nearBottom(cv)          // capture BEFORE applying
+            wasAtBottom = nearBottom(cv)
             let stick = wasAtBottom
 
             var snap = NSDiffableDataSourceSnapshot<Int, ChatListItem>()
             snap.appendSections([0])
             snap.appendItems(items, toSection: 0)
 
-            // On agent switch, hide the list while it repositions: the bottom
-            // jump must run in the apply COMPLETION (after self-sizing settles, so
-            // it reaches the real bottom), but doing it visibly shows a one-frame
-            // top→bottom scroll. alpha=0 before apply → jump while invisible →
-            // reveal already at the bottom = no visible scroll on switch.
-            if agentChanged { cv.alpha = 0 }
-
-            // One apply; all scroll decisions run in its completion, AFTER the
-            // snapshot is committed and laid out (so scrollToItem reaches a real
-            // frame). Agent switch → instant bottom (hidden); FAB token → animated
-            // bottom; otherwise stay pinned only if we were already at the bottom.
-            dataSource.apply(snap, animatingDifferences: !agentChanged) { [weak self] in
-                guard let self else { return }
-                if agentChanged || tokenChanged {
-                    self.scrollToBottom(animated: !agentChanged)
-                } else if stick {
-                    self.scrollToBottom(animated: true)
+            if agentChanged {
+                // Switch: apply non-animated, then pin to newest (the MINIMUM
+                // offset). Offset-min needs no content size, so it is correct
+                // immediately — even before self-sizing settles — with no visible
+                // scroll or slide.
+                dataSource.apply(snap, animatingDifferences: false)
+                pinToNewest(cv, animated: false)
+            } else {
+                dataSource.apply(snap, animatingDifferences: true) { [weak self] in
+                    guard let self, let cv = self.collectionView else { return }
+                    if tokenChanged || stick { self.pinToNewest(cv, animated: true) }
                 }
-                if agentChanged { self.collectionView?.alpha = 1 }
             }
         }
 
-        func scrollToBottom(animated: Bool) {
-            guard let cv = collectionView else { return }
-            let count = dataSource.snapshot().numberOfItems
-            guard count > 0 else { return }
-            cv.scrollToItem(at: IndexPath(item: count - 1, section: 0), at: .bottom, animated: animated)
+        /// Pin to the newest message = the MINIMUM content offset (top of the
+        /// inverted scroll range = the visual bottom). Independent of content size.
+        func pinToNewest(_ cv: UICollectionView, animated: Bool) {
+            let minY = -cv.adjustedContentInset.top
+            cv.setContentOffset(CGPoint(x: cv.contentOffset.x, y: minY), animated: animated)
         }
 
+        /// "At bottom" in the inverted list = near the minimum offset (newest).
         private func nearBottom(_ cv: UICollectionView) -> Bool {
-            isNearBottom(offsetY: cv.contentOffset.y,
-                         contentHeight: cv.contentSize.height,
-                         boundsHeight: cv.bounds.height,
-                         bottomInset: cv.adjustedContentInset.bottom,
-                         threshold: 160)
+            (cv.contentOffset.y + cv.adjustedContentInset.top) <= 160
         }
 
         // MARK: UICollectionViewDelegate
@@ -169,7 +172,7 @@ struct MessageListView: UIViewRepresentable {
             parent.onMessageRead(id)
         }
 
-        // MARK: Keyboard — re-pin to bottom if we were at the bottom
+        // MARK: Keyboard — re-pin to newest if we were at the bottom
 
         func observeKeyboard() {
             let nc = NotificationCenter.default
@@ -180,8 +183,8 @@ struct MessageListView: UIViewRepresentable {
         }
 
         @objc private func keyboardChange() {
-            guard wasAtBottom else { return }
-            DispatchQueue.main.async { [weak self] in self?.scrollToBottom(animated: false) }
+            guard wasAtBottom, let cv = collectionView else { return }
+            DispatchQueue.main.async { [weak self] in self?.pinToNewest(cv, animated: false) }
         }
 
         func teardown() { NotificationCenter.default.removeObserver(self) }
