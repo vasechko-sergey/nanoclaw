@@ -95,9 +95,9 @@ struct ChatView: View {
         drafts = []
     }
 
-    /// Update the scrolled-up state that drives the scroll-to-bottom FAB.
-    /// Fed by `ScrolledUpDetector` (iOS-18 scroll geometry, or the pre-18
-    /// content-offset preference). Drives the scroll-to-bottom FAB visibility.
+    /// Update the scrolled-up state that drives the scroll-to-bottom FAB. Called
+    /// from `MessageListView` (via `onScrolledUpChange`) when the list's at-bottom
+    /// state flips; wraps the change in an animation so the FAB fades/scales.
     private func setScrolledUp(_ up: Bool) {
         guard up != isScrolledUp else { return }
         withAnimation(.easeOut(duration: Theme.animFast)) {
@@ -151,7 +151,7 @@ struct ChatView: View {
                         onRetry: { id in coordinator.ws.retrySend(id: id) },
                         onMessageRead: { id in ws.sendMessageRead(id) },
                         audioPlayer: coordinator.audioPlayer,
-                        isScrolledUp: $isScrolledUp,
+                        onScrolledUpChange: { setScrolledUp($0) },
                         scrollToBottomToken: scrollToBottomToken
                     )
                     .ignoresSafeArea(.container, edges: .bottom)
@@ -594,14 +594,6 @@ struct ChatView: View {
         s.uppercased().map { String($0) }.joined(separator: "\u{2009}\u{2009}")
     }
 
-    // MARK: – Date separators
-
-    private func shouldShowDateSeparator(at index: Int, in msgs: [ChatMessage]) -> Bool {
-        guard index > 0 else { return msgs.count > 1 }
-        let current = msgs[index].timestamp
-        let previous = msgs[index - 1].timestamp
-        return !Calendar.current.isDate(current, inSameDayAs: previous)
-    }
 }
 
 // MARK: – Date Separator Component

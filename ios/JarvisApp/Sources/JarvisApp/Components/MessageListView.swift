@@ -17,7 +17,9 @@ struct MessageListView: UIViewRepresentable {
     var onRetry: (String) -> Void
     var onMessageRead: (String) -> Void
     var audioPlayer: AudioPlaybackService?
-    @Binding var isScrolledUp: Bool
+    /// Called (on the main thread) when the at-bottom state flips. The parent
+    /// wraps the actual state write in an animation, so the FAB animates in/out.
+    var onScrolledUpChange: (Bool) -> Void
     /// Incremented by the FAB tap to request an animated jump to the bottom.
     var scrollToBottomToken: Int
 
@@ -149,7 +151,7 @@ struct MessageListView: UIViewRepresentable {
             let up = !nearBottom(cv)
             guard up != lastPushedScrolledUp else { return }
             lastPushedScrolledUp = up
-            DispatchQueue.main.async { [weak self] in self?.parent.isScrolledUp = up }
+            DispatchQueue.main.async { [weak self] in self?.parent.onScrolledUpChange(up) }
         }
 
         func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
