@@ -37,6 +37,7 @@ import { WorkoutBridge } from './workout-bridge.js';
 import { WsHandler } from './ws-handler.js';
 import { HealthRequestsStore } from './health-requests-store.js';
 import { createIosHttpHandler } from './http-handler.js';
+import { PlanJsonSchema } from '../../../../shared/ios-app-protocol/index.js';
 import type { PlatformId, ContextField } from './types.js';
 
 // During the transition window the v2 adapter coexists with the legacy
@@ -536,6 +537,17 @@ function createV2Adapter(): ChannelAdapter | null {
         if (!sessionId) {
           logV2Warn('workout outbound with no active session', { platformId, type: contentType });
           return undefined;
+        }
+        // Validate workout_plan.plan_json against the canonical schema. On
+        // mismatch we WARN loudly but FORWARD anyway — schema drift should
+        // surface in VDS logs, never silently block delivery to the device.
+        if (contentType === 'workout_plan') {
+          const parsed = PlanJsonSchema.safeParse((content as { plan_json?: unknown }).plan_json);
+          if (!parsed.success) {
+            logV2Warn('workout_plan plan_json failed schema — forwarding anyway', {
+              issues: parsed.error.issues.slice(0, 8),
+            });
+          }
         }
         workoutBridge.handleAgentRequest({ session_id: sessionId, content });
         return undefined;
