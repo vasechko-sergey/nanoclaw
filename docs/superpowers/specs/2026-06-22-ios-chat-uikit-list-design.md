@@ -76,6 +76,28 @@ Inputs (SwiftUI → UIKit):
 
 `ScrollView`, `LazyVStack`, `.defaultScrollAnchor(.bottom)`, `BottomSizeChangesAnchor`, `ScrolledUpDetector`, `ChatScrollOffsetKey`, `repinOnKeyboardChange`, the `renderedAgent` `.id` rebuild, and the competing scroll handlers (`onChange(messages.count)` scroll, `onChange(visibleMessages.last?.id)`, `onChange(isBusy)` thinking-scroll, `onChange(active.active)` sleep-Task, the keyboard `onReceive`s, the `onAppear` initial scroll). The `scrollToBottomAction`/`scrollToBottomFAB` plumbing is replaced by the `scrollToBottomToken` + the SwiftUI FAB overlay reading `isScrolledUp`.
 
+## WebSocket lifecycle (one socket, always up)
+
+The chat already runs on a **single** WebSocket shared by all agents (the
+message observation `observeAllMessages` is cross-agent; the active agent is a
+client-side filter). Agent switching touches **no** connect/disconnect — verified:
+nothing tied to `active.active` calls `connect`/`disconnect`. A 25s keepalive
+ping (`URLSessionWebSocket`) and an exponential-backoff auto-reconnect
+(`TransportV2`) keep it alive across real drops.
+
+The one churn source is `ChatView.onDisappear { coordinator.disconnect() }`,
+which tears the socket down on view lifecycle and forces a backoff reconnect.
+
+**Change:** remove the view-lifecycle disconnect. The socket is connected **once**
+at launch (`ContentView` splash, when settings are configured) and stays up;
+it is torn down only on the explicit "reconnect" control (`RightDrawerContent.onReconnect`,
+which stays) and by the OS on app suspension (transport auto-reconnects on
+foreground). Result: switching agents — and entering/leaving the chat — never
+raises or stops the socket; all agents' messages flow over the one connection.
+
+Out of scope (server-side): the TCP RSTs seen earlier are an nginx/idle-timeout
+or network concern, not agent-switch churn — flagged separately, not addressed here.
+
 ## Error handling / edge cases
 
 - **Empty agent:** `messages` empty → `ChatView` shows `EmptyStateView` (unchanged branch), `MessageListView` not mounted.
@@ -101,7 +123,7 @@ Inputs (SwiftUI → UIKit):
 |------|--------|
 | `Components/MessageListView.swift` | **New** — UIViewRepresentable + Coordinator + diffable data source + hosting cell. |
 | `Models/ChatListItem.swift` | **New** — item enum + `buildChatItems` + `isNearBottom`. |
-| `Views/ChatView.swift` | Replace the `else`-branch ScrollView block with `MessageListView` + FAB overlay; delete the removed scroll machinery; keep chrome, empty state, covers, per-agent `visibleMessages`, `activeBusy`. |
+| `Views/ChatView.swift` | Replace the `else`-branch ScrollView block with `MessageListView` + FAB overlay; delete the removed scroll machinery; **remove `.onDisappear { coordinator.disconnect() }`** (keep socket up); keep chrome, empty state, covers, per-agent `visibleMessages`, `activeBusy`. |
 | `Components/MessageRow.swift` | Unchanged (hosted as-is). Possibly expose nothing new. |
 
 Version bump (`CURRENT_PROJECT_VERSION` + `xcodegen generate`) per the repo's iOS rule when the change lands.
