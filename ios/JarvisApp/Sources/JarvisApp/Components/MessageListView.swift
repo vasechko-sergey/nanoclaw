@@ -115,10 +115,17 @@ struct MessageListView: UIViewRepresentable {
             snap.appendSections([0])
             snap.appendItems(items, toSection: 0)
 
+            // On agent switch, hide the list while it repositions: the bottom
+            // jump must run in the apply COMPLETION (after self-sizing settles, so
+            // it reaches the real bottom), but doing it visibly shows a one-frame
+            // top→bottom scroll. alpha=0 before apply → jump while invisible →
+            // reveal already at the bottom = no visible scroll on switch.
+            if agentChanged { cv.alpha = 0 }
+
             // One apply; all scroll decisions run in its completion, AFTER the
             // snapshot is committed and laid out (so scrollToItem reaches a real
-            // frame). Agent switch → instant bottom; FAB token → animated bottom;
-            // otherwise stay pinned only if we were already at the bottom.
+            // frame). Agent switch → instant bottom (hidden); FAB token → animated
+            // bottom; otherwise stay pinned only if we were already at the bottom.
             dataSource.apply(snap, animatingDifferences: !agentChanged) { [weak self] in
                 guard let self else { return }
                 if agentChanged || tokenChanged {
@@ -126,6 +133,7 @@ struct MessageListView: UIViewRepresentable {
                 } else if stick {
                     self.scrollToBottom(animated: true)
                 }
+                if agentChanged { self.collectionView?.alpha = 1 }
             }
         }
 
