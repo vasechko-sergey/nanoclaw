@@ -811,7 +811,7 @@ struct ChatView: View {
 
 // MARK: – Date Separator Component
 
-private struct DateSeparator: View {
+struct DateSeparator: View {
     let date: Date
 
     var body: some View {
