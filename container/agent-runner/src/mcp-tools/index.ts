@@ -11,6 +11,7 @@ import './interactive.js';
 import './agents.js';
 import './self-mod.js';
 import './status.js';
+import { loadConfig } from '../config.js';
 import { getSessionRouting } from '../db/session-routing.js';
 import { registerRequestContextTool } from './request_context.js';
 import { registerTools, startMcpServer } from './server.js';
@@ -30,8 +31,16 @@ import { workoutCoach, workoutStartPlan, workoutSwap } from './workout.js';
 }
 
 // Agent-group-gated MCP tools: workout.* tools only register for Payne.
-if (process.env.AGENT_GROUP_ID === 'payne') {
+// Source of truth is container.json (loadConfig) — this MCP server is a child
+// process and the SDK does NOT propagate the parent's mcpServers `env` to it,
+// so `process.env.AGENT_GROUP_ID` is empty here. Read the config file directly;
+// keep the env as a fallback so in-process tests (which set it) still pass.
+const __group = loadConfig().agentGroupId || process.env.AGENT_GROUP_ID || '';
+if (__group === 'payne') {
   registerTools([workoutStartPlan, workoutCoach, workoutSwap]);
+  console.error(`[mcp-tools] workout.* tools registered (group=${__group})`);
+} else {
+  console.error(`[mcp-tools] workout.* tools NOT registered (group=${JSON.stringify(__group)})`);
 }
 
 function log(msg: string): void {

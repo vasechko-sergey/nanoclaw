@@ -14,6 +14,7 @@
  * mounts all MCP-tool plugins for every agent; the guard prevents Jarvis
  * (or any other agent) from accidentally pushing workout UI events.
  */
+import { loadConfig } from '../config.js';
 import { writeMessageOut } from '../db/messages-out.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -25,7 +26,9 @@ function err(text: string) {
 }
 
 function guard(): { ok: true } | { ok: false; res: ReturnType<typeof err> } {
-  if (process.env.AGENT_GROUP_ID !== 'payne') {
+  // container.json (loadConfig) is the source of truth; env is a test fallback.
+  // See the gate comment in mcp-tools/index.ts.
+  if ((loadConfig().agentGroupId || process.env.AGENT_GROUP_ID) !== 'payne') {
     return { ok: false, res: err('workout.* tools are only enabled for the payne agent') };
   }
   return { ok: true };

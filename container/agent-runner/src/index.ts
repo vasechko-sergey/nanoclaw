@@ -77,11 +77,10 @@ async function main(): Promise<void> {
     nanoclaw: {
       command: 'bun',
       args: ['run', mcpServerPath],
-      // The MCP subprocess gates agent-group-scoped tools (e.g. workout.* for
-      // Payne) on AGENT_GROUP_ID. It is a child process with its own env, so
-      // pass the group id through explicitly — otherwise the gate reads an
-      // empty value and those tools never register.
-      env: { AGENT_GROUP_ID: config.agentGroupId },
+      // The MCP server reads agent-group/config from container.json directly
+      // (loadConfig) — the SDK does not propagate this `env` to the subprocess,
+      // so there's nothing to pass here.
+      env: {},
     },
   };
 
