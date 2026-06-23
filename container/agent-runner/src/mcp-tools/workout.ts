@@ -16,6 +16,7 @@
  */
 import { loadConfig } from '../config.js';
 import { writeMessageOut } from '../db/messages-out.js';
+import { getSessionRouting } from '../db/session-routing.js';
 import type { McpToolDefinition } from './types.js';
 
 function ok(text: string) {
@@ -36,6 +37,25 @@ function guard(): { ok: true } | { ok: false; res: ReturnType<typeof err> } {
 
 function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Write a workout-family control row STAMPED with the current session's channel
+ * routing. Without platform_id/channel_type the host delivery poller drops the
+ * row ("Message missing routing fields") before it ever reaches the ios-app
+ * adapter's workout-bridge — so the plan never leaves the host and no card ever
+ * renders. Mirrors how status/scheduling tools route their outbound rows.
+ */
+function writeWorkoutOut(content: Record<string, unknown>): void {
+  const routing = getSessionRouting();
+  writeMessageOut({
+    id: generateId(),
+    kind: 'control',
+    platform_id: routing.platform_id,
+    channel_type: routing.channel_type,
+    thread_id: routing.thread_id,
+    content: JSON.stringify(content),
+  });
 }
 
 export const workoutStartPlan: McpToolDefinition = {
@@ -69,17 +89,13 @@ export const workoutStartPlan: McpToolDefinition = {
   async handler(args) {
     const g = guard();
     if (!g.ok) return g.res;
-    writeMessageOut({
-      id: generateId(),
-      kind: 'control',
-      content: JSON.stringify({
-        type: 'workout_plan',
-        payload: {
-          workout_id: args.workout_id,
-          plan_json: args.plan_json,
-          image_manifest: args.image_manifest ?? [],
-        },
-      }),
+    writeWorkoutOut({
+      type: 'workout_plan',
+      payload: {
+        workout_id: args.workout_id,
+        plan_json: args.plan_json,
+        image_manifest: args.image_manifest ?? [],
+      },
     });
     return ok(`workout_plan sent for ${args.workout_id}`);
   },
@@ -102,13 +118,9 @@ export const workoutCoach: McpToolDefinition = {
   async handler(args) {
     const g = guard();
     if (!g.ok) return g.res;
-    writeMessageOut({
-      id: generateId(),
-      kind: 'control',
-      content: JSON.stringify({
-        type: 'coach_message',
-        payload: { workout_id: args.workout_id, text: args.text },
-      }),
+    writeWorkoutOut({
+      type: 'coach_message',
+      payload: { workout_id: args.workout_id, text: args.text },
     });
     return ok('coach_message sent');
   },
@@ -144,17 +156,13 @@ export const workoutSwap: McpToolDefinition = {
   async handler(args) {
     const g = guard();
     if (!g.ok) return g.res;
-    writeMessageOut({
-      id: generateId(),
-      kind: 'control',
-      content: JSON.stringify({
-        type: 'exercise_swap_options',
-        payload: {
-          workout_id: args.workout_id,
-          from_exercise_slug: args.from_exercise_slug,
-          options: args.options,
-        },
-      }),
+    writeWorkoutOut({
+      type: 'exercise_swap_options',
+      payload: {
+        workout_id: args.workout_id,
+        from_exercise_slug: args.from_exercise_slug,
+        options: args.options,
+      },
     });
     return ok(`swap options sent (${(args.options as unknown[]).length})`);
   },

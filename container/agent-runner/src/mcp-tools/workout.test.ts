@@ -10,9 +10,20 @@
  * counter never moved). A real DB keeps these tests hermetic.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { initTestSessionDb } from '../db/connection.js';
+import { initTestSessionDb, getInboundDb } from '../db/connection.js';
 import { getUndeliveredMessages } from '../db/messages-out.js';
 import { workoutStartPlan, workoutCoach, workoutSwap } from './workout.js';
+
+/** Seed the per-session reply routing the host writes on every wake. */
+function seedRouting(channel = 'ios-app-v2', platform = 'ios-app-v2:default', thread = 'ios:default'): void {
+  const db = getInboundDb();
+  db.run(
+    `CREATE TABLE IF NOT EXISTS session_routing (id INTEGER PRIMARY KEY, channel_type TEXT, platform_id TEXT, thread_id TEXT)`,
+  );
+  db.run(
+    `INSERT OR REPLACE INTO session_routing (id, channel_type, platform_id, thread_id) VALUES (1, '${channel}', '${platform}', '${thread}')`,
+  );
+}
 
 describe('workout MCP tools', () => {
   beforeEach(() => {
@@ -35,6 +46,20 @@ describe('workout MCP tools', () => {
     expect(body.payload.workout_id).toBe('w1');
     expect(body.payload.plan_json).toEqual({ exercises: [] });
     expect(body.payload.image_manifest).toEqual([{ slug: 'squat', sha256: 'abc' }]);
+  });
+
+  it('stamps the session channel routing so the host can deliver the plan', async () => {
+    // The on-device bug: the control row went out with NULL platform_id/
+    // channel_type, so the host delivery poller dropped it ("Message missing
+    // routing fields") before the ios-app workout-bridge ever ran — the plan
+    // never left the host and no card ever rendered. The row must carry the
+    // session's routing, exactly like a normal reply.
+    seedRouting();
+    await workoutStartPlan.handler({ workout_id: 'w1', plan_json: { exercises: [] }, image_manifest: [] });
+    const row = getUndeliveredMessages().at(-1)!;
+    expect(row.channel_type).toBe('ios-app-v2');
+    expect(row.platform_id).toBe('ios-app-v2:default');
+    expect(row.thread_id).toBe('ios:default');
   });
 
   it('workout.start_plan defaults image_manifest to [] when omitted (images optional)', async () => {
