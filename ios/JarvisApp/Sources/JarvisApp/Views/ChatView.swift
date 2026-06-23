@@ -371,8 +371,11 @@ struct ChatView: View {
                                     )
                                 }
                             }
-                            if let mid = presentation.messageId {
-                                coordinator.markActionAnswered(rowId: mid, choice: session != nil ? "completed" : "aborted")
+                            // Grey the card ONLY when the workout was completed.
+                            // Abort / view-without-finishing leaves it tappable so
+                            // "Посмотреть тренировку" can be reopened.
+                            if let mid = presentation.messageId, session != nil {
+                                coordinator.markActionAnswered(rowId: mid, choice: "completed")
                             }
                             activeWorkout = nil
                         },
