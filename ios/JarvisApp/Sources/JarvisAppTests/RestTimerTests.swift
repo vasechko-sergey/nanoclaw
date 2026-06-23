@@ -35,4 +35,30 @@ final class RestTimerTests: XCTestCase {
         timer.skip()
         XCTAssertFalse(timer.running)
     }
+
+    @MainActor
+    func test_start_setsTotalAndProgressZero() {
+        let timer = RestTimer()
+        timer.start(planned: 120, lastRepsInReserve: 2)   // rir 2 → planned
+        XCTAssertEqual(timer.totalSec, 120)
+        XCTAssertEqual(timer.progress, 0, accuracy: 0.001)
+        timer.skip()
+    }
+
+    @MainActor
+    func test_totalReflectsAdaptedDuration() {
+        let timer = RestTimer()
+        timer.start(planned: 120, lastRepsInReserve: 0)   // +30
+        XCTAssertEqual(timer.totalSec, 150)
+        timer.skip()
+    }
+
+    @MainActor
+    func test_skipResetsTotal() {
+        let timer = RestTimer()
+        timer.start(planned: 90, lastRepsInReserve: 2)
+        timer.skip()
+        XCTAssertEqual(timer.totalSec, 0)
+        XCTAssertEqual(timer.progress, 0, accuracy: 0.001)
+    }
 }

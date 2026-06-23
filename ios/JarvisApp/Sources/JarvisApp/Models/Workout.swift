@@ -14,16 +14,28 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
     let targetRir: Int
     let restSec: Int
     var notes: String?
+    /// Russian display name from plan_json (`name_ru`). Optional — warmups /
+    /// older plans may omit it; `displayName` falls back to the slug.
+    var nameRu: String?
 
     var id: String { exerciseSlug }
 
-    init(exerciseSlug: String, targetSets: Int, targetReps: String, targetRir: Int, restSec: Int, notes: String? = nil) {
+    /// Russian name when present; else a capitalized, de-hyphenated slug
+    /// (so the UI never shows raw transliteration like "zhim shtangi lezha").
+    var displayName: String {
+        if let n = nameRu, !n.isEmpty { return n }
+        let pretty = exerciseSlug.replacingOccurrences(of: "-", with: " ")
+        return pretty.prefix(1).uppercased() + pretty.dropFirst()
+    }
+
+    init(exerciseSlug: String, targetSets: Int, targetReps: String, targetRir: Int, restSec: Int, notes: String? = nil, nameRu: String? = nil) {
         self.exerciseSlug = exerciseSlug
         self.targetSets = targetSets
         self.targetReps = targetReps
         self.targetRir = targetRir
         self.restSec = restSec
         self.notes = notes
+        self.nameRu = nameRu
     }
 
     enum CodingKeys: String, CodingKey {
@@ -33,6 +45,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         case targetRir = "reps_in_reserve"
         case restSec = "rest_seconds"
         case notes
+        case nameRu = "name_ru"
     }
 
     init(from decoder: Decoder) throws {
@@ -43,6 +56,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         targetRir = (try? c.decode(Int.self, forKey: .targetRir)) ?? 0     // null warmup → 0
         restSec = (try? c.decode(Int.self, forKey: .restSec)) ?? 0
         notes = try? c.decode(String.self, forKey: .notes)
+        nameRu = try? c.decode(String.self, forKey: .nameRu)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -53,6 +67,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         try c.encode(targetRir, forKey: .targetRir)
         try c.encode(restSec, forKey: .restSec)
         try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encodeIfPresent(nameRu, forKey: .nameRu)
     }
 }
 
