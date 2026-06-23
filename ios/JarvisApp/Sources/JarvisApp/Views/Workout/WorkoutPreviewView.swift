@@ -22,14 +22,15 @@ struct WorkoutPreviewView: View {
     let imageResolver: (_ slug: String) -> URL?
     /// Stream of inbound plans (workoutBus `.planReceived`); used to refresh after a swap.
     let planUpdates: AnyPublisher<WorkoutPlan, Never>
-    let onStart: () -> Void
+    /// Hands the CURRENT (possibly swapped) plan to the runner — not the original.
+    let onStart: (WorkoutPlan) -> Void
     let onSwap: (_ exerciseSlug: String) -> Void
     let onClose: () -> Void
 
     init(plan: WorkoutPlan,
          imageResolver: @escaping (_ slug: String) -> URL?,
          planUpdates: AnyPublisher<WorkoutPlan, Never>,
-         onStart: @escaping () -> Void,
+         onStart: @escaping (WorkoutPlan) -> Void,
          onSwap: @escaping (_ exerciseSlug: String) -> Void,
          onClose: @escaping () -> Void) {
         _plan = State(initialValue: plan)
@@ -110,7 +111,7 @@ struct WorkoutPreviewView: View {
     }
 
     private var startBar: some View {
-        Button(action: onStart) {
+        Button(action: { onStart(plan) }) {
             Text("Поехали")
                 .font(.body.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 50)

@@ -39,6 +39,17 @@ const PLAN_PAYLOAD = {
   ],
 };
 
+// Valid 1x1 PNG — UIImage(contentsOfFile:) detects the format regardless of the
+// .jpg extension the cache writes, so this renders as a real (tiny) image.
+const PNG_1x1 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+/** The sha256 the manifest declares for a slug (so the blob lands where the app's resolver looks). */
+function manifestSha(slug: string): string {
+  const e = (PLAN_PAYLOAD.image_manifest as Array<{ slug: string; sha256: string }>).find((m) => m.slug === slug);
+  return e?.sha256 ?? 'swapsha';
+}
+
 function ts(): string {
   return new Date().toISOString();
 }
@@ -95,6 +106,50 @@ wss.on('connection', (ws) => {
         }));
         log('➡️  message "Отправил план тренировки." seq=2');
       }, 400);
+    }
+
+    if (env.type === 'image_request') {
+      const slug = env.payload?.slug;
+      ws.send(JSON.stringify({
+        v: 2, kind: 'control', type: 'image_blob', id: randomUUID(), seq: null, ts: ts(),
+        payload: { slug, sha256: manifestSha(slug), base64: PNG_1x1 },
+      }));
+      log(`➡️  image_blob slug=${slug}`);
+    }
+
+    if (env.type === 'exercise_swap_request') {
+      const wid = env.payload?.workout_id;
+      const slug = env.payload?.exercise_slug;
+      ws.send(JSON.stringify({
+        v: 2, kind: 'control', type: 'exercise_swap_options', id: randomUUID(), seq: null, ts: ts(),
+        payload: {
+          workout_id: wid, original_slug: slug, alternatives: [
+            { slug: 'otzhimaniya-na-brusyah', why: 'свой вес, щадит плечо' },
+            { slug: 'zhim-v-trenazhere', why: 'фиксированная траектория' },
+          ],
+        },
+      }));
+      log(`➡️  exercise_swap_options for ${slug}`);
+    }
+
+    if (env.type === 'exercise_swap_confirm') {
+      const wid = env.payload?.workout_id;
+      const orig = env.payload?.original_slug;
+      const neu = env.payload?.new_slug;
+      const updated = JSON.parse(JSON.stringify(PLAN_PAYLOAD));
+      updated.workout_id = wid;
+      const i = updated.plan_json.exercises.findIndex((e: { slug: string }) => e.slug === orig);
+      if (i >= 0) {
+        updated.plan_json.exercises[i] = {
+          slug: neu, name_ru: 'Заменённое упражнение', target_sets: 3, target_reps: '8-10',
+          reps_in_reserve: 2, rest_seconds: 120, weight_kg_target: 25,
+        };
+      }
+      updated.image_manifest = [...updated.image_manifest, { slug: neu, sha256: 'swapsha', url: '' }];
+      ws.send(JSON.stringify({
+        v: 2, kind: 'control', type: 'workout_plan', id: randomUUID(), seq: 3, ts: ts(), payload: updated,
+      }));
+      log(`➡️  workout_plan (updated after swap) wid=${wid} new=${neu}`);
     }
   });
 

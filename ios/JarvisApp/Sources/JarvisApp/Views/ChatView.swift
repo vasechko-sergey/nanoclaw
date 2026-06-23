@@ -127,13 +127,13 @@ struct ChatView: View {
     /// "Поехали" inside the preview → create the coordinator + swap to the
     /// running phase. Same `id` (workoutId) keeps the same fullScreenCover
     /// mounted and just swaps its content from preview to runner.
-    private func startRunning() {
+    private func startRunning(with plan: WorkoutPlan) {
         guard let cur = activeWorkout, let queue = coordinator.ws.stack?.setLogQueue else {
             Log.warn(.ws, "start running but stack not built — dropping")
             return
         }
-        let wc = WorkoutCoordinator(plan: cur.plan, queue: queue)
-        activeWorkout = WorkoutPresentation(plan: cur.plan, phase: .running, coord: wc, messageId: cur.messageId)
+        let wc = WorkoutCoordinator(plan: plan, queue: queue)
+        activeWorkout = WorkoutPresentation(plan: plan, phase: .running, coord: wc, messageId: cur.messageId)
     }
 
     /// Open the swap sheet for an exercise. The sheet drives the existing
@@ -342,56 +342,61 @@ struct ChatView: View {
             OrbVoiceView(coordinator: coordinator, onHandoffToChat: nil)
         }
         .fullScreenCover(item: $activeWorkout) { presentation in
-            switch presentation.phase {
-            case .preview:
-                WorkoutPreviewView(
-                    plan: presentation.plan,
-                    imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
-                    planUpdates: coordinator.workoutBus.events
-                        .compactMap { if case .planReceived(let p) = $0 { return p } else { return nil } }
-                        .eraseToAnyPublisher(),
-                    onStart: { startRunning() },
-                    onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
-                    onClose: { activeWorkout = nil }
-                )
-            case .running:
-                WorkoutView(
-                    coordinator: presentation.coord!,
-                    imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
-                    onClose: { session in
-                        let workoutId = presentation.plan.workoutId
-                        if let session {
-                            Task { try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session) }
-                        } else {
-                            Task {
-                                try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
-                                    workoutId: workoutId, reason: "user cancelled"
-                                )
+            Group {
+                switch presentation.phase {
+                case .preview:
+                    WorkoutPreviewView(
+                        plan: presentation.plan,
+                        imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
+                        planUpdates: coordinator.workoutBus.events
+                            .compactMap { if case .planReceived(let p) = $0 { return p } else { return nil } }
+                            .eraseToAnyPublisher(),
+                        onStart: { startRunning(with: $0) },
+                        onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
+                        onClose: { activeWorkout = nil }
+                    )
+                case .running:
+                    WorkoutView(
+                        coordinator: presentation.coord!,
+                        imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
+                        onClose: { session in
+                            let workoutId = presentation.plan.workoutId
+                            if let session {
+                                Task { try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session) }
+                            } else {
+                                Task {
+                                    try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
+                                        workoutId: workoutId, reason: "user cancelled"
+                                    )
+                                }
                             }
-                        }
-                        if let mid = presentation.messageId {
-                            coordinator.markActionAnswered(rowId: mid, choice: session != nil ? "completed" : "aborted")
-                        }
-                        activeWorkout = nil
-                    },
-                    onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) }
-                )
+                            if let mid = presentation.messageId {
+                                coordinator.markActionAnswered(rowId: mid, choice: session != nil ? "completed" : "aborted")
+                            }
+                            activeWorkout = nil
+                        },
+                        onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) }
+                    )
+                }
             }
-        }
-        .sheet(item: $swapSheet) { s in
-            SwapSheet(originalSlug: s.originalSlug, response: $swapResponse, loading: $swapLoading) { action in
-                switch action {
-                case .requestSuggestions:
-                    swapLoading = true
-                    Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: nil) }
-                case .proposeOwn(let text):
-                    swapLoading = true
-                    Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: text) }
-                case .confirm(let newSlug, let persist):
-                    Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist) }
-                    swapSheet = nil
-                case .cancel:
-                    swapSheet = nil
+            // Attached INSIDE the cover so the swap sheet presents OVER the
+            // fullScreenCover. A `.sheet` on ChatView's body would sit behind it
+            // and never appear.
+            .sheet(item: $swapSheet) { s in
+                SwapSheet(originalSlug: s.originalSlug, response: $swapResponse, loading: $swapLoading) { action in
+                    switch action {
+                    case .requestSuggestions:
+                        swapLoading = true
+                        Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: nil) }
+                    case .proposeOwn(let text):
+                        swapLoading = true
+                        Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: text) }
+                    case .confirm(let newSlug, let persist):
+                        Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist) }
+                        swapSheet = nil
+                    case .cancel:
+                        swapSheet = nil
+                    }
                 }
             }
         }
