@@ -82,51 +82,70 @@ struct MessageListView: UIViewRepresentable {
 
         func configureDataSource(_ cv: UICollectionView) {
             collectionView = cv
-            let reg = UICollectionView.CellRegistration<UICollectionViewListCell, ChatListItem> { [weak self] cell, _, item in
-                guard let self else { return }
-                var bg = UIBackgroundConfiguration.listCell()
-                bg.backgroundColor = .clear
-                cell.backgroundConfiguration = bg
-                // The collection view is y-flipped (inverted list). Un-flip the
-                // CONTENT with a SwiftUI scaleEffect — doing it here (inside the
-                // hosted view) survives UICollectionView re-applying layout
-                // attributes mid-scroll, which would reset a `cell.transform`.
-                switch item {
-                case .date(let day):
-                    cell.contentConfiguration = UIHostingConfiguration {
-                        DateSeparator(date: day).scaleEffect(x: 1, y: -1)
-                    }
-                    .margins(.all, 0)
-                case .thinking:
-                    cell.contentConfiguration = UIHostingConfiguration {
-                        ThinkingRow(detail: nil).scaleEffect(x: 1, y: -1)
-                    }
-                    .margins(.all, 0)
-                case .message(let id):
-                    guard let msg = self.messagesById[id] else {
-                        cell.contentConfiguration = nil
-                        return
-                    }
-                    let isLast = (self.parent.messages.last?.id == id)
-                    cell.contentConfiguration = UIHostingConfiguration {
-                        MessageRow(
-                            message: msg,
-                            isLast: isLast,
-                            onImageTap: self.parent.onImageTap,
-                            onFeedback: self.parent.onFeedback,
-                            onActionTap: self.parent.onActionTap,
-                            onWorkoutStart: self.parent.onWorkoutStart,
-                            onRetry: self.parent.onRetry,
-                            audioPlayer: self.parent.audioPlayer
-                        )
-                        .scaleEffect(x: 1, y: -1)
-                    }
-                    .margins(.all, 0)
+            // One registration PER item kind. A single shared registration made a
+            // reused cell host different SwiftUI types (DateSeparator → ThinkingRow
+            // → MessageRow), so UIHostingConfiguration's content-view TYPE changed
+            // on reuse — forcing UIKit to replace the whole content view instead of
+            // updating in place (the "existing content view does not support the new
+            // configuration … which is expensive" console warning). Splitting by kind
+            // means each cell only ever hosts one content-view type → in-place update.
+            //
+            // The collection view is y-flipped (inverted list); each hosted view is
+            // un-flipped with a scaleEffect — done inside the hosted view so it
+            // survives UICollectionView re-applying layout attributes mid-scroll.
+            let dateReg = UICollectionView.CellRegistration<UICollectionViewListCell, Date> { cell, _, day in
+                Self.clearBackground(cell)
+                cell.contentConfiguration = UIHostingConfiguration {
+                    DateSeparator(date: day).scaleEffect(x: 1, y: -1)
                 }
+                .margins(.all, 0)
+            }
+            let thinkingReg = UICollectionView.CellRegistration<UICollectionViewListCell, Int> { cell, _, _ in
+                Self.clearBackground(cell)
+                cell.contentConfiguration = UIHostingConfiguration {
+                    ThinkingRow(detail: nil).scaleEffect(x: 1, y: -1)
+                }
+                .margins(.all, 0)
+            }
+            let messageReg = UICollectionView.CellRegistration<UICollectionViewListCell, String> { [weak self] cell, _, id in
+                Self.clearBackground(cell)
+                guard let self, let msg = self.messagesById[id] else {
+                    cell.contentConfiguration = nil
+                    return
+                }
+                let isLast = (self.parent.messages.last?.id == id)
+                cell.contentConfiguration = UIHostingConfiguration {
+                    MessageRow(
+                        message: msg,
+                        isLast: isLast,
+                        onImageTap: self.parent.onImageTap,
+                        onFeedback: self.parent.onFeedback,
+                        onActionTap: self.parent.onActionTap,
+                        onWorkoutStart: self.parent.onWorkoutStart,
+                        onRetry: self.parent.onRetry,
+                        audioPlayer: self.parent.audioPlayer
+                    )
+                    .scaleEffect(x: 1, y: -1)
+                }
+                .margins(.all, 0)
             }
             dataSource = UICollectionViewDiffableDataSource<Int, ChatListItem>(collectionView: cv) { cv, indexPath, item in
-                cv.dequeueConfiguredReusableCell(using: reg, for: indexPath, item: item)
+                switch item {
+                case .date(let day):
+                    return cv.dequeueConfiguredReusableCell(using: dateReg, for: indexPath, item: day)
+                case .thinking:
+                    return cv.dequeueConfiguredReusableCell(using: thinkingReg, for: indexPath, item: 0)
+                case .message(let id):
+                    return cv.dequeueConfiguredReusableCell(using: messageReg, for: indexPath, item: id)
+                }
             }
+        }
+
+        /// Transparent cell background (the chat surface paints its own).
+        private static func clearBackground(_ cell: UICollectionViewListCell) {
+            var bg = UIBackgroundConfiguration.listCell()
+            bg.backgroundColor = .clear
+            cell.backgroundConfiguration = bg
         }
 
         func update(parent: MessageListView, collectionView cv: UICollectionView) {
