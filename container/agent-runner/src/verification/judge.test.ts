@@ -23,6 +23,19 @@ test('parseJudgeVerdict throws on unparseable text', () => {
   expect(() => parseJudgeVerdict('no json here')).toThrow();
 });
 
+test('parseJudgeVerdict handles a fenced block preceded by prose containing braces (real Haiku shape)', () => {
+  const text =
+    'Let me analyze. The claim {about spending} needs review.\n```json\n{"unsupported":[{"claim":"x","why":"y"}]}\n```\nDone.';
+  const v = parseJudgeVerdict(text);
+  expect(v.unsupported).toHaveLength(1);
+  expect(v.unsupported[0].claim).toBe('x');
+});
+
+test('parseJudgeVerdict extracts a balanced object when prose has trailing braces', () => {
+  const v = parseJudgeVerdict('Result: {"unsupported":[]} — note: use {curly} carefully.');
+  expect(v.unsupported).toEqual([]);
+});
+
 test('judgeProse posts to the proxy and returns the parsed verdict', async () => {
   let captured: { url: string; init: RequestInit } | null = null;
   const fakeFetch = (async (url: string, init: RequestInit) => {

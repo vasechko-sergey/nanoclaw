@@ -22,12 +22,44 @@ export function buildJudgePrompt(replyText: string, sourcesText: string): { syst
   return { system: JUDGE_SYSTEM, user };
 }
 
-/** Extract the first JSON object from the model's text and validate the shape. */
+/**
+ * Pull a JSON object out of a model's freeform text. Haiku often wraps the
+ * object in a ```json fence and/or surrounds it with prose that itself contains
+ * braces — a naive first-`{`-to-last-`}` slice then swallows the fence backticks
+ * or stray prose braces and JSON.parse chokes (observed in production:
+ * "Unrecognized token '`'"). So: prefer the contents of a fenced code block,
+ * then brace-match from the first `{` to its balanced `}` (string-aware),
+ * ignoring anything after it.
+ */
+function extractJsonObject(text: string): string | null {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const hay = fence ? fence[1] : text;
+  const start = hay.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < hay.length; i++) {
+    const ch = hay[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return hay.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/** Extract the first balanced JSON object from the model's text and validate the shape. */
 export function parseJudgeVerdict(text: string): ProseVerdict {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1 || end < start) throw new Error('judge: no JSON object in response');
-  const obj = JSON.parse(text.slice(start, end + 1)) as { unsupported?: unknown };
+  const json = extractJsonObject(text);
+  if (json === null) throw new Error('judge: no JSON object in response');
+  const obj = JSON.parse(json) as { unsupported?: unknown };
   const list = Array.isArray(obj.unsupported) ? obj.unsupported : [];
   const unsupported = list
     .filter((x): x is { claim: string; why?: string } => !!x && typeof (x as { claim?: unknown }).claim === 'string')
