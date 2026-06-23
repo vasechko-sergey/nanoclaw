@@ -236,8 +236,11 @@ final class AppCoordinator {
 
     /// Persist an inbound workout plan as a chat card. No-op if the store isn't
     /// built yet. (Plan also pre-fetched into the image cache by the caller.)
-    func insertWorkoutPlan(_ plan: WorkoutPlan) {
-        try? chatStore?.insertWorkoutPlan(id: plan.workoutId, agentId: "payne", plan: plan)
+    /// `rowId` is the envelope id — unique per send, stable across retries — so
+    /// two workouts on the same calendar day don't collide (Payne's workout_id
+    /// is a DATE, and the store INSERTs OR IGNOREs on the row id).
+    func insertWorkoutPlan(_ plan: WorkoutPlan, rowId: String) {
+        try? chatStore?.insertWorkoutPlan(id: rowId, agentId: "payne", plan: plan)
     }
 
     // MARK: – Wiring
@@ -331,11 +334,14 @@ final class AppCoordinator {
             //    level + plan_json carrying day_name/week/intensity/exercises)
             //    into our top-level `WorkoutPlan` model. We splice the two
             //    halves together in a Dictionary, then run JSONDecoder.
+            Log.warn(.ws, "WORKOUTDBG: workout_plan envelope received (workout_id=\(p.workout_id))")
             do {
                 let plan = try Self.decodeWorkoutPlan(payload: p)
-                insertWorkoutPlan(plan)
+                Log.warn(.ws, "WORKOUTDBG: decoded plan, \(plan.exercises.count) ex; chatStore=\(chatStore == nil ? "NIL" : "set"); rowId=\(env.id)")
+                insertWorkoutPlan(plan, rowId: env.id)
+                Log.warn(.ws, "WORKOUTDBG: insertWorkoutPlan called (rowId=\(env.id))")
             } catch {
-                Log.warn(.ws, "workout_plan decode failed: \(error)")
+                Log.warn(.ws, "WORKOUTDBG: workout_plan decode failed: \(error)")
             }
 
         case .imageBlob(let b):

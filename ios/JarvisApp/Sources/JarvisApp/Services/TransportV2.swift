@@ -97,7 +97,8 @@ actor TransportV2 {
         // actor-isolated state directly.
         socket.onMessage = { [weak self] data in
             Task { [weak self] in
-                try? await self?.handleIncoming(data)
+                do { try await self?.handleIncoming(data) }
+                catch { Log.warn(.ws, "WORKOUTDBG: handleIncoming failed: \(error)") }
             }
         }
         socket.onClose = { [weak self] error in

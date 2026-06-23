@@ -95,6 +95,7 @@
 		8D619B38C4EE99D072145A51 /* SwapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */; };
 		8FD8CF0ADA1C202FEDA828D9 /* SetLogQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1916FC4113359563C4205F1 /* SetLogQueue.swift */; };
 		91941E7469BF57E69F4C9DE2 /* HealthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1A573133241875D7269CED /* HealthManager.swift */; };
+		959453A92AA1D6910B038CC4 /* WorkoutPlanRealEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70CB3BB03A2BE8986BF2ECD4 /* WorkoutPlanRealEnvelopeTests.swift */; };
 		974A0C8C09364FC532E6BEE1 /* SuggestionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */; };
 		978C2411C830BBFCD8AEC9B1 /* TransportV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 679495851538B21ECAB0FF20 /* TransportV2.swift */; };
 		98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */; };
@@ -234,6 +235,7 @@
 		6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		6FD66A2437F0B2BEBD7D10FA /* ChatListItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListItemTests.swift; sourceTree = "<group>"; };
 		703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClientV2.swift; sourceTree = "<group>"; };
+		70CB3BB03A2BE8986BF2ECD4 /* WorkoutPlanRealEnvelopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanRealEnvelopeTests.swift; sourceTree = "<group>"; };
 		72069FC546766200DF7310C7 /* StateBoardViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateBoardViewTests.swift; sourceTree = "<group>"; };
 		79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProactiveDispatcherTests.swift; sourceTree = "<group>"; };
@@ -496,6 +498,7 @@
 				F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */,
 				AA42D336E93B35827195BBBB /* WorkoutModelsTests.swift */,
 				87683378CBFC1F9C7E4CEBC6 /* WorkoutPlanDecodeTests.swift */,
+				70CB3BB03A2BE8986BF2ECD4 /* WorkoutPlanRealEnvelopeTests.swift */,
 				A91EE1529D439338A641F961 /* E2E */,
 			);
 			name = JarvisAppTests;
@@ -905,6 +908,7 @@
 				1D26F1F3F0A2B7924261909D /* WorkoutCoordinatorTests.swift in Sources */,
 				C1360BFA240455586946FC50 /* WorkoutModelsTests.swift in Sources */,
 				E7164107E2BB7BC0D8A356CB /* WorkoutPlanDecodeTests.swift in Sources */,
+				959453A92AA1D6910B038CC4 /* WorkoutPlanRealEnvelopeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -951,7 +955,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1197,7 +1201,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
