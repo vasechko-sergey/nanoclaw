@@ -46,6 +46,20 @@ final class ExerciseImageCache {
         UIImage(contentsOfFile: path(forSlug: slug, sha256: sha256).path)
     }
 
+    /// Newest cached file for a slug regardless of sha. Used for swap
+    /// alternatives, whose sha256 isn't known until the `image_blob` lands.
+    func latestPath(slug: String) -> URL? {
+        let items = (try? FileManager.default.contentsOfDirectory(
+            at: baseURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        return items
+            .filter { $0.lastPathComponent.hasPrefix("\(slug)_") && $0.pathExtension == "jpg" }
+            .max { a, b in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return da < db
+            }
+    }
+
     // MARK: - Prefetch / write
 
     /// Diff manifest against cache; fire `image_request` for every miss

@@ -63,7 +63,6 @@
 		54CEE570C41AE7314548DBB8 /* CalendarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */; };
 		56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */; };
 		5727F5346AE76836985BED3D /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C904740E5DA9FD762F5645C /* WatchContentView.swift */; };
-		57417098BF2204803672D9CA /* SetRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24639DA24B7C49D4F19F2A1 /* SetRowView.swift */; };
 		57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */; };
 		59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC64D6340917C38B04005455 /* SetLogQueueTests.swift */; };
 		5D14A252DCD5E3C28D7E12A4 /* GreetingBank.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */; };
@@ -309,7 +308,6 @@
 		E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageView.swift; sourceTree = "<group>"; };
 		E1916FC4113359563C4205F1 /* SetLogQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetLogQueue.swift; sourceTree = "<group>"; };
 		E1E7FBAD4AE7AF8E526AC62E /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
-		E24639DA24B7C49D4F19F2A1 /* SetRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetRowView.swift; sourceTree = "<group>"; };
 		E4D374490F6700DFE6CD2A40 /* RingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingView.swift; sourceTree = "<group>"; };
 		E5DD83E71D9C3008ACBE81F2 /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
 		E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredAttachmentTests.swift; sourceTree = "<group>"; };
@@ -534,7 +532,6 @@
 				2C0C8F23441F1DD108E2C0EE /* FocusSetCard.swift */,
 				F25916E3D90DB6728E543810 /* LoggedSetChips.swift */,
 				1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */,
-				E24639DA24B7C49D4F19F2A1 /* SetRowView.swift */,
 				9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */,
 				F236228C8C83CFFE21712C2B /* WorkoutPreviewView.swift */,
 			);
@@ -861,7 +858,6 @@
 				9B25460C1039295CFA4B156D /* Schema.swift in Sources */,
 				AB4EE93B40C86DA9562B6112 /* ServerConfig.swift in Sources */,
 				8FD8CF0ADA1C202FEDA828D9 /* SetLogQueue.swift in Sources */,
-				57417098BF2204803672D9CA /* SetRowView.swift in Sources */,
 				BF081A3591467809EC839078 /* SettingsView.swift in Sources */,
 				461CEB084ABB3FAFC32124BC /* SpeechManager.swift in Sources */,
 				298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */,
@@ -987,7 +983,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -996,7 +992,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.0;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;
@@ -1233,7 +1229,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1242,7 +1238,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.0;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;

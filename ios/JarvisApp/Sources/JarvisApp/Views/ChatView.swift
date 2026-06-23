@@ -54,6 +54,7 @@ struct ChatView: View {
     @State private var swapSheet: SwapSheetPresentation? = nil
     @State private var swapResponse: SwapResponse? = nil
     @State private var swapLoading: Bool = false
+    @State private var swapImageToken: Int = 0   // bumped on image_blob → refresh swap thumbnails
 
     private var ws: WebSocketClientV2 { coordinator.ws }
 
@@ -375,7 +376,8 @@ struct ChatView: View {
                             }
                             activeWorkout = nil
                         },
-                        onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) }
+                        onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
+                        onAppearPrefetch: { coordinator.imageCache.prefetch(manifest: presentation.plan.imageManifest) }
                     )
                 }
             }
@@ -383,7 +385,18 @@ struct ChatView: View {
             // fullScreenCover. A `.sheet` on ChatView's body would sit behind it
             // and never appear.
             .sheet(item: $swapSheet) { s in
-                SwapSheet(originalSlug: s.originalSlug, response: $swapResponse, loading: $swapLoading) { action in
+                SwapSheet(
+                    originalSlug: s.originalSlug,
+                    currentName: activeWorkout?.plan.exercises.first(where: { $0.exerciseSlug == s.originalSlug })?.displayName ?? "",
+                    thumbnail: { slug in
+                        if let plan = activeWorkout?.plan,
+                           let url = resolveImageURL(slug: slug, plan: plan) { return url }
+                        return coordinator.imageCache.latestPath(slug: slug)
+                    },
+                    refreshToken: swapImageToken,
+                    response: $swapResponse,
+                    loading: $swapLoading
+                ) { action in
                     switch action {
                     case .requestSuggestions:
                         swapLoading = true
@@ -405,6 +418,13 @@ struct ChatView: View {
             case .swapOptions(let resp, _, _):
                 swapResponse = resp
                 swapLoading = false
+                // Fetch a thumbnail for each alternative (Payne answers image_request
+                // for any slug it has). The sheet shows placeholders until they land.
+                for slug in resp.alternatives.map(\.slug) {
+                    Task { try? await coordinator.ws.stack?.transport.sendImageRequest(slug: slug) }
+                }
+            case .imageReceived:
+                swapImageToken += 1
             case .planReceived, .coachMessage, .programUpdated:
                 // .planReceived is consumed by the open WorkoutPreviewView's own
                 // subscription; coach/program banners live in WorkoutView.

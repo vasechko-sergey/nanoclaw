@@ -359,6 +359,8 @@ final class AppCoordinator {
         case .imageBlob(let b):
             do {
                 try imageCache.write(slug: b.slug, sha256: b.sha256, base64: b.base64)
+                // Let an open swap sheet refresh its alternative thumbnails.
+                workoutBus.events.send(.imageReceived(slug: b.slug))
             } catch {
                 Log.warn(.ws, "image_blob write failed for slug=\(b.slug): \(error)")
             }
