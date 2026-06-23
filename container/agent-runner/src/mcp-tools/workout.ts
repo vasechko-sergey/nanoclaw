@@ -50,7 +50,8 @@ export const workoutStartPlan: McpToolDefinition = {
         plan_json: { type: 'object', description: 'Full plan tree: exercises, sets, reps, target RPE, rest seconds.' },
         image_manifest: {
           type: 'array',
-          description: 'Image references for each exercise; iOS prefetches by slug+sha256.',
+          description:
+            'Optional image references per exercise; iOS prefetches by slug+sha256. Omit (or pass []) when you have no images — the card renders with placeholders.',
           items: {
             type: 'object',
             properties: {
@@ -62,7 +63,7 @@ export const workoutStartPlan: McpToolDefinition = {
           },
         },
       },
-      required: ['workout_id', 'plan_json', 'image_manifest'],
+      required: ['workout_id', 'plan_json'],
     },
   },
   async handler(args) {
@@ -76,7 +77,7 @@ export const workoutStartPlan: McpToolDefinition = {
         payload: {
           workout_id: args.workout_id,
           plan_json: args.plan_json,
-          image_manifest: args.image_manifest,
+          image_manifest: args.image_manifest ?? [],
         },
       }),
     });

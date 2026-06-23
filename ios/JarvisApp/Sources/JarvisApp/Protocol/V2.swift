@@ -252,6 +252,23 @@ enum V2 {
             self.workout_id = workout_id; self.plan_json = plan_json
             self.image_manifest = image_manifest; self.agent_id = agent_id
         }
+
+        enum CodingKeys: String, CodingKey {
+            case workout_id, plan_json, image_manifest, agent_id
+        }
+
+        // image_manifest is optional on the wire: a plan with no exercise images
+        // (absent or null) still decodes to an empty manifest. The UI falls back
+        // to a per-exercise placeholder, so images never gate plan delivery.
+        // Without this an absent key throws and the whole plan is dropped silently
+        // by the caller's `try?`. (encode stays synthesized via CodingKeys.)
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            workout_id = try c.decode(String.self, forKey: .workout_id)
+            plan_json = try c.decode(JSONValue.self, forKey: .plan_json)
+            image_manifest = (try? c.decode([ImageManifestEntry].self, forKey: .image_manifest)) ?? []
+            agent_id = try c.decodeIfPresent(String.self, forKey: .agent_id)
+        }
     }
 
     struct SetLog: Codable, Equatable {

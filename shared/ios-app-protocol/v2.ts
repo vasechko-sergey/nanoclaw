@@ -207,11 +207,13 @@ export const Envelopes = {
     payload: z.object({
       workout_id: z.string().min(1),
       plan_json: PlanJsonSchema,
+      // Optional: a plan with no exercise images still delivers (absent →
+      // empty manifest; the iOS card shows a per-exercise placeholder).
       image_manifest: z.array(z.object({
         slug: z.string().min(1),
         sha256: z.string().min(1),
         url: z.string().optional(),
-      })),
+      })).default([]),
       agent_id: z.string().min(1).optional(),
     }),
   }),

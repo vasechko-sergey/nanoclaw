@@ -1,25 +1,22 @@
 /**
  * Tests for Payne's workout MCP tools.
  *
- * Mocks ../db/messages-out.js so we capture what would have been written
- * without standing up a real SQLite session DB.
+ * Uses a real in-memory session DB (initTestSessionDb) and inspects the rows
+ * the handlers actually write via writeMessageOut. We deliberately do NOT
+ * `mock.module('../db/messages-out.js', ...)` here: bun's module mocks are
+ * process-global and persist for the whole `bun test` run with no auto-restore,
+ * so a partial stub of messages-out.js leaks into later files (e.g.
+ * db/messages-out.test.ts saw the stubbed writeMessageOut and its dispatch
+ * counter never moved). A real DB keeps these tests hermetic.
  */
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
-
-const writes: Array<{ kind: string; content: string }> = [];
-
-mock.module('../db/messages-out.js', () => ({
-  writeMessageOut: (m: { kind: string; content: string }) => {
-    writes.push({ kind: m.kind, content: m.content });
-    return 1;
-  },
-}));
-
-const { workoutStartPlan, workoutCoach, workoutSwap } = await import('./workout.js');
+import { describe, it, expect, beforeEach } from 'bun:test';
+import { initTestSessionDb } from '../db/connection.js';
+import { getUndeliveredMessages } from '../db/messages-out.js';
+import { workoutStartPlan, workoutCoach, workoutSwap } from './workout.js';
 
 describe('workout MCP tools', () => {
   beforeEach(() => {
-    writes.length = 0;
+    initTestSessionDb();
     process.env.AGENT_GROUP_ID = 'payne';
   });
 
@@ -30,21 +27,37 @@ describe('workout MCP tools', () => {
       image_manifest: [{ slug: 'squat', sha256: 'abc' }],
     });
     expect(res.isError).toBeUndefined();
-    expect(writes).toHaveLength(1);
-    expect(writes[0].kind).toBe('control');
-    const body = JSON.parse(writes[0].content);
+    const rows = getUndeliveredMessages();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('control');
+    const body = JSON.parse(rows[0].content);
     expect(body.type).toBe('workout_plan');
     expect(body.payload.workout_id).toBe('w1');
     expect(body.payload.plan_json).toEqual({ exercises: [] });
     expect(body.payload.image_manifest).toEqual([{ slug: 'squat', sha256: 'abc' }]);
   });
 
+  it('workout.start_plan defaults image_manifest to [] when omitted (images optional)', async () => {
+    const res = await workoutStartPlan.handler({
+      workout_id: 'w-noimg',
+      plan_json: { exercises: [] },
+      // image_manifest intentionally omitted
+    });
+    expect(res.isError).toBeUndefined();
+    const rows = getUndeliveredMessages();
+    expect(rows).toHaveLength(1);
+    const body = JSON.parse(rows[0].content);
+    expect(body.type).toBe('workout_plan');
+    expect(body.payload.image_manifest).toEqual([]);
+  });
+
   it('workout.coach writes a coach_message row', async () => {
     const res = await workoutCoach.handler({ workout_id: 'w1', text: 'good set' });
     expect(res.isError).toBeUndefined();
-    expect(writes).toHaveLength(1);
-    expect(writes[0].kind).toBe('control');
-    const body = JSON.parse(writes[0].content);
+    const rows = getUndeliveredMessages();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('control');
+    const body = JSON.parse(rows[0].content);
     expect(body.type).toBe('coach_message');
     expect(body.payload).toEqual({ workout_id: 'w1', text: 'good set' });
   });
@@ -56,9 +69,10 @@ describe('workout MCP tools', () => {
       options: [{ slug: 'leg_press', reason: 'knee' }],
     });
     expect(res.isError).toBeUndefined();
-    expect(writes).toHaveLength(1);
-    expect(writes[0].kind).toBe('control');
-    const body = JSON.parse(writes[0].content);
+    const rows = getUndeliveredMessages();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('control');
+    const body = JSON.parse(rows[0].content);
     expect(body.type).toBe('exercise_swap_options');
     expect(body.payload.from_exercise_slug).toBe('squat');
     expect(body.payload.options).toEqual([{ slug: 'leg_press', reason: 'knee' }]);
@@ -68,6 +82,6 @@ describe('workout MCP tools', () => {
     process.env.AGENT_GROUP_ID = 'jarvis';
     const res = await workoutCoach.handler({ workout_id: 'w1', text: 'x' });
     expect(res.isError).toBe(true);
-    expect(writes).toHaveLength(0);
+    expect(getUndeliveredMessages()).toHaveLength(0);
   });
 });

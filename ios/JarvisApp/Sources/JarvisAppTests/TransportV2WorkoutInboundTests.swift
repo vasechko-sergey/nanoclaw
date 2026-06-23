@@ -96,6 +96,29 @@ final class TransportV2WorkoutInboundTests: XCTestCase {
         }
     }
 
+    /// The image is optional: a plan that carries NO `image_manifest` field must
+    /// still decode and produce a card (each exercise falls back to a placeholder
+    /// in the UI). Without the tolerant wire decode this throws on the missing key
+    /// and the whole plan is dropped.
+    @MainActor
+    func test_handleIncoming_workoutPlan_withoutImageManifest_stillProducesCard() async throws {
+        let json = """
+        {"v":2,"kind":"control","type":"workout_plan","id":"id-no-img","seq":7,"ts":"2026-06-23T00:00:00.000Z","payload":{"workout_id":"w-noimg","plan_json":{"day_name":"День","week":1,"week_label":"Лёгкая","exercises":[{"slug":"prised","name_ru":"Присед","target_sets":3,"target_reps":"5","reps_in_reserve":2,"rest_seconds":120}]}}}
+        """
+        let capture = WorkoutCapture()
+        await transport.setOnWorkoutEnvelope { env in capture.store(env) }
+        try await transport.handleIncoming(Data(json.utf8))
+
+        let env = try XCTUnwrap(capture.value, "manifest-less workout_plan must still reach onWorkoutEnvelope")
+        guard case let .workoutPlan(p) = env.payload else {
+            return XCTFail("expected .workoutPlan payload, got \(env.payload)")
+        }
+        XCTAssertEqual(p.image_manifest, [], "absent image_manifest decodes to empty, not a throw")
+        let plan = try AppCoordinator.decodeWorkoutPlan(payload: p)
+        XCTAssertEqual(plan.exercises.count, 1)
+        XCTAssertEqual(plan.imageManifest, [])
+    }
+
     /// Documents the failure mode we hunted on-device: with no callback wired,
     /// `handleIncoming` must NOT throw and must NOT persist — the plan vanishes.
     func test_handleIncoming_workoutPlan_nilCallback_dropsSilently() async throws {
