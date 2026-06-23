@@ -75,12 +75,16 @@ struct WorkoutView: View {
 
                 ScrollView {
                     VStack(spacing: 14) {
-                        LoggedSetChips(
-                            logged: coordinator.loggedForCurrentExercise,
-                            currentSetIdx: coordinator.currentSetIdx,
-                            targetSets: coordinator.currentExercise.targetSets
-                        )
-                        FocusSetCard(coordinator: coordinator, restTimer: restTimer)
+                        if coordinator.currentExercise.isDuration {
+                            DurationCard(exercise: coordinator.currentExercise, onDone: advance)
+                        } else {
+                            LoggedSetChips(
+                                logged: coordinator.loggedForCurrentExercise,
+                                currentSetIdx: coordinator.currentSetIdx,
+                                targetSets: coordinator.currentExercise.targetSets
+                            )
+                            FocusSetCard(coordinator: coordinator, restTimer: restTimer)
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 14)

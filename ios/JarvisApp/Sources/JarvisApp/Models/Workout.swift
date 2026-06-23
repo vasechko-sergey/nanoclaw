@@ -17,8 +17,13 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
     /// Russian display name from plan_json (`name_ru`). Optional — warmups /
     /// older plans may omit it; `displayName` falls back to the slug.
     var nameRu: String?
+    /// Some exercises are timed (cardio/warmup) rather than set×rep — seconds.
+    var durationSec: Int?
 
     var id: String { exerciseSlug }
+
+    /// Timed exercise (treadmill, warmup) — show a duration card, not set logging.
+    var isDuration: Bool { targetSets <= 0 && (durationSec ?? 0) > 0 }
 
     /// Russian name when present; else a capitalized, de-hyphenated slug
     /// (so the UI never shows raw transliteration like "zhim shtangi lezha").
@@ -28,7 +33,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         return pretty.prefix(1).uppercased() + pretty.dropFirst()
     }
 
-    init(exerciseSlug: String, targetSets: Int, targetReps: String, targetRir: Int, restSec: Int, notes: String? = nil, nameRu: String? = nil) {
+    init(exerciseSlug: String, targetSets: Int, targetReps: String, targetRir: Int, restSec: Int, notes: String? = nil, nameRu: String? = nil, durationSec: Int? = nil) {
         self.exerciseSlug = exerciseSlug
         self.targetSets = targetSets
         self.targetReps = targetReps
@@ -36,6 +41,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         self.restSec = restSec
         self.notes = notes
         self.nameRu = nameRu
+        self.durationSec = durationSec
     }
 
     enum CodingKeys: String, CodingKey {
@@ -46,6 +52,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         case restSec = "rest_seconds"
         case notes
         case nameRu = "name_ru"
+        case durationSec = "duration_seconds"
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +64,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         restSec = (try? c.decode(Int.self, forKey: .restSec)) ?? 0
         notes = try? c.decode(String.self, forKey: .notes)
         nameRu = try? c.decode(String.self, forKey: .nameRu)
+        durationSec = try? c.decode(Int.self, forKey: .durationSec)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -68,6 +76,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         try c.encode(restSec, forKey: .restSec)
         try c.encodeIfPresent(notes, forKey: .notes)
         try c.encodeIfPresent(nameRu, forKey: .nameRu)
+        try c.encodeIfPresent(durationSec, forKey: .durationSec)
     }
 }
 

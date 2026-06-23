@@ -31,4 +31,24 @@ final class WorkoutFormatTests: XCTestCase {
         XCTAssertEqual(e.nameRu, "Тяга")
         XCTAssertEqual(e.displayName, "Тяга")
     }
+
+    func test_formatDuration() {
+        XCTAssertEqual(WorkoutSetFormat.duration(300), "5:00")
+        XCTAssertEqual(WorkoutSetFormat.duration(90), "1:30")
+    }
+
+    func test_durationExercise_decodesAndFlags() throws {
+        // Warmup shape: null sets + duration_seconds → isDuration.
+        let json = #"{"slug":"hodba","name_ru":"Ходьба","target_sets":null,"target_reps":"","reps_in_reserve":null,"rest_seconds":0,"duration_seconds":300}"#
+        let e = try JSONDecoder().decode(ExercisePlan.self, from: Data(json.utf8))
+        XCTAssertEqual(e.durationSec, 300)
+        XCTAssertTrue(e.isDuration)
+    }
+
+    func test_normalExercise_isNotDuration() throws {
+        let json = #"{"slug":"zhim","target_sets":4,"target_reps":"5-6","reps_in_reserve":2,"rest_seconds":180}"#
+        let e = try JSONDecoder().decode(ExercisePlan.self, from: Data(json.utf8))
+        XCTAssertNil(e.durationSec)
+        XCTAssertFalse(e.isDuration)
+    }
 }

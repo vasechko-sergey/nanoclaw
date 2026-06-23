@@ -15,4 +15,9 @@ enum WorkoutSetFormat {
     static func weight(_ w: Double) -> String {
         w.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(w)) : String(format: "%.1f", w)
     }
+
+    /// Seconds → "M:SS". 300 → "5:00", 90 → "1:30".
+    static func duration(_ sec: Int) -> String {
+        String(format: "%d:%02d", sec / 60, sec % 60)
+    }
 }
