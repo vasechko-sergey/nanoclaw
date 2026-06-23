@@ -127,15 +127,27 @@ final class TransportV2Tests: XCTestCase {
             contextCoordinator: coord,
             ackTimeoutSeconds: 0.2, dispatcherIntervalMs: 50
         )
+        let reqId = UUID().uuidString
         let request = V2.Envelope(
             v: V2.protocolVersion, kind: .control, type: .contextRequest,
-            id: UUID().uuidString, seq: 1,
+            id: reqId, seq: 1,
             ts: ISO8601DateFormatter().string(from: Date()),
             payload: .contextRequest(V2.ContextRequest(
                 request_id: "r-1", fields: ["device", "health"], params: nil
             ))
         )
         try await transport.handleIncoming(try JSONEncoder().encode(request))
+
+        // context_request is queued server-side but never cursor-acked, so the
+        // client must confirm it by id (status:delivered) — the per-id ack that
+        // removes it from the outbound queue.
+        let delivered = socket.sent
+            .compactMap { try? JSONDecoder().decode(V2.Envelope.self, from: $0) }
+            .first { $0.type == .delivered }
+        guard let deliveredEnv = delivered, case let .statusBatch(s) = deliveredEnv.payload else {
+            return XCTFail("expected a status:delivered for the context_request")
+        }
+        XCTAssertEqual(s.ids, [reqId])
         let responses = socket.sent.compactMap { data -> V2.Envelope? in
             try? JSONDecoder().decode(V2.Envelope.self, from: data)
         }.filter { $0.type == .contextResponse }

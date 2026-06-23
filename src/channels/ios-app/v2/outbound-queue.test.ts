@@ -41,6 +41,22 @@ describe('OutboundQueue', () => {
     expect(q.list('ios-app:dev-1').map((r) => r.seq)).toEqual([4, 5]);
   });
 
+  it('ackUpTo only deletes message rows — non-message types are per-id-ack only', () => {
+    // The cursor (last_seen_inbound_seq) is advanced by the client ONLY for
+    // chat `message` envelopes. Anything else must survive a cursor sweep and be
+    // removed solely by an explicit per-id `delivered` ack — otherwise a later
+    // chat's cursor would strand it (the confirmed workout_plan bug).
+    q.enqueue('ios-app:dev-1', env({ id: '11111111-1111-4111-8111-111111111111', type: 'message' }));
+    q.enqueue('ios-app:dev-1', env({ id: '22222222-2222-4222-8222-222222222222', type: 'workout_plan' }));
+    q.enqueue('ios-app:dev-1', env({ id: '33333333-3333-4333-8333-333333333333', type: 'context_request' }));
+    q.ackUpTo('ios-app:dev-1', 3); // cursor past all three
+    expect(q.list('ios-app:dev-1').map((r) => r.type)).toEqual(['workout_plan', 'context_request']);
+    // ...and per-id ack clears the survivors.
+    q.ackById('ios-app:dev-1', '22222222-2222-4222-8222-222222222222');
+    q.ackById('ios-app:dev-1', '33333333-3333-4333-8333-333333333333');
+    expect(q.list('ios-app:dev-1')).toHaveLength(0);
+  });
+
   it('overflow drops oldest when > MAX_QUEUE_PER_DEVICE', () => {
     for (let i = 0; i < MAX_QUEUE_PER_DEVICE + 5; i++) {
       q.enqueue('ios-app:dev-1', env({ id: `${i.toString(16).padStart(8, '0')}-1111-4111-8111-111111111111` }));

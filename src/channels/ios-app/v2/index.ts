@@ -541,8 +541,12 @@ function createV2Adapter(): ChannelAdapter | null {
         // Validate workout_plan.plan_json against the canonical schema. On
         // mismatch we WARN loudly but FORWARD anyway — schema drift should
         // surface in VDS logs, never silently block delivery to the device.
+        // The plan lives at content.payload.plan_json (the agent emits
+        // { type, payload: { workout_id, plan_json, image_manifest } }); reading
+        // content.plan_json instead made this warn fire on EVERY plan.
         if (contentType === 'workout_plan') {
-          const parsed = PlanJsonSchema.safeParse((content as { plan_json?: unknown }).plan_json);
+          const payload = content.payload as { plan_json?: unknown } | undefined;
+          const parsed = PlanJsonSchema.safeParse(payload?.plan_json);
           if (!parsed.success) {
             logV2Warn('workout_plan plan_json failed schema — forwarding anyway', {
               issues: parsed.error.issues.slice(0, 8),

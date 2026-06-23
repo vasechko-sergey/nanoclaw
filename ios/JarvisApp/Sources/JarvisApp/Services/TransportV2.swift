@@ -177,6 +177,11 @@ actor TransportV2 {
             ))
         case .contextRequest(let req):
             await handleContextRequest(req)
+            // Per-id delivery ack. context_request is queued server-side but is
+            // not a chat `message`, so the server never cursor-deletes it — this
+            // `delivered` is the only thing that clears it from the queue (same
+            // per-id model as the workout-family envelopes above).
+            try await sendStatus(.delivered, ids: [env.id])
         case .workoutPlan, .imageBlob, .coachMessage, .exerciseSwapOptions, .programUpdate:
             // Forward to the facade for typed decode + UI bus publication.
             onWorkoutEnvelope?(env)
