@@ -37,7 +37,18 @@ Flexible ~50/50 split via `GeometryReader` — top ~half is the image, bottom ~h
 
 6. **Icon toolbar:** three icon+label items — **заменить** (`arrow.2.squarepath` → `onSwap(currentExercise.exerciseSlug)`), **отдых** (`timer` → `restTimer.start(planned:lastRepsInReserve:)` to show/restart the overlay), **финиш** (`flag` → opens the finish sheet → `complete`).
 
-Overlays unchanged: `CoachBannerView` (coach_message) + `RestTimerOverlay`. Abort alert + finish sheet unchanged in behavior (finish sheet may be lightly restyled for dark consistency).
+Overlays: `CoachBannerView` (coach_message) unchanged; **`RestTimerOverlay` redesigned to a circular ring (see "Rest timer" below)**. Abort alert + finish sheet unchanged in behavior (finish sheet may be lightly restyled for dark consistency).
+
+## Rest timer — circular ring (after "Записать подход")
+
+Logging a set already calls `restTimer.start(planned:lastRepsInReserve:)`; that drives a full-screen overlay. Redesign it from the current dim-number overlay into a classic-iOS circular countdown in the app's colors:
+
+- Full-screen dark overlay (`Color.black.opacity(~0.92)` / `Theme.background`), centered.
+- "ОТДЫХ" caption · a large circular **progress ring** (SwiftUI `Circle().trim(from:0,to:progress).stroke(Theme.accent, style: .init(lineWidth:12, lineCap:.round)).rotationEffect(-90°)`) over a dim track (`Theme.accent.opacity(0.15)`). The ring **fills** as rest elapses: `progress = total > 0 ? Double(total - remaining) / Double(total) : 0`, animated.
+- Center: remaining "M:SS" (large, `.ultraLight` rounded monospaced) + a small "из {total M:SS}".
+- A muted "Дальше: подход {n} · {weight} кг" hint.
+- "Пропустить" button → `timer.skip()` (`Theme.accent` tinted, not white).
+- `RestTimer` gains `@Published private(set) var totalSec: Int` (set to `effective` in `start`, 0 in `stop`) so the ring has a denominator. `remainingSec`/`running`/`skip` unchanged.
 
 **Advance/finish semantics:** logging is the primary button (log as many sets as you want — warmup has `targetSets:0`). Navigation between exercises is the top-right "Дальше →" (`finishExercise`). Finishing the whole workout is the toolbar "финиш" (and "Дальше →" becomes "Финиш" on the last exercise). This separates log / navigate / finish cleanly — no scattered bottom bar.
 
@@ -78,6 +89,8 @@ The scattered navbar/dots/card/rows/bottombar become five ordered sections (bann
 - Create: `Views/Workout/ExerciseBannerView.swift` — image banner + name/scrim overlay (+ placeholder).
 - Create: `Views/Workout/FocusSetCard.swift` — big-control set logger (migrated from `ActiveSetRowView`, same coordinator wiring + pre-fill logic).
 - Create: `Views/Workout/LoggedSetChips.swift` — compact logged-set chip strip.
+- Modify: `Services/RestTimer.swift` — add `@Published private(set) var totalSec` (set in `start`, 0 in `stop`) for ring progress.
+- Modify: `Views/Workout/RestTimerOverlay.swift` — circular teal ring (trim/stroke) + remaining/total + next-set hint + "Пропустить".
 - Modify: `Models/Workout.swift` — `ExercisePlan.nameRu` (decode `name_ru`) + `displayName` helper; fixes transliteration everywhere names show (banner, chips, preview/`ExerciseCardView`).
 - Modify: `Views/Workout/SwapSheet.swift` — dark theming + `presentationBackground` + visualized current/alternative cards with thumbnails (slug→`latestPath`/manifest → cache; placeholder fallback).
 - Modify: `Services/ExerciseImageCache.swift` — add `latestPath(slug:) -> URL?` (newest `<slug>_*.jpg`) for slug-only thumbnail lookup of alternatives.
@@ -90,6 +103,7 @@ The scattered navbar/dots/card/rows/bottombar become five ordered sections (bann
 
 - **`FocusSetCardLogicTests`** (iOS unit): the pre-fill helper (`midReps`) and weight formatting are pure — extract `midReps`/`formatWeight` into a tiny testable helper (`WorkoutSetFormat`) and unit-test ("8-10"→9, "12"→12, ""→8; 60.0→"60", 62.5→"62.5").
 - **`ExercisePlanNameTests`** (iOS unit): `name_ru` decodes from a plan_json exercise; `displayName` returns `name_ru` when present, else the capitalized prettified slug ("zhim-shtangi-lezha" → "Zhim shtangi lezha") when `name_ru` absent/empty. (Real plans always carry `name_ru`; the fallback is the safety net.)
+- **`RestTimerTests`** (iOS unit): after `start(planned:rir:)`, `totalSec` equals the adapted `effectiveDuration` and `remainingSec == totalSec`; ring progress `= (total - remaining) / total` is 0 at start and clamps to [0,1] (expose a `progress` computed prop on `RestTimer` for the overlay + the test). `effectiveDuration` rule already implicitly covered — assert total reflects it (rir 0 → planned+30, rir≥4 → planned−15 floored 30).
 - **Manual/sim (fake-WS harness):** open runner → image banner shows (fake `image_blob`); big steppers adjust reps/weight; "Записать подход" logs a set → chip appears + rest timer; "Дальше →" advances exercise; toolbar "заменить" opens the DARK swap sheet (no light clash) → options → confirm; "финиш" → finish sheet → complete. Drive with `scripts/fake-ws-debug.ts` (already answers image/swap/plan).
 - Re-run full `JarvisAppTests` (must stay green — 201).
 
