@@ -52,6 +52,14 @@ export class InboundDispatcher {
     }
     if (env.type === 'delivered' || env.type === 'read') {
       this.deps.receipts.record(platform_id, env.payload.ids, env.type);
+      // Per-id delivery ack: remove confirmed rows from the outbound queue.
+      // This is the ONLY way workout-family envelopes leave the queue (they are
+      // exempt from cursor-based ackUpTo), and it also clears chat rows the
+      // moment the device confirms receipt rather than waiting for the next
+      // reconnect's cursor sweep.
+      if (env.type === 'delivered') {
+        for (const id of env.payload.ids) this.deps.queue.ackById(platform_id, id);
+      }
       return { kind: 'noop' };
     }
     if (env.type === 'ack') {

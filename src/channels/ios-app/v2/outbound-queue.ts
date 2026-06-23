@@ -8,6 +8,21 @@ export interface EnqueueInput {
   payload: unknown;
 }
 
+/**
+ * Outbound envelope types that are removed from the queue ONLY by an explicit
+ * per-id `delivered` ack — never by the chat-message cursor (`ackUpTo`). These
+ * are the Payne→iOS workout-family control envelopes (mirror of the
+ * workout-bridge's AGENT_TO_IOS_TYPES): the iOS client never advances its
+ * inbound cursor for them, so cursor-based deletion would strand them.
+ */
+export const PER_ID_ACK_TYPES = [
+  'workout_plan',
+  'coach_message',
+  'exercise_swap_options',
+  'program_update',
+  'image_blob',
+] as const;
+
 export class OutboundQueue {
   constructor(private db: TransportDb) {}
 
@@ -46,8 +61,27 @@ export class OutboundQueue {
     this.db.raw.prepare(`DELETE FROM outbound_queue WHERE platform_id = ? AND id = ?`).run(platform_id, id);
   }
 
+  /**
+   * Cursor-based ack: the device reports the highest CONTIGUOUS inbound seq it
+   * has processed and we drop everything at/below it. But iOS only advances that
+   * cursor for chat `message` envelopes — never for workout-family control
+   * envelopes — and Payne always sends a chat text right after a workout_plan.
+   * So a plain `seq <= ?` delete strands the plan: the following text moves the
+   * cursor past it and it is dropped before delivery ("текст был, карточки нет").
+   *
+   * Workout-family rows are therefore EXEMPT from cursor deletion. They are
+   * removed only by an explicit per-id `delivered` ack (`ackById`), so they
+   * survive in the queue and are redelivered on every drain until the device
+   * confirms receipt.
+   */
   ackUpTo(platform_id: string, seq: number): void {
-    this.db.raw.prepare(`DELETE FROM outbound_queue WHERE platform_id = ? AND seq <= ?`).run(platform_id, seq);
+    this.db.raw
+      .prepare(
+        `DELETE FROM outbound_queue
+         WHERE platform_id = ? AND seq <= ?
+           AND type NOT IN (${PER_ID_ACK_TYPES.map(() => '?').join(', ')})`,
+      )
+      .run(platform_id, seq, ...PER_ID_ACK_TYPES);
   }
 
   list(platform_id: string): OutboundQueueRow[] {

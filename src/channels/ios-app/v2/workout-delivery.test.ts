@@ -10,6 +10,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startTestServer, type Harness } from './testing/harness.js';
 
+// A valid UUID — `status:delivered.payload.ids` is schema-pinned to UUIDs, and
+// the workout envelope id in production is a randomUUID() from the bridge.
+const WK_ID = '00000000-0000-4000-8000-0000000000a1';
+
 const PAYLOAD = {
   workout_id: '2026-06-23',
   plan_json: {
@@ -23,11 +27,20 @@ const PAYLOAD = {
   image_manifest: [{ slug: 'bench', sha256: 'abc', url: '' }],
 };
 
-function emitWorkout(h: Harness, payload: unknown = PAYLOAD): void {
+function emitWorkout(h: Harness, id?: string, payload: unknown = PAYLOAD): void {
   h.workoutBridge.handleAgentRequest({
     session_id: 'sess-1',
-    content: { type: 'workout_plan', payload },
+    content: id ? { type: 'workout_plan', id, payload } : { type: 'workout_plan', payload },
   });
+}
+
+/** Poll until `cond` holds or the timeout elapses. */
+async function waitFor(cond: () => boolean, ms = 1000): Promise<void> {
+  const start = Date.now();
+  while (!cond()) {
+    if (Date.now() - start > ms) throw new Error('waitFor timeout');
+    await new Promise((r) => setTimeout(r, 20));
+  }
 }
 
 describe('workout_plan delivery', () => {
@@ -80,27 +93,54 @@ describe('workout_plan delivery', () => {
     expect(h.queue.list(h.platformId).some((r) => r.type === 'workout_plan')).toBe(true);
   });
 
-  // The core design hazard. The host deletes queued rows by a single
-  // last_seen_inbound_seq watermark. iOS advances that watermark ONLY for
-  // `message` envelopes, never for workout_plan. So if the device ever reports
-  // a cursor at/above an UNDELIVERED workout's seq — which happens under
-  // multi-device supersession (sim + phone share platform_id `…:default`, one
-  // queue, one cursor) — ackUpTo silently drops the workout and the drain never
-  // re-sends it. This test documents that loss.
-  it('drops an un-delivered workout_plan when the cursor is acked past its seq', async () => {
+  // The fix for the confirmed root cause. The host deletes queued rows by a
+  // single last_seen_inbound_seq watermark, but iOS advances that watermark
+  // ONLY for `message` envelopes, never for workout_plan — and Payne always
+  // sends a chat text right AFTER the plan. On-device that text was delivered
+  // (cursor moved past the plan) while the plan itself wasn't, so ackUpTo
+  // deleted the plan with no redelivery ("текст был, карточки нет").
+  //
+  // Fix: workout-family rows are EXEMPT from cursor-based ackUpTo. They survive
+  // until the device confirms receipt by id (status:delivered → ackById). So a
+  // later chat's cursor can never strand the plan; it is redelivered until acked.
+  it('keeps a workout_plan when the cursor is acked past its seq (the on-device bug)', async () => {
     h.db.upsertDevice(h.platformId, { capabilities: [] });
-    emitWorkout(h); // workout at seq 1 — imagine it was pushed to a now-superseded socket
-    // A later chat message lands at seq 2.
+    emitWorkout(h, WK_ID); // workout at seq 1
+    // Payne's follow-up chat text lands at seq 2.
     h.handler.sendEnvelopeToDevice(h.platformId, {
       kind: 'data',
       type: 'message',
-      payload: { thread_id: 'ios:default', text: 'вот план', agent_id: 'payne' },
+      payload: { thread_id: 'ios:default', text: 'Отправил.', agent_id: 'payne' },
     });
 
-    // A device reconnects reporting it has seen up through the chat (seq 2).
+    // Device reconnects reporting it saw through the chat (seq 2) but not the plan.
     const ws = await h.connectAuthed({ lastSeenInbound: 2 });
-    // ackUpTo(2) deleted BOTH rows; nothing is drained.
-    await expect(h.expectIncoming(ws, 300)).rejects.toThrow(/timeout/);
+    // ackUpTo(2) removed the chat message but the workout_plan SURVIVES and is
+    // drained for (re)delivery.
+    const env = await h.expectIncoming(ws);
+    expect(env.type).toBe('workout_plan');
+    expect(h.queue.list(h.platformId).map((r) => r.type)).toEqual(['workout_plan']);
+  });
+
+  it('removes a workout_plan from the queue when the device confirms delivered by id', async () => {
+    h.db.upsertDevice(h.platformId, { capabilities: [] });
+    emitWorkout(h, WK_ID);
+    const ws = await h.connectAuthed({ lastSeenInbound: 0 });
+    const env = await h.expectIncoming(ws);
+    expect(env.type).toBe('workout_plan');
+
+    // Device confirms receipt by id (status:delivered) — the per-id ack that
+    // replaces cursor-based deletion for workout-family envelopes.
+    h.send(ws, {
+      v: 2,
+      kind: 'status',
+      type: 'delivered',
+      id: '00000000-0000-4000-8000-0000000000d1',
+      seq: null,
+      ts: new Date().toISOString(),
+      payload: { ids: [WK_ID] },
+    });
+    await waitFor(() => h.queue.list(h.platformId).length === 0);
     expect(h.queue.list(h.platformId)).toHaveLength(0);
   });
 });

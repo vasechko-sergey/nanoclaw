@@ -179,10 +179,16 @@ actor TransportV2 {
             await handleContextRequest(req)
         case .workoutPlan, .imageBlob, .coachMessage, .exerciseSwapOptions, .programUpdate:
             // Forward to the facade for typed decode + UI bus publication.
-            // We deliberately do NOT ack here — workout envelopes are control
-            // kind (or data for plan) and their delivery semantics live above
-            // the dispatcher.
             onWorkoutEnvelope?(env)
+            // Per-id delivery ack. Workout-family envelopes are EXEMPT from the
+            // host's chat-cursor `ackUpTo` (the client never advances that cursor
+            // for them, and Payne sends a chat text right after a plan — which
+            // would otherwise move the cursor past the plan and strand it:
+            // "текст был, карточки нет"). So this `delivered` is the ONLY signal
+            // that removes a workout row from the host queue. Best-effort: a lost
+            // ack just means the host redelivers on the next reconnect, and the
+            // insert is idempotent on `id`, so the card never doubles.
+            try await sendStatus(.delivered, ids: [env.id])
         default:
             break
         }

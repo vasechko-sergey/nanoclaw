@@ -96,6 +96,24 @@ final class TransportV2WorkoutInboundTests: XCTestCase {
         }
     }
 
+    /// The transport must confirm a workout_plan by id (status:delivered) so the
+    /// host can drop it from the outbound queue — workout-family envelopes are
+    /// exempt from the host's chat-cursor ackUpTo, making this the only signal
+    /// that clears them (and what stops the "текст был, карточки нет" loss).
+    func test_handleIncoming_workoutPlan_sendsDeliveredAckById() async throws {
+        await transport.setOnWorkoutEnvelope { _ in }
+        try await transport.handleIncoming(try realEnvelopeData())
+
+        let delivered = socket.sent
+            .compactMap { try? JSONDecoder().decode(V2.Envelope.self, from: $0) }
+            .first { $0.type == .delivered }
+        let env = try XCTUnwrap(delivered, "handleIncoming must send status:delivered for a workout")
+        guard case let .statusBatch(s) = env.payload else {
+            return XCTFail("expected statusBatch payload, got \(env.payload)")
+        }
+        XCTAssertEqual(s.ids, ["00000000-0000-4000-8000-000000000405"])
+    }
+
     /// The image is optional: a plan that carries NO `image_manifest` field must
     /// still decode and produce a card (each exercise falls back to a placeholder
     /// in the UI). Without the tolerant wire decode this throws on the missing key
