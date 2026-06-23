@@ -42,6 +42,7 @@ enum V2 {
         case programUpdate = "program_update"
         case coachMessage = "coach_message"
         case introRequest = "intro_request"
+        case update
     }
 
     // Discriminated payload union driven by the outer `type` field.
@@ -73,6 +74,7 @@ enum V2 {
         case programUpdate(ProgramUpdate)
         case coachMessage(CoachMessage)
         case introRequest(IntroRequest)
+        case update(Update)
     }
 
     struct Envelope: Equatable {
@@ -129,6 +131,17 @@ enum V2 {
             self.agent_id = agent_id
             self.reply_to_id = reply_to_id
             self.actions = actions
+        }
+    }
+
+    struct Update: Codable, Equatable {
+        let id: String      // target message id to edit in place
+        let text: String
+        let agent_id: String?
+        init(id: String, text: String, agent_id: String? = nil) {
+            self.id = id
+            self.text = text
+            self.agent_id = agent_id
         }
     }
 
@@ -587,6 +600,8 @@ extension V2.Envelope: Codable {
             payload = .coachMessage(try V2.CoachMessage(from: payloadDecoder))
         case .introRequest:
             payload = .introRequest(try V2.IntroRequest(from: payloadDecoder))
+        case .update:
+            payload = .update(try V2.Update(from: payloadDecoder))
         }
     }
 
@@ -630,6 +645,7 @@ extension V2.Envelope: Codable {
         case .programUpdate(let p): try p.encode(to: payloadEncoder)
         case .coachMessage(let p): try p.encode(to: payloadEncoder)
         case .introRequest(let p): try p.encode(to: payloadEncoder)
+        case .update(let p): try p.encode(to: payloadEncoder)
         }
     }
 }

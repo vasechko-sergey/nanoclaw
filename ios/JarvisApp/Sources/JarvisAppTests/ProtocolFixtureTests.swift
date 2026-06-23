@@ -31,7 +31,7 @@ final class ProtocolFixtureTests: XCTestCase {
             .filter { $0.pathExtension == "json" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
-        XCTAssertEqual(urls.count, 23, "envelope fixture count mismatch — expected 23, got \(urls.count) at \(dir.path)")
+        XCTAssertEqual(urls.count, 24, "envelope fixture count mismatch — expected 24, got \(urls.count) at \(dir.path)")
 
         let decoder = JSONDecoder()
         let encoder = JSONEncoder()
