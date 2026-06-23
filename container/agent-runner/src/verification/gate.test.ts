@@ -19,3 +19,17 @@ test('no data-numbers → grounded (nothing to check)', () => {
   const r = checkProvenance('привет', new Set());
   expect(r.grounded).toBe(true);
 });
+
+test('grounded when message rounds a tool number to its displayed precision', () => {
+  const grounding = new Set(['12009.34']);
+  expect(checkProvenance('Траты $12009', grounding).grounded).toBe(true); // 0 dp
+  expect(checkProvenance('Траты $12009.3', grounding).grounded).toBe(true); // 1 dp
+  expect(checkProvenance('Траты $12009.34', grounding).grounded).toBe(true); // exact
+});
+
+test('still flags a genuinely different number, not a rounding', () => {
+  const grounding = new Set(['12009.34']);
+  const r = checkProvenance('Траты $12500', grounding);
+  expect(r.grounded).toBe(false);
+  expect(r.ungrounded).toContain('12500');
+});

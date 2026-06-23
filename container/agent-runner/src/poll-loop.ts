@@ -635,9 +635,11 @@ async function processQuery(
   // a misleading error after a perfectly fine answer. Reset to false on
   // every push() so a genuinely stalled follow-up still gets the fallback.
   let resultReceived = false;
-  // Factuality gate: how many times this turn has been bounced back to the
-  // agent to re-ground a number. Capped by FACTUALITY_MAX_RETRIES.
+  // Factuality gate: per-turn bounce counters, each capped by
+  // FACTUALITY_MAX_RETRIES. Separate budgets so number bounces don't starve the
+  // prose judge — a turn may bounce up to N times for numbers AND N for prose.
   let factualityRetries = 0;
+  let proseRetries = 0;
   // Tool-use ids that started but haven't reported back. While this set is
   // non-empty, the idle watchdog is in "tool-tolerant" mode: an idle
   // window means a long-running Bash/MCP call, not a wedged stream. The
@@ -867,21 +869,22 @@ async function processQuery(
               // Mirrors the number-bounce above: on unsupported prose, push a
               // correction + re-arm and SKIP delivery (proseBounced) so the
               // while-loop consumes the regenerated turn. Judge error →
-              // fail-closed-soft hedge via finalText. Shares factualityRetries.
+              // fail-closed-soft hedge via finalText. Uses its own proseRetries
+              // budget so number bounces don't starve it.
               let proseBounced = false;
               let proseHedge = false;
               const sources = groundingText.join('\n');
               if (
                 verdict.grounded &&
                 shouldJudgeProse(gateMode, sources, event.text) &&
-                factualityRetries < FACTUALITY_MAX_RETRIES
+                proseRetries < FACTUALITY_MAX_RETRIES
               ) {
                 try {
                   const prose = await judgeProse(event.text, sources);
                   if (prose.unsupported.length > 0) {
-                    factualityRetries++;
+                    proseRetries++;
                     log(
-                      `Factuality judge: unsupported prose — bouncing (retry ${factualityRetries}/${FACTUALITY_MAX_RETRIES})`,
+                      `Factuality judge: unsupported prose — bouncing (retry ${proseRetries}/${FACTUALITY_MAX_RETRIES})`,
                     );
                     resultReceived = false; // a correction starts a fresh turn
                     query.push(
