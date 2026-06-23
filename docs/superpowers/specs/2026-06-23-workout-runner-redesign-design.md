@@ -31,7 +31,7 @@ Top → bottom, all on `Theme.background`:
 
 3. **Logged-set chips** (`LoggedSetChips`, new): horizontal wrap of compact chips, one per logged set of the current exercise ("✓ {reps}×{weight}"), plus a muted "подход {currentSetIdx+1} из {targetSets}" chip and a "RIR {targetRir}" chip. Replaces the stacked `LoggedSetRow` list.
 
-4. **Focus card** (`FocusSetCard`, replaces `ActiveSetRowView`): `Theme.surface` rounded card with two big stepper rows — **Повторы** and **Вес, кг** — each: label left; right = a 34pt "−" circle, a 26pt value, a 34pt "+" circle (large tap targets). A third compact row for **запас (RIR)** (smaller −/+). State (`reps`/`weight`/`rir`) + pre-fill/on-change logic carried over verbatim from `ActiveSetRowView`.
+4. **Focus card** (`FocusSetCard`, replaces `ActiveSetRowView`): `Theme.surface` rounded card with THREE identical-layout rows — **Повторы**, **Вес, кг**, **Запас** — separated by hairlines. Each row: label left (`Theme.textSecondary`); right = a fixed control group `[− circle] [value] [+ circle]` with the SAME sizes across all three rows (32pt circles, value `width:44` centered) so the +/− columns line up vertically. No inline unit suffixes (no "повт"/"кг" after the number — the unit lives in the label). State (`reps`/`weight`/`rir`) + pre-fill/on-change logic carried over verbatim from `ActiveSetRowView`. Weight steps 0.5; reps/rir step 1.
 
 5. **Primary button:** full-width "Записать подход" (`Theme.accent` fill) → `coordinator.logSet(reps:weight:repsInReserve:ts:)` + `restTimer.start(planned:lastRepsInReserve:)` (same as today's ✓).
 
@@ -59,6 +59,15 @@ Note (dependency): real alternative thumbnails require Payne to answer `image_re
 
 - The banner uses the same resolver the preview proved working. On `WorkoutView.onAppear`, also call the image prefetch for the plan's manifest (so images are fetched even if the runner is opened without going through the preview's prefetch). Prefetch is the existing `ExerciseImageCache.prefetch(manifest:)`; thread it via a new `onAppearPrefetch: () -> Void` closure passed from ChatView (which has `coordinator.imageCache`), OR pass the cache's prefetch directly. Placeholder shows until the `image_blob` lands; the banner re-renders when the cache fills (resolver re-queried on body eval / coordinator change).
 
+## Russian names (fix: transliteration on device)
+
+On the real device exercise names render as transliterated slugs ("zhim shtangi lezha …") because `ExercisePlan` never decodes `name_ru` — the UI falls back to the hyphen-split slug. The plan_json DOES carry `name_ru` per exercise (canonical `PlanExerciseSchema.name_ru`).
+
+- `ExercisePlan` (`Models/Workout.swift`): add `var nameRu: String?`, decode/encode key `name_ru` (lenient `try?`, optional — warmups/older plans may omit it).
+- Add `ExercisePlan.displayName`: `nameRu` if non-empty, else the current prettified slug (hyphens→spaces). Capitalize the slug fallback's first letter.
+- Use `displayName` everywhere a name shows: the new banner, `FocusSetCard` (if it shows a name), `LoggedSetChips`, AND the already-shipped `WorkoutPreviewView`/`ExerciseCardView` (so the preview is fixed too).
+- Swap alternatives: `SwapResponse.Alternative` carries only `slug`+`why`, so alternative rows show the prettified slug for now. Real Russian names for alternatives need `name_ru` added to the `exercise_swap_options` payload (shared `v2.ts` + Swift + Payne) — noted as a follow-up, out of scope here.
+
 ## Cohesion (fix #3)
 
 The scattered navbar/dots/card/rows/bottombar become five ordered sections (banner → chips → focus card → primary → toolbar) on one background, with the focus card as the single visual anchor.
@@ -69,6 +78,7 @@ The scattered navbar/dots/card/rows/bottombar become five ordered sections (bann
 - Create: `Views/Workout/ExerciseBannerView.swift` — image banner + name/scrim overlay (+ placeholder).
 - Create: `Views/Workout/FocusSetCard.swift` — big-control set logger (migrated from `ActiveSetRowView`, same coordinator wiring + pre-fill logic).
 - Create: `Views/Workout/LoggedSetChips.swift` — compact logged-set chip strip.
+- Modify: `Models/Workout.swift` — `ExercisePlan.nameRu` (decode `name_ru`) + `displayName` helper; fixes transliteration everywhere names show (banner, chips, preview/`ExerciseCardView`).
 - Modify: `Views/Workout/SwapSheet.swift` — dark theming + `presentationBackground` + visualized current/alternative cards with thumbnails (slug→`latestPath`/manifest → cache; placeholder fallback).
 - Modify: `Services/ExerciseImageCache.swift` — add `latestPath(slug:) -> URL?` (newest `<slug>_*.jpg`) for slug-only thumbnail lookup of alternatives.
 - Modify: `Services/WorkoutInbound.swift` — add `case imageReceived(slug: String)` to `WorkoutInboundEvent`.
@@ -78,7 +88,8 @@ The scattered navbar/dots/card/rows/bottombar become five ordered sections (bann
 
 ## Testing
 
-- **`FocusSetCardLogicTests`** (iOS unit): the pre-fill helper (`midReps`) and weight formatting are pure — extract `midReps`/`formatWeight` into a tiny testable helper (`WorkoutSetFormat`) and unit-test ("8-10"→9, "12"→12, ""→8; 60.0→"60", 62.5→"62.5"). This is the only non-view logic; the rest is verified visually.
+- **`FocusSetCardLogicTests`** (iOS unit): the pre-fill helper (`midReps`) and weight formatting are pure — extract `midReps`/`formatWeight` into a tiny testable helper (`WorkoutSetFormat`) and unit-test ("8-10"→9, "12"→12, ""→8; 60.0→"60", 62.5→"62.5").
+- **`ExercisePlanNameTests`** (iOS unit): `name_ru` decodes from a plan_json exercise; `displayName` returns `name_ru` when present, else the capitalized prettified slug ("zhim-shtangi-lezha" → "Zhim shtangi lezha") when `name_ru` absent/empty. (Real plans always carry `name_ru`; the fallback is the safety net.)
 - **Manual/sim (fake-WS harness):** open runner → image banner shows (fake `image_blob`); big steppers adjust reps/weight; "Записать подход" logs a set → chip appears + rest timer; "Дальше →" advances exercise; toolbar "заменить" opens the DARK swap sheet (no light clash) → options → confirm; "финиш" → finish sheet → complete. Drive with `scripts/fake-ws-debug.ts` (already answers image/swap/plan).
 - Re-run full `JarvisAppTests` (must stay green — 201).
 
