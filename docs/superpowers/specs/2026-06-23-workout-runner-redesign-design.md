@@ -41,11 +41,19 @@ Overlays unchanged: `CoachBannerView` (coach_message) + `RestTimerOverlay`. Abor
 
 **Advance/finish semantics:** logging is the primary button (log as many sets as you want — warmup has `targetSets:0`). Navigation between exercises is the top-right "Дальше →" (`finishExercise`). Finishing the whole workout is the toolbar "финиш" (and "Дальше →" becomes "Финиш" on the last exercise). This separates log / navigate / finish cleanly — no scattered bottom bar.
 
-## Swap sheet theming (fix #1)
+## Swap sheet — dark theme + visualization (fix #1 + "no swap visualization")
 
-- Add `.presentationBackground(Theme.background)` to the `SwapSheet`'s `NavigationStack` (iOS 16.4+; min target is 18.0 so available).
-- Restyle `SwapSheet` content to dark: section containers on `Theme.surface`, text `Theme.textPrimary`/secondary, the "Предложи варианты" + confirm CTAs use `Theme.accent`, the alternatives list uses `Theme.surface` rows with hairline separators. Remove reliance on default `Form`/grouped-list chrome. Toolbar "Отмена" tinted `Theme.accent`.
-- `.preferredColorScheme(.dark)` on the sheet for system controls (toggle/stepper) consistency.
+Theming:
+- `.presentationBackground(Theme.background)` + `.preferredColorScheme(.dark)` on the `SwapSheet` (min target 18.0). Restyle content to dark: containers on `Theme.surface`, text `Theme.textPrimary`/secondary, CTAs `Theme.accent`, hairline separators. Drop default `Form`/grouped-list chrome. "Отмена" tinted `Theme.accent`.
+
+Visualization (every exercise shows its image, not just a slug):
+- **Current exercise** row at top: real thumbnail from the plan manifest (slug+sha256 → cache, already prefetched) + name + "меняем" label.
+- **Alternatives** as image-card rows: thumbnail + `name_ru`/slug + `why`; the selected one gets a `Theme.accent` border + a filled check; the confirm CTA names the choice ("Заменить на «…»").
+- Alternative thumbnails: the swap-options payload carries only slugs, so on `exercise_swap_options` arrival the app fires `transport.sendImageRequest(slug:)` for each alternative slug (best-effort; Payne answers with `image_blob` if it has the image). Until a blob lands, the card shows the `figure.strengthtraining.traditional` placeholder.
+- Because an alternative's `sha256` isn't known up front (it arrives WITH the blob), add `ExerciseImageCache.latestPath(slug:) -> URL?` (newest `<slug>_*.jpg` on disk) for slug-only lookup. The current exercise still uses the exact slug+sha256 path.
+- Re-render when a blob lands: add bus case `WorkoutInboundEvent.imageReceived(slug: String)`; `AppCoordinator.handleWorkoutEnvelope`'s `.imageBlob` branch emits it after `imageCache.write(...)`. The swap sheet (driven from ChatView) bumps a `@State` token on `.imageReceived` to re-resolve thumbnails.
+
+Note (dependency): real alternative thumbnails require Payne to answer `image_request` for arbitrary exercise slugs (it already serves plan slugs). If Payne has no image for a slug, the placeholder stays — the sheet is still fully usable. No protocol change; reuses image_request/image_blob.
 
 ## Images (fix #2)
 
@@ -61,8 +69,11 @@ The scattered navbar/dots/card/rows/bottombar become five ordered sections (bann
 - Create: `Views/Workout/ExerciseBannerView.swift` — image banner + name/scrim overlay (+ placeholder).
 - Create: `Views/Workout/FocusSetCard.swift` — big-control set logger (migrated from `ActiveSetRowView`, same coordinator wiring + pre-fill logic).
 - Create: `Views/Workout/LoggedSetChips.swift` — compact logged-set chip strip.
-- Modify: `Views/Workout/SwapSheet.swift` — dark theming + `presentationBackground`.
-- Modify: `Views/ChatView.swift` — pass `onAppearPrefetch` (calls `coordinator.imageCache.prefetch(manifest:)`) into `WorkoutView`.
+- Modify: `Views/Workout/SwapSheet.swift` — dark theming + `presentationBackground` + visualized current/alternative cards with thumbnails (slug→`latestPath`/manifest → cache; placeholder fallback).
+- Modify: `Services/ExerciseImageCache.swift` — add `latestPath(slug:) -> URL?` (newest `<slug>_*.jpg`) for slug-only thumbnail lookup of alternatives.
+- Modify: `Services/WorkoutInbound.swift` — add `case imageReceived(slug: String)` to `WorkoutInboundEvent`.
+- Modify: `Services/AppCoordinator.swift` — `.imageBlob` branch emits `workoutBus.events.send(.imageReceived(b.slug))` after cache write.
+- Modify: `Views/ChatView.swift` — pass `onAppearPrefetch` (calls `coordinator.imageCache.prefetch(manifest:)`) into `WorkoutView`; on `.swapOptions` fire `transport.sendImageRequest(slug:)` for each alternative slug + thread an image-resolver + an `.imageReceived` re-render token into `SwapSheet`.
 - Remove `ActiveSetRowView` from `SetRowView.swift` once `FocusSetCard` replaces it (keep `LoggedSetRow` only if still referenced; otherwise remove). `progressDots` / `navbar` / `bottomBar` private helpers in `WorkoutView` are replaced.
 
 ## Testing
