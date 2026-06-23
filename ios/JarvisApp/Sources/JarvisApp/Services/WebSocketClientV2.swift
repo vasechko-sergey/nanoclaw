@@ -211,7 +211,13 @@ final class WebSocketClientV2 {
     /// the URL-massaging the legacy `WSTransport.doConnect` did.
     private static func resolveWebSocketURL(settings: AppSettings) -> URL? {
         let raw: String
-        if JarvisApp.isUITesting {
+        // Debug/QA hook: point the real app at a local fake server WITHOUT the
+        // other --uitesting behaviors. `SIMCTL_CHILD_JARVIS_WS_URL=ws://127.0.0.1:8765
+        // xcrun simctl launch …` lets us drive the production transport + UI
+        // against a controlled server. Inert in normal runs (env unset).
+        if let override = ProcessInfo.processInfo.environment["JARVIS_WS_URL"], !override.isEmpty {
+            raw = override
+        } else if JarvisApp.isUITesting {
             raw = "ws://127.0.0.1:8765"
         } else {
             raw = settings.serverURL.trimmingCharacters(in: .whitespaces)
