@@ -23,13 +23,13 @@ Chosen variant: **B** (focus controls) from the two mockups presented 2026-06-23
 
 ## New `WorkoutView` layout (Variant B)
 
-Top → bottom, all on `Theme.background`:
+Flexible ~50/50 split via `GeometryReader` — top ~half is the image, bottom ~half is the controls, all on `Theme.background`:
 
-1. **Top bar:** ✕ (abort, left) · thin segmented progress (one segment per exercise, filled ≤ current) · "Дальше →" (right) that advances the exercise (`finishExercise`); on the last exercise it reads "Финиш" and opens the finish sheet. Day/week/intensity as a small caption under the bar.
+1. **Image hero — top ~half** (`ExerciseBannerView`, new): fills the top ~46% of the available height (`geo.size.height * 0.46`, so it adapts across devices and is properly visible — not a thin banner). Loads `imageResolver(currentExercise.exerciseSlug)` and renders `.scaledToFill().clipped()` (aspect-fill, "ресайз" = scales to fill its area); on nil/missing shows the `figure.strengthtraining.traditional` placeholder centered on `Theme.surface`. **Overlaid** (not separate rows): a top translucent bar — ✕ (abort) · thin segmented progress (one segment per exercise, filled ≤ current) · "Дальше →" (advances via `finishExercise`; reads "Финиш" + opens the finish sheet on the last exercise); a bottom solid scrim (`Color.black.opacity(0.74)`) with the exercise `displayName` + "{idx+1}/{total}".
 
-2. **Image banner** (`ExerciseBannerView`, new): full-width, ~150pt tall, `Theme.radius`. Loads `imageResolver(currentExercise.exerciseSlug)`; on nil/missing shows the `figure.strengthtraining.traditional` placeholder centered on `Theme.surface`. Exercise name + "{idx+1}/{total}" overlaid on a SOLID scrim band (`Color.black.opacity(0.72)`) at the bottom (no gradients).
+2. **Controls — bottom ~half:** the remaining height holds, compact, top→bottom: logged-set chips → focus card → primary button → icon toolbar (items 3–6 below). Day/week/intensity is a small caption (e.g. above the chips or in the scrim).
 
-3. **Logged-set chips** (`LoggedSetChips`, new): horizontal wrap of compact chips, one per logged set of the current exercise ("✓ {reps}×{weight}"), plus a muted "подход {currentSetIdx+1} из {targetSets}" chip and a "RIR {targetRir}" chip. Replaces the stacked `LoggedSetRow` list.
+3. **Logged-set chips** (`LoggedSetChips`, new): horizontal wrap of compact chips, one per logged set of the current exercise ("✓ {reps}×{weight}"), plus a muted "подход {currentSetIdx+1} из {targetSets}" chip. Replaces the stacked `LoggedSetRow` list.
 
 4. **Focus card** (`FocusSetCard`, replaces `ActiveSetRowView`): `Theme.surface` rounded card with THREE identical-layout rows — **Повторы**, **Вес, кг**, **Запас** — separated by hairlines. Each row: label left (`Theme.textSecondary`); right = a fixed control group `[− circle] [value] [+ circle]` with the SAME sizes across all three rows (32pt circles, value `width:44` centered) so the +/− columns line up vertically. No inline unit suffixes (no "повт"/"кг" after the number — the unit lives in the label). State (`reps`/`weight`/`rir`) + pre-fill/on-change logic carried over verbatim from `ActiveSetRowView`. Weight steps 0.5; reps/rir step 1.
 
