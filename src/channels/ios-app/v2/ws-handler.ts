@@ -25,6 +25,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import { log } from '../../../log.js';
 import { AnyEnvelope } from '../../../../shared/ios-app-protocol/index.js';
 import type { TransportDb } from './transport-db.js';
 import type { OutboundQueue } from './outbound-queue.js';
@@ -110,7 +111,12 @@ export class WsHandler {
       payload: envelope.payload,
     });
     const conn = this.sockets.get(platform_id);
-    if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
+    if (!conn || conn.ws.readyState !== WebSocket.OPEN) {
+      // [delivery] trace: enqueued but no live socket — will be drained on the
+      // device's next connect. Grep `[delivery]` across host + device logs.
+      log.info('[delivery] queued (offline)', { to: platform_id, type: envelope.type, id, seq });
+      return;
+    }
     const fullEnvelope = {
       v: 2,
       kind: envelope.kind,
@@ -121,6 +127,7 @@ export class WsHandler {
       payload: envelope.payload,
     };
     this.sendRaw(conn.ws, fullEnvelope);
+    log.info('[delivery] push', { to: platform_id, type: envelope.type, id, seq });
   }
 
   /**
@@ -234,7 +241,13 @@ export class WsHandler {
 
     // Supersede any prior live socket for this device.
     const prev = this.sockets.get(pid);
+    const superseding = !!(prev && prev.ws !== ws);
     if (prev && prev.ws !== ws) {
+      // [delivery] trace: a second connection for the SAME platform_id (e.g. a
+      // simulator AND a phone sharing one token) takes over the socket. The
+      // displaced device stops receiving pushes — a classic cause of "message
+      // never arrived on my device".
+      log.warn('[delivery] supersede', { platform_id: pid, build: auth.payload.build });
       clearInterval(prev.retryInterval);
       clearInterval(prev.appPingInterval);
       this.sockets.delete(pid);
@@ -242,6 +255,13 @@ export class WsHandler {
         prev.ws.close(CLOSE_CODES.superseded, 'superseded');
       }
     }
+    log.info('[delivery] auth', {
+      platform_id: pid,
+      build: auth.payload.build,
+      app_version: auth.payload.app_version,
+      superseding,
+      lastSeenInbound: auth.payload.last_seen_inbound_seq,
+    });
 
     const dev = this.deps.db.getDevice(pid);
     // upsertDevice above guarantees the row exists.
@@ -275,6 +295,7 @@ export class WsHandler {
         ts: new Date().toISOString(),
         payload: JSON.parse(row.payload_json),
       });
+      log.info('[delivery] drain', { to: pid, type: row.type, id: row.id, seq: row.seq });
     }
 
     const retryInterval = setInterval(() => this.tickRetry(pid), this.retryTickMs);

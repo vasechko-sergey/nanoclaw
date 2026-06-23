@@ -154,6 +154,9 @@ actor TransportV2 {
     /// Test-friendly inbound entrypoint.
     func handleIncoming(_ data: Data) async throws {
         let env = try JSONDecoder().decode(V2.Envelope.self, from: data)
+        // [delivery] trace: grep `[delivery]` in Xcode console (device) + VDS logs
+        // (server) to see end-to-end which envelope this device received.
+        Log.info(.ws, "[delivery] recv \(env.type.rawValue) id=\(env.id) seq=\(env.seq.map(String.init) ?? "nil")")
         switch env.payload {
         case .ack(let a):
             cancelAckRetry(id: a.id)
@@ -311,6 +314,11 @@ actor TransportV2 {
     }
 
     private func sendStatus(_ type: V2.TypeTag, ids: [String]) async throws {
+        if type == .delivered {
+            // [delivery] trace: this device confirms receipt of `ids` to the host
+            // (pairs with the server's `[delivery] ack-recv`).
+            Log.info(.ws, "[delivery] sent-delivered ids=\(ids)")
+        }
         let env = V2.Envelope(
             v: V2.protocolVersion, kind: .status, type: type,
             id: UUID().uuidString, seq: nil,

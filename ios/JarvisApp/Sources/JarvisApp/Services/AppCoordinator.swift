@@ -240,7 +240,19 @@ final class AppCoordinator {
     /// two workouts on the same calendar day don't collide (Payne's workout_id
     /// is a DATE, and the store INSERTs OR IGNOREs on the row id).
     func insertWorkoutPlan(_ plan: WorkoutPlan, rowId: String) {
-        try? chatStore?.insertWorkoutPlan(id: rowId, agentId: "payne", plan: plan)
+        // [delivery] trace + surface the two silent drop modes (store not built /
+        // insert throws). This is the device-side proof the card row was actually
+        // persisted — pair with `[delivery] recv` above and the host's push/ack.
+        guard let chatStore else {
+            Log.warn(.ws, "[delivery] inserted-workout SKIPPED id=\(rowId) — chatStore nil")
+            return
+        }
+        do {
+            try chatStore.insertWorkoutPlan(id: rowId, agentId: "payne", plan: plan)
+            Log.info(.ws, "[delivery] inserted-workout id=\(rowId) ex=\(plan.exercises.count)")
+        } catch {
+            Log.warn(.ws, "[delivery] inserted-workout FAILED id=\(rowId): \(error)")
+        }
     }
 
     // MARK: – Wiring

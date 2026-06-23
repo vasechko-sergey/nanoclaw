@@ -1,3 +1,4 @@
+import { log } from '../../../log.js';
 import type { TransportDb } from './transport-db.js';
 import type { OutboundQueue } from './outbound-queue.js';
 import type { ReceiptStore } from './receipt-store.js';
@@ -58,6 +59,10 @@ export class InboundDispatcher {
       // moment the device confirms receipt rather than waiting for the next
       // reconnect's cursor sweep.
       if (env.type === 'delivered') {
+        // [delivery] trace: this device confirms receipt of these ids. Pair with
+        // the host's `[delivery] push id=…` and the device's `[delivery] recv id=…`
+        // to see end-to-end who received what.
+        log.info('[delivery] ack-recv', { from: platform_id, ids: env.payload.ids });
         for (const id of env.payload.ids) this.deps.queue.ackById(platform_id, id);
       }
       return { kind: 'noop' };
