@@ -31,12 +31,18 @@ struct ExerciseCardView: View {
 
             // Title + targets.
             VStack(spacing: 4) {
-                Text(exercise.exerciseSlug.replacingOccurrences(of: "-", with: " "))
+                Text(exercise.displayName)
                     .font(.title3.weight(.medium))
                     .foregroundStyle(.primary)
-                Text("\(exercise.targetSets) × \(exercise.targetReps) · запас \(exercise.targetRir) повторов · отдых \(exercise.restSec) сек")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                if exercise.isDuration {
+                    Text("Длительность \(WorkoutSetFormat.duration(exercise.durationSec ?? 0))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(exercise.targetSets) × \(exercise.targetReps) · запас \(exercise.targetRir) повторов · отдых \(exercise.restSec) сек")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 if let notes = exercise.notes, !notes.isEmpty {
                     Text(notes)
                         .font(.footnote.italic())
