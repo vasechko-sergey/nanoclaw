@@ -22,6 +22,10 @@ Use `mcp__nanoclaw__send_file({ path, text?, filename?, to? })` to deliver a fil
 
 Use `mcp__nanoclaw__add_reaction({ messageId, emoji })` to react to a specific inbound message by its `#N` id — pass `messageId` as an integer (e.g. `22`, not `"22"`). Good for lightweight acknowledgment (`eyes` = seen, `white_check_mark` = done) when a full reply would be noise. `emoji` is the shortcode name (e.g. `thumbs_up`, `heart`), not the raw character.
 
+### Editing a message (`edit_message`)
+
+Use `mcp__nanoclaw__edit_message({ text, messageId? })` to correct a message you already sent — it replaces the whole text in place (the user sees the same bubble update, marked edited). To fix the message you JUST sent, call it with only the new `text` and **omit** `messageId`. Pass the numeric `messageId` (the `#N` id shown next to messages, as an integer) only to edit an OLDER message. Never invent a messageId — if you don't have the number, omit it.
+
 ### Internal thoughts
 
 Wrap reasoning in `<internal>...</internal>` tags to mark it as scratchpad — logged but not sent.

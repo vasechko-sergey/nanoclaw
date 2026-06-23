@@ -179,6 +179,28 @@ export function getRoutingBySeq(
   return outRow ?? null;
 }
 
+/**
+ * Latest user-facing outbound message's seq (or null). Powers `edit_message`
+ * with no explicit id: "fix the message I just said". Like isUserFacing (chat
+ * kind, not a status ping), and additionally skips edit/reaction control rows
+ * so we target a real message, never a prior correction.
+ */
+export function getLatestUserFacingOutboundSeq(): number | null {
+  const row = getOutboundDb()
+    .prepare(
+      `SELECT seq FROM messages_out
+       WHERE kind = 'chat'
+         AND seq IS NOT NULL
+         AND content NOT LIKE '%"type":"status"%'
+         AND content NOT LIKE '%"operation":"edit"%'
+         AND content NOT LIKE '%"operation":"reaction"%'
+       ORDER BY seq DESC
+       LIMIT 1`,
+    )
+    .get() as { seq: number } | undefined;
+  return row?.seq ?? null;
+}
+
 /** Get undelivered messages (for host polling — reads from outbound.db). */
 export function getUndeliveredMessages(): MessageOutRow[] {
   return getOutboundDb()

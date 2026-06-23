@@ -11,7 +11,7 @@ import path from 'path';
 
 import { getCurrentInReplyTo } from '../current-batch.js';
 import { findByName, getAllDestinations } from '../destinations.js';
-import { getMessageIdBySeq, getRoutingBySeq, writeMessageOut } from '../db/messages-out.js';
+import { getLatestUserFacingOutboundSeq, getMessageIdBySeq, getRoutingBySeq, writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
@@ -249,20 +249,38 @@ export const sendPhoto: McpToolDefinition = {
 export const editMessage: McpToolDefinition = {
   tool: {
     name: 'edit_message',
-    description: 'Edit a previously sent message. Targets the same destination the original message was sent to.',
+    description:
+      'Edit a message you already sent — replaces its full text in place (the user sees the bubble change, marked edited). ' +
+      'Omit `messageId` to edit the LAST message you sent (the common "fix what I just said" case). ' +
+      'Pass `messageId` (the numeric id shown in messages) only to target an OLDER message. ' +
+      'Never invent a messageId — omit it instead.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        messageId: { type: 'integer', description: 'Message ID (the numeric id shown in messages)' },
-        text: { type: 'string', description: 'New message content' },
+        messageId: {
+          type: 'integer',
+          description: 'Numeric id of an older message to edit. Omit to edit your most recent message.',
+        },
+        text: { type: 'string', description: 'New full message content (replaces the old text)' },
       },
-      required: ['messageId', 'text'],
+      required: ['text'],
     },
   },
   async handler(args) {
-    const seq = Number(args.messageId);
     const text = args.text as string;
-    if (!seq || !text) return err('messageId and text are required');
+    if (!text) return err('text is required');
+
+    let seq: number;
+    if (args.messageId === undefined || args.messageId === null || args.messageId === '') {
+      const last = getLatestUserFacingOutboundSeq();
+      if (last === null) return err('No recent message to edit');
+      seq = last;
+    } else {
+      seq = Number(args.messageId);
+      if (!Number.isFinite(seq) || seq <= 0) {
+        return err('messageId must be the numeric id shown in messages — or omit it to edit your last message.');
+      }
+    }
 
     const platformId = getMessageIdBySeq(seq);
     if (!platformId) return err(`Message #${seq} not found`);

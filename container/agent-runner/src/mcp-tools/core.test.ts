@@ -8,9 +8,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb } from '../db/connection.js';
-import { getUndeliveredMessages } from '../db/messages-out.js';
+import { getUndeliveredMessages, writeMessageOut } from '../db/messages-out.js';
 import { setCurrentInReplyTo, clearCurrentInReplyTo } from '../current-batch.js';
-import { sendMessage } from './core.js';
+import { sendMessage, editMessage } from './core.js';
 
 beforeEach(() => {
   initTestSessionDb();
@@ -46,5 +46,37 @@ describe('send_message MCP tool — in_reply_to plumbing', () => {
     const out = getUndeliveredMessages();
     expect(out).toHaveLength(1);
     expect(out[0].in_reply_to).toBeNull();
+  });
+});
+
+describe('edit_message targeting', () => {
+  it('errors when text is missing', async () => {
+    const res = await editMessage.handler({ messageId: 1 });
+    expect(res.isError).toBe(true);
+  });
+
+  it('errors with a clear message when messageId is non-numeric', async () => {
+    const res = await editMessage.handler({ messageId: '867B-not-a-seq', text: 'x' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('numeric');
+  });
+
+  it('edits the last user-facing message when messageId is omitted', async () => {
+    const seq = writeMessageOut({
+      id: 'm1', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'oops' }),
+    });
+    const res = await editMessage.handler({ text: 'corrected' });
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toContain(String(seq));
+    // Verify the edit was actually written to outbound (not just the string echo).
+    const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
+    expect(edit).toBeTruthy();
+    expect(JSON.parse(edit!.content).text).toBe('corrected');
+  });
+
+  it('errors when omitted and there is no prior message', async () => {
+    const res = await editMessage.handler({ text: 'corrected' });
+    expect(res.isError).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 // Run: bun test src/db/messages-out.test.ts
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { initTestSessionDb } from './connection.js';
-import { writeMessageOut, getUserFacingDispatchCount, resetUserFacingDispatch } from './messages-out.js';
+import { writeMessageOut, getUserFacingDispatchCount, resetUserFacingDispatch, getLatestUserFacingOutboundSeq } from './messages-out.js';
 
 describe('userFacingDispatchCount', () => {
   const base = {
@@ -44,5 +44,39 @@ describe('userFacingDispatchCount', () => {
     expect(getUserFacingDispatchCount()).toBe(2);
     resetUserFacingDispatch();
     expect(getUserFacingDispatchCount()).toBe(0);
+  });
+});
+
+describe('getLatestUserFacingOutboundSeq', () => {
+  const base = {
+    id: '',
+    kind: 'chat',
+    platform_id: 'p',
+    channel_type: 'c',
+    thread_id: null as string | null,
+    content: '',
+  };
+
+  beforeEach(() => {
+    initTestSessionDb();
+    resetUserFacingDispatch();
+  });
+
+  it('returns null when there is no outbound message', () => {
+    expect(getLatestUserFacingOutboundSeq()).toBeNull();
+  });
+
+  it('returns the seq of the most recent user-facing chat message', () => {
+    writeMessageOut({ ...base, id: 'm1', content: JSON.stringify({ text: 'first' }) });
+    const seq2 = writeMessageOut({ ...base, id: 'm2', content: JSON.stringify({ text: 'second' }) });
+    expect(getLatestUserFacingOutboundSeq()).toBe(seq2);
+  });
+
+  it('skips status pings, edits and reactions', () => {
+    const real = writeMessageOut({ ...base, id: 'm1', content: JSON.stringify({ text: 'real' }) });
+    writeMessageOut({ ...base, id: 'm2', content: JSON.stringify({ type: 'status', text: 'working' }) });
+    writeMessageOut({ ...base, id: 'm3', content: JSON.stringify({ operation: 'edit', messageId: 'x', text: 'e' }) });
+    writeMessageOut({ ...base, id: 'm4', content: JSON.stringify({ operation: 'reaction', messageId: 'x', emoji: 'heart' }) });
+    expect(getLatestUserFacingOutboundSeq()).toBe(real);
   });
 });
