@@ -24,6 +24,7 @@ struct StoredMessage: Equatable {
     var actionsJSON: String? = nil
     var actionChoice: String? = nil
     var workoutPlanJSON: String? = nil
+    var edited: Bool = false
 }
 
 final class ConversationStoreV2 {
@@ -222,6 +223,18 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Edit a message's text in place (agent correction) and mark it edited so
+    /// the UI can show a "(ред.)" tag. Returns whether a row was updated —
+    /// false means the id is unknown (e.g. pruned), which is a silent no-op.
+    @discardableResult
+    func updateMessageText(id: String, text: String) throws -> Bool {
+        try writer.write { db in
+            try db.execute(sql: "UPDATE messages SET text = ?, edited = 1 WHERE id = ?",
+                           arguments: [text, id])
+            return db.changesCount > 0
+        }
+    }
+
     /// Record the user's answer to an inbound action card. Persisted so the
     /// answered state survives reload (the rendered card shows the chosen option).
     func markActionAnswered(rowId: String, choice: String) throws {
@@ -317,7 +330,8 @@ final class ConversationStoreV2 {
                 agentId: row["agent_id"] ?? "jarvis",
                 actionsJSON: row["actions_json"],
                 actionChoice: row["action_choice"],
-                workoutPlanJSON: row["workout_plan_json"]
+                workoutPlanJSON: row["workout_plan_json"],
+                edited: row["edited"] ?? false
             )
         }
     }
@@ -342,7 +356,8 @@ final class ConversationStoreV2 {
                     agentId: row["agent_id"] ?? "jarvis",
                     actionsJSON: row["actions_json"],
                     actionChoice: row["action_choice"],
-                    workoutPlanJSON: row["workout_plan_json"]
+                    workoutPlanJSON: row["workout_plan_json"],
+                    edited: row["edited"] ?? false
                 )
             }
         }
@@ -378,7 +393,8 @@ final class ConversationStoreV2 {
                     agentId: row["agent_id"] ?? "jarvis",
                     actionsJSON: row["actions_json"],
                     actionChoice: row["action_choice"],
-                    workoutPlanJSON: row["workout_plan_json"]
+                    workoutPlanJSON: row["workout_plan_json"],
+                    edited: row["edited"] ?? false
                 )
             }
         }
@@ -431,7 +447,8 @@ final class ConversationStoreV2 {
             agentId: row["agent_id"] ?? "jarvis",
             actionsJSON: row["actions_json"],
             actionChoice: row["action_choice"],
-            workoutPlanJSON: row["workout_plan_json"]
+            workoutPlanJSON: row["workout_plan_json"],
+            edited: row["edited"] ?? false
         )
     }
 

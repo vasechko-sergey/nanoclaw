@@ -144,6 +144,10 @@ enum Schema {
         m.registerMigration("v8-workout-plan") { db in
             try db.execute(sql: "ALTER TABLE messages ADD COLUMN workout_plan_json TEXT;")
         }
+        m.registerMigration("v9-message-edited") { db in
+            // Agent edit-in-place: mark a row as edited so the UI can show "(ред.)".
+            try db.execute(sql: "ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0;")
+        }
         try m.migrate(writer)
     }
 }

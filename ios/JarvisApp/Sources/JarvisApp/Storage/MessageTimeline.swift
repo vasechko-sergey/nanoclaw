@@ -46,7 +46,8 @@ final class MessageTimeline {
                     ts: row["ts"],
                     serverTS: row["server_ts"],
                     createdAt: row["created_at"],
-                    agentId: row["agent_id"] ?? "jarvis"
+                    agentId: row["agent_id"] ?? "jarvis",
+                    edited: row["edited"] ?? false
                 )
             }
         }

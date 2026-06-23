@@ -187,6 +187,27 @@ final class ConversationStoreV2AgentTests: XCTestCase {
         XCTAssertEqual(try store.fetchById("w1")!.actionChoice, "completed")
     }
 
+    func testUpdateMessageTextEditsInPlaceAndMarksEdited() throws {
+        let store = try makeStore()
+
+        let env = V2.Envelope(
+            v: 2, kind: .data, type: .message,
+            id: "msg-1", seq: 3, ts: "2026-06-23T12:00:00.000Z",
+            payload: .message(V2.Message(thread_id: "default", text: "oops"))
+        )
+        try store.insertInbound(envelope: env, message: V2.Message(thread_id: "default", text: "oops"), agentId: "jarvis")
+
+        let changed = try store.updateMessageText(id: "msg-1", text: "corrected")
+        XCTAssertTrue(changed)
+
+        let row = try store.fetchById("msg-1")
+        XCTAssertEqual(row?.text, "corrected")
+        XCTAssertTrue(row?.edited ?? false)
+
+        let missing = try store.updateMessageText(id: "nope", text: "x")
+        XCTAssertFalse(missing)
+    }
+
     func test_v4Migration_addsAgentIdColumn_andIndex() throws {
         let queue = try DatabaseQueue()
         try Schema.migrate(queue)
