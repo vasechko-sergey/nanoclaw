@@ -609,7 +609,7 @@ struct WorkoutPlanRow: View {
                                     .stroke(Theme.textSecondary.opacity(0.6), style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
                                     .frame(width: 9, height: 6)
                             }
-                            Text("Начать тренировку")
+                            Text("Посмотреть тренировку")
                                 .font(.system(size: 13, weight: .medium))
                         }
                         .foregroundStyle(info.done ? Theme.textSecondary.opacity(0.6) : Theme.accent)

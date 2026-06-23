@@ -349,6 +349,9 @@ final class AppCoordinator {
             do {
                 let plan = try Self.decodeWorkoutPlan(payload: p)
                 insertWorkoutPlan(plan, rowId: env.id)
+                // Let an open WorkoutPreviewView refresh in place (e.g. after a
+                // swap, Payne re-sends the updated plan with the same workoutId).
+                workoutBus.events.send(.planReceived(plan))
             } catch {
                 Log.warn(.ws, "workout_plan decode failed: \(error)")
             }

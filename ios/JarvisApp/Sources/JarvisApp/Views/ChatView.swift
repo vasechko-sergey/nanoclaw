@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 private struct FullScreenImagePresentation: Identifiable {
     let id = UUID()
@@ -10,8 +11,10 @@ private struct FullScreenImagePresentation: Identifiable {
 /// Identifiable wrapper for `fullScreenCover(item:)` so SwiftUI can track
 /// the current workout session by workoutId.
 private struct WorkoutPresentation: Identifiable {
+    enum Phase { case preview, running }
     let plan: WorkoutPlan
-    let coord: WorkoutCoordinator
+    var phase: Phase
+    var coord: WorkoutCoordinator?   // nil in preview; created on "Поехали"
     let messageId: String?
     var id: String { plan.workoutId }
 }
@@ -41,6 +44,16 @@ struct ChatView: View {
     // P3.T17 — workout flow presentation. `activeWorkout` is set when an
     // inbound `workout_plan` envelope arrives on `coordinator.workoutBus`.
     @State private var activeWorkout: WorkoutPresentation? = nil
+
+    // Swap-exercise sheet (driven from the preview / runner "Заменить").
+    private struct SwapSheetPresentation: Identifiable {
+        let workoutId: String
+        let originalSlug: String
+        var id: String { originalSlug }
+    }
+    @State private var swapSheet: SwapSheetPresentation? = nil
+    @State private var swapResponse: SwapResponse? = nil
+    @State private var swapLoading: Bool = false
 
     private var ws: WebSocketClientV2 { coordinator.ws }
 
@@ -98,13 +111,37 @@ struct ChatView: View {
 
     /// Open the live WorkoutView for a plan delivered as a chat card. Holds the
     /// originating message id so the card can be marked done on close.
+    /// Shared slug→cached-image-URL resolver (used by both preview and runner).
+    private func resolveImageURL(slug: String, plan: WorkoutPlan) -> URL? {
+        guard let entry = plan.imageManifest.first(where: { $0.slug == slug }) else { return nil }
+        return coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256)
+            ? coordinator.imageCache.path(forSlug: entry.slug, sha256: entry.sha256)
+            : nil
+    }
+
+    /// Card tap → open the PREVIEW (not the runner). The runner opens from preview.
     private func startWorkout(_ plan: WorkoutPlan, messageId: String) {
-        guard let queue = coordinator.ws.stack?.setLogQueue else {
-            Log.warn(.ws, "start workout but stack not built — dropping")
+        activeWorkout = WorkoutPresentation(plan: plan, phase: .preview, coord: nil, messageId: messageId)
+    }
+
+    /// "Поехали" inside the preview → create the coordinator + swap to the
+    /// running phase. Same `id` (workoutId) keeps the same fullScreenCover
+    /// mounted and just swaps its content from preview to runner.
+    private func startRunning() {
+        guard let cur = activeWorkout, let queue = coordinator.ws.stack?.setLogQueue else {
+            Log.warn(.ws, "start running but stack not built — dropping")
             return
         }
-        let wc = WorkoutCoordinator(plan: plan, queue: queue)
-        activeWorkout = WorkoutPresentation(plan: plan, coord: wc, messageId: messageId)
+        let wc = WorkoutCoordinator(plan: cur.plan, queue: queue)
+        activeWorkout = WorkoutPresentation(plan: cur.plan, phase: .running, coord: wc, messageId: cur.messageId)
+    }
+
+    /// Open the swap sheet for an exercise. The sheet drives the existing
+    /// exercise_swap_request / _options / _confirm flow over the transport.
+    private func beginSwap(slug: String, workoutId: String) {
+        swapResponse = nil
+        swapLoading = false
+        swapSheet = SwapSheetPresentation(workoutId: workoutId, originalSlug: slug)
     }
 
     /// Update the scrolled-up state that drives the scroll-to-bottom FAB. Called
@@ -305,49 +342,67 @@ struct ChatView: View {
             OrbVoiceView(coordinator: coordinator, onHandoffToChat: nil)
         }
         .fullScreenCover(item: $activeWorkout) { presentation in
-            WorkoutView(
-                coordinator: presentation.coord,
-                imageResolver: { slug in
-                    guard let entry = presentation.plan.imageManifest.first(where: { $0.slug == slug })
-                    else { return nil }
-                    return coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256)
-                        ? coordinator.imageCache.path(forSlug: entry.slug, sha256: entry.sha256)
-                        : nil
-                },
-                onClose: { session in
-                    let workoutId = presentation.plan.workoutId
-                    if let session {
-                        Task {
-                            try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session)
+            switch presentation.phase {
+            case .preview:
+                WorkoutPreviewView(
+                    plan: presentation.plan,
+                    imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
+                    planUpdates: coordinator.workoutBus.events
+                        .compactMap { if case .planReceived(let p) = $0 { return p } else { return nil } }
+                        .eraseToAnyPublisher(),
+                    onStart: { startRunning() },
+                    onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
+                    onClose: { activeWorkout = nil }
+                )
+            case .running:
+                WorkoutView(
+                    coordinator: presentation.coord!,
+                    imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
+                    onClose: { session in
+                        let workoutId = presentation.plan.workoutId
+                        if let session {
+                            Task { try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session) }
+                        } else {
+                            Task {
+                                try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
+                                    workoutId: workoutId, reason: "user cancelled"
+                                )
+                            }
                         }
-                    } else {
-                        Task {
-                            try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
-                                workoutId: workoutId, reason: "user cancelled"
-                            )
+                        if let mid = presentation.messageId {
+                            coordinator.markActionAnswered(rowId: mid, choice: session != nil ? "completed" : "aborted")
                         }
-                    }
-                    if let mid = presentation.messageId {
-                        coordinator.markActionAnswered(rowId: mid, choice: session != nil ? "completed" : "aborted")
-                    }
-                    activeWorkout = nil
-                },
-                onSwap: { _ in
-                    // T17.5: open SwapSheet — deferred. Bus is in place; the
-                    // sheet wiring (binding the SwapResponse from
-                    // `workoutBus.events.swapOptions`) lands in a follow-up.
+                        activeWorkout = nil
+                    },
+                    onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) }
+                )
+            }
+        }
+        .sheet(item: $swapSheet) { s in
+            SwapSheet(originalSlug: s.originalSlug, response: $swapResponse, loading: $swapLoading) { action in
+                switch action {
+                case .requestSuggestions:
+                    swapLoading = true
+                    Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: nil) }
+                case .proposeOwn(let text):
+                    swapLoading = true
+                    Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: text) }
+                case .confirm(let newSlug, let persist):
+                    Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist) }
+                    swapSheet = nil
+                case .cancel:
+                    swapSheet = nil
                 }
-            )
+            }
         }
         .onReceive(coordinator.workoutBus.events) { event in
             switch event {
-            case .planReceived:
-                // Plans now render as inline cards (persisted via insertWorkoutPlan);
-                // the live WorkoutView opens from the card's Start button. No auto-open.
-                break
-            case .coachMessage, .swapOptions, .programUpdated:
-                // Banner + sheet wiring lives in WorkoutView itself once it
-                // subscribes to the bus directly (T17 follow-up).
+            case .swapOptions(let resp, _, _):
+                swapResponse = resp
+                swapLoading = false
+            case .planReceived, .coachMessage, .programUpdated:
+                // .planReceived is consumed by the open WorkoutPreviewView's own
+                // subscription; coach/program banners live in WorkoutView.
                 break
             }
         }
