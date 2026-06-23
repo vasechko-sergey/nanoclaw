@@ -21,8 +21,8 @@ describe('shared/ios-app-protocol envelope fixtures', () => {
     });
   }
 
-  it('covers all 23 expected envelope fixtures', () => {
-    expect(envelopeFiles).toHaveLength(23);
+  it('covers all 24 expected envelope fixtures', () => {
+    expect(envelopeFiles).toHaveLength(24);
   });
 
   it('message_with_agent_id.json preserves agent_id through round-trip', () => {

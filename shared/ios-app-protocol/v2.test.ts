@@ -122,6 +122,21 @@ describe('AnyEnvelope discriminated union', () => {
     const parsed = AnyEnvelope.parse(env);
     expect(parsed.type).toBe('auth');
   });
+
+  it('parses an update envelope (server→device edit)', () => {
+    const env = AnyEnvelope.parse({
+      v: 2,
+      kind: 'data',
+      type: 'update',
+      id: '11111111-1111-4111-8111-111111111111',
+      seq: 7,
+      ts: '2026-06-23T12:00:00.000Z',
+      payload: { id: 'msg-1750670000000-abc123', text: 'fixed' },
+    });
+    if (env.type !== 'update') throw new Error('expected update');
+    expect(env.payload.id).toBe('msg-1750670000000-abc123');
+    expect(env.payload.text).toBe('fixed');
+  });
 });
 
 describe('Stateless envelopes (ack/ping/pong/status)', () => {

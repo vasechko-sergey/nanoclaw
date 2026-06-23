@@ -119,6 +119,18 @@ export const Envelopes = {
       })).min(1).optional(),
     }),
   }),
+  Update: EnvelopeBase.extend({
+    kind: z.literal('data'),
+    type: z.literal('update'),
+    payload: z.object({
+      // Target message id to edit in place. This is the original outbound
+      // `msg-…` id the device stored the message under — NOT a uuid, so .min(1)
+      // (the envelope's own `id` stays a uuid via EnvelopeBase).
+      id: z.string().min(1),
+      text: z.string(),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
   ContextRequest: EnvelopeBase.extend({
     kind: z.literal('control'),
     type: z.literal('context_request'),
@@ -404,7 +416,7 @@ export type HealthUploadBody = z.infer<typeof HealthUploadBody>;
 
 export const AnyEnvelope = z.discriminatedUnion('type', [
   Envelopes.Auth, Envelopes.AuthOk, Envelopes.AuthFail,
-  Envelopes.Message, Envelopes.ContextRequest, Envelopes.ContextResponse,
+  Envelopes.Message, Envelopes.Update, Envelopes.ContextRequest, Envelopes.ContextResponse,
   Envelopes.NewConversation, Envelopes.ActionResponse, Envelopes.Feedback,
   Envelopes.Ack, Envelopes.Ping, Envelopes.Pong,
   Envelopes.StatusDelivered, Envelopes.StatusRead,
