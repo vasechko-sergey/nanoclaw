@@ -175,6 +175,80 @@ final class TransportV2WorkoutInboundTests: XCTestCase {
             return XCTFail("expected .workoutPlan payload, got \(env.payload)")
         }
     }
+
+    /// THE fake-WS-server end-to-end test. A MockWebSocket plays the server:
+    /// the app sends a workout request, the "server" replies with the EXACT
+    /// frame Payne emits (seq 405), and we assert the card surfaces in the live
+    /// `ws.messages` array — the very list `ChatView` filters and renders. This
+    /// closes the last gap: prior tests checked decode/callback/windowedRows but
+    /// never that the inserted row reaches the observed UI list for the active
+    /// agent. The `onWorkoutEnvelope` closure mirrors AppCoordinator's two real
+    /// ops (decodeWorkoutPlan + chatStore.insertWorkoutPlan).
+    @MainActor
+    func test_payneWorkoutFrame_surfacesAsCardInObservedMessages() async throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ConversationStoreV2(writer: dbq)
+        let socket = MockWebSocket()
+        let transport = TransportV2(store: store, socket: socket, token: "tok")
+        let stack = AppV2Stack(
+            store: store,
+            transport: transport,
+            coordinator: AppContextCoordinator(),
+            dbq: dbq,
+            setLogQueue: SetLogQueue(writer: dbq)
+        )
+        let ws = WebSocketClientV2(stack: stack)   // restartObservation + wireAuthOkCallback
+        wsHolder = ws
+
+        // Mirror AppCoordinator.handleWorkoutEnvelope: decode + persist.
+        ws.onWorkoutEnvelope = { env in
+            guard case let .workoutPlan(p) = env.payload else { return }
+            guard let plan = try? AppCoordinator.decodeWorkoutPlan(payload: p) else {
+                return XCTFail("decodeWorkoutPlan failed on the real frame")
+            }
+            try? store.insertWorkoutPlan(id: env.id, agentId: "payne", plan: plan)
+        }
+
+        // Let wireAuthOkCallback's detached Task install transport.onWorkoutEnvelope.
+        try await Task.sleep(nanoseconds: 150_000_000)
+        try await transport.connect()
+
+        // Request leg: the user asks Payne for a workout.
+        ws.send(text: "Дай план тренировки", timezone: "UTC", status: nil, agentId: "payne")
+
+        // Fake server replies with Payne's real workout_plan frame.
+        socket.onMessage?(try realEnvelopeData())
+
+        // The card must reach the observed `messages` list (async observation tick).
+        try await waitUntil(timeout: 3, "workout card surfaces in ws.messages") {
+            ws.messages.contains {
+                if case .workoutPlan = $0.content { return $0.agentId == "payne" }
+                return false
+            }
+        }
+
+        let card = try XCTUnwrap(
+            ws.messages.first { if case .workoutPlan = $0.content { return true }; return false },
+            "workout card must surface in ws.messages"
+        )
+        XCTAssertEqual(card.agentId, "payne")
+        XCTAssertTrue(card.isVisible, "card must pass ChatView's isVisible gate")
+        // And it must survive ChatView's active-agent filter when Payne is active.
+        XCTAssertEqual(AgentIdentity(rawValue: card.agentId ?? ""), .payne)
+    }
+
+    /// Poll `cond` on the main actor until true or `timeout` elapses.
+    @MainActor
+    private func waitUntil(timeout: TimeInterval, _ label: String, _ cond: () -> Bool) async throws {
+        let start = Date()
+        while !cond() {
+            if Date().timeIntervalSince(start) > timeout {
+                return XCTFail("timeout waiting for: \(label)")
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
 }
 
 /// Sendable capture box for the `@Sendable` envelope callback.
