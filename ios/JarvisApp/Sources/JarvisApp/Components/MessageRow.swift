@@ -168,6 +168,11 @@ struct MessageRow: View {
                 .tracking(0.5)
                 .foregroundStyle(senderAccentColor)
             Spacer()
+            if message.edited {
+                Text("ред.")
+                    .font(Theme.metaFont)
+                    .foregroundStyle(Theme.timestamp)
+            }
             Text(message.timestamp, style: .time)
                 .font(Theme.metaFont)
                 .foregroundStyle(Theme.timestamp)

@@ -288,4 +288,27 @@ final class TransportV2Tests: XCTestCase {
         let later = socket.sent.count
         XCTAssertGreaterThan(later, firstCount)
     }
+
+    func testUpdateEnvelopeEditsMessageInPlace() async throws {
+        let seed = V2.Envelope(
+            v: V2.protocolVersion, kind: .data, type: .message,
+            id: "msg-1", seq: 3,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .message(V2.Message(thread_id: "default", text: "oops",
+                                          attachments: nil, context: nil, agent_id: nil))
+        )
+        try await transport.handleIncoming(JSONEncoder().encode(seed))
+
+        let upd = V2.Envelope(
+            v: V2.protocolVersion, kind: .data, type: .update,
+            id: "env-uuid-1", seq: 5,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .update(V2.Update(id: "msg-1", text: "corrected"))
+        )
+        try await transport.handleIncoming(JSONEncoder().encode(upd))
+
+        let row = try store.fetchById("msg-1")
+        XCTAssertEqual(row?.text, "corrected")
+        XCTAssertTrue(row?.edited ?? false)
+    }
 }

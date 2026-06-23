@@ -185,6 +185,14 @@ actor TransportV2 {
             // `delivered` is the only thing that clears it from the queue (same
             // per-id model as the workout-family envelopes above).
             try await sendStatus(.delivered, ids: [env.id])
+        case .update(let u):
+            // Edit-in-place. Not a chat `message`, so it's exempt from the host's
+            // cursor ack (ackUpTo is message-only) — this per-id `delivered` is
+            // the only thing that clears it from the host queue, same model as the
+            // workout-family envelopes above. Idempotent: re-applying the same
+            // edit is a no-op, so a redelivered update never harms.
+            try store.updateMessageText(id: u.id, text: u.text)
+            try await sendStatus(.delivered, ids: [env.id])
         case .workoutPlan, .imageBlob, .coachMessage, .exerciseSwapOptions, .programUpdate:
             // Forward to the facade for typed decode + UI bus publication.
             onWorkoutEnvelope?(env)

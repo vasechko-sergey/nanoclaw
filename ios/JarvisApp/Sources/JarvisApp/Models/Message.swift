@@ -79,6 +79,8 @@ struct ChatMessage: Identifiable {
     /// original instead of the small row thumbnail. nil for legacy inline-image
     /// rows (they fall back to the thumbnail in the full-screen view).
     var imageSHA: String? = nil
+    /// True when an agent edited this message in place (shows a "(ред.)" tag).
+    var edited: Bool = false
 
     enum Role { case user, assistant, system }
 

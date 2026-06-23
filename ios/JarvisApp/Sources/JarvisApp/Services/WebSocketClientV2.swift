@@ -570,6 +570,7 @@ final class WebSocketClientV2 {
                 combined.attachedAudio = audioInfo
                 combined.deliveryStatus = mapDelivery(row.status)
                 combined.agentId = row.agentId
+                combined.edited = row.edited
                 return [combined]
             }
 
@@ -581,6 +582,7 @@ final class WebSocketClientV2 {
                 var t = ChatMessage.text(row.id + "-text", role: role, text: row.text, timestamp: timestamp)
                 t.deliveryStatus = mapDelivery(row.status)
                 t.agentId = row.agentId
+                t.edited = row.edited
                 out.append(t)
             }
 
@@ -611,6 +613,7 @@ final class WebSocketClientV2 {
         var msg = ChatMessage.text(row.id, role: role, text: row.text, timestamp: timestamp)
         msg.deliveryStatus = mapDelivery(row.status)
         msg.agentId = row.agentId
+        msg.edited = row.edited
         return [msg]
     }
 
