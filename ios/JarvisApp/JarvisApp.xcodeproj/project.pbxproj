@@ -14,6 +14,7 @@
 		08FB138313D1EC3412C3F20E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3784B2D589C11B07F162E081 /* ChatView.swift */; };
 		0BD4EA7CD6A96B99D6BF0CE4 /* ChatImageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD520F14145C721CB957282 /* ChatImageStore.swift */; };
 		0BFCBCBFAB94DCD9F3E01013 /* StateBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B226A1DA1BA45112E46E3E8 /* StateBoardView.swift */; };
+		0F7D198D445B06AD693036EF /* WorkoutPreviewUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30BC68D46F2D2CB7210A1C1D /* WorkoutPreviewUpdateTests.swift */; };
 		1091D28461A2EBCE460F25DD /* AppContextCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */; };
 		111316843C98101D95B9912B /* DraftAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F99A4953300541E52CE55B /* DraftAttachment.swift */; };
 		11B08BC875BE39607D9034DF /* MessageListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C576CDFA7FEBFCE26DA9BFD0 /* MessageListView.swift */; };
@@ -34,6 +35,7 @@
 		34E137370E4486A938FB89CA /* ChatPrewarmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4540556E737B1FF782CE9556 /* ChatPrewarmer.swift */; };
 		3502D3234561E8F256B9EAD5 /* JarvisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */; };
 		365191E0FC23319F9CA2C898 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 31E0AB4EF75BC659349C8E0A /* GRDB */; };
+		3AB8641347ABF4C946F55CD5 /* WorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F236228C8C83CFFE21712C2B /* WorkoutPreviewView.swift */; };
 		3B780D772FC0C9C43796F3F8 /* JarvisUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */; };
 		3BC3B261F475A3B3A3E3FF7B /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D3D7941261E832088202BF /* EmptyStateView.swift */; };
 		3CBB91784B65C8CA4A702AF6 /* TransportV2WorkoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 834FF3E88E233A898EDBA444 /* TransportV2WorkoutTests.swift */; };
@@ -197,6 +199,7 @@
 		2D4B230E77EB04B73239A542 /* JarvisUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JarvisUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoopControllerTests.swift; sourceTree = "<group>"; };
 		2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetector.swift; sourceTree = "<group>"; };
+		30BC68D46F2D2CB7210A1C1D /* WorkoutPreviewUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPreviewUpdateTests.swift; sourceTree = "<group>"; };
 		30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTimelineTests.swift; sourceTree = "<group>"; };
 		32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerTests.swift; sourceTree = "<group>"; };
 		3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilder.swift; sourceTree = "<group>"; };
@@ -308,6 +311,7 @@
 		F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinatorTests.swift; sourceTree = "<group>"; };
 		F07A48DFDFE814C899E5E434 /* ExerciseCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCardView.swift; sourceTree = "<group>"; };
 		F0C84294434D6D5A3845BD5D /* HealthUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthUpload.swift; sourceTree = "<group>"; };
+		F236228C8C83CFFE21712C2B /* WorkoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPreviewView.swift; sourceTree = "<group>"; };
 		F38E1835A732AD75F82D9CEF /* AgentIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIdentity.swift; sourceTree = "<group>"; };
 		F4212E96E265F732C0CA6A0F /* StateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateModel.swift; sourceTree = "<group>"; };
 		F4800B2F3554B52EE041BEAD /* VoiceLoopController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoopController.swift; sourceTree = "<group>"; };
@@ -502,6 +506,7 @@
 				AA42D336E93B35827195BBBB /* WorkoutModelsTests.swift */,
 				87683378CBFC1F9C7E4CEBC6 /* WorkoutPlanDecodeTests.swift */,
 				70CB3BB03A2BE8986BF2ECD4 /* WorkoutPlanRealEnvelopeTests.swift */,
+				30BC68D46F2D2CB7210A1C1D /* WorkoutPreviewUpdateTests.swift */,
 				A91EE1529D439338A641F961 /* E2E */,
 			);
 			name = JarvisAppTests;
@@ -516,6 +521,7 @@
 				1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */,
 				E24639DA24B7C49D4F19F2A1 /* SetRowView.swift */,
 				9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */,
+				F236228C8C83CFFE21712C2B /* WorkoutPreviewView.swift */,
 			);
 			path = Workout;
 			sourceTree = "<group>";
@@ -860,6 +866,7 @@
 				EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */,
 				63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */,
 				001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */,
+				3AB8641347ABF4C946F55CD5 /* WorkoutPreviewView.swift in Sources */,
 				81782C95746BFB6B3D396FF9 /* WorkoutView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -913,6 +920,7 @@
 				C1360BFA240455586946FC50 /* WorkoutModelsTests.swift in Sources */,
 				E7164107E2BB7BC0D8A356CB /* WorkoutPlanDecodeTests.swift in Sources */,
 				959453A92AA1D6910B038CC4 /* WorkoutPlanRealEnvelopeTests.swift in Sources */,
+				0F7D198D445B06AD693036EF /* WorkoutPreviewUpdateTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
