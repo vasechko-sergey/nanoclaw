@@ -500,6 +500,39 @@ function createV2Adapter(): ChannelAdapter | null {
       const content = message.content as Record<string, unknown>;
       const contentType = typeof content.type === 'string' ? content.type : undefined;
 
+      // Edit-in-place: the agent's edit_message tool emits
+      //   { operation:'edit', messageId, text }
+      // messageId is the original outbound msg-id (= the id the device stored
+      // the message under, see delivery.ts:389). Emit an explicit `update`
+      // envelope; the device does UPDATE … WHERE id = payload.id. Do NOT reuse
+      // messageId as the envelope id — sendEnvelopeToDevice defaults it to a
+      // fresh uuid, and the device dedups inbound by envelope id (reusing the
+      // original id would make it drop the edit as a duplicate).
+      if (content.operation === 'edit') {
+        const targetId = typeof content.messageId === 'string' ? content.messageId : undefined;
+        if (!targetId) {
+          logV2Warn('edit with no messageId — dropping', { platformId });
+          return undefined;
+        }
+        const newText = typeof content.text === 'string' ? content.text : '';
+        const agentFolder = resolveAgentFolder(message.agentGroupId);
+        handler.sendEnvelopeToDevice(platformId, {
+          kind: 'data',
+          type: 'update',
+          payload: {
+            id: targetId,
+            text: newText,
+            ...(agentFolder ? { agent_id: agentFolder } : {}),
+          },
+        });
+        logV2('edit dispatched', { platformId, targetId });
+        // Fire-and-forget like the workout branch: return undefined so the
+        // edit's own message-out row isn't stamped with the ORIGINAL message's
+        // id in `delivered` (it has no device bubble of its own). delivery.ts
+        // still marks the row delivered with null, so it isn't re-polled.
+        return undefined;
+      }
+
       // Agent-initiated context pull — route through ContextBridge, which
       // persists a pending row and pushes a control:context_request to the
       // device. Returns the request id so the caller can correlate.
