@@ -95,6 +95,7 @@
 		8D619B38C4EE99D072145A51 /* SwapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */; };
 		8FD8CF0ADA1C202FEDA828D9 /* SetLogQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1916FC4113359563C4205F1 /* SetLogQueue.swift */; };
 		91941E7469BF57E69F4C9DE2 /* HealthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1A573133241875D7269CED /* HealthManager.swift */; };
+		920E2AE3DB5215DAE666BF65 /* TransportV2WorkoutInboundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E75D5AB84CECDD2D10E119 /* TransportV2WorkoutInboundTests.swift */; };
 		959453A92AA1D6910B038CC4 /* WorkoutPlanRealEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70CB3BB03A2BE8986BF2ECD4 /* WorkoutPlanRealEnvelopeTests.swift */; };
 		974A0C8C09364FC532E6BEE1 /* SuggestionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */; };
 		978C2411C830BBFCD8AEC9B1 /* TransportV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 679495851538B21ECAB0FF20 /* TransportV2.swift */; };
@@ -186,6 +187,7 @@
 		1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSynthesizer.swift; sourceTree = "<group>"; };
 		1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppV2Bootstrap.swift; sourceTree = "<group>"; };
 		24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryChecksTests.swift; sourceTree = "<group>"; };
+		24E75D5AB84CECDD2D10E119 /* TransportV2WorkoutInboundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2WorkoutInboundTests.swift; sourceTree = "<group>"; };
 		2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingScenariosE2ETests.swift; sourceTree = "<group>"; };
 		294C253860B67EF3201B2370 /* WorkoutInbound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInbound.swift; sourceTree = "<group>"; };
 		2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HappyPathE2ETests.swift; sourceTree = "<group>"; };
@@ -490,6 +492,7 @@
 				E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */,
 				9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */,
 				0056A55985BB7DB31F765116 /* TransportV2Tests.swift */,
+				24E75D5AB84CECDD2D10E119 /* TransportV2WorkoutInboundTests.swift */,
 				834FF3E88E233A898EDBA444 /* TransportV2WorkoutTests.swift */,
 				2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */,
 				5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */,
@@ -900,6 +903,7 @@
 				E45B2D67CDD9B59EBFC1ADD3 /* StoredAttachmentTests.swift in Sources */,
 				645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */,
 				E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */,
+				920E2AE3DB5215DAE666BF65 /* TransportV2WorkoutInboundTests.swift in Sources */,
 				3CBB91784B65C8CA4A702AF6 /* TransportV2WorkoutTests.swift in Sources */,
 				2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */,
 				ED86C8462FA285929BB5D83B /* WatchConnectivityBridgeTests.swift in Sources */,
@@ -955,7 +959,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1201,7 +1205,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;

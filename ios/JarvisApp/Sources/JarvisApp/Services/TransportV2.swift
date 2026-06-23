@@ -98,7 +98,7 @@ actor TransportV2 {
         socket.onMessage = { [weak self] data in
             Task { [weak self] in
                 do { try await self?.handleIncoming(data) }
-                catch { Log.warn(.ws, "WORKOUTDBG: handleIncoming failed: \(error)") }
+                catch { Log.warn(.ws, "handleIncoming failed: \(error)") }
             }
         }
         socket.onClose = { [weak self] error in

@@ -334,14 +334,11 @@ final class AppCoordinator {
             //    level + plan_json carrying day_name/week/intensity/exercises)
             //    into our top-level `WorkoutPlan` model. We splice the two
             //    halves together in a Dictionary, then run JSONDecoder.
-            Log.warn(.ws, "WORKOUTDBG: workout_plan envelope received (workout_id=\(p.workout_id))")
             do {
                 let plan = try Self.decodeWorkoutPlan(payload: p)
-                Log.warn(.ws, "WORKOUTDBG: decoded plan, \(plan.exercises.count) ex; chatStore=\(chatStore == nil ? "NIL" : "set"); rowId=\(env.id)")
                 insertWorkoutPlan(plan, rowId: env.id)
-                Log.warn(.ws, "WORKOUTDBG: insertWorkoutPlan called (rowId=\(env.id))")
             } catch {
-                Log.warn(.ws, "WORKOUTDBG: workout_plan decode failed: \(error)")
+                Log.warn(.ws, "workout_plan decode failed: \(error)")
             }
 
         case .imageBlob(let b):
