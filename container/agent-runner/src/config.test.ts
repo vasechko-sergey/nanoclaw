@@ -1,14 +1,20 @@
 import { test, expect } from 'bun:test';
-import { parseFactualityGate } from './config.js';
+import { parseFactualityLevel } from './config.js';
 
-test('parseFactualityGate defaults to off', () => {
-  expect(parseFactualityGate(undefined)).toBe('off');
-  expect(parseFactualityGate('nonsense')).toBe('off');
-  expect(parseFactualityGate(null)).toBe('off');
+test('parseFactualityLevel reads an integer level', () => {
+  expect(parseFactualityLevel(0)).toBe(0);
+  expect(parseFactualityLevel(1)).toBe(1);
+  expect(parseFactualityLevel(2)).toBe(2);
+  expect(parseFactualityLevel(3)).toBe(3);
 });
-
-test('parseFactualityGate accepts known modes', () => {
-  expect(parseFactualityGate('deterministic')).toBe('deterministic');
-  expect(parseFactualityGate('full')).toBe('full');
-  expect(parseFactualityGate('off')).toBe('off');
+test('parseFactualityLevel clamps out-of-range / junk to 0..3', () => {
+  expect(parseFactualityLevel(9)).toBe(3);
+  expect(parseFactualityLevel(-1)).toBe(0);
+  expect(parseFactualityLevel('x')).toBe(0);
+  expect(parseFactualityLevel(undefined)).toBe(0);
+});
+test('parseFactualityLevel falls back to the legacy string mode', () => {
+  expect(parseFactualityLevel(undefined, 'deterministic')).toBe(1);
+  expect(parseFactualityLevel(undefined, 'full')).toBe(2);
+  expect(parseFactualityLevel(undefined, 'off')).toBe(0);
 });

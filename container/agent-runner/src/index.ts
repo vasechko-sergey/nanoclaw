@@ -103,7 +103,7 @@ async function main(): Promise<void> {
     providerName,
     cwd: CWD,
     systemContext: { instructions },
-    factualityGate: config.factualityGate,
+    factualityLevel: config.factualityLevel,
   });
 
   // runPollLoop runs forever and returns ONLY to request a clean container

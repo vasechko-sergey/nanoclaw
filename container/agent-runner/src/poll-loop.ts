@@ -15,7 +15,7 @@ import {
 } from './formatter.js';
 import { onContextResponse } from './mcp-tools/request_context.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
-import type { FactualityGate } from './config.js';
+import type { FactualityLevel } from './config.js';
 import { extractDataNumbers } from './verification/numbers.js';
 import { gateOutboundText } from './verification/poll-gate.js';
 import { judgeProse } from './verification/judge.js';
@@ -129,8 +129,8 @@ export interface PollLoopConfig {
   systemContext?: {
     instructions?: string;
   };
-  /** Factuality gate mode for this agent. Default 'off' = no behavior change. */
-  factualityGate?: FactualityGate;
+  /** Factuality verification level for this agent. Default 0 = no behavior change. */
+  factualityLevel?: FactualityLevel;
 }
 
 /**
@@ -288,8 +288,8 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // Factuality gate: seed the per-turn grounding set with the numbers the
     // user already supplied this turn (the prompt). Tool outputs get folded in
     // as tool_use_end events arrive. When the gate is off this is unused.
-    const gateMode = config.factualityGate ?? 'off';
-    const gateOn = gateMode !== 'off';
+    const level = config.factualityLevel ?? 0;
+    const gateOn = level >= 1;
     const grounding = new Set<string>();
     const groundingText: string[] = []; // raw tool outputs this turn (Phase 2)
     if (gateOn) {
@@ -319,7 +319,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     setCurrentInReplyTo(routing.inReplyTo);
     let leaveForRetry = false;
     try {
-      const result = await processQuery(query, routing, processingIds, config.providerName, gateOn, grounding, gateMode, groundingText);
+      const result = await processQuery(query, routing, processingIds, config.providerName, gateOn, grounding, level, groundingText);
       if (result.continuation && result.continuation !== continuation) {
         continuation = result.continuation;
         setContinuation(config.providerName, continuation);
@@ -496,7 +496,7 @@ async function processQuery(
   providerName: string,
   gateOn = false,
   grounding: Set<string> = new Set(),
-  gateMode: import('./config.js').FactualityGate = 'off',
+  level: number = 0,
   groundingText: string[] = [],
 ): Promise<QueryResult> {
   let queryContinuation: string | undefined;
@@ -764,7 +764,7 @@ async function processQuery(
         // factuality gate can trace the agent's numbers back to a source.
         if (gateOn && event.output) {
           for (const n of extractDataNumbers(event.output)) grounding.add(n);
-          if (gateMode === 'full') {
+          if (level >= 2) {
             const used = groundingText.reduce((a, s) => a + s.length, 0);
             if (used < 8000) groundingText.push(event.output.slice(0, 8000 - used));
           }
@@ -876,7 +876,7 @@ async function processQuery(
               const sources = groundingText.join('\n');
               if (
                 verdict.grounded &&
-                shouldJudgeProse(gateMode, sources, event.text) &&
+                shouldJudgeProse(level, sources, event.text) &&
                 proseRetries < FACTUALITY_MAX_RETRIES
               ) {
                 try {

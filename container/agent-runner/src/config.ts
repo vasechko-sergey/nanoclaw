@@ -9,12 +9,23 @@ import fs from 'fs';
 
 const CONFIG_PATH = '/workspace/agent/container.json';
 
-/** Factuality gate mode (see docs/superpowers/specs/2026-06-17-factuality-architecture-design.md). */
-export type FactualityGate = 'off' | 'deterministic' | 'full';
+/** Factuality verification level (see docs/superpowers/specs/2026-06-24-factuality-phase3-design.md).
+ *  0=off, 1=numbers, 2=tool-prose, 3=all-prose. Cumulative. */
+export type FactualityLevel = 0 | 1 | 2 | 3;
 
-/** Coerce a raw container.json value to a known gate mode; unknown → 'off'. */
-export function parseFactualityGate(raw: unknown): FactualityGate {
-  return raw === 'deterministic' || raw === 'full' ? raw : 'off';
+/**
+ * Coerce container.json's value to a level 0..3. Prefer the integer
+ * `factualityLevel`; if absent, map the legacy `factualityGate` string
+ * (off→0, deterministic→1, full→2) for one-release back-compat.
+ */
+export function parseFactualityLevel(raw: unknown, legacy?: unknown): FactualityLevel {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const n = Math.max(0, Math.min(3, Math.trunc(raw)));
+    return n as FactualityLevel;
+  }
+  if (legacy === 'deterministic') return 1;
+  if (legacy === 'full') return 2;
+  return 0;
 }
 
 export interface RunnerConfig {
@@ -26,7 +37,7 @@ export interface RunnerConfig {
   mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
   model?: string;
   effort?: string;
-  factualityGate: FactualityGate;
+  factualityLevel: FactualityLevel;
 }
 
 const DEFAULT_MAX_MESSAGES = 10;
@@ -56,7 +67,7 @@ export function loadConfig(): RunnerConfig {
     mcpServers: (raw.mcpServers as RunnerConfig['mcpServers']) || {},
     model: (raw.model as string) || undefined,
     effort: (raw.effort as string) || undefined,
-    factualityGate: parseFactualityGate(raw.factualityGate),
+    factualityLevel: parseFactualityLevel(raw.factualityLevel, raw.factualityGate),
   };
 
   return _config;
