@@ -197,13 +197,17 @@ export const Envelopes = {
     kind: z.literal('status'),
     type: z.literal('delivered'),
     seq: z.null(),
-    payload: z.object({ ids: z.array(z.string().uuid()).min(1) }),
+    // Message/workout ids are NOT uuids (delivery.ts stamps content.id = the
+    // outbound row id, e.g. "msg-…"/"new-…"). Requiring .uuid() here made the
+    // device's delivered ack fail AnyEnvelope.parse → host closed the socket
+    // (4002) → reconnect loop + the row never cleared. Any non-empty id.
+    payload: z.object({ ids: z.array(z.string().min(1)).min(1) }),
   }),
   StatusRead: EnvelopeBase.extend({
     kind: z.literal('status'),
     type: z.literal('read'),
     seq: z.null(),
-    payload: z.object({ ids: z.array(z.string().uuid()).min(1) }),
+    payload: z.object({ ids: z.array(z.string().min(1)).min(1) }),
   }),
   WorkoutStartRequest: EnvelopeBase.extend({
     kind: z.literal('control'),

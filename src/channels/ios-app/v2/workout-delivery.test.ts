@@ -10,9 +10,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startTestServer, type Harness } from './testing/harness.js';
 
-// A valid UUID — `status:delivered.payload.ids` is schema-pinned to UUIDs, and
-// the workout envelope id in production is a randomUUID() from the bridge.
-const WK_ID = '00000000-0000-4000-8000-0000000000a1';
+// NON-uuid id — in production delivery.ts stamps the envelope id = the outbound
+// row id ("msg-…"), so `status:delivered.payload.ids` carry non-uuids. The
+// `delivered` ack MUST still parse (regression: requiring .uuid() closed the
+// socket → reconnect loop → workout never cleared).
+const WK_ID = 'msg-1782212659592-fsqyh8';
 
 const PAYLOAD = {
   workout_id: '2026-06-23',
