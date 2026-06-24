@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import Combine
 
 /// Unified input bar (Alice-style): text field with "+" inside for attachments,
 /// one button on the right — mic when empty, send arrow when text exists.
@@ -130,6 +132,19 @@ struct UnifiedInputBar: View {
                     }
                 }
             }
+        }
+        // Re-sync `@FocusState` with the real first-responder state on every
+        // keyboard dismissal. The chat closes the keyboard at the UIKit layer —
+        // tap-to-dismiss in the message list (MessageListView.handleDismissTap)
+        // and agent switch (ChatView.dismissKeyboard) both fire app-wide
+        // `resignFirstResponder`, which does NOT update this private `textFocused`.
+        // Left stale-`true`, the next tap on the field requests focus=true on an
+        // already-true state, so SwiftUI never re-issues `becomeFirstResponder`
+        // and the keyboard won't reopen until enough taps happen to reconcile it
+        // ("надо нажать несколько раз"). Clearing it here makes the next tap a
+        // genuine false→true transition that opens the keyboard first try.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            if textFocused { textFocused = false }
         }
     }
 
