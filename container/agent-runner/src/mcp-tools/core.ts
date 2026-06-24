@@ -11,7 +11,13 @@ import path from 'path';
 
 import { getCurrentInReplyTo } from '../current-batch.js';
 import { findByName, getAllDestinations } from '../destinations.js';
-import { getLatestUserFacingOutboundSeq, getMessageIdBySeq, getRoutingBySeq, writeMessageOut } from '../db/messages-out.js';
+import {
+  getLatestUserFacingOutboundSeq,
+  getMessageIdBySeq,
+  getRoutingBySeq,
+  isOutboundSeq,
+  writeMessageOut,
+} from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
@@ -252,7 +258,8 @@ export const editMessage: McpToolDefinition = {
     description:
       'Edit a message you already sent — replaces its full text in place (the user sees the bubble change, marked edited). ' +
       'Omit `messageId` to edit the LAST message you sent (the common "fix what I just said" case). ' +
-      'Pass `messageId` (the numeric id shown in messages) only to target an OLDER message. ' +
+      'Pass `messageId` (the numeric id shown in messages) only to target an OLDER message YOU sent — ' +
+      'you cannot edit the user\'s messages, only your own. ' +
       'Never invent a messageId — omit it instead.',
     inputSchema: {
       type: 'object' as const,
@@ -280,6 +287,13 @@ export const editMessage: McpToolDefinition = {
       if (!Number.isFinite(seq) || seq <= 0) {
         return err('messageId must be the numeric id shown in messages — or omit it to edit your last message.');
       }
+    }
+
+    // Only edit YOUR OWN (outbound) messages. An explicit messageId can resolve
+    // to a user/inbound message (getMessageIdBySeq checks inbound too) — editing
+    // that would rewrite the user's bubble. Refuse; nudge toward omit-id.
+    if (!isOutboundSeq(seq)) {
+      return err(`#${seq} isn't a message you sent — you can only edit your own. Omit messageId to edit your last message.`);
     }
 
     const platformId = getMessageIdBySeq(seq);

@@ -201,6 +201,17 @@ export function getLatestUserFacingOutboundSeq(): number | null {
   return row?.seq ?? null;
 }
 
+/**
+ * Is `seq` one of the agent's OWN outbound messages? `edit_message` uses this to
+ * refuse editing a user/inbound message: `getMessageIdBySeq` resolves inbound
+ * (user) seqs too, so without this guard an explicit messageId pointing at a
+ * user message would rewrite the USER's bubble. Reactions are exempt (reacting
+ * to a user message is legitimate).
+ */
+export function isOutboundSeq(seq: number): boolean {
+  return !!getOutboundDb().prepare('SELECT 1 FROM messages_out WHERE seq = ?').get(seq);
+}
+
 /** Get undelivered messages (for host polling — reads from outbound.db). */
 export function getUndeliveredMessages(): MessageOutRow[] {
   return getOutboundDb()

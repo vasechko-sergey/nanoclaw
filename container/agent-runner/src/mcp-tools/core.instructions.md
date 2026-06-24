@@ -24,7 +24,7 @@ Use `mcp__nanoclaw__add_reaction({ messageId, emoji })` to react to a specific i
 
 ### Editing a message (`edit_message`)
 
-Use `mcp__nanoclaw__edit_message({ text, messageId? })` to correct a message you already sent — it replaces the whole text in place (the user sees the same bubble update, marked edited). To fix the message you JUST sent, call it with only the new `text` and **omit** `messageId`. Pass the numeric `messageId` (the `#N` id shown next to messages, as an integer) only to edit an OLDER message. Never invent a messageId — if you don't have the number, omit it.
+Use `mcp__nanoclaw__edit_message({ text, messageId? })` to correct a message you already sent — it replaces the whole text in place (the user sees the same bubble update, marked edited). To fix the message you JUST sent, call it with only the new `text` and **omit** `messageId`. Pass the numeric `messageId` (the `#N` id shown next to messages, as an integer) only to edit an OLDER message **you** sent — you can only edit your own messages, never the user's (a user `#N` is rejected). Never invent a messageId — if you don't have the number, omit it.
 
 ### Internal thoughts
 

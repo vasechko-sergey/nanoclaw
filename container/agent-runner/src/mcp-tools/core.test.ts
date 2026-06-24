@@ -79,4 +79,15 @@ describe('edit_message targeting', () => {
     const res = await editMessage.handler({ text: 'corrected' });
     expect(res.isError).toBe(true);
   });
+
+  it('refuses to edit a seq that is not the agent\'s own outbound message', async () => {
+    const mine = writeMessageOut({
+      id: 'mine', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'mine' }),
+    });
+    // A seq not present in messages_out (e.g. a user/inbound message id) must be refused.
+    const res = await editMessage.handler({ messageId: mine + 1, text: 'hijack' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("isn't a message you sent");
+  });
 });
