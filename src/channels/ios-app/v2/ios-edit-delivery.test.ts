@@ -81,3 +81,25 @@ describe('ios-app-v2 deliver() edit dispatch', () => {
     expect(queue.list(platformId).some((r) => r.type === 'update')).toBe(false);
   });
 });
+
+describe('ios-app-v2 deliver() reaction drop', () => {
+  // ios-app-v2 has no reaction UI. The agent's add_reaction tool emits
+  //   { operation:'reaction', messageId, emoji }
+  // which has no `type` field; without an explicit branch it would fall through
+  // to the default message path and render as an empty-text bubble on the
+  // device. deliver() must drop it: return undefined, enqueue nothing.
+  it('drops a reaction (no envelope enqueued, no empty bubble)', async () => {
+    const platformId = 'ios-app-v2:default';
+    registerDevice(platformId);
+    const adapter = createV2Adapter()!;
+
+    const ret = await adapter.deliver(platformId, 'default', {
+      kind: 'chat',
+      content: { operation: 'reaction', messageId: 'msg-789-xyz', emoji: 'thumbs_up' },
+    } as any);
+
+    expect(ret).toBeUndefined();
+    const queue = new OutboundQueue(openTransportDb(mockEnv.IOS_APP_V2_DB_PATH!));
+    expect(queue.list(platformId).length).toBe(0);
+  });
+});

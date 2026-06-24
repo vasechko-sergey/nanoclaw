@@ -533,6 +533,24 @@ function createV2Adapter(): ChannelAdapter | null {
         return undefined;
       }
 
+      // Reactions: the agent's add_reaction tool emits
+      //   { operation:'reaction', messageId, emoji }
+      // ios-app-v2 has no reaction UI (Telegram renders reactions natively;
+      // iOS does not). The content has no `type` field, so without this branch
+      // it falls through to the default message path and renders as an
+      // empty-text bubble on the device. Drop it: enqueue nothing, return
+      // undefined. delivery.ts marks the message-out row delivered with null
+      // so it isn't re-polled. If iOS ever grows a reaction UI, add a wire
+      // envelope here instead of dropping (see the `edit`/`update` branch).
+      if (content.operation === 'reaction') {
+        logV2('reaction dropped (no iOS reaction UI)', {
+          platformId,
+          messageId: typeof content.messageId === 'string' ? content.messageId : undefined,
+          emoji: typeof content.emoji === 'string' ? content.emoji : undefined,
+        });
+        return undefined;
+      }
+
       // Agent-initiated context pull — route through ContextBridge, which
       // persists a pending row and pushes a control:context_request to the
       // device. Returns the request id so the caller can correlate.
