@@ -37,7 +37,7 @@ struct UnifiedInputBar: View {
         VStack(spacing: 0) {
             // Command suggestions
             if !filteredCommands.isEmpty {
-                CommandList(commands: filteredCommands) { cmd in
+                CommandList(commands: filteredCommands, onClose: showCommands ? { showCommands = false } : nil) { cmd in
                     text = cmd
                     showCommands = false
                 }
