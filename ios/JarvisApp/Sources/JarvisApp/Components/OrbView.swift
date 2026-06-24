@@ -76,14 +76,23 @@ struct OrbView: View {
 
     // MARK: - Body
 
+    /// Per-mood redraw cadence. The Canvas rebuilds ~hundreds of glow+crisp path
+    /// ops per frame on the main thread, so animating it when nothing is really
+    /// moving burned ~30% CPU at idle. Active moods get 30fps; the slow-rotating
+    /// resting moods get a cheap 12fps; truly at-rest moods render ONE static
+    /// frame (nil → no TimelineView).
+    private var animationInterval: Double? {
+        switch mood {
+        case .listening, .processing, .speaking: 1.0 / 30.0
+        case .heroic, .welcoming, .ready: 1.0 / 12.0
+        case .calm, .error: nil
+        }
+    }
+
     var body: some View {
         Group {
-            if scenePhase == .active {
-                // Cap at 30fps. The Canvas rebuilds ~hundreds of path ops per
-                // frame on the main thread; at ProMotion's 120Hz that starved
-                // touch handling. 30fps is imperceptible for this slow rotation
-                // and cuts the per-second main-thread cost ~4×.
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            if scenePhase == .active, let interval = animationInterval {
+                TimelineView(.animation(minimumInterval: interval)) { timeline in
                     orbCanvas(t: timeline.date.timeIntervalSinceReferenceDate)
                 }
             } else {
