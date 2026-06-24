@@ -51,6 +51,30 @@ final class ConversationStoreV2AgentTests: XCTestCase {
         XCTAssertEqual(try store.countMessages(agentId: "payne"), 2)
     }
 
+    func test_windowedRows_equalTs_stableByInsertionOrder_andEditDoesNotReorder() throws {
+        let store = try makeStore()
+        // Two messages with the SAME ts (millisecond collision — e.g. a burst of
+        // <message> blocks in one turn), inserted A then B.
+        try store.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO messages (id,dir,seq,text,status,ts,created_at,agent_id,edited) VALUES (?,?,NULL,?,?,?,?,?,0)",
+                arguments: ["m-a", "in", "A", "new", 1000, 1000, "jarvis"]
+            )
+            try db.execute(
+                sql: "INSERT INTO messages (id,dir,seq,text,status,ts,created_at,agent_id,edited) VALUES (?,?,NULL,?,?,?,?,?,0)",
+                arguments: ["m-b", "in", "B", "new", 1000, 1000, "jarvis"]
+            )
+        }
+        let before = try store.writer.read { db in try ConversationStoreV2.windowedRows(db, perAgent: 500) }
+        XCTAssertEqual(before.map(\.id), ["m-a", "m-b"], "equal-ts rows must order by insertion (rowid)")
+
+        // Editing A in place must NOT reorder the timeline (the reported bug).
+        _ = try store.updateMessageText(id: "m-a", text: "A-edited")
+        let after = try store.writer.read { db in try ConversationStoreV2.windowedRows(db, perAgent: 500) }
+        XCTAssertEqual(after.map(\.id), ["m-a", "m-b"], "edit must not reorder equal-ts rows")
+        XCTAssertEqual(after.first { $0.id == "m-a" }?.text, "A-edited")
+    }
+
     func test_defaultAgentId_isJarvis_forBackCompat() throws {
         let store = try makeStore()
 

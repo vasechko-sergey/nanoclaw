@@ -374,7 +374,7 @@ final class ConversationStoreV2 {
             let rows = try Row.fetchAll(db, sql: """
                 SELECT * FROM messages
                 WHERE agent_id=?
-                ORDER BY ts DESC
+                ORDER BY ts DESC, rowid DESC
                 LIMIT ?
             """, arguments: [agentId, limit])
             return rows.reversed().map { row in
@@ -418,13 +418,18 @@ final class ConversationStoreV2 {
     /// oldest-first overall. Shared by the observation and unit tests. Uses a
     /// window function (SQLite ≥ 3.25, well below the iOS floor).
     static func windowedRows(_ db: Database, perAgent: Int) throws -> [StoredMessage] {
+        // `rowid` (insertion order) is the stable tiebreaker: `ts` collides when
+        // the agent emits several <message> blocks in the same millisecond, and
+        // `created_at == ts` at insert so it can't break the tie. Without this,
+        // any re-fetch (e.g. triggered by an edit's in-place UPDATE) can reorder
+        // equal-ts rows. rowid order = arrival/send order = correct display order.
         let rows = try Row.fetchAll(db, sql: """
             SELECT * FROM (
-              SELECT *, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY ts DESC) AS _rn
+              SELECT *, rowid AS _rid, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY ts DESC, rowid DESC) AS _rn
               FROM messages
             )
             WHERE _rn <= ?
-            ORDER BY ts ASC
+            ORDER BY ts ASC, _rid ASC
         """, arguments: [perAgent])
         return rows.map(Self.mapRow)
     }
