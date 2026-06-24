@@ -12,6 +12,9 @@ struct UnifiedInputBar: View {
     let commands: [BotCommand]
     var isDisabled: Bool = false
     var enterToSend: Bool = true
+    /// Placeholder shown when the field is empty. Carries the active agent's
+    /// display name so a multi-agent chat doesn't always read "Спросить Jarvis…".
+    var placeholder: String = "Спросить Jarvis..."
     @Binding var autoStartVoice: Bool
     let onSend: () -> Void
     var onPinchOut: (() -> Void)? = nil
@@ -59,7 +62,7 @@ struct UnifiedInputBar: View {
                     attachmentPlus
 
                     // Text field
-                    TextField("Спросить Jarvis...", text: $text, axis: .vertical)
+                    TextField(placeholder, text: $text, axis: .vertical)
                         .font(.system(size: Theme.fontInput))
                         .lineLimit(1...5)
                         .focused($textFocused)

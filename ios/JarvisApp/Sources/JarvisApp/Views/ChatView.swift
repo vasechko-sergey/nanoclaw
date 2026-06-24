@@ -246,6 +246,7 @@ struct ChatView: View {
             UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
                             commands: ws.commands, isDisabled: !ws.isConnected,
                             enterToSend: settings.enterToSend,
+                            placeholder: "Спросить \(active.active.displayName)...",
                             autoStartVoice: $autoStartVoice,
                             onSend: sendCurrent,
                             onPinchOut: { showVoiceFullscreen = true })
