@@ -1,5 +1,11 @@
 import { test, expect } from 'bun:test';
-import { shouldJudgeProse } from './prose-trigger.js';
+import { hasEnoughProse, shouldJudgeProse } from './prose-trigger.js';
+
+test('hasEnoughProse: ≥6 letter-words true, fewer/number-only false', () => {
+  expect(hasEnoughProse('this is a long enough sentence here')).toBe(true);
+  expect(hasEnoughProse('ok')).toBe(false);
+  expect(hasEnoughProse('$0.80 12009.34')).toBe(false);
+});
 
 test('fires only on level>=2 + tool output + prose', () => {
   expect(shouldJudgeProse(2, 'tool said x', 'Your balance is concentrated in Tbank.')).toBe(true);

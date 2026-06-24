@@ -19,7 +19,8 @@ import type { FactualityLevel } from './config.js';
 import { extractDataNumbers } from './verification/numbers.js';
 import { gateOutboundText } from './verification/poll-gate.js';
 import { judgeProse } from './verification/judge.js';
-import { shouldJudgeProse } from './verification/prose-trigger.js';
+import { hasEnoughProse, shouldJudgeProse } from './verification/prose-trigger.js';
+import { runLevel3 } from './verification/level3.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -640,6 +641,7 @@ async function processQuery(
   // prose judge — a turn may bounce up to N times for numbers AND N for prose.
   let factualityRetries = 0;
   let proseRetries = 0;
+  let l3Retries = 0;
   // Tool-use ids that started but haven't reported back. While this set is
   // non-empty, the idle watchdog is in "tool-tolerant" mode: an idle
   // window means a long-running Bash/MCP call, not a wedged stream. The
@@ -899,12 +901,39 @@ async function processQuery(
                   log(`Factuality judge error (fail-closed-soft): ${err instanceof Error ? err.message : String(err)}`);
                 }
               }
-              if (!proseBounced) {
+              let l3Bounced = false;
+              let l3Hedge: string[] = [];
+              if (!proseBounced && level >= 3 && verdict.grounded) {
+                // L3 runs up to ~10 sequential verification calls (extract + CoVe
+                // per claim + web on the action-relevant slice) inline here. The
+                // turn's content is already complete; this deliberately delays
+                // DELIVERY (which is gated anyway) to verify it — a conscious
+                // latency-for-correctness tradeoff, same posture as the prose judge.
+                if (hasEnoughProse(event.text)) {
+                  const l3 = await runLevel3(event.text, sources);
+                  log(`Factuality L3: checked=${l3.checked} escalated=${l3.escalated} failed=${l3.failed.length}`);
+                  if (l3.failed.length > 0 && l3Retries < FACTUALITY_MAX_RETRIES) {
+                    l3Retries++;
+                    resultReceived = false; // a correction starts a fresh turn
+                    query.push(
+                      `<system>A fact-check could not confirm these claims in your reply: ` +
+                        l3.failed.map((f) => `"${f.claim}" (${f.why})`).join('; ') +
+                        `. Verify each with a tool/web/source, or remove/clearly hedge it, then re-send your full reply.</system>`,
+                    );
+                    l3Bounced = true;
+                  } else if (l3.failed.length > 0) {
+                    l3Hedge = l3.failed.map((f) => f.claim);
+                  }
+                }
+              }
+              if (!proseBounced && !l3Bounced) {
                 const finalText = !verdict.grounded
                   ? `${event.text}\n\n⚠️ Часть чисел выше я не смог подтвердить по источнику — перепроверь перед использованием.`
                   : proseHedge
                     ? `${event.text}\n\n⚠️ Факты не проверены (проверяльщик недоступен).`
-                    : event.text;
+                    : l3Hedge.length > 0
+                      ? `${event.text}\n\n⚠️ Эти утверждения я не смог подтвердить — перепроверь: ${l3Hedge.map((c) => `"${c}"`).join(', ')}.`
+                      : event.text;
                 const { hasUnwrapped } = dispatchResultText(finalText, routing, dispatchedKeys);
                 dispatchedKeys = new Set<string>();
                 if (hasUnwrapped && !unwrappedNudged) {
