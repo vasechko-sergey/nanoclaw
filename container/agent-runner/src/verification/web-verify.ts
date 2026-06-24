@@ -47,9 +47,15 @@ export async function webVerify(
       { system: SYSTEM, user: `CLAIM: ${claim}`, model: MODEL, maxTokens: 1024, tools: TOOLS, timeoutMs: WEB_TIMEOUT_MS },
       fetchImpl, env,
     );
-    return parseWebVerdict(text);
-  } catch {
+    const r = parseWebVerdict(text);
+    // Diagnostic: distinguishes web-works (supported/refuted) from
+    // model-served-but-unformatted (unavailable here) vs tool-unavailable
+    // (the catch below). Grep `[web-verify]` in container logs during pilot.
+    console.error(`[web-verify] verdict=${r.verdict}`);
+    return r;
+  } catch (err) {
     preflightFailed = true;
+    console.error(`[web-verify] unavailable (error: ${err instanceof Error ? err.message : String(err)})`);
     return { verdict: 'unavailable', evidence: '' };
   }
 }
