@@ -43,7 +43,11 @@ export interface ContainerConfig {
   maxMessagesPerPrompt?: number;
   model?: string;
   effort?: string;
+  /** @deprecated Legacy string gate. Superseded by `factualityLevel` (0–3). Dual-written
+   *  for one release so older container images still parse it; remove once all containers
+   *  read `factualityLevel`. */
   factualityGate?: 'off' | 'deterministic' | 'full';
+  factualityLevel?: number;
 }
 
 /** Build a `ContainerConfig` from a DB row + agent group identity. */
@@ -65,6 +69,7 @@ export function configFromDb(row: ContainerConfigRow, group: AgentGroup): Contai
     model: row.model ?? undefined,
     effort: row.effort ?? undefined,
     factualityGate: (row.factuality_gate as 'off' | 'deterministic' | 'full') || 'off',
+    factualityLevel: typeof row.factuality_level === 'number' ? row.factuality_level : 0,
   };
 }
 

@@ -26,6 +26,7 @@ export interface ContainerConfigRow {
   additional_mounts: string; // JSON: AdditionalMountConfig[]
   cli_scope: string; // 'disabled' | 'group' | 'global'
   factuality_gate: string; // 'off' | 'deterministic' | 'full'
+  factuality_level: number;
   updated_at: string;
 }
 

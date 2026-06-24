@@ -19,6 +19,7 @@ function row(overrides: Partial<ContainerConfigRow> = {}): ContainerConfigRow {
     additional_mounts: '[]',
     cli_scope: 'group',
     factuality_gate: 'off',
+    factuality_level: 0,
     updated_at: '2026-06-17T00:00:00Z',
     ...overrides,
   };
