@@ -191,7 +191,14 @@ actor TransportV2 {
             // the only thing that clears it from the host queue, same model as the
             // workout-family envelopes above. Idempotent: re-applying the same
             // edit is a no-op, so a redelivered update never harms.
-            try store.updateMessageText(id: u.id, text: u.text)
+            // Diagnostic (build 51): bracket the device-side apply. Pairs with the
+            // `[delivery] recv update` line above (recv timestamp) and the host's
+            // `[ios-app-v2] edit dispatched` / `[delivery] push` (VDS) — full
+            // host→device→apply trace. `hit=false` ⇒ the target id didn't match any
+            // stored row (id-seam broke); `hit=true` + a slow-looking bubble ⇒ it's
+            // render/perception, not latency.
+            let hit = try store.updateMessageText(id: u.id, text: u.text)
+            Log.info(.ws, "[delivery] applied update target=\(u.id) hit=\(hit)")
             try await sendStatus(.delivered, ids: [env.id])
         case .workoutPlan, .imageBlob, .coachMessage, .exerciseSwapOptions, .programUpdate:
             // Forward to the facade for typed decode + UI bus publication.
