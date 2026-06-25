@@ -69,6 +69,8 @@ struct SettingsFormBody: View {
                 if !isInitialSetup {
                     settingsSection(title: "Голос") {
                         settingsToggle(icon: "speaker.wave.2", label: "Озвучивать ответы на голос", isOn: $settings.autoSpeak)
+                        settingsDivider()
+                        settingsToggle(icon: "waveform", label: "Отвечать только голосом", isOn: $settings.voiceOnlyMode)
                     }
                 }
 

@@ -14,6 +14,9 @@ final class AppSettings {
     @ObservationIgnored @AppStorage("statusEmoji")   var statusEmoji  = ""
     @ObservationIgnored @AppStorage("enterToSend")   var enterToSend  = true
     @ObservationIgnored @AppStorage("autoSpeak")     var autoSpeak    = false
+    /// Global voice-only mode: every reply comes back as a voice note (text held
+    /// until the audio is ready, transcript collapsed).
+    @ObservationIgnored @AppStorage("voiceOnlyMode") var voiceOnlyMode = false
 
     // MARK: – Voice-fullscreen ("Glass") mode
     /// After TTS finishes reading the assistant reply, auto-resume the

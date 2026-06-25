@@ -206,7 +206,10 @@ final class AppCoordinator {
         // Request server-side TTS when: Orb fullscreen forces it (forceVoice=true),
         // OR when the user has autoSpeak enabled AND the message was dictated.
         // Pure dictation with autoSpeak OFF does NOT produce a server voice note.
-        let wantVoiceReply = forceVoice || (settings.autoSpeak && lastSendWasVoice)
+        // Voice-only mode forces a server voice reply for every send (typed or
+        // dictated). Otherwise the orb / autoSpeak path decides as before.
+        let voiceOnly = settings.voiceOnlyMode
+        let wantVoiceReply = voiceOnly || forceVoice || (settings.autoSpeak && lastSendWasVoice)
         lastSendWantedServerVoice = wantVoiceReply
         ws.send(
             text: text,
@@ -215,7 +218,8 @@ final class AppCoordinator {
             attachments: attachments,
             context: ctx,
             agentId: agentId,
-            respondByVoice: wantVoiceReply
+            respondByVoice: wantVoiceReply,
+            voiceOnly: voiceOnly
         )
     }
 

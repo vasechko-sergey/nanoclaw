@@ -262,7 +262,8 @@ final class WebSocketClientV2 {
         attachments: [DraftAttachment] = [],
         context: [String: Any]? = nil,
         agentId: String = "jarvis",
-        respondByVoice: Bool = false
+        respondByVoice: Bool = false,
+        voiceOnly: Bool = false
     ) {
         guard stack != nil else {
             Log.warn(.ws, "WebSocketClientV2.send: stack not built yet")
@@ -273,7 +274,8 @@ final class WebSocketClientV2 {
         lastUserSentAt[agentId] = ts
 
         let inline = makeInlineContext(timezone: timezone, status: status, raw: context,
-                                       respondByVoice: respondByVoice ? true : nil)
+                                       respondByVoice: respondByVoice ? true : nil,
+                                       voiceOnly: voiceOnly ? true : nil)
         let v2Attachments = attachments.compactMap { Self.toV2Attachment($0) }
 
         do {
@@ -643,7 +645,7 @@ final class WebSocketClientV2 {
     }
 
     private func makeInlineContext(timezone: String, status: String?, raw: [String: Any]?,
-                                   respondByVoice: Bool? = nil) -> V2.InlineContext? {
+                                   respondByVoice: Bool? = nil, voiceOnly: Bool? = nil) -> V2.InlineContext? {
         // We don't try to round-trip the legacy free-form dict here; the v2
         // protocol has a stricter shape. We only populate timezone +
         // timestamp (always-on) and a coarse locality if the legacy dict
@@ -666,7 +668,8 @@ final class WebSocketClientV2 {
             timestamp: now,
             timezone: timezone,
             locality: locality,
-            respond_by_voice: respondByVoice
+            respond_by_voice: respondByVoice,
+            voice_only: voiceOnly
         )
     }
 
