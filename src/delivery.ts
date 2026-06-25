@@ -381,6 +381,19 @@ async function deliverMessage(
       ? readOutboxFiles(session.agent_group_id, session.id, msg.id, content.files as string[])
       : undefined;
 
+  // Voice flags for this session (read once; reused by the gate below). Stamping
+  // voice_only on the iOS text envelope makes the client hide the text and show
+  // a placeholder until the rendered audio attaches by reply_to_id.
+  const sessVoice = getDb()
+    .prepare('SELECT voice_intent, voice_only FROM sessions WHERE id = ?')
+    .get(session.id) as { voice_intent: number; voice_only: number } | undefined;
+  const willHoldForVoice =
+    msg.channel_type === 'ios-app-v2' &&
+    isFinalUserReply &&
+    !!sessVoice?.voice_intent &&
+    !!sessVoice?.voice_only &&
+    !!(content.text && typeof content.text === 'string' && content.text.trim());
+
   // For the iOS app, stamp the outbound DB row id as the message id so the
   // device stores the reply under a STABLE id. A voice note rendered later
   // (fire-and-forget, below) references this same id via `reply_to_id`, letting
@@ -389,7 +402,11 @@ async function deliverMessage(
   // Other channels ignore content.id, so scope the rewrite to ios-app-v2.
   const deliverContent =
     msg.channel_type === 'ios-app-v2'
-      ? JSON.stringify({ ...(content as Record<string, unknown>), id: (content as { id?: string }).id ?? msg.id })
+      ? JSON.stringify({
+          ...(content as Record<string, unknown>),
+          id: (content as { id?: string }).id ?? msg.id,
+          ...(willHoldForVoice ? { voice_only: true } : {}),
+        })
       : msg.content;
   const platformMsgId = await deliveryAdapter.deliver(
     msg.channel_type,
@@ -419,14 +436,11 @@ async function deliverMessage(
   // note lands later. renderVoice returns null when the sidecar is unreachable,
   // in which case we skip silently.
   const agentGroup = getAgentGroup(session.agent_group_id);
-  const voiceRow = getDb()
-    .prepare('SELECT voice_intent FROM sessions WHERE id = ?')
-    .get(session.id) as { voice_intent: number } | undefined;
   const hasText = !!(content.text && typeof content.text === 'string' && content.text.trim());
   const voiceDecision = decideVoice({
     isFinalUserReply,
-    voiceIntent: !!voiceRow?.voice_intent,
-    voiceOnly: false, // wired in Task 2.4
+    voiceIntent: !!sessVoice?.voice_intent,
+    voiceOnly: !!sessVoice?.voice_only,
     hasText,
     folder: agentGroup?.folder ?? '',
   });
@@ -435,7 +449,8 @@ async function deliverMessage(
     sessionId: session.id,
     isFinalUserReply,
     folder: agentGroup?.folder,
-    voiceIntent: voiceRow?.voice_intent ?? 0,
+    voiceIntent: sessVoice?.voice_intent ?? 0,
+    voiceOnly: sessVoice?.voice_only ?? 0,
     shouldRender: voiceDecision.shouldRender,
     hasText,
   });
