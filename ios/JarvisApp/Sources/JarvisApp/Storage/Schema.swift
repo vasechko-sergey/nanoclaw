@@ -148,6 +148,12 @@ enum Schema {
             // Agent edit-in-place: mark a row as edited so the UI can show "(ред.)".
             try db.execute(sql: "ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0;")
         }
+        m.registerMigration("v10-voice-only") { db in
+            // Voice-only rows: text hidden behind a placeholder until the
+            // rendered voice note attaches. 1 = voice-only; cleared to 0 on
+            // render failure (text revealed).
+            try db.execute(sql: "ALTER TABLE messages ADD COLUMN voice_only INTEGER NOT NULL DEFAULT 0;")
+        }
         try m.migrate(writer)
     }
 }

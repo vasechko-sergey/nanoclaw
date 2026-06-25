@@ -25,6 +25,7 @@ struct StoredMessage: Equatable {
     var actionChoice: String? = nil
     var workoutPlanJSON: String? = nil
     var edited: Bool = false
+    var voiceOnly: Bool = false
 }
 
 final class ConversationStoreV2 {
@@ -199,9 +200,9 @@ final class ConversationStoreV2 {
             }
             try db.execute(sql: """
                 INSERT INTO messages
-                  (id, dir, seq, text, attachments_json, actions_json, status, ts, created_at, agent_id)
-                VALUES (?, 'in', ?, ?, ?, ?, 'new', ?, ?, ?)
-            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, now, now, agentId])
+                  (id, dir, seq, text, attachments_json, actions_json, status, ts, created_at, agent_id, voice_only)
+                VALUES (?, 'in', ?, ?, ?, ?, 'new', ?, ?, ?, ?)
+            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, now, now, agentId, (message.voice_only ?? false)])
         }
     }
 
@@ -241,6 +242,16 @@ final class ConversationStoreV2 {
         try writer.write { db in
             try db.execute(sql: "UPDATE messages SET action_choice=? WHERE id=?",
                            arguments: [choice, rowId])
+        }
+    }
+
+    /// Clear the voice-only flag on a row (render failed → reveal its text).
+    /// Returns whether a row changed.
+    @discardableResult
+    func clearVoiceOnly(rowId: String) throws -> Bool {
+        try writer.write { db in
+            try db.execute(sql: "UPDATE messages SET voice_only=0 WHERE id=?", arguments: [rowId])
+            return db.changesCount > 0
         }
     }
 
@@ -453,7 +464,8 @@ final class ConversationStoreV2 {
             actionsJSON: row["actions_json"],
             actionChoice: row["action_choice"],
             workoutPlanJSON: row["workout_plan_json"],
-            edited: row["edited"] ?? false
+            edited: row["edited"] ?? false,
+            voiceOnly: row["voice_only"] ?? false
         )
     }
 
