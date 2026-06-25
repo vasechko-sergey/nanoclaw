@@ -75,8 +75,32 @@ def synth_to_opus(text: str, voice: str, max_chars: int, fmt: str = "opus") -> b
             out_path = os.path.join(td, out_name)
             subprocess.run(
                 ["ffmpeg", "-y", "-loglevel", "error", "-i", wav_path,
-                 "-af", "loudnorm=I=-16:TP=-2", *enc_args, out_path],
+                 "-af", _loudnorm_filter(wav_path), *enc_args, out_path],
                 check=True,
             )
             with open(out_path, "rb") as f:
                 return f.read()
+
+
+# Two-pass EBU R128 loudness normalization. Single-pass loudnorm is adaptive and
+# drifts ~1 LUFS per clip, so the 5 voices (whose reference clips differ in
+# level) land at audibly different volumes. Pass 1 measures, pass 2 applies a
+# linear gain to hit exactly I=-16 LUFS / TP=-2 dBTP for every voice → even
+# perceived loudness. Falls back to single-pass if the measure step can't parse.
+def _loudnorm_filter(wav_path: str) -> str:
+    base = "loudnorm=I=-16:TP=-2:LRA=11"
+    try:
+        import json
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-i", wav_path,
+             "-af", base + ":print_format=json", "-f", "null", "-"],
+            capture_output=True, text=True, check=True,
+        )
+        blob = r.stderr[r.stderr.rindex("{"):r.stderr.rindex("}") + 1]
+        m = json.loads(blob)
+        return (f"{base}:linear=true:measured_I={m['input_i']}:"
+                f"measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:"
+                f"measured_thresh={m['input_thresh']}:offset={m['target_offset']}")
+    except Exception as e:
+        log.warning("loudnorm measure failed, single-pass fallback: %s", e)
+        return "loudnorm=I=-16:TP=-2"
