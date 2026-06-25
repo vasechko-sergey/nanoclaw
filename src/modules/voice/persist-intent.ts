@@ -1,8 +1,9 @@
 import { getDb } from '../../db/connection.js';
-import { resolveVoiceIntent } from './voice-intent.js';
+import { resolveVoiceIntent, resolveVoiceOnly } from './voice-intent.js';
 
 export interface PersistVoiceIntentResult {
   voiceIntent: boolean;
+  voiceOnly: boolean;
   hasIosContext: boolean;
   respondByVoice: boolean | null;
   groupVoiceMode: boolean;
@@ -26,7 +27,7 @@ export function persistVoiceIntent(input: {
   messagingGroupId: string;
   content: string;
 }): PersistVoiceIntentResult {
-  let parsed: { ios_context?: { respond_by_voice?: boolean } | null } = {};
+  let parsed: { ios_context?: { respond_by_voice?: boolean; voice_only?: boolean } | null } = {};
   try {
     parsed = JSON.parse(input.content);
   } catch {
@@ -38,11 +39,13 @@ export function persistVoiceIntent(input: {
     .get(input.messagingGroupId) as { voice_mode: number } | undefined;
   const groupVoiceMode = (mgVoiceRow?.voice_mode ?? 0) !== 0;
   const voiceIntent = resolveVoiceIntent({ iosContext, groupVoiceMode });
+  const voiceOnly = resolveVoiceOnly(iosContext);
   getDb()
-    .prepare('UPDATE sessions SET voice_intent = ? WHERE id = ?')
-    .run(voiceIntent ? 1 : 0, input.sessionId);
+    .prepare('UPDATE sessions SET voice_intent = ?, voice_only = ? WHERE id = ?')
+    .run(voiceIntent ? 1 : 0, voiceOnly ? 1 : 0, input.sessionId);
   return {
     voiceIntent,
+    voiceOnly,
     hasIosContext: !!iosContext,
     respondByVoice: iosContext?.respond_by_voice ?? null,
     groupVoiceMode,
