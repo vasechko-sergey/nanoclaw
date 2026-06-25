@@ -688,6 +688,8 @@ function createV2Adapter(): ChannelAdapter | null {
       // A server-rendered voice note carries reply_to_id = the text reply's
       // message id, so the device attaches the audio to that exact bubble.
       const replyToId = typeof content.reply_to_id === 'string' ? content.reply_to_id : undefined;
+      const voiceOnly = content.voice_only === true;
+      const voiceFailed = content.voice_failed === true;
 
       handler.sendEnvelopeToDevice(platformId, {
         id,
@@ -699,6 +701,8 @@ function createV2Adapter(): ChannelAdapter | null {
           ...(attachments && attachments.length > 0 ? { attachments } : {}),
           ...(agentFolder ? { agent_id: agentFolder } : {}),
           ...(replyToId ? { reply_to_id: replyToId } : {}),
+          ...(voiceOnly ? { voice_only: true } : {}),
+          ...(voiceFailed ? { voice_failed: true } : {}),
         },
       });
       return id;
