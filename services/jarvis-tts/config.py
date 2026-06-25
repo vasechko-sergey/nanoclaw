@@ -6,11 +6,29 @@ CKPT_FILE = str(ASSETS / "accent_tune.safetensors")
 VOCAB_FILE = str(ASSETS / "vocab.txt")
 MODEL_NAME = "F5TTS_v1_Base"
 
-# Voice registry: voice name -> (reference wav, reference transcript).
+# Voice registry: voice name (== agent folder) -> (reference wav, reference
+# transcript). Each clone is zero-shot from its ref clip, so the clip IS the
+# voice — keep it clean (single speaker, ~6-12s, no music/SFX bed).
 VOICES = {
-    "jarvis": {
+    "jarvis": {  # J.A.R.V.I.S. (Iron Man RU dub, Баранов)
         "ref_wav": str(ASSETS / "ref_workshop.wav"),
         "ref_text_file": str(ASSETS / "ref_workshop_text.txt"),
+    },
+    "greg": {  # Грегори Хаус (Доктор Хаус, LostFilm / Кухарешин)
+        "ref_wav": str(ASSETS / "ref_greg.wav"),
+        "ref_text_file": str(ASSETS / "ref_greg_text.txt"),
+    },
+    "gordon": {  # Гордон Рамзи (Kitchen Nightmares RU)
+        "ref_wav": str(ASSETS / "ref_gordon.wav"),
+        "ref_text_file": str(ASSETS / "ref_gordon_text.txt"),
+    },
+    "payne": {  # Майор Пейн (RU dub, казарма)
+        "ref_wav": str(ASSETS / "ref_payne.wav"),
+        "ref_text_file": str(ASSETS / "ref_payne_text.txt"),
+    },
+    "scrooge": {  # Скрудж МакДак (Утиные истории, Борзунов)
+        "ref_wav": str(ASSETS / "ref_scrooge.wav"),
+        "ref_text_file": str(ASSETS / "ref_scrooge_text.txt"),
     },
 }
 DEFAULT_VOICE = "jarvis"
