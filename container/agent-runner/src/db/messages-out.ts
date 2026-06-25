@@ -6,6 +6,10 @@
  */
 import { getInboundDb, getOutboundDb } from './connection.js';
 
+function log(msg: string): void {
+  console.error(`[messages-out] ${msg}`);
+}
+
 export interface MessageOutRow {
   id: string;
   seq: number | null;
@@ -49,6 +53,38 @@ export interface WriteMessageOut {
  */
 let userFacingDispatchCount = 0;
 
+/**
+ * Recent-duplicate suppression window for `writeMessageOut`. An identical
+ * user-facing message to the same destination written within this many seconds
+ * is collapsed to a single delivery (the second write returns the first's seq
+ * without inserting a row).
+ *
+ * Why this exists: two delivery paths converge on `writeMessageOut` and share
+ * NO upstream dedup — streamed/result `<message to="…">` blocks (poll-loop
+ * `sendToDestination`, deduped only against each other via `dispatchedKeys`)
+ * and the `send_message` / `send_photo` / `send_file` MCP tools. An agent that
+ * both wraps its answer in a `<message>` block AND calls `send_message` for the
+ * same destination delivers the identical message twice — jarvis's "Auth sync"
+ * brief went out twice 4s apart on 2026-06-24 for exactly this reason.
+ *
+ * Why a DB query and not an in-memory set: the nanoclaw MCP server runs as a
+ * stdio SUBPROCESS (see container-runner / index.ts mcpServers config), so the
+ * `<message>` dispatch (poll-loop process) and the `send_message` write (MCP
+ * subprocess) execute in DIFFERENT processes. They share only outbound.db, so
+ * the dedup has to be a DB lookup against it — a module-level Set would never
+ * span the two writers.
+ *
+ * Why a time window and not exact per-turn scoping: a turn boundary is
+ * process-local state the MCP subprocess can't see, so it can't be the dedup
+ * scope across processes. The double-send pattern emits both copies within
+ * seconds (the model produces the tool call and the block text together), so a
+ * short window catches it with wide margin. The only false positive is an
+ * intentional byte-identical re-send to the same destination+thread inside the
+ * window — no deployed cron sends identical text that fast, and a duplicate
+ * identical line seconds apart is virtually always accidental.
+ */
+const DEDUP_WINDOW_SECONDS = 90;
+
 export function resetUserFacingDispatch(): void {
   userFacingDispatchCount = 0;
 }
@@ -89,7 +125,45 @@ function isUserFacing(msg: WriteMessageOut): boolean {
  * host-side in session-db.ts) in a BEGIN IMMEDIATE transaction.
  */
 export function writeMessageOut(msg: WriteMessageOut): number {
+  const userFacing = isUserFacing(msg);
   const outbound = getOutboundDb();
+
+  // Recent-duplicate suppression (see DEDUP_WINDOW_SECONDS). Immediate
+  // (non-scheduled) user-facing rows only: scheduled sends (deliver_after) and
+  // non-user-facing rows (status pings, system kinds) legitimately recur.
+  // Matched against outbound.db so it spans BOTH the poll-loop process (which
+  // writes <message> blocks) and the MCP subprocess (which writes send_message)
+  // — a module-level set could not. IFNULL() so a NULL channel/platform/thread
+  // matches another NULL rather than never matching.
+  if (userFacing && !msg.deliver_after) {
+    const prior = outbound
+      .prepare(
+        `SELECT seq FROM messages_out
+         WHERE kind = 'chat'
+           AND deliver_after IS NULL
+           AND content = ?
+           AND IFNULL(channel_type, '') = ?
+           AND IFNULL(platform_id, '') = ?
+           AND IFNULL(thread_id, '') = ?
+           AND timestamp >= datetime('now', ?)
+         ORDER BY seq DESC
+         LIMIT 1`,
+      )
+      .get(
+        msg.content,
+        msg.channel_type ?? '',
+        msg.platform_id ?? '',
+        msg.thread_id ?? '',
+        `-${DEDUP_WINDOW_SECONDS} seconds`,
+      ) as { seq: number } | undefined;
+    if (prior) {
+      log(
+        `Suppressed duplicate outbound: identical message already sent to ${msg.channel_type}:${msg.platform_id} within ${DEDUP_WINDOW_SECONDS}s (seq ${prior.seq})`,
+      );
+      return prior.seq;
+    }
+  }
+
   const inbound = getInboundDb();
 
   // Read max seq from both DBs to maintain global ordering.
@@ -119,7 +193,7 @@ export function writeMessageOut(msg: WriteMessageOut): number {
       $content: msg.content,
     });
 
-  if (isUserFacing(msg)) userFacingDispatchCount++;
+  if (userFacing) userFacingDispatchCount++;
 
   return nextSeq;
 }
