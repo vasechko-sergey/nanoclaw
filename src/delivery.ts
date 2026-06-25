@@ -13,6 +13,7 @@ import { getRunningSessions, getActiveSessions, createPendingQuestion } from './
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { renderVoice } from './modules/voice/tts-client.js';
+import { decideVoice } from './modules/voice/decide-voice.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
 import {
   getDueOutboundMessages,
@@ -418,29 +419,27 @@ async function deliverMessage(
   // note lands later. renderVoice returns null when the sidecar is unreachable,
   // in which case we skip silently.
   const agentGroup = getAgentGroup(session.agent_group_id);
-  const isJarvis = agentGroup?.folder === 'jarvis';
-  const voiceRow = getDb().prepare('SELECT voice_intent FROM sessions WHERE id = ?').get(session.id) as
-    | { voice_intent: number }
-    | undefined;
+  const voiceRow = getDb()
+    .prepare('SELECT voice_intent FROM sessions WHERE id = ?')
+    .get(session.id) as { voice_intent: number } | undefined;
+  const hasText = !!(content.text && typeof content.text === 'string' && content.text.trim());
+  const voiceDecision = decideVoice({
+    isFinalUserReply,
+    voiceIntent: !!voiceRow?.voice_intent,
+    voiceOnly: false, // wired in Task 2.4
+    hasText,
+    folder: agentGroup?.folder ?? '',
+  });
   log.info('Voice delivery gate', {
     id: msg.id,
     sessionId: session.id,
     isFinalUserReply,
-    isJarvis,
+    folder: agentGroup?.folder,
     voiceIntent: voiceRow?.voice_intent ?? 0,
-    hasText: !!(content.text && typeof content.text === 'string' && content.text.trim()),
+    shouldRender: voiceDecision.shouldRender,
+    hasText,
   });
-  if (
-    isFinalUserReply &&
-    isJarvis &&
-    voiceRow?.voice_intent &&
-    content.text &&
-    typeof content.text === 'string' &&
-    content.text.trim()
-  ) {
-    // Capture narrowed values as locals: inside the deferred async closure below,
-    // TypeScript widens msg.* back to their declared (nullable) types, so freeze
-    // them here where control-flow narrowing from deliverMessage still applies.
+  if (voiceDecision.shouldRender) {
     const replyText = content.text as string;
     const vChannelType = msg.channel_type;
     const vPlatformId = msg.platform_id;
@@ -448,14 +447,14 @@ async function deliverMessage(
     const vKind = msg.kind;
     const vAgentGroupId = session.agent_group_id;
     const vMsgId = msg.id;
-    // iOS plays AAC/m4a (AVAudioPlayer can't decode OGG/Opus); Telegram voice
-    // notes need OGG/Opus. Pick codec + filename by channel.
+    const vVoice = voiceDecision.voice;
+    const vHoldText = voiceDecision.holdText;
     const isIos = vChannelType === 'ios-app-v2';
     const fmt: 'opus' | 'm4a' = isIos ? 'm4a' : 'opus';
     const fname = isIos ? 'reply.m4a' : 'reply.ogg';
     void (async () => {
       try {
-        const audio = await renderVoice(replyText, 'jarvis', { format: fmt });
+        const audio = await renderVoice(replyText, vVoice, { format: fmt });
         if (audio) {
           await deliveryAdapter.deliver(
             vChannelType,
@@ -466,7 +465,20 @@ async function deliverMessage(
             [{ filename: fname, data: audio, operation: 'send_voice' as const }],
             vAgentGroupId,
           );
-          log.info('Voice note delivered', { id: vMsgId, sessionId: session.id, format: fmt });
+          log.info('Voice note delivered', { id: vMsgId, sessionId: session.id, voice: vVoice, format: fmt });
+        } else if (vHoldText && isIos) {
+          // Render failed in voice-only mode: tell the client to reveal the
+          // text it was hiding behind the placeholder. (Task 2.4/2.5.)
+          await deliveryAdapter.deliver(
+            vChannelType,
+            vPlatformId,
+            vThreadId,
+            vKind,
+            JSON.stringify({ voice_failed: true, reply_to_id: vMsgId, text: '' }),
+            undefined,
+            vAgentGroupId,
+          );
+          log.info('Voice render failed — sent voice_failed', { id: vMsgId, sessionId: session.id });
         }
       } catch (err) {
         log.warn('Voice note delivery failed', { id: vMsgId, sessionId: session.id, err });
