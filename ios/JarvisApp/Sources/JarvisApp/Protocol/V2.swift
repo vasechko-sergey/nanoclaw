@@ -122,14 +122,20 @@ enum V2 {
         /// Set on a server-rendered voice note: the id of the text message this
         /// audio belongs to. The client attaches the audio to that bubble.
         let reply_to_id: String?
+        /// Set on the text reply in voice-only mode → client hides text + shows placeholder.
+        let voice_only: Bool?
+        /// Set on a signal (with reply_to_id) when render failed → client reveals text.
+        let voice_failed: Bool?
         let actions: [Action]?
-        init(thread_id: String, text: String, attachments: [Attachment]? = nil, context: InlineContext? = nil, agent_id: String? = nil, reply_to_id: String? = nil, actions: [Action]? = nil) {
+        init(thread_id: String, text: String, attachments: [Attachment]? = nil, context: InlineContext? = nil, agent_id: String? = nil, reply_to_id: String? = nil, voice_only: Bool? = nil, voice_failed: Bool? = nil, actions: [Action]? = nil) {
             self.thread_id = thread_id
             self.text = text
             self.attachments = attachments
             self.context = context
             self.agent_id = agent_id
             self.reply_to_id = reply_to_id
+            self.voice_only = voice_only
+            self.voice_failed = voice_failed
             self.actions = actions
         }
     }
@@ -175,6 +181,8 @@ enum V2 {
         /// instead of (or in addition to) a text reply. Optional — omit on
         /// non-voice sends.
         var respond_by_voice: Bool?
+        /// Voice-only mode: reply as a voice note, text held until audio ready.
+        var voice_only: Bool?
     }
 
     struct ContextRequest: Codable, Equatable {
