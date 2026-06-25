@@ -384,9 +384,9 @@ async function deliverMessage(
   // Voice flags for this session (read once; reused by the gate below). Stamping
   // voice_only on the iOS text envelope makes the client hide the text and show
   // a placeholder until the rendered audio attaches by reply_to_id.
-  const sessVoice = getDb()
-    .prepare('SELECT voice_intent, voice_only FROM sessions WHERE id = ?')
-    .get(session.id) as { voice_intent: number; voice_only: number } | undefined;
+  const sessVoice = getDb().prepare('SELECT voice_intent, voice_only FROM sessions WHERE id = ?').get(session.id) as
+    | { voice_intent: number; voice_only: number }
+    | undefined;
   const willHoldForVoice =
     msg.channel_type === 'ios-app-v2' &&
     isFinalUserReply &&
@@ -427,7 +427,8 @@ async function deliverMessage(
 
   // Voice note: when the session has voice_intent and this is the FINAL user-facing
   // text message of the turn, render it via the TTS sidecar and send as a voice note.
-  // Only fires for the Jarvis agent group (spec is Jarvis-only for now).
+  // The voice is picked per agent group by folder name (decideVoice); a group
+  // whose voice isn't registered in the sidecar yet renders null → skipped.
   // FIRE-AND-FORGET: a CPU render takes seconds-to-minutes, and this runs
   // inside the sequential `for (msg of undelivered) { await deliverMessage }`
   // loop — awaiting it here would stall delivery of every other message AND
