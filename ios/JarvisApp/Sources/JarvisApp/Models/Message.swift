@@ -81,6 +81,9 @@ struct ChatMessage: Identifiable {
     var imageSHA: String? = nil
     /// True when an agent edited this message in place (shows a "(ред.)" tag).
     var edited: Bool = false
+    /// True when this row is a voice-only reply: pending → placeholder, ready →
+    /// voice note with a collapsed transcript. Drives MessageRow's branch.
+    var voiceOnly: Bool = false
 
     enum Role { case user, assistant, system }
 

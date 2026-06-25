@@ -571,6 +571,7 @@ final class WebSocketClientV2 {
                 combined.deliveryStatus = mapDelivery(row.status)
                 combined.agentId = row.agentId
                 combined.edited = row.edited
+                combined.voiceOnly = row.voiceOnly
                 return [combined]
             }
 
@@ -614,6 +615,7 @@ final class WebSocketClientV2 {
         msg.deliveryStatus = mapDelivery(row.status)
         msg.agentId = row.agentId
         msg.edited = row.edited
+        msg.voiceOnly = row.voiceOnly
         return [msg]
     }
 
