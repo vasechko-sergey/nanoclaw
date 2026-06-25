@@ -30,6 +30,9 @@ export const InlineContext = z.object({
   timezone: z.string(),
   locality: z.string().optional(),
   respond_by_voice: z.boolean().optional(),
+  // Voice-only mode: deliver the reply as a voice note with the text held back
+  // (shown only after the audio is ready, transcript collapsed). Implies voice.
+  voice_only: z.boolean().optional(),
 });
 export type InlineContext = z.infer<typeof InlineContext>;
 
@@ -112,6 +115,13 @@ export const Envelopes = {
       // belongs to a previously-delivered text message with this id — the
       // client attaches the audio to that bubble instead of showing it alone.
       reply_to_id: z.string().min(1).optional(),
+      // Set on the TEXT reply when the session is voice-only: the client hides
+      // the text and shows a "записывает…" placeholder until the audio (a later
+      // message with this id as reply_to_id) attaches.
+      voice_only: z.boolean().optional(),
+      // Set on a signal message (with reply_to_id) when voice render failed:
+      // the client reveals the text it was hiding for that row.
+      voice_failed: z.boolean().optional(),
       actions: z.array(z.object({
         id: z.string().min(1),
         label: z.string().min(1),
