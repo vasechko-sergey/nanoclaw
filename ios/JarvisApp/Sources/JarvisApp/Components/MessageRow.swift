@@ -54,22 +54,33 @@ struct MessageRow: View {
                 avatarDot
                 VStack(alignment: .leading, spacing: 4) {
                     metaRow
-                    // Voice note (server-rendered) sits ABOVE the text.
-                    if let audio = message.attachedAudio {
+                    if message.voiceOnly && message.attachedAudio == nil {
+                        // Pending: render is in flight, hide text behind a placeholder.
+                        VoicePendingView()
+                    } else if message.voiceOnly, let audio = message.attachedAudio {
+                        // Ready: voice note + collapsed (tap-to-expand) transcript.
                         AudioNoteView(info: audio, messageId: message.id, player: audioPlayer)
-                    }
-                    if !(text.isEmpty && message.attachedAudio != nil) {
-                        Group {
-                            if isUser {
-                                Text(text).font(.system(size: 14))
-                            } else {
-                                MarkdownText(text, fontSize: 14)
-                            }
+                        if !text.isEmpty {
+                            CollapsibleTranscript(text: text, isUser: isUser)
                         }
-                        .foregroundStyle(isUser ? .white : Theme.assistantText)
-                        .lineSpacing(2)
-                        .contextMenu {
-                            contextMenuButtons(text)
+                    } else {
+                        // Normal: voice note (if any) above always-visible text.
+                        if let audio = message.attachedAudio {
+                            AudioNoteView(info: audio, messageId: message.id, player: audioPlayer)
+                        }
+                        if !(text.isEmpty && message.attachedAudio != nil) {
+                            Group {
+                                if isUser {
+                                    Text(text).font(.system(size: 14))
+                                } else {
+                                    MarkdownText(text, fontSize: 14)
+                                }
+                            }
+                            .foregroundStyle(isUser ? .white : Theme.assistantText)
+                            .lineSpacing(2)
+                            .contextMenu {
+                                contextMenuButtons(text)
+                            }
                         }
                     }
                 }
@@ -386,6 +397,63 @@ enum WaveformExtractor {
             return out
         } catch {
             return nil
+        }
+    }
+}
+
+/// Placeholder shown for a voice-only reply while the server renders the audio.
+/// The text is withheld until the voice note lands; this fills the wait.
+private struct VoicePendingView: View {
+    @State private var pulse = false
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mic.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Theme.accent)
+                .opacity(pulse ? 1.0 : 0.35)
+            Text("записывает голосовое…")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.assistantText.opacity(0.7))
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.accent.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
+        }
+        .accessibilityLabel("Записывается голосовое сообщение")
+    }
+}
+
+/// Voice-only transcript: collapsed behind a "Показать текст" control, expands
+/// in place. Mirrors Telegram hiding the transcription under the voice note.
+private struct CollapsibleTranscript: View {
+    let text: String
+    let isUser: Bool
+    @State private var expanded = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: expanded ? "chevron.up" : "text.bubble")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(expanded ? "Скрыть текст" : "Показать текст")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                Group {
+                    if isUser { Text(text).font(.system(size: 14)) }
+                    else { MarkdownText(text, fontSize: 14) }
+                }
+                .foregroundStyle(isUser ? .white : Theme.assistantText)
+                .lineSpacing(2)
+                .transition(.opacity)
+            }
         }
     }
 }
