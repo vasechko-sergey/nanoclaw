@@ -287,6 +287,19 @@ actor TransportV2 {
         }
         try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
 
+        // Voice-only render failed: reveal the text that was held behind the
+        // placeholder for that row. Carries reply_to_id + voice_failed, no audio.
+        if message.voice_failed == true, let target = message.reply_to_id {
+            _ = try? store.clearVoiceOnly(rowId: target)
+            try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
+            try await sendStatus(.delivered, ids: [envelope.id])
+            if let seq = envelope.seq {
+                let current = try store.cursor(.lastSeenInbound)
+                if seq > current { try store.setCursor(.lastSeenInbound, seq) }
+            }
+            return
+        }
+
         // Voice-note merge: a message that carries a voice-note attachment and
         // names the text message it replies to is attached onto that bubble
         // (one combined audio+text bubble) rather than inserted as its own row.
