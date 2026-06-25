@@ -88,19 +88,24 @@ def synth_to_opus(text: str, voice: str, max_chars: int, fmt: str = "opus") -> b
 # linear gain to hit exactly I=-16 LUFS / TP=-2 dBTP for every voice → even
 # perceived loudness. Falls back to single-pass if the measure step can't parse.
 def _loudnorm_filter(wav_path: str) -> str:
+    # Gentle 3:1 compressor first: the shouty voices (Payne, Jarvis) have high
+    # crest factor, so without it loudnorm backs off loudness to respect TP and
+    # they land ~1.5 LU quieter than the calm voices. Taming peaks lets every
+    # voice reach exactly I=-16 → spread drops from ~1.7 LU to ~0.8 LU.
+    comp = "acompressor=threshold=-18dB:ratio=3:attack=5:release=60:makeup=2"
     base = "loudnorm=I=-16:TP=-2:LRA=11"
     try:
         import json
         r = subprocess.run(
             ["ffmpeg", "-hide_banner", "-i", wav_path,
-             "-af", base + ":print_format=json", "-f", "null", "-"],
+             "-af", f"{comp},{base}:print_format=json", "-f", "null", "-"],
             capture_output=True, text=True, check=True,
         )
         blob = r.stderr[r.stderr.rindex("{"):r.stderr.rindex("}") + 1]
         m = json.loads(blob)
-        return (f"{base}:linear=true:measured_I={m['input_i']}:"
+        return (f"{comp},{base}:linear=true:measured_I={m['input_i']}:"
                 f"measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:"
                 f"measured_thresh={m['input_thresh']}:offset={m['target_offset']}")
     except Exception as e:
         log.warning("loudnorm measure failed, single-pass fallback: %s", e)
-        return "loudnorm=I=-16:TP=-2"
+        return f"{comp},loudnorm=I=-16:TP=-2"
