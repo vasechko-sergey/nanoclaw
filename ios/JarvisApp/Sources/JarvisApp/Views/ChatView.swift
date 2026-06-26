@@ -357,6 +357,10 @@ struct ChatView: View {
                         planUpdates: coordinator.workoutBus.events
                             .compactMap { if case .planReceived(let p) = $0 { return p } else { return nil } }
                             .eraseToAnyPublisher(),
+                        imageUpdates: coordinator.workoutBus.events
+                            .compactMap { if case .imageReceived(let s) = $0 { return s } else { return nil } }
+                            .eraseToAnyPublisher(),
+                        onAppearPrefetch: { coordinator.imageCache.prefetch(manifest: presentation.plan.imageManifest) },
                         onStart: { startRunning(with: $0) },
                         onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
                         onClose: { activeWorkout = nil }

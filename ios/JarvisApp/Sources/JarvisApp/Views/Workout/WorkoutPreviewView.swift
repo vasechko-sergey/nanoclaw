@@ -18,10 +18,18 @@ enum WorkoutPreviewUpdate {
 struct WorkoutPreviewView: View {
     @State private var plan: WorkoutPlan
     @State private var page: Int = 0
+    /// Bumped on every arrived image so the visible card re-resolves its URL —
+    /// a freshly-delivered gif then replaces the stale jpg in place.
+    @State private var imageRefresh = 0
 
     let imageResolver: (_ slug: String) -> URL?
     /// Stream of inbound plans (workoutBus `.planReceived`); used to refresh after a swap.
     let planUpdates: AnyPublisher<WorkoutPlan, Never>
+    /// Stream of arrived-image slugs (workoutBus `.imageReceived`) → forces a re-resolve.
+    let imageUpdates: AnyPublisher<String, Never>
+    /// Fired on appear so the host prefetches this plan's images. Without it the
+    /// preview never requests gifs and shows stale jpgs (only the runner pulled).
+    var onAppearPrefetch: () -> Void = {}
     /// Hands the CURRENT (possibly swapped) plan to the runner — not the original.
     let onStart: (WorkoutPlan) -> Void
     let onSwap: (_ exerciseSlug: String) -> Void
@@ -30,12 +38,16 @@ struct WorkoutPreviewView: View {
     init(plan: WorkoutPlan,
          imageResolver: @escaping (_ slug: String) -> URL?,
          planUpdates: AnyPublisher<WorkoutPlan, Never>,
+         imageUpdates: AnyPublisher<String, Never>,
+         onAppearPrefetch: @escaping () -> Void = {},
          onStart: @escaping (WorkoutPlan) -> Void,
          onSwap: @escaping (_ exerciseSlug: String) -> Void,
          onClose: @escaping () -> Void) {
         _plan = State(initialValue: plan)
         self.imageResolver = imageResolver
         self.planUpdates = planUpdates
+        self.imageUpdates = imageUpdates
+        self.onAppearPrefetch = onAppearPrefetch
         self.onStart = onStart
         self.onSwap = onSwap
         self.onClose = onClose
@@ -53,6 +65,7 @@ struct WorkoutPreviewView: View {
                             imageURL: imageResolver(exercise.exerciseSlug),
                             onSwap: { onSwap(exercise.exerciseSlug) }
                         )
+                        .id("\(exercise.exerciseSlug)-\(imageRefresh)")
                         .padding()
                     }
                     .tag(idx)
@@ -68,6 +81,8 @@ struct WorkoutPreviewView: View {
             plan = r.plan
             page = r.page
         }
+        .onReceive(imageUpdates) { _ in imageRefresh += 1 }
+        .onAppear { onAppearPrefetch() }
         .accessibilityIdentifier("workout-preview")
     }
 
