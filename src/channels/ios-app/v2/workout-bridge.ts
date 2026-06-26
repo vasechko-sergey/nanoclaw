@@ -2,8 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { AnyEnvelope } from '../../../../shared/ios-app-protocol/index.js';
 
 export interface WorkoutBridgeDeps {
-  /** Write a JSON-encoded system inbound row into the agent's session DB. */
-  writeInboundSystemMessage: (input: { session_id: string; text: string; tag: string }) => void;
+  /**
+   * Write a JSON-encoded system inbound row into the agent's session DB.
+   * `trigger` follows the messages_in convention: 1 = wake the agent, 0 =
+   * accumulate as silent context (rides along to the next waking turn).
+   */
+  writeInboundSystemMessage: (input: { session_id: string; text: string; tag: string; trigger: 0 | 1 }) => void;
   /** Reverse: session → device that should receive an outbound envelope. */
   resolvePlatformForSession: (session_id: string) => string | null;
   /** Hand the envelope to the WS handler (it allocates seq + flushes if connected). */
@@ -22,6 +26,16 @@ const IOS_TO_AGENT_TYPES: ReadonlySet<string> = new Set([
   'image_request',
   'intro_request',
 ]);
+
+/**
+ * Per-set telemetry the user generates rapidly during a workout. These
+ * accumulate as silent context (trigger=0, don't wake the agent per-set) and
+ * ride along to the agent on the next waking event — in practice the
+ * `workout_complete`, whose `full_session_json` is the authoritative record.
+ * This keeps Payne from spinning up one agent turn per logged set. Every other
+ * inbound type (workout_complete/abort, image_request, swap, intro, …) wakes.
+ */
+const ACCUMULATE_EVENTS: ReadonlySet<string> = new Set(['set_log', 'exercise_done']);
 
 /** Workout envelope types routed Payne → iOS (outbound). */
 const AGENT_TO_IOS_TYPES: ReadonlySet<string> = new Set([
@@ -58,7 +72,12 @@ export class WorkoutBridge {
       event: env.type,
       payload: (env as { payload?: unknown }).payload ?? {},
     });
-    this.deps.writeInboundSystemMessage({ session_id, text: body, tag: 'workout' });
+    this.deps.writeInboundSystemMessage({
+      session_id,
+      text: body,
+      tag: 'workout',
+      trigger: ACCUMULATE_EVENTS.has(env.type) ? 0 : 1,
+    });
   }
 
   /**

@@ -249,3 +249,48 @@ describe('stripInternalTags', () => {
     );
   });
 });
+
+describe('workout_event system rows', () => {
+  const base = {
+    id: 'wk1',
+    seq: 7,
+    kind: 'system',
+    timestamp: '2026-06-26T03:34:00Z',
+    status: 'pending',
+    process_after: null,
+    recurrence: null,
+    tries: 0,
+    trigger: 1,
+    platform_id: null,
+    channel_type: null,
+    thread_id: null,
+    source_session_id: null,
+  };
+
+  it('renders a typed <workout_event> tag carrying event + payload, not <system_response>', () => {
+    const row = {
+      ...base,
+      content: JSON.stringify({
+        subtype: 'workout_event',
+        event: 'workout_complete',
+        payload: { workout_id: '2026-06-26', full_session_json: { exercises: [] } },
+      }),
+    };
+    const result = formatMessages([row as Parameters<typeof formatMessages>[0][number]]);
+    expect(result).toContain('<workout_event');
+    expect(result).toContain('event="workout_complete"');
+    expect(result).toContain('"workout_id":"2026-06-26"');
+    expect(result).not.toContain('<system_response');
+  });
+
+  it('still renders non-workout system rows as <system_response>', () => {
+    const row = {
+      ...base,
+      id: 'sys1',
+      content: JSON.stringify({ action: 'schedule', status: 'ok', result: null }),
+    };
+    const result = formatMessages([row as Parameters<typeof formatMessages>[0][number]]);
+    expect(result).toContain('<system_response');
+    expect(result).not.toContain('<workout_event');
+  });
+});

@@ -245,7 +245,7 @@ function createV2Adapter(): ChannelAdapter | null {
           payload: parsed.payload,
           tag: input.tag,
         }),
-        trigger: 1,
+        trigger: input.trigger,
       });
     },
     resolvePlatformForSession,

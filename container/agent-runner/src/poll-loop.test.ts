@@ -4,7 +4,7 @@ import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from '
 import { getPendingMessages, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
 import { formatMessages, extractRouting } from './formatter.js';
-import { dispatchSystemReplies, partitionMessagesBySource, isAuthError } from './poll-loop.js';
+import { dispatchSystemReplies, partitionMessagesBySource, isAuthError, isWorkoutEventRow } from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
 
@@ -495,6 +495,56 @@ describe('dispatchSystemReplies (ios-app context_response)', () => {
   // Reference unused imports so the import survives tree-shaking checks.
   it('onContextResponse export is callable', () => {
     expect(typeof onContextResponse).toBe('function');
+  });
+});
+
+describe('isWorkoutEventRow (workout events reach the agent)', () => {
+  const base = {
+    id: 'x',
+    seq: 1,
+    timestamp: '2026-06-26T03:34:00Z',
+    status: 'pending',
+    process_after: null,
+    recurrence: null,
+    tries: 0,
+    trigger: 1,
+    platform_id: null,
+    channel_type: null,
+    thread_id: null,
+    source_session_id: null,
+  };
+
+  it('true for a workout_event system row', () => {
+    const row = { ...base, kind: 'system', content: JSON.stringify({ subtype: 'workout_event', event: 'workout_complete', payload: {} }) };
+    expect(isWorkoutEventRow(row as MessageInRow)).toBe(true);
+  });
+
+  it('false for a context_response system row', () => {
+    const row = { ...base, kind: 'system', content: JSON.stringify({ subtype: 'context_response', request_id: 'r' }) };
+    expect(isWorkoutEventRow(row as MessageInRow)).toBe(false);
+  });
+
+  it('false for a chat row', () => {
+    const row = { ...base, kind: 'chat', content: JSON.stringify({ text: 'hi' }) };
+    expect(isWorkoutEventRow(row as MessageInRow)).toBe(false);
+  });
+
+  it('false for malformed system content', () => {
+    const row = { ...base, kind: 'system', content: 'not json' };
+    expect(isWorkoutEventRow(row as MessageInRow)).toBe(false);
+  });
+
+  it('the poll-loop system filter keeps workout_event but drops context_response', () => {
+    const wk = { ...base, id: 'wk1', kind: 'system', content: JSON.stringify({ subtype: 'workout_event', event: 'workout_complete', payload: { workout_id: '2026-06-26' } }) };
+    const ctx = { ...base, id: 'ctx1', kind: 'system', content: JSON.stringify({ subtype: 'context_response', request_id: 'never', data: {} }) };
+    const chat = { ...base, id: 'c1', kind: 'chat', content: JSON.stringify({ text: 'hi' }) };
+    const survivors = dispatchSystemReplies([wk, ctx, chat] as MessageInRow[]);
+    // Mirror the exact filter expression the poll loop uses post-dispatch.
+    const messages = survivors.filter((m) => m.kind !== 'system' || isWorkoutEventRow(m));
+    const ids = messages.map((m) => m.id);
+    expect(ids).toContain('wk1');
+    expect(ids).toContain('c1');
+    expect(ids).not.toContain('ctx1');
   });
 });
 

@@ -63,6 +63,24 @@ function generateId(): string {
 }
 
 /**
+ * True for the iOS workout-event system rows the host's WorkoutBridge writes
+ * (`subtype: 'workout_event'` — set_log / exercise_done / workout_complete /
+ * workout_abort / image_request / exercise_swap_request / … ). Unlike MCP-reply
+ * system rows (`context_response`), these are AGENT-FACING: Payne's workout-mode
+ * skill parses `{subtype, event, payload}` and acts on them. They must therefore
+ * survive the `kind !== 'system'` filter and reach the turn. Non-JSON or
+ * non-workout content is treated as not-a-workout-event.
+ */
+export function isWorkoutEventRow(m: MessageInRow): boolean {
+  if (m.kind !== 'system') return false;
+  try {
+    return (JSON.parse(m.content) as { subtype?: string }).subtype === 'workout_event';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Drain `system` rows that carry MCP-tool replies (currently:
  * ios-app `context_response`) into their awaiting Promises, mark them
  * completed, and return the rows that did NOT match — those continue to
@@ -169,8 +187,12 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // (currently: ios-app context_response). They MUST NOT join the agent's
     // turn — they resolve the pending Promise the tool is awaiting. Mark
     // them completed in the same tick so the host sweep doesn't see stale
-    // claims. Returns the rows that survived dispatch.
-    const messages = dispatchSystemReplies(allPending).filter((m) => m.kind !== 'system');
+    // claims. Returns the rows that survived dispatch. Workout-event system
+    // rows are agent-facing (Payne's workout-mode skill consumes them), so
+    // they ride through the `kind !== 'system'` filter alongside chat.
+    const messages = dispatchSystemReplies(allPending).filter(
+      (m) => m.kind !== 'system' || isWorkoutEventRow(m),
+    );
     isFirstPoll = false;
     pollCount++;
 
@@ -551,7 +573,11 @@ async function processQuery(
         // Same as the outer loop: drain system rows that resolve in-flight
         // MCP tool promises (ios-app context_response) before filtering, so a
         // device reply arriving mid-turn unblocks the awaiting tool.
-        const newMessages = dispatchSystemReplies(pending).filter((m) => m.kind !== 'system');
+        // Workout-event system rows are agent-facing — keep them (a set logged
+        // or a workout finished mid-turn should reach Payne this turn).
+        const newMessages = dispatchSystemReplies(pending).filter(
+          (m) => m.kind !== 'system' || isWorkoutEventRow(m),
+        );
         if (newMessages.length === 0) return;
 
         const newIds = newMessages.map((m) => m.id);

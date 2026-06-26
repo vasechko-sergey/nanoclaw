@@ -272,6 +272,20 @@ function formatWebhookMessage(msg: MessageInRow): string {
 function formatSystemMessage(msg: MessageInRow): string {
   const content = parseContent(msg.content);
   const from = originAttr(msg);
+  // iOS WorkoutView events (set_log / workout_complete / image_request / swap /
+  // …) arrive as `subtype: 'workout_event'` system rows. Render the raw
+  // envelope so Payne's workout-mode skill can parse {subtype, event, payload}
+  // and branch on `event` — the generic <system_response> shape below drops
+  // both the event name and the payload.
+  if (content.subtype === 'workout_event') {
+    const time = formatLocalTime(msg.timestamp, TIMEZONE);
+    const envelope = JSON.stringify({
+      subtype: 'workout_event',
+      event: content.event,
+      payload: content.payload ?? {},
+    });
+    return `<workout_event${from} event="${escapeXml(String(content.event || 'unknown'))}" time="${escapeXml(time)}">${envelope}</workout_event>`;
+  }
   return `<system_response${from} action="${escapeXml(content.action || 'unknown')}" status="${escapeXml(content.status || 'unknown')}">${JSON.stringify(content.result || null)}</system_response>`;
 }
 

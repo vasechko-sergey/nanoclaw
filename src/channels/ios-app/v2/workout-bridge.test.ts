@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { WorkoutBridge } from './workout-bridge.js';
 
 describe('WorkoutBridge', () => {
-  let writes: Array<{ session_id: string; text: string; tag: string }>;
+  let writes: Array<{ session_id: string; text: string; tag: string; trigger: number }>;
   let sends: Array<{ pid: string; env: unknown }>;
   let bridge: WorkoutBridge;
 
@@ -48,6 +48,37 @@ describe('WorkoutBridge', () => {
     const body = JSON.parse(writes[0].text);
     expect(body.event).toBe('set_log');
     expect(body.payload.reps_in_reserve).toBe(3);
+  });
+
+  it('stamps set_log as accumulate context (trigger 0 — does not wake per-set)', () => {
+    bridge.handleInbound('sess-payne', {
+      type: 'set_log',
+      payload: { workout_id: 'w1', set_idx: 0 },
+    } as any);
+    expect(writes[0].trigger).toBe(0);
+  });
+
+  it('stamps exercise_done as accumulate context (trigger 0)', () => {
+    bridge.handleInbound('sess-payne', {
+      type: 'exercise_done',
+      payload: { workout_id: 'w1', exercise_slug: 'x' },
+    } as any);
+    expect(writes[0].trigger).toBe(0);
+  });
+
+  it('stamps workout_complete as a wake (trigger 1)', () => {
+    bridge.handleInbound('sess-payne', {
+      type: 'workout_complete',
+      payload: { workout_id: 'w1', full_session_json: {} },
+    } as any);
+    expect(writes[0].trigger).toBe(1);
+  });
+
+  it('stamps image_request and swap as wakes (trigger 1)', () => {
+    bridge.handleInbound('sess-payne', { type: 'image_request', payload: { slug: 'x' } } as any);
+    bridge.handleInbound('sess-payne', { type: 'exercise_swap_request', payload: { workout_id: 'w1' } } as any);
+    expect(writes[0].trigger).toBe(1);
+    expect(writes[1].trigger).toBe(1);
   });
 
   it('ignores non-bridge envelope types on inbound', () => {
