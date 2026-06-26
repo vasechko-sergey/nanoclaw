@@ -239,6 +239,7 @@ describe('buildMounts owner isolation', () => {
     fs.rmSync(path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER), { recursive: true, force: true });
     fs.rmSync(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, ISO_FOLDER), { recursive: true, force: true });
     fs.rmSync(path.join(DATA_DIR, 'user-memory', 'isomnt', 'global'), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'isomnt', 'shared'), { recursive: true, force: true });
     fs.rmSync(path.join(DATA_DIR, 'v2-sessions', ISO_AG), { recursive: true, force: true });
   });
 
@@ -296,9 +297,19 @@ describe('buildMounts owner isolation', () => {
     expect(fs.readFileSync(path.join(mem, 'scripts', '.env'), 'utf8')).toBe('HER_SECRET=1');
   });
 
+  it('mounts the shared wiki RW for every agent, under the owner tree', () => {
+    const mounts = mountsFor('isomnt');
+    const shared = mounts.find((m) => m.containerPath === '/workspace/shared');
+    expect(shared?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', 'isomnt', 'shared'));
+    expect(shared?.readonly).toBe(false);
+  });
+
   it('falls back to OWNER_PERSON_KEY when owner_key is null', () => {
     const mounts = mountsFor(null);
     const agentMount = mounts.find((m) => m.containerPath === '/workspace/agent');
     expect(agentMount?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, ISO_FOLDER));
+    // The shared mount resolves through the same ownerKey fallback.
+    const sharedMount = mounts.find((m) => m.containerPath === '/workspace/shared');
+    expect(sharedMount?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, 'shared'));
   });
 });

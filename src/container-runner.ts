@@ -52,7 +52,7 @@ import {
   writeSessionRouting,
 } from './session-manager.js';
 import type { AgentGroup, Session } from './types.js';
-import { userMemoryRoot, userGlobalRoot, initUserMemory } from './user-memory.js';
+import { userMemoryRoot, userGlobalRoot, userSharedRoot, initUserMemory } from './user-memory.js';
 
 /** Active containers tracked by session ID. */
 const activeContainers = new Map<string, { process: ChildProcess; containerName: string }>();
@@ -488,6 +488,12 @@ export function buildMounts(
   const globalDir = userGlobalRoot(ownerKey);
   const writable = isGlobalMemoryWriter(globalDir, agentGroup.folder);
   mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: !writable });
+
+  // Per-person SHARED wiki at /workspace/shared. RW for ALL agents (no .writer
+  // gate): domain blocks are soft-owned one-per-agent and the only multi-writer
+  // file (log.md) is append-only. Per-person isolation preserved via ownerKey,
+  // same as /workspace/global above.
+  mounts.push({ hostPath: userSharedRoot(ownerKey), containerPath: '/workspace/shared', readonly: false });
 
   // Per-person Claude home (state, settings, skill symlinks). Was per-agent-
   // group .claude-shared — that shared Claude history/todos across people.
