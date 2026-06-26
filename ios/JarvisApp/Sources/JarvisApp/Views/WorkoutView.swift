@@ -82,39 +82,40 @@ struct WorkoutView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 pinnedHeader
-                ScrollView {
-                    VStack(spacing: 0) {
-                        let preview = coordinator.plan.exercises[previewIdx]
-                        ExerciseBannerView(
-                            exercise: preview,
-                            imageURL: imageResolver(preview.exerciseSlug),
-                            stateTag: stateTag(for: previewIdx),
-                            canPrev: previewIdx > 0,
-                            canNext: previewIdx < coordinator.totalExercises - 1,
-                            onPreview: movePreview
-                        )
-                        .frame(height: geo.size.height * 0.66)
 
-                        RecommendationPanel(exercise: preview)
+                let preview = coordinator.plan.exercises[previewIdx]
+                ExerciseBannerView(
+                    exercise: preview,
+                    imageURL: imageResolver(preview.exerciseSlug),
+                    stateTag: stateTag(for: previewIdx),
+                    canPrev: previewIdx > 0,
+                    canNext: previewIdx < coordinator.totalExercises - 1,
+                    onPreview: movePreview
+                )
+                .frame(maxWidth: .infinity, minHeight: 120, maxHeight: geo.size.width * 9.0 / 16.0)
+                .clipped()
 
-                        if previewIdx == coordinator.currentExerciseIdx {
-                            VStack(spacing: 14) {
-                                if coordinator.currentExercise.isDuration {
-                                    DurationCard(exercise: coordinator.currentExercise, onDone: advance)
-                                } else {
-                                    LoggedSetChips(
-                                        logged: coordinator.loggedForCurrentExercise,
-                                        currentSetIdx: coordinator.currentSetIdx,
-                                        targetSets: coordinator.currentExercise.targetSets)
-                                    FocusSetCard(coordinator: coordinator, restTimer: restTimer)
-                                }
-                            }
-                            .padding(.horizontal, 16).padding(.top, 14)
-                        } else {
-                            startExerciseButton
+                RecommendationPanel(exercise: preview)
+
+                if previewIdx == coordinator.currentExerciseIdx {
+                    if coordinator.currentExercise.isDuration {
+                        DurationCard(exercise: coordinator.currentExercise, onDone: advance)
+                            .padding(.horizontal, 16).padding(.top, 12)
+                    } else {
+                        VStack(spacing: 10) {
+                            LoggedSetChips(
+                                logged: coordinator.loggedForCurrentExercise,
+                                currentSetIdx: coordinator.currentSetIdx,
+                                targetSets: coordinator.currentExercise.targetSets)
+                            FocusSetCard(coordinator: coordinator, restTimer: restTimer)
                         }
+                        .padding(.horizontal, 16).padding(.top, 10)
                     }
+                } else {
+                    startExerciseButton
                 }
+
+                Spacer(minLength: 0)
                 toolbar
             }
         }
