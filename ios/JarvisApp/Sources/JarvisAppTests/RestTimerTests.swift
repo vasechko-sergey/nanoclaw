@@ -54,6 +54,24 @@ final class RestTimerTests: XCTestCase {
     }
 
     @MainActor
+    func test_remaining_derivesFromEndDate_acrossGap() {
+        let timer = RestTimer()
+        var fake = Date(timeIntervalSince1970: 1000)
+        timer.now = { fake }
+        timer.start(planned: 60, lastRepsInReserve: 2)        // ends at 1060
+        XCTAssertEqual(timer.remainingSec, 60)
+
+        fake = Date(timeIntervalSince1970: 1045)              // simulate 45s screen-off gap
+        timer.refresh()
+        XCTAssertEqual(timer.remainingSec, 15)                // not frozen at 60
+
+        fake = Date(timeIntervalSince1970: 1100)              // past the end
+        timer.refresh()
+        XCTAssertEqual(timer.remainingSec, 0)
+        XCTAssertFalse(timer.running)
+    }
+
+    @MainActor
     func test_skipResetsTotal() {
         let timer = RestTimer()
         timer.start(planned: 90, lastRepsInReserve: 2)

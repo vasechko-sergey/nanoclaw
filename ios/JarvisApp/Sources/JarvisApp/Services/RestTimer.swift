@@ -19,6 +19,11 @@ final class RestTimer: ObservableObject {
     private let notificationId = "RestTimer.done"
     private let center: UNUserNotificationCenter
 
+    /// Injectable clock so the countdown derives from wall time (survives
+    /// screen-off) and is unit-testable.
+    var now: () -> Date = { Date() }
+    private var endDate: Date?
+
     init(center: UNUserNotificationCenter = .current()) {
         self.center = center
     }
@@ -28,20 +33,28 @@ final class RestTimer: ObservableObject {
     func start(planned: Int, lastRepsInReserve: Int) {
         stop()
         let effective = Self.effectiveDuration(planned: planned, rir: lastRepsInReserve)
-        remainingSec = effective
+        endDate = now().addingTimeInterval(TimeInterval(effective))
         totalSec = effective
+        remainingSec = effective
         running = true
         cancellable = Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
-            .sink { [weak self] _ in
-                guard let self else { return }
-                if self.remainingSec > 0 {
-                    self.remainingSec -= 1
-                } else {
-                    self.stop()
-                }
-            }
+            .sink { [weak self] _ in self?.refresh() }
         scheduleLocalNotification(after: TimeInterval(effective))
+    }
+
+    /// Recompute remaining from the wall clock. Stops at zero. Safe to call any
+    /// time (e.g. when the app returns to foreground after the screen slept).
+    func refresh() {
+        guard running, let end = endDate else { return }
+        let rem = Int(ceil(end.timeIntervalSince(now())))
+        if rem <= 0 {
+            remainingSec = 0
+            stop()
+            cancelLocalNotification()
+        } else {
+            remainingSec = rem
+        }
     }
 
     /// User tapped "пропустить" or started next set early.
@@ -55,6 +68,7 @@ final class RestTimer: ObservableObject {
         cancellable = nil
         running = false
         totalSec = 0
+        endDate = nil
     }
 
     // MARK: - Adaptation rule

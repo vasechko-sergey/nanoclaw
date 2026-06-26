@@ -6,6 +6,7 @@ import SwiftUI
 struct WorkoutView: View {
     @StateObject var coordinator: WorkoutCoordinator
     @StateObject var restTimer = RestTimer()
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Resolve a slug to a local cached image URL (shared with inbound prefetch).
     let imageResolver: (_ slug: String) -> URL?
@@ -40,7 +41,7 @@ struct WorkoutView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(2)
             }
-            RestTimerOverlay(timer: restTimer, nextHint: "подход \(coordinator.currentSetIdx + 1)")
+            RestTimerOverlay(timer: restTimer, nextHint: restHint)
                 .zIndex(3)
         }
         .preferredColorScheme(.dark)
@@ -70,6 +71,9 @@ struct WorkoutView: View {
         }
         .onAppear { previewIdx = coordinator.currentExerciseIdx; onAppearPrefetch() }
         .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { restTimer.refresh() }
+        }
         .accessibilityIdentifier("workout-view")
     }
 
@@ -198,6 +202,18 @@ struct WorkoutView: View {
                 targetSets: coordinator.currentExercise.targetSets) ?? ""
         }
         return coordinator.logged[idx].sets.isEmpty ? "ещё не начато" : "пройдено"
+    }
+
+    /// Rest-overlay hint: the next exercise once the active one's sets are done,
+    /// else the next set of this exercise.
+    private var restHint: String {
+        let next = coordinator.currentExerciseIdx + 1 < coordinator.totalExercises
+            ? coordinator.plan.exercises[coordinator.currentExerciseIdx + 1].displayName
+            : nil
+        return WorkoutRunnerLogic.restHint(
+            setsDone: coordinator.loggedForCurrentExercise.count,
+            targetSets: coordinator.currentExercise.targetSets,
+            nextExerciseName: next)
     }
 
     /// "Дальше →": advance to the next exercise, or open the finish sheet if last.
