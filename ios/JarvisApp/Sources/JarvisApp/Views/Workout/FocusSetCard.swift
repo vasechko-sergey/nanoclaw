@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Big-control set logger for the runner: three aligned stepper rows
-/// (Повторы / Вес / Запас) + the primary "Записать подход" button. Owns the
-/// editable set state + pre-fill, and logs through the coordinator. Migrated
-/// from the former `ActiveSetRowView` with the same wiring.
+/// Big-control set logger for the runner: reps stepper + weight wheel + запас
+/// buttons (0/1/2/4) + the primary "Записать подход" button. Owns the editable
+/// set state, seeds defaults from Payne's plan (weight_kg_target / target_reps /
+/// reps_in_reserve), and logs through the coordinator.
 struct FocusSetCard: View {
     @ObservedObject var coordinator: WorkoutCoordinator
     @ObservedObject var restTimer: RestTimer
@@ -12,6 +12,10 @@ struct FocusSetCard: View {
     @State private var weight: Double = 20
     @State private var rir = 2
 
+    /// Dark teal used for text sitting on the accent fill.
+    private let onAccent = Color(red: 0.02, green: 0.16, blue: 0.17)
+    private let copper = Color(red: 0.78, green: 0.57, blue: 0.35)
+
     var body: some View {
         VStack(spacing: 12) {
             VStack(spacing: 0) {
@@ -19,15 +23,12 @@ struct FocusSetCard: View {
                            onMinus: { reps = max(0, reps - 1) },
                            onPlus: { reps = min(30, reps + 1) })
                 Divider().overlay(Color.white.opacity(0.06))
-                stepperRow(label: "Вес, кг", value: WorkoutSetFormat.weight(weight),
-                           onMinus: { weight = max(0, weight - 0.5) },
-                           onPlus: { weight = min(500, weight + 0.5) })
+                weightRow
                 Divider().overlay(Color.white.opacity(0.06))
-                stepperRow(label: "Запас", value: "\(rir)",
-                           onMinus: { rir = max(0, rir - 1) },
-                           onPlus: { rir = min(10, rir + 1) })
+                rirRow
             }
             .padding(.horizontal, 14)
+            .padding(.vertical, 4)
             .background(RoundedRectangle(cornerRadius: 16).fill(Theme.surface))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
 
@@ -47,6 +48,47 @@ struct FocusSetCard: View {
         .onChange(of: coordinator.currentExerciseIdx) { _, _ in prefill() }
     }
 
+    private var weightRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("Вес, кг").foregroundStyle(.white.opacity(0.65))
+                Spacer()
+                if let t = coordinator.currentExercise.weightKgTarget {
+                    Text("Пейн: \(WorkoutSetFormat.weight(t))").font(.caption).foregroundStyle(copper)
+                }
+            }
+            Picker("Вес", selection: $weight) {
+                ForEach(WorkoutRunnerLogic.weightOptions, id: \.self) { w in
+                    Text(WorkoutSetFormat.weight(w)).tag(w)
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(height: 110)
+            .clipped()
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var rirRow: some View {
+        HStack {
+            Text("Запас").foregroundStyle(.white.opacity(0.65))
+            Spacer()
+            HStack(spacing: 8) {
+                ForEach(WorkoutRunnerLogic.rirButtons, id: \.self) { v in
+                    Button { Theme.hapticSend(); rir = v } label: {
+                        Text("\(v)")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 40, height: 36)
+                            .foregroundStyle(rir == v ? onAccent : .white.opacity(0.6))
+                            .background(RoundedRectangle(cornerRadius: 10).fill(rir == v ? Theme.accent : Color.white.opacity(0.05)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.vertical, 11)
+    }
+
     private func logCurrent() {
         Theme.hapticSend()
         coordinator.logSet(reps: reps, weight: weight, repsInReserve: rir, ts: Date())
@@ -56,15 +98,16 @@ struct FocusSetCard: View {
     private func prefill() {
         let prev = coordinator.loggedForCurrentExercise.last
         reps = prev?.reps ?? WorkoutSetFormat.midReps(targetReps: coordinator.currentExercise.targetReps)
-        weight = prev?.weight ?? weight
-        rir = coordinator.currentExercise.targetRir
+        weight = WorkoutRunnerLogic.defaultWeight(
+            target: coordinator.currentExercise.weightKgTarget, lastLogged: prev?.weight)
+        rir = WorkoutRunnerLogic.snapRir(coordinator.currentExercise.targetRir)
     }
 
     private func prefillKeepWeight() {
         let prev = coordinator.loggedForCurrentExercise.last
         reps = prev?.reps ?? reps
-        weight = prev?.weight ?? weight
-        rir = coordinator.currentExercise.targetRir
+        if let w = prev?.weight { weight = w }
+        rir = WorkoutRunnerLogic.snapRir(coordinator.currentExercise.targetRir)
     }
 
     @ViewBuilder
