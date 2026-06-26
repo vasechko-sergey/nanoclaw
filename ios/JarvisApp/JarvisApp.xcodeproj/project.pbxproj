@@ -80,6 +80,7 @@
 		7538B26F3F54F0A20083FC22 /* ExerciseBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A07127DD756653FDA997A10 /* ExerciseBannerView.swift */; };
 		776CC332C08FABE24DB90627 /* AgentIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7602CA89C5703F581DB155 /* AgentIdentityTests.swift */; };
 		79863C9C38EE621B71898E1D /* VoiceOnlyStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B15C373E9A1A762EDBE060A /* VoiceOnlyStoreTests.swift */; };
+		7C6244BC22EF9490B6F5527A /* WorkoutRunnerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAAE91150FB182B64898418C /* WorkoutRunnerLogic.swift */; };
 		7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72069FC546766200DF7310C7 /* StateBoardViewTests.swift */; };
 		7D71BB9752F92386B2FE07AA /* ActiveAgentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C18FEBC87883D1730806373 /* ActiveAgentState.swift */; };
 		7DC25537E427E9625F7151DA /* VoiceLoopController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4800B2F3554B52EE041BEAD /* VoiceLoopController.swift */; };
@@ -146,6 +147,7 @@
 		E653E1C200C705930FF7958A /* OrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */; };
 		E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */; };
 		E7164107E2BB7BC0D8A356CB /* WorkoutPlanDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87683378CBFC1F9C7E4CEBC6 /* WorkoutPlanDecodeTests.swift */; };
+		E76647B937E3C7A455964FC8 /* WorkoutRunnerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 356D5EEBE95E4BA3082109E3 /* WorkoutRunnerLogicTests.swift */; };
 		E772C83F0C3EC1AFB1D8C7A7 /* FocusSetCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0C8F23441F1DD108E2C0EE /* FocusSetCard.swift */; };
 		EA5F7794D8CE0B26CC3A3D66 /* StateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF942308460AF6C2A8AE638E /* StateService.swift */; };
 		EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 407AF8586506D0610BCD4DC7 /* Workout.swift */; };
@@ -213,6 +215,7 @@
 		30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTimelineTests.swift; sourceTree = "<group>"; };
 		32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerTests.swift; sourceTree = "<group>"; };
 		3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilder.swift; sourceTree = "<group>"; };
+		356D5EEBE95E4BA3082109E3 /* WorkoutRunnerLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutRunnerLogicTests.swift; sourceTree = "<group>"; };
 		3784B2D589C11B07F162E081 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		38A007C4C73B5CD2D3AC048B /* ChatListItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListItem.swift; sourceTree = "<group>"; };
 		3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundDispatcherV2Tests.swift; sourceTree = "<group>"; };
@@ -332,6 +335,7 @@
 		F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextCoordinator.swift; sourceTree = "<group>"; };
 		F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HrSpikeDetectorTests.swift; sourceTree = "<group>"; };
 		F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthHistoryTests.swift; sourceTree = "<group>"; };
+		FAAE91150FB182B64898418C /* WorkoutRunnerLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutRunnerLogic.swift; sourceTree = "<group>"; };
 		FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinator.swift; sourceTree = "<group>"; };
 		FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreetingBank.swift; sourceTree = "<group>"; };
 		FC430323408B66D7F47AA5B8 /* ChatImageStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageStoreTests.swift; sourceTree = "<group>"; };
@@ -468,6 +472,7 @@
 				9825F81040F6DD9FE0033F85 /* StoredAction.swift */,
 				4D4FF344A7F45A86D8241127 /* StoredAttachment.swift */,
 				407AF8586506D0610BCD4DC7 /* Workout.swift */,
+				FAAE91150FB182B64898418C /* WorkoutRunnerLogic.swift */,
 				19584709A9F814A108D69A97 /* WorkoutSetFormat.swift */,
 			);
 			path = Models;
@@ -522,6 +527,7 @@
 				87683378CBFC1F9C7E4CEBC6 /* WorkoutPlanDecodeTests.swift */,
 				70CB3BB03A2BE8986BF2ECD4 /* WorkoutPlanRealEnvelopeTests.swift */,
 				30BC68D46F2D2CB7210A1C1D /* WorkoutPreviewUpdateTests.swift */,
+				356D5EEBE95E4BA3082109E3 /* WorkoutRunnerLogicTests.swift */,
 				A91EE1529D439338A641F961 /* E2E */,
 			);
 			name = JarvisAppTests;
@@ -888,6 +894,7 @@
 				63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */,
 				001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */,
 				3AB8641347ABF4C946F55CD5 /* WorkoutPreviewView.swift in Sources */,
+				7C6244BC22EF9490B6F5527A /* WorkoutRunnerLogic.swift in Sources */,
 				B440ABE6DCF344D540E5C3F0 /* WorkoutSetFormat.swift in Sources */,
 				81782C95746BFB6B3D396FF9 /* WorkoutView.swift in Sources */,
 			);
@@ -945,6 +952,7 @@
 				E7164107E2BB7BC0D8A356CB /* WorkoutPlanDecodeTests.swift in Sources */,
 				959453A92AA1D6910B038CC4 /* WorkoutPlanRealEnvelopeTests.swift in Sources */,
 				0F7D198D445B06AD693036EF /* WorkoutPreviewUpdateTests.swift in Sources */,
+				E76647B937E3C7A455964FC8 /* WorkoutRunnerLogicTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
