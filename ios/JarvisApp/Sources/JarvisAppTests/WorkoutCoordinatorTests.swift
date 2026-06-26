@@ -81,6 +81,29 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(try queue.pending().count, 0)
     }
 
+    func test_activate_switchesActiveAndResumesSetCount() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 3, setsPerExercise: 4), queue: queue)
+        // Log one set on exercise 0, then jump to exercise 2.
+        coord.logSet(reps: 8, weight: 40, repsInReserve: 2)
+        coord.activate(idx: 2)
+        XCTAssertEqual(coord.currentExerciseIdx, 2)
+        XCTAssertEqual(coord.currentSetIdx, 0)            // exercise 2 has no sets yet
+        coord.logSet(reps: 10, weight: 30, repsInReserve: 1)
+        // Jump back to exercise 0 — set count resumes from what was logged there.
+        coord.activate(idx: 0)
+        XCTAssertEqual(coord.currentExerciseIdx, 0)
+        XCTAssertEqual(coord.currentSetIdx, 1)
+        XCTAssertEqual(coord.loggedForCurrentExercise.count, 1)
+    }
+
+    func test_activate_outOfRange_isNoOp() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        coord.activate(idx: 9)
+        XCTAssertEqual(coord.currentExerciseIdx, 0)
+    }
+
     func test_abort_marksFinishedWithoutSession() throws {
         let queue = try makeQueue()
         let coord = WorkoutCoordinator(plan: makePlan(), queue: queue)

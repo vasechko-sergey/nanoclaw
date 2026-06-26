@@ -83,6 +83,14 @@ final class WorkoutCoordinator: ObservableObject {
         }
     }
 
+    /// Switch the active exercise (free order — e.g. machine busy). Resumes the
+    /// target exercise's set count so logging continues where it left off.
+    func activate(idx: Int) {
+        guard !isFinished, plan.exercises.indices.contains(idx) else { return }
+        currentExerciseIdx = idx
+        currentSetIdx = logged[idx].sets.count
+    }
+
     /// Produce the final WorkoutSession payload for `workout_complete`.
     func complete(perceivedOverallRir: Int, healthSignalAtStart: String? = nil) -> WorkoutSession {
         isFinished = true
