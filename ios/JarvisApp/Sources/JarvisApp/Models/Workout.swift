@@ -19,6 +19,9 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
     var nameRu: String?
     /// Some exercises are timed (cardio/warmup) rather than set×rep — seconds.
     var durationSec: Int?
+    /// Payne's recommended working weight (kg) for this exercise. Optional —
+    /// warmups omit it. Drives the weight-wheel default + the recs panel.
+    var weightKgTarget: Double?
 
     var id: String { exerciseSlug }
 
@@ -33,7 +36,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         return pretty.prefix(1).uppercased() + pretty.dropFirst()
     }
 
-    init(exerciseSlug: String, targetSets: Int, targetReps: String, targetRir: Int, restSec: Int, notes: String? = nil, nameRu: String? = nil, durationSec: Int? = nil) {
+    init(exerciseSlug: String, targetSets: Int, targetReps: String, targetRir: Int, restSec: Int, notes: String? = nil, nameRu: String? = nil, durationSec: Int? = nil, weightKgTarget: Double? = nil) {
         self.exerciseSlug = exerciseSlug
         self.targetSets = targetSets
         self.targetReps = targetReps
@@ -42,6 +45,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         self.notes = notes
         self.nameRu = nameRu
         self.durationSec = durationSec
+        self.weightKgTarget = weightKgTarget
     }
 
     enum CodingKeys: String, CodingKey {
@@ -53,6 +57,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         case notes
         case nameRu = "name_ru"
         case durationSec = "duration_seconds"
+        case weightKgTarget = "weight_kg_target"
     }
 
     init(from decoder: Decoder) throws {
@@ -65,6 +70,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         notes = try? c.decode(String.self, forKey: .notes)
         nameRu = try? c.decode(String.self, forKey: .nameRu)
         durationSec = try? c.decode(Int.self, forKey: .durationSec)
+        weightKgTarget = try? c.decode(Double.self, forKey: .weightKgTarget)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -77,6 +83,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         try c.encodeIfPresent(notes, forKey: .notes)
         try c.encodeIfPresent(nameRu, forKey: .nameRu)
         try c.encodeIfPresent(durationSec, forKey: .durationSec)
+        try c.encodeIfPresent(weightKgTarget, forKey: .weightKgTarget)
     }
 }
 
@@ -172,6 +179,11 @@ struct WorkoutSession: Codable, Equatable {
     var exercises: [LoggedExercise]
     var perceivedOverallRir: Int?
     var healthSignalAtStart: String?
+    /// Subjective 1–5 rating of the whole session (1 = tough … 5 = easy),
+    /// replacing the redundant overall-RIR. Sent to Payne in workout_complete.
+    var sessionFeeling: Int? = nil
+    /// Human label for `sessionFeeling` so Payne reads the scale without guessing.
+    var sessionFeelingLabel: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case workoutId = "workout_id"
@@ -183,5 +195,7 @@ struct WorkoutSession: Codable, Equatable {
         case exercises
         case perceivedOverallRir = "perceived_overall_rir"
         case healthSignalAtStart = "health_signal_at_start"
+        case sessionFeeling = "session_feeling"
+        case sessionFeelingLabel = "session_feeling_label"
     }
 }

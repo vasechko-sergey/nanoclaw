@@ -49,4 +49,42 @@ final class WorkoutModelsTests: XCTestCase {
         XCTAssertEqual(session.workoutId, "w1")
         XCTAssertEqual(session.exercises[0].sets[0].repsInReserve, 3)
     }
+
+    func test_exercisePlan_decodesWeightKgTarget() throws {
+        let json = """
+        {"slug":"zhim","name_ru":"Жим","target_sets":4,"target_reps":"5-6",
+         "reps_in_reserve":2,"rest_seconds":180,"weight_kg_target":66.25}
+        """
+        let ex = try JSONDecoder().decode(ExercisePlan.self, from: Data(json.utf8))
+        XCTAssertEqual(ex.weightKgTarget, 66.25)
+    }
+
+    func test_exercisePlan_nilWeightKgTarget_whenAbsent() throws {
+        let json = """
+        {"slug":"warmup","target_sets":null,"target_reps":"","reps_in_reserve":null,
+         "rest_seconds":0,"duration_seconds":300}
+        """
+        let ex = try JSONDecoder().decode(ExercisePlan.self, from: Data(json.utf8))
+        XCTAssertNil(ex.weightKgTarget)
+    }
+
+    func test_exercisePlan_weightKgTarget_roundTrips() throws {
+        let ex = ExercisePlan(exerciseSlug: "a", targetSets: 3, targetReps: "8",
+                              targetRir: 2, restSec: 90, weightKgTarget: 40)
+        let data = try JSONEncoder().encode(ex)
+        let back = try JSONDecoder().decode(ExercisePlan.self, from: data)
+        XCTAssertEqual(back.weightKgTarget, 40)
+    }
+
+    func test_workoutSession_encodesSessionFeeling() throws {
+        let s = WorkoutSession(
+            workoutId: "w", date: "2026-06-26", dayName: "Верх", week: 1,
+            startedAt: Date(timeIntervalSince1970: 0), finishedAt: nil, exercises: [],
+            perceivedOverallRir: nil, healthSignalAtStart: nil,
+            sessionFeeling: 4, sessionFeelingLabel: "Хорошо, с запасом")
+        let data = try JSONEncoder().encode(s)
+        let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        XCTAssertEqual(obj["session_feeling"] as? Int, 4)
+        XCTAssertEqual(obj["session_feeling_label"] as? String, "Хорошо, с запасом")
+    }
 }
