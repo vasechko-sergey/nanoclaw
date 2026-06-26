@@ -21,6 +21,10 @@ import { gateOutboundText } from './verification/poll-gate.js';
 import { judgeProse } from './verification/judge.js';
 import { hasEnoughProse, shouldJudgeProse } from './verification/prose-trigger.js';
 import { runLevel3 } from './verification/level3.js';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { getSessionRouting } from './db/session-routing.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -136,6 +140,73 @@ export function dispatchSystemReplies(rows: MessageInRow[]): MessageInRow[] {
   return survivors;
 }
 
+const DEFAULT_EXERCISES_DIR = '/workspace/agent/exercises';
+const IMAGE_EXTS = ['.gif', '.jpg', '.png'] as const;
+
+/**
+ * Auto-serve iOS `image_request` workout events: read the exercise image from
+ * the agent's workspace, emit an `image_blob` outbound row (kind 'control', so
+ * the host WorkoutBridge forwards it and it never counts as user-facing), and
+ * CONSUME the request so it never reaches the LLM — no tokens, no chat-dump.
+ *
+ * `.gif` is preferred over `.jpg`/`.png` so an animated asset wins automatically.
+ * A missing file (or absent slug) is still consumed: iOS keeps its placeholder.
+ * Non-image_request rows (chat, set_log, …) pass through untouched.
+ *
+ * `exercisesDir` is injectable for tests; production is `/workspace/agent/exercises`.
+ */
+export function serveImageRequests(
+  rows: MessageInRow[],
+  exercisesDir: string = DEFAULT_EXERCISES_DIR,
+): MessageInRow[] {
+  const consumed: string[] = [];
+  const survivors: MessageInRow[] = [];
+  for (const row of rows) {
+    if (!isWorkoutEventRow(row)) {
+      survivors.push(row);
+      continue;
+    }
+    let ev: { event?: string; payload?: { slug?: string } };
+    try {
+      ev = JSON.parse(row.content);
+    } catch {
+      survivors.push(row);
+      continue;
+    }
+    if (ev.event !== 'image_request') {
+      survivors.push(row);
+      continue;
+    }
+    const slug = ev.payload?.slug;
+    if (slug) {
+      const path = IMAGE_EXTS.map((ext) => join(exercisesDir, `${slug}${ext}`)).find((p) => existsSync(p));
+      if (path) {
+        try {
+          const bytes = readFileSync(path);
+          const sha256 = createHash('sha256').update(bytes).digest('hex');
+          const routing = getSessionRouting();
+          writeMessageOut({
+            id: generateId(),
+            kind: 'control',
+            platform_id: routing.platform_id,
+            channel_type: routing.channel_type,
+            thread_id: routing.thread_id,
+            content: JSON.stringify({ type: 'image_blob', payload: { slug, sha256, base64: bytes.toString('base64') } }),
+          });
+          log(`Served image_blob for ${slug} (${bytes.length}b, sha ${sha256.slice(0, 8)})`);
+        } catch (err) {
+          log(`serveImageRequests failed for ${slug}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      } else {
+        log(`No exercise image for ${slug} — iOS keeps placeholder`);
+      }
+    }
+    consumed.push(row.id);
+  }
+  if (consumed.length > 0) markCompleted(consumed);
+  return survivors;
+}
+
 export interface PollLoopConfig {
   provider: AgentProvider;
   /**
@@ -190,7 +261,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // claims. Returns the rows that survived dispatch. Workout-event system
     // rows are agent-facing (Payne's workout-mode skill consumes them), so
     // they ride through the `kind !== 'system'` filter alongside chat.
-    const messages = dispatchSystemReplies(allPending).filter(
+    const messages = serveImageRequests(dispatchSystemReplies(allPending)).filter(
       (m) => m.kind !== 'system' || isWorkoutEventRow(m),
     );
     isFirstPoll = false;
@@ -575,7 +646,7 @@ async function processQuery(
         // device reply arriving mid-turn unblocks the awaiting tool.
         // Workout-event system rows are agent-facing — keep them (a set logged
         // or a workout finished mid-turn should reach Payne this turn).
-        const newMessages = dispatchSystemReplies(pending).filter(
+        const newMessages = serveImageRequests(dispatchSystemReplies(pending)).filter(
           (m) => m.kind !== 'system' || isWorkoutEventRow(m),
         );
         if (newMessages.length === 0) return;

@@ -1,10 +1,20 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from './db/connection.js';
 import { getPendingMessages, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
 import { formatMessages, extractRouting } from './formatter.js';
-import { dispatchSystemReplies, partitionMessagesBySource, isAuthError, isWorkoutEventRow } from './poll-loop.js';
+import {
+  dispatchSystemReplies,
+  partitionMessagesBySource,
+  isAuthError,
+  isWorkoutEventRow,
+  serveImageRequests,
+} from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
 
@@ -640,5 +650,53 @@ describe('isAuthError', () => {
     ]) {
       expect(isAuthError(m)).toBe(false);
     }
+  });
+});
+
+describe('serveImageRequests', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'ex-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('serves an image_blob for an existing file and consumes the request', () => {
+    const bytes = Buffer.from([0x47, 0x49, 0x46, 0x38, 1, 2, 3]);
+    writeFileSync(join(dir, 'zhim.gif'), bytes);
+    insertMessage('ir1', 'system', { subtype: 'workout_event', event: 'image_request', payload: { slug: 'zhim' } });
+    const survivors = serveImageRequests(getPendingMessages(), dir);
+    expect(survivors.length).toBe(0);
+    const out = getUndeliveredMessages();
+    expect(out.length).toBe(1);
+    const c = JSON.parse(out[0].content);
+    expect(c.type).toBe('image_blob');
+    expect(c.payload.slug).toBe('zhim');
+    expect(c.payload.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+    expect(Buffer.from(c.payload.base64, 'base64')).toEqual(bytes);
+  });
+
+  it('prefers .gif over .jpg', () => {
+    writeFileSync(join(dir, 'ex.jpg'), Buffer.from('JPGDATA'));
+    writeFileSync(join(dir, 'ex.gif'), Buffer.from('GIF8DATA'));
+    insertMessage('ir1', 'system', { subtype: 'workout_event', event: 'image_request', payload: { slug: 'ex' } });
+    serveImageRequests(getPendingMessages(), dir);
+    const c = JSON.parse(getUndeliveredMessages()[0].content);
+    expect(Buffer.from(c.payload.base64, 'base64').toString()).toBe('GIF8DATA');
+  });
+
+  it('consumes but serves nothing when the file is missing', () => {
+    insertMessage('ir1', 'system', { subtype: 'workout_event', event: 'image_request', payload: { slug: 'nope' } });
+    const survivors = serveImageRequests(getPendingMessages(), dir);
+    expect(survivors.length).toBe(0);
+    expect(getUndeliveredMessages().length).toBe(0);
+  });
+
+  it('passes non-image_request workout events through untouched', () => {
+    insertMessage('sl1', 'system', { subtype: 'workout_event', event: 'set_log', payload: {} });
+    const survivors = serveImageRequests(getPendingMessages(), dir);
+    expect(survivors.length).toBe(1);
+    expect(getUndeliveredMessages().length).toBe(0);
   });
 });
