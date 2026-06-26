@@ -13,8 +13,8 @@ struct ExerciseBannerView: View {
 
     var body: some View {
         ZStack {
-            if let url = imageURL, let img = UIImage(contentsOfFile: url.path) {
-                Image(uiImage: img).resizable().scaledToFill()
+            if let url = imageURL, FileManager.default.fileExists(atPath: url.path) {
+                AnimatedExerciseImage(url: url)
             } else {
                 Theme.surface
                 Image(systemName: "figure.strengthtraining.traditional")
