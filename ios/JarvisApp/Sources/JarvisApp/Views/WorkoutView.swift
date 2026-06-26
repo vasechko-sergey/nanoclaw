@@ -20,8 +20,7 @@ struct WorkoutView: View {
     var onAppearPrefetch: () -> Void = {}
 
     @State private var showAbortConfirm = false
-    @State private var showFinishSheet = false
-    @State private var finishOverallRir: Int = 2
+    @State private var showFinish = false
     @State private var coachBanner: String? = nil
 
     private var isLastExercise: Bool {
@@ -52,7 +51,20 @@ struct WorkoutView: View {
         } message: {
             Text("Логи уже записанных подходов сохранятся.")
         }
-        .sheet(isPresented: $showFinishSheet) { finishSheet }
+        .fullScreenCover(isPresented: $showFinish) {
+            WorkoutFinishView(
+                dayName: coordinator.plan.dayName,
+                exerciseCount: coordinator.totalExercises,
+                setCount: coordinator.logged.reduce(0) { $0 + $1.sets.count },
+                onCancel: { showFinish = false },
+                onDone: { feeling, label in
+                    let session = coordinator.complete(sessionFeeling: feeling, sessionFeelingLabel: label)
+                    restTimer.skip()
+                    showFinish = false
+                    onClose(session)
+                }
+            )
+        }
         .onAppear { onAppearPrefetch() }
         .accessibilityIdentifier("workout-view")
     }
@@ -98,7 +110,7 @@ struct WorkoutView: View {
     /// "Дальше →": advance to the next exercise, or open the finish sheet if last.
     private func advance() {
         if isLastExercise {
-            showFinishSheet = true
+            showFinish = true
         } else {
             coordinator.finishExercise(comment: nil)
         }
@@ -116,7 +128,7 @@ struct WorkoutView: View {
             }
             Spacer()
             toolbarItem("flag", "финиш", tint: Theme.accent) {
-                showFinishSheet = true
+                showFinish = true
             }
         }
         .padding(.horizontal, 28)
@@ -140,33 +152,6 @@ struct WorkoutView: View {
         .buttonStyle(.plain)
     }
 
-    private var finishSheet: some View {
-        VStack(spacing: 24) {
-            Text("Как тренировка?").font(.title3.weight(.medium))
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Общее ощущение, запас по тренировке: \(finishOverallRir) повторов")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Stepper("\(finishOverallRir)", value: $finishOverallRir, in: 0...10).labelsHidden()
-            }
-            HStack(spacing: 12) {
-                Button("Отмена") { showFinishSheet = false }
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                Button {
-                    let session = coordinator.complete(perceivedOverallRir: finishOverallRir)
-                    restTimer.skip()
-                    showFinishSheet = false
-                    onClose(session)
-                } label: {
-                    Text("Готово").font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(Capsule().fill(Theme.accent))
-                        .foregroundStyle(.white)
-                }
-            }
-        }
-        .padding()
-        .presentationDetents([.medium])
-    }
 }
 
 extension WorkoutView {

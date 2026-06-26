@@ -106,6 +106,7 @@
 		978C2411C830BBFCD8AEC9B1 /* TransportV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 679495851538B21ECAB0FF20 /* TransportV2.swift */; };
 		98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */; };
 		9B25460C1039295CFA4B156D /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCBEC9BA80E9EC8768D5A6B /* Schema.swift */; };
+		A05233D6EF80D4FEF4A63605 /* WorkoutFinishView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692F9E85378427AA7C0DC3B6 /* WorkoutFinishView.swift */; };
 		A19C0788C26EB264554E9F0B /* HomeViewSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */; };
 		A2C29BF4D8C4AEF8C0B41128 /* HealthBackgroundTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B40F32A70A80FF764EB592B /* HealthBackgroundTask.swift */; };
 		A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */; };
@@ -247,6 +248,7 @@
 		5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolFixtureTests.swift; sourceTree = "<group>"; };
 		63F99A4953300541E52CE55B /* DraftAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftAttachment.swift; sourceTree = "<group>"; };
 		679495851538B21ECAB0FF20 /* TransportV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2.swift; sourceTree = "<group>"; };
+		692F9E85378427AA7C0DC3B6 /* WorkoutFinishView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFinishView.swift; sourceTree = "<group>"; };
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthRequests.swift; sourceTree = "<group>"; };
 		6B165040849DF187E7D1113C /* OrbInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInputBar.swift; sourceTree = "<group>"; };
@@ -545,6 +547,7 @@
 				F25916E3D90DB6728E543810 /* LoggedSetChips.swift */,
 				1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */,
 				9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */,
+				692F9E85378427AA7C0DC3B6 /* WorkoutFinishView.swift */,
 				F236228C8C83CFFE21712C2B /* WorkoutPreviewView.swift */,
 			);
 			path = Workout;
@@ -892,6 +895,7 @@
 				04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */,
 				EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */,
 				63E803FD761E0475224CD876 /* WorkoutCoordinator.swift in Sources */,
+				A05233D6EF80D4FEF4A63605 /* WorkoutFinishView.swift in Sources */,
 				001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */,
 				3AB8641347ABF4C946F55CD5 /* WorkoutPreviewView.swift in Sources */,
 				7C6244BC22EF9490B6F5527A /* WorkoutRunnerLogic.swift in Sources */,

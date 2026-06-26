@@ -92,7 +92,7 @@ final class WorkoutCoordinator: ObservableObject {
     }
 
     /// Produce the final WorkoutSession payload for `workout_complete`.
-    func complete(perceivedOverallRir: Int, healthSignalAtStart: String? = nil) -> WorkoutSession {
+    func complete(sessionFeeling: Int, sessionFeelingLabel: String, healthSignalAtStart: String? = nil) -> WorkoutSession {
         isFinished = true
         return WorkoutSession(
             workoutId: plan.workoutId,
@@ -102,8 +102,10 @@ final class WorkoutCoordinator: ObservableObject {
             startedAt: startedAt,
             finishedAt: Date(),
             exercises: logged,
-            perceivedOverallRir: perceivedOverallRir,
-            healthSignalAtStart: healthSignalAtStart
+            perceivedOverallRir: nil,
+            healthSignalAtStart: healthSignalAtStart,
+            sessionFeeling: sessionFeeling,
+            sessionFeelingLabel: sessionFeelingLabel
         )
     }
 

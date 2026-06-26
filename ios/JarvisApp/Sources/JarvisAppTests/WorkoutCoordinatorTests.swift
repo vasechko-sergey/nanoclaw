@@ -67,16 +67,19 @@ final class WorkoutCoordinatorTests: XCTestCase {
         coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
         coord.finishExercise(comment: nil)
         coord.logSet(reps: 8, weight: 20, repsInReserve: 0)
-        let session = coord.complete(perceivedOverallRir: 1)
+        let session = coord.complete(sessionFeeling: 4, sessionFeelingLabel: "Хорошо, с запасом")
         XCTAssertEqual(session.workoutId, "w1")
         XCTAssertEqual(session.exercises.flatMap(\.sets).count, 2)
+        XCTAssertEqual(session.sessionFeeling, 4)
+        XCTAssertEqual(session.sessionFeelingLabel, "Хорошо, с запасом")
+        XCTAssertNil(session.perceivedOverallRir)
         XCTAssertTrue(coord.isFinished)
     }
 
     func test_logSet_afterFinished_isNoOp() throws {
         let queue = try makeQueue()
         let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 1, setsPerExercise: 1), queue: queue)
-        _ = coord.complete(perceivedOverallRir: 2)
+        _ = coord.complete(sessionFeeling: 3, sessionFeelingLabel: "Нормально")
         coord.logSet(reps: 5, weight: 10, repsInReserve: 0)
         XCTAssertEqual(try queue.pending().count, 0)
     }
