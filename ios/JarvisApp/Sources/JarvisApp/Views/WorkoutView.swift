@@ -130,11 +130,13 @@ struct WorkoutView: View {
                     segmentView(seg)
                 }
             }
+            Text(WorkoutRunnerLogic.exerciseCounter(activeIdx: coordinator.currentExerciseIdx, total: coordinator.totalExercises))
+                .font(.caption).monospacedDigit().foregroundStyle(.white)
             Button(action: advance) {
                 Text(isLastExercise ? "Финиш" : "Дальше →").font(.subheadline).foregroundStyle(Theme.accent)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
+        .padding(.horizontal, 14).padding(.vertical, 9)
         .background(Theme.background)
     }
 
@@ -142,32 +144,20 @@ struct WorkoutView: View {
         WorkoutRunnerLogic.progressSegments(
             total: coordinator.totalExercises,
             activeIdx: coordinator.currentExerciseIdx,
-            setsDone: coordinator.loggedForCurrentExercise.count,
-            targetSets: coordinator.currentExercise.targetSets,
             previewIdx: previewIdx)
     }
 
     @ViewBuilder
     private func segmentView(_ seg: WorkoutRunnerLogic.ProgressSegment) -> some View {
-        switch seg.kind {
-        case .doneExercise:
-            Capsule().fill(Theme.accent).frame(height: 4)
-                .overlay(previewRing(seg.isPreview))
-        case .upcoming:
-            Capsule().fill(Color.white.opacity(0.2)).frame(height: 4)
-                .overlay(previewRing(seg.isPreview))
-        case let .activeSets(done, total):
-            HStack(spacing: 2) {
-                ForEach(0..<total, id: \.self) { i in
-                    Capsule().fill(i < done ? Color(red: 0.5, green: 0.89, blue: 0.92) : Color.white.opacity(0.12))
-                }
+        let fill: Color = {
+            switch seg.kind {
+            case .done: return Theme.accent
+            case .active: return Color(red: 0.5, green: 0.89, blue: 0.92)
+            case .upcoming: return Color.white.opacity(0.2)
             }
-            .frame(height: 9)
-            .padding(1.5)
-            .background(Capsule().fill(Theme.accent.opacity(0.16)))
-            .frame(minWidth: 40)
-            .layoutPriority(1)
-        }
+        }()
+        Capsule().fill(fill).frame(height: 5)
+            .overlay(previewRing(seg.kind == .active || seg.isPreview))
     }
 
     private func previewRing(_ on: Bool) -> some View {

@@ -41,13 +41,20 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertEqual(WorkoutRunnerLogic.feelings.first(where: { $0.value == 4 })?.label, "Хорошо, с запасом")
     }
 
-    func test_progressSegments_activeShowsSetsAndPreviewMark() {
-        let segs = WorkoutRunnerLogic.progressSegments(
-            total: 3, activeIdx: 1, setsDone: 2, targetSets: 4, previewIdx: 2)
-        XCTAssertEqual(segs[0].kind, .doneExercise)
-        XCTAssertEqual(segs[1].kind, .activeSets(done: 2, total: 4))
-        XCTAssertEqual(segs[2].kind, .upcoming)
-        XCTAssertTrue(segs[2].isPreview)
+    func test_progressSegments_equalKindsAndPreviewMark() {
+        let segs = WorkoutRunnerLogic.progressSegments(total: 4, activeIdx: 1, previewIdx: 3)
+        XCTAssertEqual(segs.map(\.kind), [.done, .active, .upcoming, .upcoming])
+        XCTAssertTrue(segs[3].isPreview)
         XCTAssertFalse(segs[1].isPreview)
+    }
+
+    func test_exerciseCounter_oneBased_clamped() {
+        XCTAssertEqual(WorkoutRunnerLogic.exerciseCounter(activeIdx: 2, total: 6), "3/6")
+        XCTAssertEqual(WorkoutRunnerLogic.exerciseCounter(activeIdx: 5, total: 6), "6/6")
+    }
+
+    func test_repsOptions_spans1to30() {
+        XCTAssertEqual(WorkoutRunnerLogic.repsOptions.first, 1)
+        XCTAssertEqual(WorkoutRunnerLogic.repsOptions.last, 30)
     }
 }

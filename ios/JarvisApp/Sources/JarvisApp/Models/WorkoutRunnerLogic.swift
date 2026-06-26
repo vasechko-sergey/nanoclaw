@@ -59,33 +59,28 @@ enum WorkoutRunnerLogic {
         (5, "Легко, мог больше"),
     ]
 
-    /// One cell of the two-level top progress bar.
+    /// Reps wheel choices.
+    static let repsOptions = Array(1...30)
+
+    /// One cell of the top progress bar — one per exercise, equal width.
     struct ProgressSegment: Equatable {
-        enum Kind: Equatable {
-            case doneExercise
-            case activeSets(done: Int, total: Int)
-            case upcoming
-        }
+        enum Kind: Equatable { case done, active, upcoming }
         let kind: Kind
         let isPreview: Bool
     }
 
-    /// Build the progress row: exercises before `activeIdx` are done; the active
-    /// one shows its set fill; later ones are upcoming. The previewed exercise
-    /// (when different from active) is marked for an outline.
-    static func progressSegments(total: Int, activeIdx: Int, setsDone: Int,
-                                 targetSets: Int, previewIdx: Int) -> [ProgressSegment] {
+    /// Equal segment per exercise: before `activeIdx` = done, at = active, after =
+    /// upcoming. The previewed exercise (when ≠ active) is marked for an outline.
+    /// Set-level progress lives in the image scrim, not here.
+    static func progressSegments(total: Int, activeIdx: Int, previewIdx: Int) -> [ProgressSegment] {
         (0..<max(total, 1)).map { i in
-            let kind: ProgressSegment.Kind
-            if i < activeIdx {
-                kind = .doneExercise
-            } else if i == activeIdx {
-                let tot = max(targetSets, 1)
-                kind = .activeSets(done: min(setsDone, tot), total: tot)
-            } else {
-                kind = .upcoming
-            }
+            let kind: ProgressSegment.Kind = i < activeIdx ? .done : (i == activeIdx ? .active : .upcoming)
             return ProgressSegment(kind: kind, isPreview: i == previewIdx && previewIdx != activeIdx)
         }
+    }
+
+    /// "3/6" — 1-based active index over total, clamped.
+    static func exerciseCounter(activeIdx: Int, total: Int) -> String {
+        "\(min(activeIdx + 1, max(total, 1)))/\(max(total, 1))"
     }
 }
