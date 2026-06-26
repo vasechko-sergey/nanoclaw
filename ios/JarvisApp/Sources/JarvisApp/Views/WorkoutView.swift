@@ -22,6 +22,9 @@ struct WorkoutView: View {
     @State private var showAbortConfirm = false
     @State private var showFinish = false
     @State private var coachBanner: String? = nil
+    /// Exercise currently being looked at (swipe/chevrons). May differ from the
+    /// active exercise (`coordinator.currentExerciseIdx`) while browsing.
+    @State private var previewIdx: Int = 0
 
     private var isLastExercise: Bool {
         coordinator.currentExerciseIdx >= coordinator.totalExercises - 1
@@ -65,7 +68,8 @@ struct WorkoutView: View {
                 }
             )
         }
-        .onAppear { onAppearPrefetch() }
+        .onAppear { previewIdx = coordinator.currentExerciseIdx; onAppearPrefetch() }
+        .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
         .accessibilityIdentifier("workout-view")
     }
 
@@ -73,38 +77,127 @@ struct WorkoutView: View {
     private var content: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                ExerciseBannerView(
-                    exercise: coordinator.currentExercise,
-                    imageURL: imageResolver(coordinator.currentExercise.exerciseSlug),
-                    indexLabel: "\(coordinator.currentExerciseIdx + 1)/\(coordinator.totalExercises)",
-                    current: coordinator.currentExerciseIdx,
-                    total: coordinator.totalExercises,
-                    isLast: isLastExercise,
-                    onClose: { showAbortConfirm = true },
-                    onAdvance: advance
-                )
-                .frame(height: geo.size.height * 0.46)
-
+                pinnedHeader
                 ScrollView {
-                    VStack(spacing: 14) {
-                        if coordinator.currentExercise.isDuration {
-                            DurationCard(exercise: coordinator.currentExercise, onDone: advance)
+                    VStack(spacing: 0) {
+                        let preview = coordinator.plan.exercises[previewIdx]
+                        ExerciseBannerView(
+                            exercise: preview,
+                            imageURL: imageResolver(preview.exerciseSlug),
+                            stateTag: stateTag(for: previewIdx),
+                            canPrev: previewIdx > 0,
+                            canNext: previewIdx < coordinator.totalExercises - 1,
+                            onPreview: movePreview
+                        )
+                        .frame(height: geo.size.height * 0.66)
+
+                        RecommendationPanel(exercise: preview)
+
+                        if previewIdx == coordinator.currentExerciseIdx {
+                            VStack(spacing: 14) {
+                                if coordinator.currentExercise.isDuration {
+                                    DurationCard(exercise: coordinator.currentExercise, onDone: advance)
+                                } else {
+                                    LoggedSetChips(
+                                        logged: coordinator.loggedForCurrentExercise,
+                                        currentSetIdx: coordinator.currentSetIdx,
+                                        targetSets: coordinator.currentExercise.targetSets)
+                                    FocusSetCard(coordinator: coordinator, restTimer: restTimer)
+                                }
+                            }
+                            .padding(.horizontal, 16).padding(.top, 14)
                         } else {
-                            LoggedSetChips(
-                                logged: coordinator.loggedForCurrentExercise,
-                                currentSetIdx: coordinator.currentSetIdx,
-                                targetSets: coordinator.currentExercise.targetSets
-                            )
-                            FocusSetCard(coordinator: coordinator, restTimer: restTimer)
+                            startExerciseButton
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
                 }
-
                 toolbar
             }
         }
+    }
+
+    private var pinnedHeader: some View {
+        HStack(spacing: 12) {
+            Button { showAbortConfirm = true } label: {
+                Image(systemName: "xmark").font(.body).foregroundStyle(.white).frame(width: 36, height: 36)
+            }
+            HStack(spacing: 3) {
+                ForEach(Array(progressSegments.enumerated()), id: \.offset) { _, seg in
+                    segmentView(seg)
+                }
+            }
+            Button(action: advance) {
+                Text(isLastExercise ? "Финиш" : "Дальше →").font(.subheadline).foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Theme.background)
+    }
+
+    private var progressSegments: [WorkoutRunnerLogic.ProgressSegment] {
+        WorkoutRunnerLogic.progressSegments(
+            total: coordinator.totalExercises,
+            activeIdx: coordinator.currentExerciseIdx,
+            setsDone: coordinator.loggedForCurrentExercise.count,
+            targetSets: coordinator.currentExercise.targetSets,
+            previewIdx: previewIdx)
+    }
+
+    @ViewBuilder
+    private func segmentView(_ seg: WorkoutRunnerLogic.ProgressSegment) -> some View {
+        switch seg.kind {
+        case .doneExercise:
+            Capsule().fill(Theme.accent).frame(height: 4)
+                .overlay(previewRing(seg.isPreview))
+        case .upcoming:
+            Capsule().fill(Color.white.opacity(0.2)).frame(height: 4)
+                .overlay(previewRing(seg.isPreview))
+        case let .activeSets(done, total):
+            HStack(spacing: 2) {
+                ForEach(0..<total, id: \.self) { i in
+                    Capsule().fill(i < done ? Color(red: 0.5, green: 0.89, blue: 0.92) : Color.white.opacity(0.12))
+                }
+            }
+            .frame(height: 9)
+            .padding(1.5)
+            .background(Capsule().fill(Theme.accent.opacity(0.16)))
+            .frame(minWidth: 40)
+            .layoutPriority(1)
+        }
+    }
+
+    private func previewRing(_ on: Bool) -> some View {
+        Capsule().stroke(Color(red: 0.78, green: 0.57, blue: 0.35), lineWidth: on ? 1.5 : 0)
+    }
+
+    private var startExerciseButton: some View {
+        Button {
+            coordinator.activate(idx: previewIdx)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "play.fill")
+                Text("Начать это упражнение").font(.body.weight(.medium))
+            }
+            .foregroundStyle(Theme.accent)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(Capsule().stroke(Theme.accent, lineWidth: 1).background(Capsule().fill(Theme.accent.opacity(0.16))))
+        }
+        .padding(.horizontal, 16).padding(.top, 16)
+    }
+
+    private func movePreview(_ delta: Int) {
+        let next = previewIdx + delta
+        guard coordinator.plan.exercises.indices.contains(next) else { return }
+        previewIdx = next
+    }
+
+    private func stateTag(for idx: Int) -> String {
+        if idx == coordinator.currentExerciseIdx {
+            return WorkoutRunnerLogic.setLabel(
+                currentSetIdx: coordinator.currentSetIdx,
+                targetSets: coordinator.currentExercise.targetSets) ?? ""
+        }
+        return coordinator.logged[idx].sets.isEmpty ? "ещё не начато" : "пройдено"
     }
 
     /// "Дальше →": advance to the next exercise, or open the finish sheet if last.
