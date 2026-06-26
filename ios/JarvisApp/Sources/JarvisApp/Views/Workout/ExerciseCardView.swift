@@ -7,27 +7,22 @@ struct ExerciseCardView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            // Schematic image area (square aspect, rounded corners).
+            // Schematic image area — 16:9 to match the runner; animates GIFs.
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Theme.background.opacity(0.6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Theme.accent.opacity(0.15), lineWidth: 1)
-                    )
-                if let url = imageURL, let img = UIImage(contentsOfFile: url.path) {
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(8)
+                if let url = imageURL, FileManager.default.fileExists(atPath: url.path) {
+                    AnimatedExerciseImage(url: url)
                 } else {
                     Image(systemName: "figure.strengthtraining.traditional")
                         .font(.system(size: 56, weight: .ultraLight))
                         .foregroundStyle(Theme.accent.opacity(0.4))
                 }
             }
-            .aspectRatio(1.0, contentMode: .fit)
-            .frame(maxWidth: 320)
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .frame(maxWidth: 400)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.accent.opacity(0.15), lineWidth: 1))
 
             // Title + targets.
             VStack(spacing: 4) {
