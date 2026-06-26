@@ -203,6 +203,7 @@ struct ChatView: View {
                             coordinator.markActionAnswered(rowId: messageId, choice: buttonId)
                         },
                         onWorkoutStart: { plan, messageId in startWorkout(plan, messageId: messageId) },
+                        onWorkoutCancel: { coordinator.markWorkoutCardDone(workoutId: $0) },
                         onRetry: { id in coordinator.ws.retrySend(id: id) },
                         onMessageRead: { id in ws.sendMessageRead(id) },
                         audioPlayer: coordinator.audioPlayer,

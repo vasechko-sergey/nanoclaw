@@ -11,6 +11,7 @@ struct MessageRow: View {
     var onFeedback: ((String, Bool) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil
     var onWorkoutStart: ((WorkoutPlan, String) -> Void)? = nil
+    var onWorkoutCancel: ((String) -> Void)? = nil
     var onRetry: ((String) -> Void)? = nil
     /// Shared player so a voice-note bubble can play/stop its own audio and
     /// reflect which note is currently playing.
@@ -38,7 +39,7 @@ struct MessageRow: View {
             case .action(let info):
                 ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast)
             case .workoutPlan(let info):
-                WorkoutPlanRow(messageId: message.id, info: info, onStart: onWorkoutStart, isLast: isLast)
+                WorkoutPlanRow(messageId: message.id, info: info, onStart: onWorkoutStart, onCancel: onWorkoutCancel, isLast: isLast)
             case .status(let info):
                 StatusRow(info: info)
             }
@@ -647,6 +648,7 @@ struct WorkoutPlanRow: View {
     let messageId: String
     let info: WorkoutPlanCardInfo
     var onStart: ((WorkoutPlan, String) -> Void)?
+    var onCancel: ((String) -> Void)?
     let isLast: Bool
 
     var body: some View {
@@ -672,33 +674,50 @@ struct WorkoutPlanRow: View {
                     }
                     .foregroundStyle(Theme.assistantText)
 
-                    Button {
-                        Theme.hapticSend()
-                        onStart?(info.plan, messageId)
-                    } label: {
-                        HStack(spacing: 5) {
-                            if info.done {
-                                CheckmarkShape()
-                                    .stroke(Theme.textSecondary.opacity(0.6), style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
-                                    .frame(width: 9, height: 6)
+                    HStack(spacing: 8) {
+                        Button {
+                            Theme.hapticSend()
+                            onStart?(info.plan, messageId)
+                        } label: {
+                            HStack(spacing: 5) {
+                                if info.done {
+                                    CheckmarkShape()
+                                        .stroke(Theme.textSecondary.opacity(0.6), style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
+                                        .frame(width: 9, height: 6)
+                                }
+                                Text("Посмотреть тренировку")
+                                    .font(.system(size: 13, weight: .medium))
                             }
-                            Text("Посмотреть тренировку")
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .foregroundStyle(info.done ? Theme.textSecondary.opacity(0.6) : Theme.accent)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(info.done ? Color.clear : Theme.accent.opacity(0.16))
-                        .clipShape(Capsule())
-                        .overlay(
-                            Capsule().stroke(
-                                info.done ? Theme.surfaceBorder.opacity(0.5) : Theme.accent.opacity(0.35),
-                                lineWidth: info.done ? Theme.lineHairline : Theme.lineAccent
+                            .foregroundStyle(info.done ? Theme.textSecondary.opacity(0.6) : Theme.accent)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(info.done ? Color.clear : Theme.accent.opacity(0.16))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule().stroke(
+                                    info.done ? Theme.surfaceBorder.opacity(0.5) : Theme.accent.opacity(0.35),
+                                    lineWidth: info.done ? Theme.lineHairline : Theme.lineAccent
+                                )
                             )
-                        )
-                        .opacity(info.done ? 0.6 : 1)
+                            .opacity(info.done ? 0.6 : 1)
+                        }
+                        .disabled(info.done)
+
+                        if !info.done {
+                            Button {
+                                Theme.hapticSend()
+                                onCancel?(info.plan.workoutId)
+                            } label: {
+                                Text("Отменить")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .overlay(Capsule().stroke(Theme.surfaceBorder, lineWidth: Theme.lineHairline))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .disabled(info.done)
                     .animation(.easeOut(duration: 0.2), value: info.done)
                 }
             }
