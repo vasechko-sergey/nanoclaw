@@ -12,8 +12,8 @@ struct LoggedSetChips: View {
             ForEach(Array(logged.enumerated()), id: \.offset) { _, s in
                 chip("✓ \(s.reps)×\(WorkoutSetFormat.weight(s.weight))", filled: true)
             }
-            if targetSets > 0 {
-                chip("подход \(currentSetIdx + 1) из \(targetSets)", filled: false)
+            if let label = WorkoutRunnerLogic.setLabel(currentSetIdx: currentSetIdx, targetSets: targetSets) {
+                chip(label, filled: false)
             }
             Spacer(minLength: 0)
         }
