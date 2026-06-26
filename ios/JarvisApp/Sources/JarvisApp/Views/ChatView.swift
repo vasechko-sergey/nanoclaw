@@ -373,10 +373,13 @@ struct ChatView: View {
                                 }
                             }
                             // Grey the card ONLY when the workout was completed.
+                            // Match by workout_id (NOT presentation.messageId, which a
+                            // mid-workout exercise swap can drop → card stayed active
+                            // even though the workout finished) so it reliably resolves.
                             // Abort / view-without-finishing leaves it tappable so
                             // "Посмотреть тренировку" can be reopened.
-                            if let mid = presentation.messageId, session != nil {
-                                coordinator.markActionAnswered(rowId: mid, choice: "completed")
+                            if session != nil {
+                                coordinator.markWorkoutCardDone(workoutId: workoutId)
                             }
                             activeWorkout = nil
                         },

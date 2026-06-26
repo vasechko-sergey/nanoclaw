@@ -238,6 +238,14 @@ final class AppCoordinator {
         try? chatStore?.markActionAnswered(rowId: rowId, choice: choice)
     }
 
+    /// Resolve the workout card for `workoutId` (grey its button) when the
+    /// workout finishes — matched by workout_id, not the card's row id, so it
+    /// survives a mid-workout swap dropping the runner presentation's
+    /// messageId. No-op if the store isn't built.
+    func markWorkoutCardDone(workoutId: String) {
+        _ = try? chatStore?.markWorkoutCardDone(workoutId: workoutId)
+    }
+
     /// Persist an inbound workout plan as a chat card. No-op if the store isn't
     /// built yet. (Plan also pre-fetched into the image cache by the caller.)
     /// `rowId` is the envelope id — unique per send, stable across retries — so

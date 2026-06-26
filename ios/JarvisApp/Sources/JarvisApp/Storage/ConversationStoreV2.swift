@@ -245,6 +245,35 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Mark every still-open workout-plan card whose plan carries `workoutId`
+    /// as completed (greys its "Посмотреть тренировку" button). Matches by the
+    /// decoded `workout_id`, NOT a transient in-memory row id, so the card
+    /// resolves on finish even when the runner's presentation lost its
+    /// `messageId` (e.g. a mid-workout exercise swap re-presented it). The
+    /// persisted `action_choice` keeps it resolved across reloads. Returns how
+    /// many cards were marked.
+    @discardableResult
+    func markWorkoutCardDone(workoutId: String) throws -> Int {
+        try writer.write { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT id, workout_plan_json FROM messages WHERE workout_plan_json IS NOT NULL AND action_choice IS NULL"
+            )
+            var marked = 0
+            for row in rows {
+                guard let json: String = row["workout_plan_json"],
+                      let data = json.data(using: .utf8),
+                      let plan = try? JSONDecoder().decode(WorkoutPlan.self, from: data),
+                      plan.workoutId == workoutId else { continue }
+                let id: String = row["id"]
+                try db.execute(sql: "UPDATE messages SET action_choice = 'completed' WHERE id = ?",
+                               arguments: [id])
+                marked += 1
+            }
+            return marked
+        }
+    }
+
     /// Clear the voice-only flag on a row (render failed → reveal its text).
     /// Returns whether a row changed.
     @discardableResult
