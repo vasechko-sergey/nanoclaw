@@ -76,6 +76,15 @@ final class ExerciseImageCacheTests: XCTestCase {
         XCTAssertEqual(requested, ["incline-db-press"])
     }
 
+    func test_latestPath_returnsCachedBlobForSlug_nilForAbsent() throws {
+        let cache = ExerciseImageCache(baseURL: tmpDir) { _ in }
+        let url = try cache.write(slug: "ex", sha256: "served-sha", base64: tinyJpegBase64())
+        // Resolver fallback depends on this: any cached blob for the slug resolves,
+        // regardless of the manifest sha.
+        XCTAssertEqual(cache.latestPath(slug: "ex")?.lastPathComponent, url.lastPathComponent)
+        XCTAssertNil(cache.latestPath(slug: "absent"))
+    }
+
     // 1x1 JPEG (smallest valid).
     private func tinyJpegBase64() -> String {
         "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKp//9k="

@@ -114,10 +114,13 @@ struct ChatView: View {
     /// originating message id so the card can be marked done on close.
     /// Shared slug→cached-image-URL resolver (used by both preview and runner).
     private func resolveImageURL(slug: String, plan: WorkoutPlan) -> URL? {
-        guard let entry = plan.imageManifest.first(where: { $0.slug == slug }) else { return nil }
-        return coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256)
-            ? coordinator.imageCache.path(forSlug: entry.slug, sha256: entry.sha256)
-            : nil
+        if let entry = plan.imageManifest.first(where: { $0.slug == slug }),
+           coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256) {
+            return coordinator.imageCache.path(forSlug: entry.slug, sha256: entry.sha256)
+        }
+        // Fallback: newest cached blob for this slug regardless of sha — covers a
+        // manifest-sha vs served-blob-sha drift so a delivered image still resolves.
+        return coordinator.imageCache.latestPath(slug: slug)
     }
 
     /// Card tap → open the PREVIEW (not the runner). The runner opens from preview.
