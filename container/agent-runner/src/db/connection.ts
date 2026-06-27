@@ -23,9 +23,34 @@ import fs from 'fs';
 const DEFAULT_INBOUND_PATH = '/workspace/inbound.db';
 const DEFAULT_OUTBOUND_PATH = '/workspace/outbound.db';
 const DEFAULT_HEARTBEAT_PATH = '/workspace/.heartbeat';
+// The owner's headless session folder, mounted read-only by the host (see
+// buildMounts) so list_tasks can see recurring tasks, which are consolidated
+// there rather than in this (interactive) session's inbound.db. Absent when no
+// headless session exists or when THIS session is the headless one.
+const DEFAULT_HEADLESS_INBOUND_PATH = '/workspace/.headless/inbound.db';
+
+const MESSAGES_IN_DDL = `
+    CREATE TABLE messages_in (
+      id             TEXT PRIMARY KEY,
+      seq            INTEGER UNIQUE,
+      kind           TEXT NOT NULL,
+      timestamp      TEXT NOT NULL,
+      status         TEXT DEFAULT 'pending',
+      process_after  TEXT,
+      recurrence     TEXT,
+      series_id      TEXT,
+      tries          INTEGER DEFAULT 0,
+      trigger        INTEGER NOT NULL DEFAULT 1,
+      platform_id    TEXT,
+      channel_type   TEXT,
+      thread_id      TEXT,
+      content        TEXT NOT NULL,
+      on_wake        INTEGER NOT NULL DEFAULT 0
+    );`;
 
 let _inbound: Database | null = null;
 let _outbound: Database | null = null;
+let _headlessInbound: Database | null = null;
 let _heartbeatPath: string = DEFAULT_HEARTBEAT_PATH;
 let _testMode = false;
 
@@ -69,6 +94,26 @@ export function getInboundDb(): Database {
     _inbound.exec('PRAGMA mmap_size = 0');
   }
   return _inbound;
+}
+
+/**
+ * Open the owner's headless-session inbound.db read-only, or return null if it
+ * isn't mounted (no headless session, or this session IS the headless one).
+ * Recurring tasks live there; list_tasks unions it with this session's tasks.
+ * mmap=0 for the same cross-mount visibility reason as openInboundDb. Caller
+ * must .close() the returned connection when non-null.
+ */
+export function openHeadlessInboundDb(): Database | null {
+  if (_testMode) {
+    if (!_headlessInbound) return null;
+    const db = _headlessInbound;
+    return { prepare: (sql: string) => db.prepare(sql), exec: (sql: string) => db.exec(sql), close: () => {} } as unknown as Database;
+  }
+  if (!fs.existsSync(DEFAULT_HEADLESS_INBOUND_PATH)) return null;
+  const db = new Database(DEFAULT_HEADLESS_INBOUND_PATH, { readonly: true });
+  db.exec('PRAGMA busy_timeout = 5000');
+  db.exec('PRAGMA mmap_size = 0');
+  return db;
 }
 
 /** Outbound DB — container owns this file (sole writer). */
@@ -182,23 +227,7 @@ export function initTestSessionDb(): { inbound: Database; outbound: Database } {
   _inbound = new Database(':memory:');
   _inbound.exec('PRAGMA foreign_keys = ON');
   _inbound.exec(`
-    CREATE TABLE messages_in (
-      id             TEXT PRIMARY KEY,
-      seq            INTEGER UNIQUE,
-      kind           TEXT NOT NULL,
-      timestamp      TEXT NOT NULL,
-      status         TEXT DEFAULT 'pending',
-      process_after  TEXT,
-      recurrence     TEXT,
-      series_id      TEXT,
-      tries          INTEGER DEFAULT 0,
-      trigger        INTEGER NOT NULL DEFAULT 1,
-      platform_id    TEXT,
-      channel_type   TEXT,
-      thread_id      TEXT,
-      content        TEXT NOT NULL,
-      on_wake        INTEGER NOT NULL DEFAULT 0
-    );
+    ${MESSAGES_IN_DDL}
     CREATE TABLE delivered (
       message_out_id      TEXT PRIMARY KEY,
       platform_message_id TEXT,
@@ -253,12 +282,26 @@ export function initTestSessionDb(): { inbound: Database; outbound: Database } {
   return { inbound: _inbound, outbound: _outbound };
 }
 
+/**
+ * For tests — creates a second in-memory inbound.db standing in for the
+ * mounted headless session, so openHeadlessInboundDb() returns it. Requires
+ * initTestSessionDb() to have set test mode first.
+ */
+export function initTestHeadlessInboundDb(): Database {
+  _headlessInbound = new Database(':memory:');
+  _headlessInbound.exec('PRAGMA foreign_keys = ON');
+  _headlessInbound.exec(MESSAGES_IN_DDL);
+  return _headlessInbound;
+}
+
 export function closeSessionDb(): void {
   _inbound?.close();
   _inbound = null;
   _testMode = false;
   _outbound?.close();
   _outbound = null;
+  _headlessInbound?.close();
+  _headlessInbound = null;
 }
 
 /**

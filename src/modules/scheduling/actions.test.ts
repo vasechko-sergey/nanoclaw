@@ -13,11 +13,18 @@ import fs from 'fs';
 import path from 'path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { initTestDb, closeDb, runMigrations, createAgentGroup, createSession, createMessagingGroup } from '../../db/index.js';
+import {
+  initTestDb,
+  closeDb,
+  runMigrations,
+  createAgentGroup,
+  createSession,
+  createMessagingGroup,
+} from '../../db/index.js';
 import { getSessionsByAgentGroup } from '../../db/sessions.js';
 import { initSessionFolder, openInboundDb, sessionsBaseDir } from '../../session-manager.js';
 import type { Session } from '../../types.js';
-import { handleScheduleTask } from './actions.js';
+import { handleScheduleTask, handleCancelTask, handleUpdateTask } from './actions.js';
 
 function now() {
   return new Date().toISOString();
@@ -33,6 +40,37 @@ function countTasks(agentGroupId: string, sessionId: string): number {
   } finally {
     db.close();
   }
+}
+
+function countLiveTasks(agentGroupId: string, sessionId: string): number {
+  const db = openInboundDb(agentGroupId, sessionId);
+  try {
+    return (
+      db
+        .prepare("SELECT COUNT(*) AS n FROM messages_in WHERE kind = 'task' AND status IN ('pending', 'paused')")
+        .get() as { n: number }
+    ).n;
+  } finally {
+    db.close();
+  }
+}
+
+function taskRecurrence(agentGroupId: string, sessionId: string, taskId: string): string | null {
+  const db = openInboundDb(agentGroupId, sessionId);
+  try {
+    const row = db
+      .prepare("SELECT recurrence FROM messages_in WHERE series_id = ? AND status IN ('pending', 'paused')")
+      .get(taskId) as { recurrence: string | null } | undefined;
+    return row ? row.recurrence : null;
+  } finally {
+    db.close();
+  }
+}
+
+function onlyHeadless(): Session {
+  const h = getSessionsByAgentGroup(TEST_AG).filter((s) => s.messaging_group_id === null && s.status === 'active');
+  if (h.length !== 1) throw new Error(`expected exactly 1 headless session, got ${h.length}`);
+  return h[0];
 }
 
 function interactiveSession(): Session {
@@ -153,5 +191,75 @@ describe('handleScheduleTask routing', () => {
     expect(countTasks(TEST_AG, headlessId)).toBe(1);
     const headless = getSessionsByAgentGroup(TEST_AG).filter((s) => s.messaging_group_id === null);
     expect(headless).toHaveLength(1);
+  });
+});
+
+// Recurring tasks live in the headless session, but cancel/pause/resume/update
+// arrive from an INTERACTIVE session. They must fall back to the headless
+// session's inbound.db, or the mutation silently no-ops (the live bug: agent
+// "cancels" a cron that keeps firing).
+describe('task mutations fall back to the headless session', () => {
+  async function scheduleRecurringFromInteractive(): Promise<string> {
+    const content = scheduleContent('45 8 * * *');
+    const inDb = openInboundDb(TEST_AG, INTERACTIVE_SESSION);
+    try {
+      await handleScheduleTask(content, interactiveSession(), inDb);
+    } finally {
+      inDb.close();
+    }
+    return content.taskId as string;
+  }
+
+  it('handleCancelTask cancels a recurring task that lives in headless', async () => {
+    const taskId = await scheduleRecurringFromInteractive();
+    const headless = onlyHeadless();
+    expect(countLiveTasks(TEST_AG, headless.id)).toBe(1);
+
+    const inDb = openInboundDb(TEST_AG, INTERACTIVE_SESSION);
+    try {
+      await handleCancelTask({ action: 'cancel_task', taskId }, interactiveSession(), inDb);
+    } finally {
+      inDb.close();
+    }
+
+    // The cron is actually gone from headless, not just from the (empty) interactive db.
+    expect(countLiveTasks(TEST_AG, headless.id)).toBe(0);
+  });
+
+  it('handleUpdateTask edits a recurring task that lives in headless', async () => {
+    const taskId = await scheduleRecurringFromInteractive();
+    const headless = onlyHeadless();
+    expect(taskRecurrence(TEST_AG, headless.id, taskId)).toBe('45 8 * * *');
+
+    const inDb = openInboundDb(TEST_AG, INTERACTIVE_SESSION);
+    try {
+      await handleUpdateTask({ action: 'update_task', taskId, recurrence: '0 9 * * *' }, interactiveSession(), inDb);
+    } finally {
+      inDb.close();
+    }
+
+    expect(taskRecurrence(TEST_AG, headless.id, taskId)).toBe('0 9 * * *');
+  });
+
+  it('handleCancelTask still cancels a ONE-SHOT in the emitting interactive session', async () => {
+    const content = scheduleContent(null);
+    const taskId = content.taskId as string;
+    let inDb = openInboundDb(TEST_AG, INTERACTIVE_SESSION);
+    try {
+      await handleScheduleTask(content, interactiveSession(), inDb);
+    } finally {
+      inDb.close();
+    }
+    expect(countLiveTasks(TEST_AG, INTERACTIVE_SESSION)).toBe(1);
+
+    inDb = openInboundDb(TEST_AG, INTERACTIVE_SESSION);
+    try {
+      await handleCancelTask({ action: 'cancel_task', taskId }, interactiveSession(), inDb);
+    } finally {
+      inDb.close();
+    }
+    expect(countLiveTasks(TEST_AG, INTERACTIVE_SESSION)).toBe(0);
+    // No headless session was spun up for a one-shot mutation.
+    expect(getSessionsByAgentGroup(TEST_AG).filter((s) => s.messaging_group_id === null)).toHaveLength(0);
   });
 });

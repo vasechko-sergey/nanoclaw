@@ -10,11 +10,34 @@
 import type Database from 'better-sqlite3';
 
 import { wakeContainer } from '../../container-runner.js';
-import { getSession } from '../../db/sessions.js';
+import { findActiveHeadlessSession, getSession } from '../../db/sessions.js';
 import { log } from '../../log.js';
 import { openInboundDb, resolveHeadlessSession, writeSessionMessage } from '../../session-manager.js';
 import type { Session } from '../../types.js';
 import { cancelTask, insertTask, pauseTask, resumeTask, updateTask, type TaskUpdate } from './db.js';
+
+/**
+ * Apply a task mutation to the emitting session's inbound.db; if it touched
+ * nothing AND we're in an interactive session, retry against the owner's
+ * headless session — that's where recurring tasks are consolidated (see
+ * handleScheduleTask). Without this, cancel/pause/resume/update of a recurring
+ * task from a chat session silently no-ops: the row lives in headless, not in
+ * the session that emitted the action. Returns total rows touched.
+ */
+function applyToTaskHome(session: Session, inDb: Database.Database, fn: (db: Database.Database) => number): number {
+  const touched = fn(inDb);
+  if (touched > 0 || session.messaging_group_id == null) return touched;
+
+  const headless = findActiveHeadlessSession(session.agent_group_id, session.owner_key);
+  if (!headless || headless.id === session.id) return touched;
+
+  const headlessDb = openInboundDb(session.agent_group_id, headless.id);
+  try {
+    return fn(headlessDb);
+  } finally {
+    headlessDb.close();
+  }
+}
 
 export async function handleScheduleTask(
   content: Record<string, unknown>,
@@ -67,32 +90,32 @@ export async function handleScheduleTask(
 
 export async function handleCancelTask(
   content: Record<string, unknown>,
-  _session: Session,
+  session: Session,
   inDb: Database.Database,
 ): Promise<void> {
   const taskId = content.taskId as string;
-  cancelTask(inDb, taskId);
-  log.info('Task cancelled', { taskId });
+  const touched = applyToTaskHome(session, inDb, (db) => cancelTask(db, taskId));
+  log.info('Task cancelled', { taskId, touched });
 }
 
 export async function handlePauseTask(
   content: Record<string, unknown>,
-  _session: Session,
+  session: Session,
   inDb: Database.Database,
 ): Promise<void> {
   const taskId = content.taskId as string;
-  pauseTask(inDb, taskId);
-  log.info('Task paused', { taskId });
+  const touched = applyToTaskHome(session, inDb, (db) => pauseTask(db, taskId));
+  log.info('Task paused', { taskId, touched });
 }
 
 export async function handleResumeTask(
   content: Record<string, unknown>,
-  _session: Session,
+  session: Session,
   inDb: Database.Database,
 ): Promise<void> {
   const taskId = content.taskId as string;
-  resumeTask(inDb, taskId);
-  log.info('Task resumed', { taskId });
+  const touched = applyToTaskHome(session, inDb, (db) => resumeTask(db, taskId));
+  log.info('Task resumed', { taskId, touched });
 }
 
 export async function handleUpdateTask(
@@ -110,7 +133,7 @@ export async function handleUpdateTask(
   if (content.script === null || typeof content.script === 'string') {
     update.script = content.script as string | null;
   }
-  const touched = updateTask(inDb, taskId, update);
+  const touched = applyToTaskHome(session, inDb, (db) => updateTask(db, taskId, update));
   log.info('Task updated', { taskId, touched, fields: Object.keys(update) });
   if (touched === 0) {
     // Notify the agent that update_task matched nothing. Replicates the

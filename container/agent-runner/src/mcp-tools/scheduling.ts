@@ -5,7 +5,9 @@
  * Scheduling operations are sent as system actions via messages_out — the host
  * reads them during delivery and applies the changes to inbound.db.
  */
-import { getInboundDb } from '../db/connection.js';
+import type { Database } from 'bun:sqlite';
+
+import { getInboundDb, openHeadlessInboundDb } from '../db/connection.js';
 import { writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
 import { TIMEZONE, parseZonedToUtc } from '../timezone.js';
@@ -26,6 +28,45 @@ function routing() {
 
 function ok(text: string) {
   return { content: [{ type: 'text' as const, text }] };
+}
+
+interface TaskRow {
+  id: string;
+  status: string;
+  process_after: string | null;
+  recurrence: string | null;
+  content: string;
+}
+
+/**
+ * One row per series — the live (pending or paused) occurrence. Recurring tasks
+ * accumulate one completed row per firing plus one live follow-up; exposing the
+ * whole pile is noisy and confuses task identity ("which id do I cancel?"). The
+ * series_id is the stable handle.
+ *
+ * SQLite quirk: when MAX(seq) appears in the SELECT list of a GROUP BY query,
+ * the bare columns take values from the row that contains that max — that's how
+ * we pick "the latest live row per series" in one pass.
+ */
+function queryTaskSeries(db: Database, status: string | undefined): TaskRow[] {
+  if (status) {
+    return db
+      .prepare(
+        `SELECT series_id AS id, status, process_after, recurrence, content, MAX(seq) AS _seq
+           FROM messages_in
+          WHERE kind = 'task' AND status = ?
+          GROUP BY series_id`,
+      )
+      .all(status) as TaskRow[];
+  }
+  return db
+    .prepare(
+      `SELECT series_id AS id, status, process_after, recurrence, content, MAX(seq) AS _seq
+         FROM messages_in
+        WHERE kind = 'task' AND status IN ('pending', 'paused')
+        GROUP BY series_id`,
+    )
+    .all() as TaskRow[];
 }
 
 function err(text: string) {
@@ -114,41 +155,30 @@ export const listTasks: McpToolDefinition = {
   },
   async handler(args) {
     const status = args.status as string | undefined;
-    const db = getInboundDb();
-    // One row per series — the live (pending or paused) occurrence. Recurring
-    // tasks accumulate one completed row per firing plus one live follow-up;
-    // exposing the whole pile to the agent is noisy and confuses task identity
-    // ("which id do I cancel?"). The series_id is the stable handle.
-    //
-    // SQLite quirk: when MAX(seq) appears in the SELECT list of a GROUP BY
-    // query, the bare columns take values from the row that contains that max
-    // — that's how we pick "the latest live row per series" in one pass.
-    let rows;
-    if (status) {
-      rows = db
-        .prepare(
-          `SELECT series_id AS id, status, process_after, recurrence, content, MAX(seq) AS _seq
-             FROM messages_in
-            WHERE kind = 'task' AND status = ?
-            GROUP BY series_id
-            ORDER BY process_after ASC`,
-        )
-        .all(status);
-    } else {
-      rows = db
-        .prepare(
-          `SELECT series_id AS id, status, process_after, recurrence, content, MAX(seq) AS _seq
-             FROM messages_in
-            WHERE kind = 'task' AND status IN ('pending', 'paused')
-            GROUP BY series_id
-            ORDER BY process_after ASC`,
-        )
-        .all();
+
+    // Union this session's tasks with the owner's headless session, where
+    // recurring tasks are consolidated (the host mounts it read-only at
+    // /workspace/.headless). Without the union, a list from an interactive
+    // session shows "empty" and the agent re-creates crons it already has.
+    const headlessDb = openHeadlessInboundDb();
+    let rows: TaskRow[];
+    try {
+      const here = queryTaskSeries(getInboundDb(), status);
+      const there = headlessDb ? queryTaskSeries(headlessDb, status) : [];
+      // Dedup by series id; the two sessions hold disjoint series in practice,
+      // but guard against a migrated row appearing in both.
+      const byId = new Map<string, TaskRow>();
+      for (const r of [...here, ...there]) if (!byId.has(r.id)) byId.set(r.id, r);
+      rows = [...byId.values()].sort((a, b) =>
+        String(a.process_after ?? '').localeCompare(String(b.process_after ?? '')),
+      );
+    } finally {
+      headlessDb?.close();
     }
 
-    if ((rows as unknown[]).length === 0) return ok('No tasks found.');
+    if (rows.length === 0) return ok('No tasks found.');
 
-    const lines = (rows as Array<{ id: string; status: string; process_after: string | null; recurrence: string | null; content: string }>).map((r) => {
+    const lines = rows.map((r) => {
       const content = JSON.parse(r.content);
       const prompt = (content.prompt as string || '').slice(0, 80);
       return `- ${r.id} [${r.status}] at=${r.process_after || 'now'} ${r.recurrence ? `recur=${r.recurrence} ` : ''}→ ${prompt}`;

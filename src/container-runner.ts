@@ -30,6 +30,7 @@ import {
 import { detectAuthMode } from './credential-proxy.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
+import { findActiveHeadlessSession } from './db/sessions.js';
 import { initGroupFilesystem } from './group-init.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
@@ -476,6 +477,23 @@ export function buildMounts(
 
   // Session folder at /workspace (inbound.db, outbound.db, outbox/). Per-session.
   mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false });
+
+  // Recurring tasks are consolidated into the owner's headless session (see
+  // handleScheduleTask). An interactive container only has its OWN session
+  // folder, so list_tasks would report "empty" and the agent re-creates the
+  // cron. Mount the owner's headless session folder read-only so list_tasks can
+  // union it. Only when one already exists and we aren't it; the whole dir (not
+  // just inbound.db) so SQLite's rollback-journal sidecar stays visible.
+  if (session.messaging_group_id != null) {
+    const headless = findActiveHeadlessSession(agentGroup.id, session.owner_key);
+    if (headless && headless.id !== session.id) {
+      mounts.push({
+        hostPath: sessionDir(agentGroup.id, headless.id),
+        containerPath: '/workspace/.headless',
+        readonly: true,
+      });
+    }
+  }
 
   // /workspace/agent — the per-person WRITABLE working dir, FULLY read-write.
   // Holds the synced code (above) + all agent data. THIS is the isolation

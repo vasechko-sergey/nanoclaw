@@ -12,7 +12,7 @@ import {
   resolveProviderName,
 } from './container-runner.js';
 import { DATA_DIR, GROUPS_DIR, OWNER_PERSON_KEY } from './config.js';
-import { initTestDb, closeDb, runMigrations, createAgentGroup } from './db/index.js';
+import { initTestDb, closeDb, runMigrations, createAgentGroup, createSession } from './db/index.js';
 import { initSessionFolder, openOutboundDbRw, outboundDbPath, sessionDir } from './session-manager.js';
 import type { Session } from './types.js';
 
@@ -311,5 +311,74 @@ describe('buildMounts owner isolation', () => {
     // The shared mount resolves through the same ownerKey fallback.
     const sharedMount = mounts.find((m) => m.containerPath === '/workspace/shared');
     expect(sharedMount?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, 'shared'));
+  });
+});
+
+// Recurring tasks are consolidated into the owner's headless session. An
+// interactive session must mount that session's folder read-only so list_tasks
+// inside the container can see them (the container only ever has its OWN session
+// folder otherwise). See src/modules/scheduling/actions.ts.
+const HTV_AG = 'ag-test-htv';
+const HTV_FOLDER = 'test-htv-mounts';
+
+describe('buildMounts headless task visibility', () => {
+  const cfg = { provider: 'claude', skills: [] as string[], additionalMounts: [] } as any;
+
+  function htvSession(id: string, messagingGroupId: string | null): Session {
+    return {
+      id,
+      agent_group_id: HTV_AG,
+      messaging_group_id: messagingGroupId,
+      thread_id: null,
+      owner_key: 'htvowner',
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: 'now',
+    };
+  }
+
+  function buildFor(session: Session) {
+    const agentGroup = { id: HTV_AG, name: 'Htv', folder: HTV_FOLDER, agent_provider: null, created_at: 'now' };
+    return buildMounts(agentGroup as any, session as any, cfg, {});
+  }
+
+  beforeEach(() => {
+    const db = initTestDb();
+    runMigrations(db);
+    createAgentGroup({ id: HTV_AG, name: 'Htv', folder: HTV_FOLDER, agent_provider: null, created_at: 'now' });
+  });
+  afterEach(() => {
+    closeDb();
+    fs.rmSync(path.join(GROUPS_DIR, HTV_FOLDER), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'user-memory', 'htvowner'), { recursive: true, force: true });
+    fs.rmSync(path.join(DATA_DIR, 'v2-sessions', HTV_AG), { recursive: true, force: true });
+  });
+
+  it('mounts the owner headless session folder read-only at /workspace/.headless', () => {
+    createSession(htvSession('sess-htv-headless', null));
+    const mounts = buildFor(htvSession('sess-htv-interactive', 'mg-htv'));
+    const m = mounts.find((x) => x.containerPath === '/workspace/.headless');
+    expect(m?.hostPath).toBe(sessionDir(HTV_AG, 'sess-htv-headless'));
+    expect(m?.readonly).toBe(true);
+  });
+
+  it('does NOT mount .headless for the headless session itself (no self-mount)', () => {
+    createSession(htvSession('sess-htv-headless', null));
+    const mounts = buildFor(htvSession('sess-htv-headless', null));
+    expect(mounts.find((x) => x.containerPath === '/workspace/.headless')).toBeUndefined();
+  });
+
+  it('does NOT mount .headless when the owner has no headless session', () => {
+    const mounts = buildFor(htvSession('sess-htv-interactive', 'mg-htv'));
+    expect(mounts.find((x) => x.containerPath === '/workspace/.headless')).toBeUndefined();
+  });
+
+  it("does NOT mount another person's headless session", () => {
+    // Headless belongs to a DIFFERENT owner — must not leak into this person's container.
+    createSession({ ...htvSession('sess-htv-headless-other', null), owner_key: 'someoneelse' });
+    const mounts = buildFor(htvSession('sess-htv-interactive', 'mg-htv'));
+    expect(mounts.find((x) => x.containerPath === '/workspace/.headless')).toBeUndefined();
   });
 });
