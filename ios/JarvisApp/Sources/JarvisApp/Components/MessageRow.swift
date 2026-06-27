@@ -704,6 +704,11 @@ struct WorkoutPlanRow: View {
                         .disabled(info.done)
 
                         if !info.done {
+                            // No explicit buttonStyle — matches the sibling
+                            // "Посмотреть" button and the working two-option
+                            // ActionRow. A `.plain` button here gets its tap
+                            // swallowed by the `.automatic` sibling's cell-wide
+                            // hit target inside the UICollectionViewListCell.
                             Button {
                                 Theme.hapticSend()
                                 onCancel?(info.plan.workoutId)
@@ -711,11 +716,12 @@ struct WorkoutPlanRow: View {
                                 Text("Отменить")
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(Theme.textSecondary)
-                                    .padding(.horizontal, 12)
+                                    .padding(.horizontal, 14)
                                     .padding(.vertical, 8)
+                                    .background(Theme.surface)
+                                    .clipShape(Capsule())
                                     .overlay(Capsule().stroke(Theme.surfaceBorder, lineWidth: Theme.lineHairline))
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                     .animation(.easeOut(duration: 0.2), value: info.done)
