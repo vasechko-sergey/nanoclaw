@@ -114,12 +114,15 @@ struct ChatView: View {
     /// originating message id so the card can be marked done on close.
     /// Shared slug→cached-image-URL resolver (used by both preview and runner).
     private func resolveImageURL(slug: String, plan: WorkoutPlan) -> URL? {
-        if let entry = plan.imageManifest.first(where: { $0.slug == slug }),
-           coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256) {
+        // No manifest entry → the plan carries no image for this exercise (e.g.
+        // one antitrainer has no demo for). Show the placeholder, NOT a stale
+        // cached blob from a past plan — keeps a unified "no demo" look.
+        guard let entry = plan.imageManifest.first(where: { $0.slug == slug }) else { return nil }
+        if coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256) {
             return coordinator.imageCache.path(forSlug: entry.slug, sha256: entry.sha256)
         }
-        // Fallback: newest cached blob for this slug regardless of sha — covers a
-        // manifest-sha vs served-blob-sha drift so a delivered image still resolves.
+        // Manifest entry present but its sha isn't cached yet (sha drift or
+        // not-yet-delivered) → newest cached blob for the slug.
         return coordinator.imageCache.latestPath(slug: slug)
     }
 
