@@ -31,12 +31,10 @@ function formatData(data: Record<string, unknown>): string {
 }
 
 function ts(): string {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  return `${hh}:${mm}:${ss}.${ms}`;
+  // Date-bearing UTC timestamp. The host appends to long-lived, unrotated log
+  // files; a bare HH:MM:SS once caused a stale-log misread (15h-old errors read
+  // as "now"). ISO without the T/Z separators: "2026-06-28 10:55:45.123".
+  return new Date().toISOString().replace('T', ' ').replace('Z', '');
 }
 
 function emit(level: Level, msg: string, data?: Record<string, unknown>): void {
