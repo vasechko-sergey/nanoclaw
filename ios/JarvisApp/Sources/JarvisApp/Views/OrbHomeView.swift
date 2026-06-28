@@ -111,8 +111,9 @@ struct OrbHomeView: View {
 
                     Spacer()
 
-                    HealthStripView(levels: stateService.state?.levels)
+                    SummaryEntryView(agents: stateService.state?.agents ?? [])
                         .onTapGesture { showStateBoard = true }
+                        .padding(.horizontal, Theme.hPadding)
                         .padding(.bottom, Theme.scaled(8))
                 }
             }

@@ -64,4 +64,14 @@ final class AgentDashboardTests: XCTestCase {
         XCTAssertEqual(StateBoardView.MetricTone.parse(nil), .neutral)
         XCTAssertEqual(StateBoardView.MetricTone.parse("nonsense"), .neutral)
     }
+
+    func testSummaryPlural() {
+        XCTAssertEqual(SummaryEntryView.plural(1), "дело")
+        XCTAssertEqual(SummaryEntryView.plural(2), "дела")
+        XCTAssertEqual(SummaryEntryView.plural(4), "дела")
+        XCTAssertEqual(SummaryEntryView.plural(5), "дел")
+        XCTAssertEqual(SummaryEntryView.plural(11), "дел")
+        XCTAssertEqual(SummaryEntryView.plural(21), "дело")
+        XCTAssertEqual(SummaryEntryView.plural(0), "дел")
+    }
 }
