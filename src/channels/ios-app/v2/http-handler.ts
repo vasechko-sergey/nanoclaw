@@ -81,7 +81,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
     scrooge: { title: 'Финансы · Scrooge', icon: '💰' },
     jarvis: { title: 'Фокус · Jarvis', icon: '🧭' },
   };
-  const AGENT_ORDER = ['greg', 'gordon', 'payne', 'scrooge', 'jarvis'];
+  const AGENT_ORDER = ['jarvis', 'payne', 'greg', 'scrooge', 'gordon'];
 
   const authIdentity = (req: http.IncomingMessage): { platform_id: string; person_key: string } | null => {
     const auth = req.headers.authorization ?? '';
@@ -343,6 +343,8 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
           summary: p.summary,
           detail: p.detail,
           updated: p.updated,
+          metrics: p.metrics,
+          action: p.action,
         };
       });
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ levels, agents }));

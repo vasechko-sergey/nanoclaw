@@ -375,6 +375,35 @@ describe('GET /ios/state', () => {
     const r = await fetchJson(`${h.url}/ios/state`, { method: 'GET' });
     expect(r.status).toBe(401);
   });
+
+  it('orders agents by picker order and passes through metrics + action', async () => {
+    const profilesDir = join(userGlobalRoot(PERSON), 'profiles');
+    mkdirSync(profilesDir, { recursive: true });
+    writeFileSync(
+      join(profilesDir, 'greg.md'),
+      `---\nupdated: 2026-06-13\nsummary: ok\naction: Лёгкий день\nmetrics: [{"v":"68","l":"готовность","t":"warn"},{"v":"6.2ч","l":"сон"}]\n---\nbody`,
+    );
+    writeFileSync(
+      join(profilesDir, 'jarvis.md'),
+      `---\nupdated: 2026-06-13\nsummary: focus\naction: 10:00 встреча\nmetrics: [{"v":"2","l":"события"}]\n---\nbody`,
+    );
+
+    const r = await fetchJson(`${h.url}/ios/state`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    const body = r.json() as {
+      agents: Array<{ key: string; action?: string; metrics?: Array<{ v: string; l: string; t?: string }> }>;
+    };
+    expect(body.agents[0].key).toBe('jarvis');
+    const greg = body.agents.find((a) => a.key === 'greg')!;
+    expect(greg.action).toBe('Лёгкий день');
+    expect(greg.metrics).toEqual([
+      { v: '68', l: 'готовность', t: 'warn' },
+      { v: '6.2ч', l: 'сон' },
+    ]);
+  });
 });
 
 describe('unknown routes', () => {
