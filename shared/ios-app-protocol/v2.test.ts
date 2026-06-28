@@ -307,4 +307,28 @@ describe('workout envelopes', () => {
     });
     expect(parsed.type).toBe('coach_message');
   });
+
+  it('parses image_ready (by-reference image envelope)', () => {
+    const e = Envelopes.ImageReady.parse({
+      ...base, kind: 'control', type: 'image_ready',
+      payload: { slug: 'incline-db-press', sha256: 'abc123', agent_id: 'payne' },
+    });
+    expect(e.payload.slug).toBe('incline-db-press');
+    expect(e.payload.sha256).toBe('abc123');
+  });
+
+  it('image_ready requires slug and sha256', () => {
+    expect(() => Envelopes.ImageReady.parse({
+      ...base, kind: 'control', type: 'image_ready',
+      payload: { slug: 'x' },
+    })).toThrow();
+  });
+
+  it('AnyEnvelope discriminated union accepts image_ready', () => {
+    const parsed = AnyEnvelope.parse({
+      ...base, kind: 'control', type: 'image_ready',
+      payload: { slug: 's', sha256: 'h' },
+    });
+    expect(parsed.type).toBe('image_ready');
+  });
 });

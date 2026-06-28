@@ -20,10 +20,11 @@
 // vars + a live ws server).
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, createReadStream } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ChannelSetup } from '../../adapter.js';
+import type { ImageCache } from './image-cache.js';
 import { HealthUploadBody } from '../../../../shared/ios-app-protocol/index.js';
 import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
 import { sickDayCheck } from '../../../modules/health-trigger/sick-day.js';
@@ -61,12 +62,17 @@ export interface HttpHandlerDeps {
   healthAgentFolder: string;
   /** Where proactive HTTP fallbacks go — same hook as the WS path. */
   getChannelSetup: () => ChannelSetup | null;
+  /**
+   * Host-side image byte cache for by-reference image delivery. Serves
+   * `GET /ios/image?slug=&sha=`. Absent → that route 404s (feature off).
+   */
+  imageCache?: ImageCache;
   log: (msg: string, ctx?: Record<string, unknown>) => void;
   logWarn: (msg: string, ctx?: Record<string, unknown>) => void;
 }
 
 export function createIosHttpHandler(deps: HttpHandlerDeps) {
-  const { resolveToken, healthRequestsStore, healthAgentFolder, getChannelSetup, log, logWarn } = deps;
+  const { resolveToken, healthRequestsStore, healthAgentFolder, getChannelSetup, imageCache, log, logWarn } = deps;
 
   const AGENT_META: Record<string, { title: string; icon: string }> = {
     greg: { title: 'Здоровье · Greg', icon: '🩺' },
@@ -122,6 +128,48 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
         days: r.days,
       }));
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(rows));
+      return;
+    }
+
+    // By-reference image bytes. The client receives an `image_ready { slug,
+    // sha256 }` envelope on the WS and fetches the bytes here, so multi-MB
+    // base64 never rides the realtime stream. Bearer auth; slug/sha are
+    // validated against a strict charset (path-traversal guard) by ImageCache.
+    if (req.method === 'GET' && url.pathname === '/ios/image') {
+      const id = authIdentity(req);
+      if (!id) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
+        return;
+      }
+      const slug = url.searchParams.get('slug') ?? '';
+      const sha = url.searchParams.get('sha') ?? '';
+      if (!imageCache || !slug || !sha) {
+        res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"slug and sha required"}');
+        return;
+      }
+      let filePath: string;
+      try {
+        filePath = imageCache.path(slug, sha); // throws on a malformed (traversal) key
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"invalid slug or sha"}');
+        return;
+      }
+      if (!imageCache.has(slug, sha)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' }).end('{"error":"not found"}');
+        return;
+      }
+      // sha-pinned content is immutable — let the client cache it forever.
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      });
+      const stream = createReadStream(filePath);
+      stream.on('error', (err) => {
+        logWarn('image stream failed', { slug, error: String(err) });
+        if (!res.headersSent) res.writeHead(500).end();
+        else res.end();
+      });
+      stream.pipe(res);
       return;
     }
 

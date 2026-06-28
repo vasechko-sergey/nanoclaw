@@ -120,7 +120,9 @@ actor TransportV2 {
             payload: .auth(V2.Auth(
                 token: token,
                 last_seen_inbound_seq: lastSeenInbound,
-                capabilities: [],
+                // Tell the host this client fetches images by reference, so it
+                // sends tiny `image_ready` refs instead of inline base64 blobs.
+                capabilities: ["image_ref"],
                 app_version: appVersion,
                 build: appBuild
             ))
@@ -200,8 +202,10 @@ actor TransportV2 {
             let hit = try store.updateMessageText(id: u.id, text: u.text)
             Log.info(.ws, "[delivery] applied update target=\(u.id) hit=\(hit)")
             try await sendStatus(.delivered, ids: [env.id])
-        case .workoutPlan, .imageBlob, .coachMessage, .exerciseSwapOptions, .programUpdate:
+        case .workoutPlan, .imageBlob, .imageReady, .coachMessage, .exerciseSwapOptions, .programUpdate:
             // Forward to the facade for typed decode + UI bus publication.
+            // (image_ready triggers an off-main HTTP byte fetch in AppCoordinator;
+            // the tiny ref itself is acked here, same per-id model as the rest.)
             onWorkoutEnvelope?(env)
             // Per-id delivery ack. Workout-family envelopes are EXEMPT from the
             // host's chat-cursor `ackUpTo` (the client never advances that cursor

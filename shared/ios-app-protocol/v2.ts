@@ -303,6 +303,19 @@ export const Envelopes = {
       agent_id: z.string().min(1).optional(),
     }),
   }),
+  // By-reference image delivery. Replaces ImageBlob on the realtime stream for
+  // capability-`image_ref` devices: the bytes are cached host-side and fetched
+  // by the client over HTTP (`GET /ios/image?slug=&sha=`), so multi-MB base64
+  // never rides the WS envelope stream and can never head-of-line-block text.
+  ImageReady: EnvelopeBase.extend({
+    kind: z.literal('control'),
+    type: z.literal('image_ready'),
+    payload: z.object({
+      slug: z.string().min(1),
+      sha256: z.string().min(1),
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
   ExerciseSwapRequest: EnvelopeBase.extend({
     kind: z.literal('control'),
     type: z.literal('exercise_swap_request'),
@@ -437,7 +450,7 @@ export const AnyEnvelope = z.discriminatedUnion('type', [
   // Workout-mode envelopes (P3.T1)
   Envelopes.WorkoutStartRequest, Envelopes.WorkoutPlan, Envelopes.SetLog,
   Envelopes.ExerciseDone, Envelopes.WorkoutComplete, Envelopes.WorkoutAbort,
-  Envelopes.ImageRequest, Envelopes.ImageBlob,
+  Envelopes.ImageRequest, Envelopes.ImageBlob, Envelopes.ImageReady,
   Envelopes.ExerciseSwapRequest, Envelopes.ExerciseSwapConfirm,
   Envelopes.ExerciseSwapOptions, Envelopes.ProgramUpdate,
   Envelopes.CoachMessage, Envelopes.IntroRequest,

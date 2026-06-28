@@ -34,6 +34,7 @@ import { ReceiptStore } from './receipt-store.js';
 import { InboundDispatcher } from './inbound-dispatch.js';
 import { ContextBridge } from './context-bridge.js';
 import { WorkoutBridge } from './workout-bridge.js';
+import { ImageCache } from './image-cache.js';
 import { WsHandler } from './ws-handler.js';
 import { HealthRequestsStore } from './health-requests-store.js';
 import { createIosHttpHandler } from './http-handler.js';
@@ -203,6 +204,10 @@ function createV2Adapter(): ChannelAdapter | null {
   const queue = new OutboundQueue(db);
   const receipts = new ReceiptStore(db);
   const healthRequestsStore = new HealthRequestsStore(db);
+  // By-reference image delivery: bytes for capability-`image_ref` devices are
+  // cached here (sibling to transport.db) and served over HTTP, never inlined
+  // as base64 on the WS stream. See image-cache.ts / image-ref.ts.
+  const imageCache = new ImageCache(path.join(path.dirname(dbPath), 'image-cache'));
 
   // Health daily aggregates land under each person's HEALTH agent folder in
   // user-memory: data/user-memory/<person>/<HEALTH_AGENT_FOLDER>/health/health.db.
@@ -393,6 +398,7 @@ function createV2Adapter(): ChannelAdapter | null {
     queue,
     dispatcher,
     contextBridge,
+    imageCache,
     commands: BOT_COMMANDS.map((c) => ({
       command: '/' + c.command,
       description: c.description,
@@ -457,6 +463,7 @@ function createV2Adapter(): ChannelAdapter | null {
         healthRequestsStore,
         healthAgentFolder: HEALTH_AGENT_FOLDER,
         getChannelSetup: () => cfg,
+        imageCache,
         log: logV2,
         logWarn: logV2Warn,
       });

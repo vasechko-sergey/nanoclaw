@@ -96,6 +96,19 @@ final class ExerciseImageCache {
         return url
     }
 
+    /// Persist already-decoded bytes (e.g. an HTTP-fetched `image_ready`).
+    /// Mirrors `write(slug:sha256:base64:)` but takes raw `Data` — no base64
+    /// round-trip. Atomic; clears the in-flight marker.
+    @discardableResult
+    func store(slug: String, sha256: String, data: Data) throws -> URL {
+        let url = path(forSlug: slug, sha256: sha256)
+        try data.write(to: url, options: .atomic)
+        lock.lock()
+        inflightSlugs.remove(slug)
+        lock.unlock()
+        return url
+    }
+
     /// For tests / cleanup: drop all cached files.
     func clear() throws {
         let items = try FileManager.default.contentsOfDirectory(

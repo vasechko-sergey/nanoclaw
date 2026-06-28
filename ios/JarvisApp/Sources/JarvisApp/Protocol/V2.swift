@@ -36,6 +36,7 @@ enum V2 {
         case workoutAbort = "workout_abort"
         case imageRequest = "image_request"
         case imageBlob = "image_blob"
+        case imageReady = "image_ready"
         case exerciseSwapRequest = "exercise_swap_request"
         case exerciseSwapConfirm = "exercise_swap_confirm"
         case exerciseSwapOptions = "exercise_swap_options"
@@ -68,6 +69,7 @@ enum V2 {
         case workoutAbort(WorkoutAbort)
         case imageRequest(ImageRequest)
         case imageBlob(ImageBlob)
+        case imageReady(ImageReady)
         case exerciseSwapRequest(ExerciseSwapRequest)
         case exerciseSwapConfirm(ExerciseSwapConfirm)
         case exerciseSwapOptions(ExerciseSwapOptions)
@@ -356,6 +358,19 @@ enum V2 {
         }
     }
 
+    /// By-reference image. Carries only the slug + sha256 (no bytes); the client
+    /// fetches the bytes over HTTP (`GET /ios/image?slug=&sha=`). Replaces
+    /// `ImageBlob` on the realtime stream for `image_ref`-capable clients so
+    /// multi-MB base64 never head-of-line-blocks text. Host: image-ref.ts.
+    struct ImageReady: Codable, Equatable {
+        let slug: String
+        let sha256: String
+        var agent_id: String?
+        init(slug: String, sha256: String, agent_id: String? = nil) {
+            self.slug = slug; self.sha256 = sha256; self.agent_id = agent_id
+        }
+    }
+
     struct ExerciseSwapRequest: Codable, Equatable {
         let workout_id: String
         let exercise_slug: String
@@ -596,6 +611,8 @@ extension V2.Envelope: Codable {
             payload = .imageRequest(try V2.ImageRequest(from: payloadDecoder))
         case .imageBlob:
             payload = .imageBlob(try V2.ImageBlob(from: payloadDecoder))
+        case .imageReady:
+            payload = .imageReady(try V2.ImageReady(from: payloadDecoder))
         case .exerciseSwapRequest:
             payload = .exerciseSwapRequest(try V2.ExerciseSwapRequest(from: payloadDecoder))
         case .exerciseSwapConfirm:
@@ -647,6 +664,7 @@ extension V2.Envelope: Codable {
         case .workoutAbort(let p): try p.encode(to: payloadEncoder)
         case .imageRequest(let p): try p.encode(to: payloadEncoder)
         case .imageBlob(let p): try p.encode(to: payloadEncoder)
+        case .imageReady(let p): try p.encode(to: payloadEncoder)
         case .exerciseSwapRequest(let p): try p.encode(to: payloadEncoder)
         case .exerciseSwapConfirm(let p): try p.encode(to: payloadEncoder)
         case .exerciseSwapOptions(let p): try p.encode(to: payloadEncoder)

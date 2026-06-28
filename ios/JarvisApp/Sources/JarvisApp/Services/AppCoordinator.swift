@@ -33,6 +33,10 @@ final class AppCoordinator {
     /// the v2 transport so misses turn into `image_request` envelopes.
     @ObservationIgnored private(set) var imageCache: ExerciseImageCache!
 
+    /// Fetches by-reference (`image_ready`) image bytes over HTTP into
+    /// `imageCache`, off the main thread. See `ImageFetcher`.
+    @ObservationIgnored private(set) var imageFetcher: ImageFetcher!
+
     /// Held so the one-shot cache prewarm can run in `startBackgroundPrep()`
     /// (after the splash appears) rather than at init (before any UI).
     @ObservationIgnored private var chatStore: ConversationStoreV2?
@@ -96,12 +100,23 @@ final class AppCoordinator {
         )
         // Build the shared image cache after `ws` is set so the request sender
         // can read the lazily-built transport once it exists.
-        self.imageCache = ExerciseImageCache(
+        let imageCache = ExerciseImageCache(
             baseURL: ExerciseImageCache.defaultBaseURL(),
             imageRequestSender: { [weak self] slug in
                 Task { @MainActor [weak self] in
                     guard let stack = self?.ws.stack else { return }
                     try? await stack.transport.sendImageRequest(slug: slug)
+                }
+            }
+        )
+        self.imageCache = imageCache
+        // Fetches by-reference (`image_ready`) image bytes over HTTP, off-main,
+        // into the same cache — keeping multi-MB base64 off the realtime stream.
+        self.imageFetcher = ImageFetcher(
+            cache: imageCache,
+            onFetched: { [weak self] slug in
+                Task { @MainActor [weak self] in
+                    self?.workoutBus.events.send(.imageReceived(slug: slug))
                 }
             }
         )
@@ -369,12 +384,22 @@ final class AppCoordinator {
             }
 
         case .imageBlob(let b):
+            // Legacy inline path — kept for backward compatibility while the
+            // host rolls out by-reference delivery (an old host, or one that
+            // hasn't seen our `image_ref` capability yet, still sends blobs).
             do {
                 try imageCache.write(slug: b.slug, sha256: b.sha256, base64: b.base64)
                 // Let an open swap sheet refresh its alternative thumbnails.
                 workoutBus.events.send(.imageReceived(slug: b.slug))
             } catch {
                 Log.warn(.ws, "image_blob write failed for slug=\(b.slug): \(error)")
+            }
+
+        case .imageReady(let r):
+            // By-reference path: fetch the bytes over HTTP off-main, then refresh
+            // thumbnails (the fetcher fires `.imageReceived` via onFetched).
+            Task { [imageFetcher] in
+                await imageFetcher?.fetch(slug: r.slug, sha256: r.sha256)
             }
 
         case .coachMessage(let c):

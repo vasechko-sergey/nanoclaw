@@ -4,6 +4,9 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { openTransportDb, type TransportDb } from '../transport-db.js';
 import { OutboundQueue } from '../outbound-queue.js';
@@ -11,6 +14,7 @@ import { ReceiptStore } from '../receipt-store.js';
 import { InboundDispatcher } from '../inbound-dispatch.js';
 import { ContextBridge } from '../context-bridge.js';
 import { WorkoutBridge } from '../workout-bridge.js';
+import { ImageCache } from '../image-cache.js';
 import { WsHandler } from '../ws-handler.js';
 
 export interface HarnessReceivedEvent {
@@ -78,6 +82,7 @@ export interface Harness {
   queue: OutboundQueue;
   bridge: ContextBridge;
   workoutBridge: WorkoutBridge;
+  imageCache: ImageCache;
   handler: WsHandler;
   agent: { received: HarnessReceivedEvent[]; systemWrites: HarnessSystemWrite[] };
   close(): Promise<void>;
@@ -94,6 +99,8 @@ export async function startTestServer(): Promise<Harness> {
   const db = openTransportDb(':memory:');
   const queue = new OutboundQueue(db);
   const receipts = new ReceiptStore(db);
+  const imageCacheDir = mkdtempSync(join(tmpdir(), 'harness-img-'));
+  const imageCache = new ImageCache(imageCacheDir);
   const agent: { received: HarnessReceivedEvent[]; systemWrites: HarnessSystemWrite[] } = {
     received: [],
     systemWrites: [],
@@ -149,6 +156,7 @@ export async function startTestServer(): Promise<Harness> {
     queue,
     dispatcher,
     contextBridge: bridge,
+    imageCache,
     validateToken: async (token) => (token === validToken ? platformId : null),
   });
 
@@ -167,6 +175,7 @@ export async function startTestServer(): Promise<Harness> {
     queue,
     bridge,
     workoutBridge,
+    imageCache,
     handler,
     agent,
     async close() {
@@ -174,6 +183,7 @@ export async function startTestServer(): Promise<Harness> {
       await new Promise<void>((r) => wss.close(() => r()));
       await new Promise<void>((r) => server.close(() => r()));
       db.raw.close();
+      rmSync(imageCacheDir, { recursive: true, force: true });
     },
     send(ws, envelope) {
       ws.send(JSON.stringify(envelope));
