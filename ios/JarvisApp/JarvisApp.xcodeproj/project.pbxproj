@@ -157,6 +157,7 @@
 		E772C83F0C3EC1AFB1D8C7A7 /* FocusSetCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0C8F23441F1DD108E2C0EE /* FocusSetCard.swift */; };
 		EA5F7794D8CE0B26CC3A3D66 /* StateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF942308460AF6C2A8AE638E /* StateService.swift */; };
 		EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 407AF8586506D0610BCD4DC7 /* Workout.swift */; };
+		EC8E2456A6CEDB92A85DF17E /* AgentDashboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDD1D3092CADFE728FBC6D9 /* AgentDashboardTests.swift */; };
 		ECABEF30369E237C4C4EFDA1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9143ED9DD7B640862D468B63 /* Assets.xcassets */; };
 		ED86C8462FA285929BB5D83B /* WatchConnectivityBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */; };
 		EE49457CC13C07D3BF6CCEDD /* DeliveryChecksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */; };
@@ -250,6 +251,7 @@
 		4B444C288D4DEB267ABF3D02 /* V2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2.swift; sourceTree = "<group>"; };
 		4D4FF344A7F45A86D8241127 /* StoredAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredAttachment.swift; sourceTree = "<group>"; };
 		4DCBEC9BA80E9EC8768D5A6B /* Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Schema.swift; sourceTree = "<group>"; };
+		4DDD1D3092CADFE728FBC6D9 /* AgentDashboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDashboardTests.swift; sourceTree = "<group>"; };
 		5114A888276D0E083FC387EB /* ContextBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilderTests.swift; sourceTree = "<group>"; };
 		554BF5C37C33D1542F61065C /* WatchTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
 		5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityBridgeTests.swift; sourceTree = "<group>"; };
@@ -501,6 +503,7 @@
 			children = (
 				6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */,
 				BD6558F7C0D54EB55E6DFD1C /* ActiveAgentStateTests.swift */,
+				4DDD1D3092CADFE728FBC6D9 /* AgentDashboardTests.swift */,
 				4A7602CA89C5703F581DB155 /* AgentIdentityTests.swift */,
 				18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */,
 				05ACC337A0C4A86AD116625D /* AttachmentMigrationTests.swift */,
@@ -936,6 +939,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D6AB552551DC96D807F9D72E /* ActiveAgentStateTests.swift in Sources */,
+				EC8E2456A6CEDB92A85DF17E /* AgentDashboardTests.swift in Sources */,
 				776CC332C08FABE24DB90627 /* AgentIdentityTests.swift in Sources */,
 				AFFBB9A3F440BF8A16D6FDCB /* AppV2BootstrapTests.swift in Sources */,
 				699907BA215423494BD29F45 /* AttachmentMigrationTests.swift in Sources */,
