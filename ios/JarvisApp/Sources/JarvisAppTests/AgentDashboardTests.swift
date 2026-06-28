@@ -38,4 +38,30 @@ final class AgentDashboardTests: XCTestCase {
     func testDashIconsNonEmpty() {
         for a in AgentIdentity.allCases { XCTAssertFalse(a.dashIcon.isEmpty) }
     }
+
+    private func row(action: String?) -> StateModel.AgentRow {
+        StateModel.AgentRow(key: "k", title: "t", icon: "i",
+                            summary: nil, detail: nil, updated: nil,
+                            metrics: nil, action: action)
+    }
+
+    func testShowsAction() {
+        XCTAssertTrue(StateBoardView.showsAction("Лёгкий день"))
+        XCTAssertFalse(StateBoardView.showsAction("—"))
+        XCTAssertFalse(StateBoardView.showsAction(nil))
+        XCTAssertFalse(StateBoardView.showsAction("   "))
+    }
+
+    func testActionableCount() {
+        let rows = [row(action: "a"), row(action: "—"), row(action: nil), row(action: "b")]
+        XCTAssertEqual(StateBoardView.actionableCount(rows), 2)
+    }
+
+    func testMetricToneParse() {
+        XCTAssertEqual(StateBoardView.MetricTone.parse("ok"), .ok)
+        XCTAssertEqual(StateBoardView.MetricTone.parse("warn"), .warn)
+        XCTAssertEqual(StateBoardView.MetricTone.parse("bad"), .bad)
+        XCTAssertEqual(StateBoardView.MetricTone.parse(nil), .neutral)
+        XCTAssertEqual(StateBoardView.MetricTone.parse("nonsense"), .neutral)
+    }
 }

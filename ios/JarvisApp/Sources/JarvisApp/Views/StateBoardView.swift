@@ -14,6 +14,30 @@ struct StateBoardView: View {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date())
     }
 
+    /// Chip tone parsed from the optional `t` field on a Metric.
+    enum MetricTone: Equatable {
+        case ok, warn, bad, neutral
+        static func parse(_ t: String?) -> MetricTone {
+            switch t {
+            case "ok":   return .ok
+            case "warn": return .warn
+            case "bad":  return .bad
+            default:     return .neutral
+            }
+        }
+    }
+
+    /// An action line is shown only when present and not the "—" placeholder.
+    static func showsAction(_ action: String?) -> Bool {
+        guard let a = action?.trimmingCharacters(in: .whitespaces), !a.isEmpty, a != "—" else { return false }
+        return true
+    }
+
+    /// Count of agents with a real action today — drives the home "Сводка · N" entry.
+    static func actionableCount(_ agents: [StateModel.AgentRow]) -> Int {
+        agents.filter { showsAction($0.action) }.count
+    }
+
     private func accent(_ key: String) -> Color {
         switch key {
         case "greg": return .green; case "gordon": return .orange
