@@ -8,6 +8,11 @@ export interface Levels {
   recovery: number | null;
   readiness: number | null;
 }
+export interface Metric {
+  v: string;
+  l: string;
+  t?: string;
+}
 export interface ParsedProfile {
   key: string;
   updated: string | null;
@@ -15,6 +20,8 @@ export interface ParsedProfile {
   detail: string;
   levels: Levels | null;
   recovery7d: number[] | null;
+  action: string | null;
+  metrics: Metric[] | null;
 }
 
 function parseInlineLevels(s: string): Levels | null {
@@ -30,11 +37,32 @@ function parseInlineLevels(s: string): Levels | null {
   return { energy, stress, recovery, readiness };
 }
 
+function parseMetrics(raw: string): Metric[] | null {
+  try {
+    const arr = JSON.parse(raw.trim());
+    if (!Array.isArray(arr)) return null;
+    const out: Metric[] = [];
+    for (const item of arr) {
+      if (out.length >= 3) break;
+      if (item && typeof item.v === 'string' && typeof item.l === 'string') {
+        const m: Metric = { v: item.v, l: item.l };
+        if (typeof item.t === 'string') m.t = item.t;
+        out.push(m);
+      }
+    }
+    return out.length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseProfile(key: string, text: string): ParsedProfile {
   let updated: string | null = null;
   let summary: string | null = null;
   let levels: Levels | null = null;
   let recovery7d: number[] | null = null;
+  let action: string | null = null;
+  let metrics: Metric[] | null = null;
   let detail = text;
 
   const fm = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -54,8 +82,9 @@ export function parseProfile(key: string, text: string): ParsedProfile {
         } catch {
           recovery7d = null;
         }
-      }
+      } else if (k === 'action') action = v.trim();
+      else if (k === 'metrics') metrics = parseMetrics(v);
     }
   }
-  return { key, updated, summary, detail, levels, recovery7d };
+  return { key, updated, summary, detail, levels, recovery7d, action, metrics };
 }
