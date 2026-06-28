@@ -24,10 +24,13 @@ export function normalizeNumber(token: string): string {
   return String(n);
 }
 
-// Matches currency-prefixed / spaced-grouped numbers, percentages, decimals,
-// and bare integers. Ordered so the greedy grouped form wins before the bare
-// single-digit fallback.
-const TOKEN_RE = /[$€₽£¥]?\s?\d[\d.,\s]*\d|\d+(?:\.\d+)?%?|\d/g;
+// Matches currency-prefixed / grouped numbers, percentages, decimals, and bare
+// integers. Grouping is STRICT — a separator must precede EXACTLY 3 digits (real
+// thousands grouping like "1,234" / "1 000 000"). This is deliberate: a loose
+// `\d[\d.,\s]*\d` fused comma/space-separated LISTS ("9, 11, 16") into a phantom
+// number ("91116") that no tool output could ever ground, doom-looping the
+// factuality gate. Grouped form is listed first so it wins over the bare fallback.
+const TOKEN_RE = /[$€₽£¥]?\s?\d{1,3}(?:[,\s]\d{3})+(?:\.\d+)?%?|[$€₽£¥]?\s?\d+(?:\.\d+)?%?/g;
 
 /**
  * Extract canonical data-numbers worth grounding. Phase-1 heuristic to bound
