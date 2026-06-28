@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// The agent dashboard — one card per agent (picker order), each with metric
+/// chips and one daily action; tap a card to expand its detail text. Replaces
+/// the old 4-ring health glance.
 struct StateBoardView: View {
     @ObservedObject var service: StateService
     @State private var expanded: Set<String> = []
@@ -9,12 +12,10 @@ struct StateBoardView: View {
         guard let u = updated else { return .unknown }
         return u == today ? .today : .stale
     }
-
     private static func todayKey() -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date())
     }
 
-    /// Chip tone parsed from the optional `t` field on a Metric.
     enum MetricTone: Equatable {
         case ok, warn, bad, neutral
         static func parse(_ t: String?) -> MetricTone {
@@ -27,76 +28,125 @@ struct StateBoardView: View {
         }
     }
 
-    /// An action line is shown only when present and not the "—" placeholder.
     static func showsAction(_ action: String?) -> Bool {
         guard let a = action?.trimmingCharacters(in: .whitespaces), !a.isEmpty, a != "—" else { return false }
         return true
     }
 
-    /// Count of agents with a real action today — drives the home "Сводка · N" entry.
     static func actionableCount(_ agents: [StateModel.AgentRow]) -> Int {
         agents.filter { showsAction($0.action) }.count
     }
 
-    private func accent(_ key: String) -> Color {
-        switch key {
-        case "greg": return .green; case "gordon": return .orange
-        case "payne": return .purple; case "scrooge": return .yellow
-        default: return .blue
+    private func identity(_ key: String) -> AgentIdentity? { AgentIdentity(rawValue: key) }
+    private func accent(_ key: String) -> Color { identity(key)?.accentColor ?? Theme.accent }
+
+    private func toneColor(_ tone: MetricTone) -> Color {
+        switch tone {
+        case .ok:      return AgentIdentity.greg.accentColor      // sage
+        case .warn:    return AgentIdentity.scrooge.accentColor   // gold
+        case .bad:     return AgentIdentity.gordon.accentColor    // tomato
+        case .neutral: return Theme.textPrimary
         }
+    }
+
+    private func headerTitle(_ a: StateModel.AgentRow) -> String {
+        if let id = identity(a.key) { return "\(id.displayName) · \(id.profession)" }
+        return a.title
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if let lv = service.state?.levels {
-                    HStack(spacing: 14) {
-                        RingView(value: lv.energy, caption: "энергия", color: .orange)
-                        RingView(value: lv.stress, caption: "стресс", color: .teal)
-                        RingView(value: lv.recovery, caption: "восст.", color: .green)
-                        RingView(value: lv.readiness, caption: "готовн.", color: Color(red: 0.6, green: 0.84, blue: 0.29))
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 16)
-                }
+            VStack(alignment: .leading, spacing: Theme.scaled(10)) {
                 ForEach(service.state?.agents ?? []) { a in
-                    rowView(a)
+                    cardView(a)
                 }
             }
+            .padding(.horizontal, Theme.hPadding)
+            .padding(.vertical, Theme.scaled(12))
         }
-        .navigationTitle("Состояние")
+        .background(Theme.background.ignoresSafeArea())
+        .navigationTitle("Сводка")
         .onAppear { service.refresh() }
     }
 
     @ViewBuilder
-    private func rowView(_ a: StateModel.AgentRow) -> some View {
+    private func cardView(_ a: StateModel.AgentRow) -> some View {
         let isOpen = expanded.contains(a.key)
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 8) {
-                Text(a.icon)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(a.title).font(.system(size: 13, weight: .bold))
-                    if let s = a.summary { Text(s).font(.system(size: 11)).foregroundColor(.secondary) }
-                    if isOpen {
-                        if let d = a.detail { Text(d).font(.system(size: 11)).foregroundColor(.secondary).padding(.top, 2) }
-                        if a.key == "greg", let series = service.state?.levels.recovery7d, series.count > 1 {
-                            Sparkline(values: series).stroke(Color.green, lineWidth: 2).frame(height: 26).padding(.top, 4)
-                        }
-                    }
-                }
+        let ac = accent(a.key)
+        let stale = Self.freshness(updated: a.updated, today: Self.todayKey()) == .stale
+
+        VStack(alignment: .leading, spacing: Theme.scaled(9)) {
+            HStack(spacing: 8) {
+                Image(systemName: identity(a.key)?.dashIcon ?? "circle")
+                    .font(.system(size: Theme.fontSubhead))
+                    .foregroundColor(ac)
+                Text(headerTitle(a))
+                    .font(.system(size: Theme.fontSubhead, weight: .semibold))
+                    .foregroundColor(ac)
                 Spacer()
-                Image(systemName: isOpen ? "chevron.down" : "chevron.right").font(.system(size: 10)).foregroundColor(.secondary)
+                Circle().fill(stale ? Theme.textSecondary : Theme.online)
+                    .frame(width: 6, height: 6)
+                if let u = a.updated {
+                    Text(u).font(.system(size: Theme.fontCaption)).foregroundColor(Theme.textSecondary)
+                }
             }
-            .contentShape(Rectangle())
-            .onTapGesture { if isOpen { expanded.remove(a.key) } else { expanded.insert(a.key) } }
+
+            if let metrics = a.metrics, !metrics.isEmpty {
+                HStack(spacing: 7) {
+                    ForEach(Array(metrics.enumerated()), id: \.offset) { _, m in chip(m) }
+                }
+            }
+
+            if Self.showsAction(a.action), let action = a.action {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.right").font(.system(size: Theme.fontCaption))
+                    Text(action).font(.system(size: Theme.fontCaption))
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(ac)
+            }
+
+            if isOpen {
+                if let d = a.detail, !d.isEmpty {
+                    Text(d).font(.system(size: Theme.fontCaption))
+                        .foregroundColor(Theme.textSecondary).padding(.top, 2)
+                }
+                if a.key == "greg", let series = service.state?.levels.recovery7d, series.count > 1 {
+                    Sparkline(values: series)
+                        .stroke(AgentIdentity.greg.accentColor, lineWidth: 2)
+                        .frame(height: 26).padding(.top, 4)
+                }
+            }
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .overlay(Rectangle().frame(width: 3).foregroundColor(accent(a.key)), alignment: .leading)
-        .opacity(Self.freshness(updated: a.updated, today: Self.todayKey()) == .stale ? 0.6 : 1)
-        Divider()
+        .padding(.horizontal, Theme.scaled(13))
+        .padding(.vertical, Theme.scaled(11))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
+                .stroke(Theme.surfaceBorder, lineWidth: 0.5)
+        )
+        .opacity(stale ? 0.6 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture { if isOpen { expanded.remove(a.key) } else { expanded.insert(a.key) } }
+    }
+
+    @ViewBuilder
+    private func chip(_ m: StateModel.Metric) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(m.v)
+                .font(.system(size: Theme.fontSubhead, weight: .semibold))
+                .foregroundColor(toneColor(MetricTone.parse(m.t)))
+            Text(m.l)
+                .font(.system(size: Theme.fontCaption))
+                .foregroundColor(Theme.textSecondary)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
-/// Normalized 0-100 series → path in unit rect.
+/// Normalized 0-100 series → path in unit rect. Used for Greg's recovery7d.
 struct Sparkline: Shape {
     let values: [Int]
     func path(in rect: CGRect) -> Path {
