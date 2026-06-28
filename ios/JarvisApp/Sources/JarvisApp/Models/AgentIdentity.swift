@@ -70,6 +70,29 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Profession label shown as the dashboard card subtitle (the persona's
+    /// trade, not the domain): "Dr House · врач-диагност".
+    var profession: String {
+        switch self {
+        case .jarvis:  return "дворецкий"
+        case .payne:   return "тренер"
+        case .greg:    return "врач-диагност"
+        case .scrooge: return "казначей"
+        case .gordon:  return "повар"
+        }
+    }
+
+    /// SF Symbol for the dashboard card header. All available on iOS 16.0.
+    var dashIcon: String {
+        switch self {
+        case .jarvis:  return "bell.fill"
+        case .payne:   return "figure.strengthtraining.traditional"
+        case .greg:    return "stethoscope"
+        case .scrooge: return "banknote.fill"
+        case .gordon:  return "fork.knife"
+        }
+    }
+
     /// Curated per-agent starter chips for the home orb satellites and the
     /// empty-chat state. Each agent gets a domain-relevant set rather than the
     /// Jarvis-centric `SuggestionEngine` defaults. Tapping a chip sends `text`

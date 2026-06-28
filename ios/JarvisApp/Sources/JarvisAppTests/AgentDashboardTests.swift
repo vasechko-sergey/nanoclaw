@@ -21,4 +21,21 @@ final class AgentDashboardTests: XCTestCase {
         XCTAssertNil(row.metrics)
         XCTAssertNil(row.action)
     }
+
+    func testProfessions() {
+        XCTAssertEqual(AgentIdentity.jarvis.profession, "дворецкий")
+        XCTAssertEqual(AgentIdentity.payne.profession, "тренер")
+        XCTAssertEqual(AgentIdentity.greg.profession, "врач-диагност")
+        XCTAssertEqual(AgentIdentity.scrooge.profession, "казначей")
+        XCTAssertEqual(AgentIdentity.gordon.profession, "повар")
+    }
+
+    func testPickerOrderIsCanonical() {
+        XCTAssertEqual(AgentIdentity.allCases.map(\.rawValue),
+                       ["jarvis", "payne", "greg", "scrooge", "gordon"])
+    }
+
+    func testDashIconsNonEmpty() {
+        for a in AgentIdentity.allCases { XCTAssertFalse(a.dashIcon.isEmpty) }
+    }
 }
