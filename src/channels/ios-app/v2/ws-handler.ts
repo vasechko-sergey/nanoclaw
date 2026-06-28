@@ -31,6 +31,8 @@ import type { TransportDb } from './transport-db.js';
 import type { OutboundQueue } from './outbound-queue.js';
 import type { InboundDispatcher } from './inbound-dispatch.js';
 import type { ContextBridge } from './context-bridge.js';
+import type { ImageCache } from './image-cache.js';
+import { convertImageBlobToRef } from './image-ref.js';
 import { ACK_RETRY_MS, APP_PING_INTERVAL_MS, type PlatformId } from './types.js';
 
 export const CLOSE_CODES = {
@@ -46,6 +48,13 @@ export interface WsHandlerDeps {
   queue: OutboundQueue;
   dispatcher: InboundDispatcher;
   contextBridge: ContextBridge;
+  /**
+   * Host-side image byte cache. When present, an outbound `image_blob` to a
+   * capability-`image_ref` device is rewritten to a tiny `image_ready` ref and
+   * its bytes are cached for HTTP fetch — keeping multi-MB base64 off the
+   * realtime stream. Absent → no conversion (legacy inline-blob path).
+   */
+  imageCache?: ImageCache;
   validateToken: (token: string) => Promise<PlatformId | null>;
   /**
    * Optional slash-command catalogue published on every `auth_ok`. The iOS
@@ -103,6 +112,17 @@ export class WsHandler {
    * always allocated server-side — any seq on the input is ignored.
    */
   sendEnvelopeToDevice(platform_id: PlatformId, envelope: any): void {
+    // Keep multi-MB image bytes off the realtime stream: rewrite image_blob →
+    // image_ready (and cache the bytes host-side) for ref-capable devices. A
+    // no-op for every other envelope type and for legacy clients.
+    if (this.deps.imageCache) {
+      envelope = convertImageBlobToRef(
+        envelope,
+        this.deviceSupportsImageRef(platform_id),
+        this.deps.imageCache,
+        (msg, ctx) => log.warn(`[ios-app-v2] ${msg}`, ctx),
+      );
+    }
     const id = envelope.id ?? randomUUID();
     const seq = this.deps.queue.enqueue(platform_id, {
       id,
@@ -146,6 +166,17 @@ export class WsHandler {
       }
     }
     this.sockets.clear();
+  }
+
+  /** True if the device advertised the `image_ref` capability on its last auth. */
+  private deviceSupportsImageRef(pid: PlatformId): boolean {
+    const caps = this.deps.db.getDevice(pid)?.capabilities_json;
+    if (!caps) return false;
+    try {
+      return (JSON.parse(caps) as unknown[]).includes('image_ref');
+    } catch {
+      return false;
+    }
   }
 
   private onConnection(ws: WebSocket): void {
@@ -292,7 +323,11 @@ export class WsHandler {
         type: row.type,
         id: row.id,
         seq: row.seq,
-        ts: new Date().toISOString(),
+        // Authored/enqueue time, NOT send time: a row drained from the offline
+        // queue minutes/hours late must keep its original timestamp so the iOS
+        // client (which orders the chat by `ts`) doesn't sort it after newer
+        // messages. created_at is set once at enqueue (outbound-queue.ts).
+        ts: new Date(row.created_at).toISOString(),
         payload: JSON.parse(row.payload_json),
       });
       log.info('[delivery] drain', { to: pid, type: row.type, id: row.id, seq: row.seq });
@@ -316,7 +351,11 @@ export class WsHandler {
         type: row.type,
         id: row.id,
         seq: row.seq,
-        ts: new Date().toISOString(),
+        // Authored/enqueue time, NOT send time: a row drained from the offline
+        // queue minutes/hours late must keep its original timestamp so the iOS
+        // client (which orders the chat by `ts`) doesn't sort it after newer
+        // messages. created_at is set once at enqueue (outbound-queue.ts).
+        ts: new Date(row.created_at).toISOString(),
         payload: JSON.parse(row.payload_json),
       });
     }

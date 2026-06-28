@@ -51,6 +51,7 @@
 		448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */; };
 		44C86F549EEFDBA9707EDAF3 /* MessageMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 834E333F228FB23CEB38FB63 /* MessageMappingTests.swift */; };
 		461CEB084ABB3FAFC32124BC /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */; };
+		4851B97F7257765B86ACF934 /* ImageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3ABA244E566782292F4030 /* ImageFetcher.swift */; };
 		496C7C87D93A74983F21EF54 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B48F479168B41727E62B105 /* InputBar.swift */; };
 		4A6AB9D56E2065680B3749AA /* RestTimerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D936C1B29DF1CA0ADC0AEAE /* RestTimerOverlay.swift */; };
 		4AA4A9E6701037C12967B46D /* GreetingBankTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4741A7AAAEAAB4133351A78F /* GreetingBankTests.swift */; };
@@ -115,6 +116,7 @@
 		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
 		AB14A705BBEB71BA032EC292 /* AppV2Bootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */; };
 		AB4EE93B40C86DA9562B6112 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4872976D5AE47EAE125433FA /* ServerConfig.swift */; };
+		AFB2633AA962239F6E7381CE /* MessageOrderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE6005C35E95197C886F0DDA /* MessageOrderingTests.swift */; };
 		AFFBB9A3F440BF8A16D6FDCB /* AppV2BootstrapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */; };
 		B065348C458302F95325E16F /* ThinkingRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AA5A25FF72A993B2BA61E6 /* ThinkingRowTests.swift */; };
 		B24B74F2D86B5F7D20354B2F /* ChatListItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD66A2437F0B2BEBD7D10FA /* ChatListItemTests.swift */; };
@@ -139,6 +141,7 @@
 		C30B04EF089F683141E1AFA9 /* AttachmentMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903F8E4E445A8A4777CE3812 /* AttachmentMigration.swift */; };
 		D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
+		D4A1E360C123657ADD04F83E /* ImageReadyProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D6EACA13E995C3D3DF962EE /* ImageReadyProtocolTests.swift */; };
 		D6AB552551DC96D807F9D72E /* ActiveAgentStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD6558F7C0D54EB55E6DFD1C /* ActiveAgentStateTests.swift */; };
 		D76B99448549A036E84A20B1 /* VoiceFullscreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */; };
 		D8C071DDEDA0C58A157A3EA7 /* ProactiveDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */; };
@@ -265,6 +268,7 @@
 		72069FC546766200DF7310C7 /* StateBoardViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateBoardViewTests.swift; sourceTree = "<group>"; };
 		79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProactiveDispatcherTests.swift; sourceTree = "<group>"; };
+		7D6EACA13E995C3D3DF962EE /* ImageReadyProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageReadyProtocolTests.swift; sourceTree = "<group>"; };
 		7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisUITests.swift; sourceTree = "<group>"; };
 		834E333F228FB23CEB38FB63 /* MessageMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageMappingTests.swift; sourceTree = "<group>"; };
 		834FF3E88E233A898EDBA444 /* TransportV2WorkoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2WorkoutTests.swift; sourceTree = "<group>"; };
@@ -311,6 +315,7 @@
 		BCD520F14145C721CB957282 /* ChatImageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageStore.swift; sourceTree = "<group>"; };
 		BD51F238E46BCB805C742CEE /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
 		BD6558F7C0D54EB55E6DFD1C /* ActiveAgentStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAgentStateTests.swift; sourceTree = "<group>"; };
+		BE6005C35E95197C886F0DDA /* MessageOrderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageOrderingTests.swift; sourceTree = "<group>"; };
 		C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncTests.swift; sourceTree = "<group>"; };
 		C3E5E42CC2C921F15C37BEC3 /* E2EHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EHarness.swift; sourceTree = "<group>"; };
 		C576CDFA7FEBFCE26DA9BFD0 /* MessageListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageListView.swift; sourceTree = "<group>"; };
@@ -328,6 +333,7 @@
 		E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredAttachmentTests.swift; sourceTree = "<group>"; };
 		E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFullscreenTests.swift; sourceTree = "<group>"; };
 		E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
+		ED3ABA244E566782292F4030 /* ImageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageFetcher.swift; sourceTree = "<group>"; };
 		EDC10BA9695C24F9819D51C2 /* CoachBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBannerView.swift; sourceTree = "<group>"; };
 		EF942308460AF6C2A8AE638E /* StateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateService.swift; sourceTree = "<group>"; };
 		F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinatorTests.swift; sourceTree = "<group>"; };
@@ -509,9 +515,11 @@
 				F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */,
 				C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */,
 				F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */,
+				7D6EACA13E995C3D3DF962EE /* ImageReadyProtocolTests.swift */,
 				3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */,
 				008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */,
 				834E333F228FB23CEB38FB63 /* MessageMappingTests.swift */,
+				BE6005C35E95197C886F0DDA /* MessageOrderingTests.swift */,
 				30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */,
 				7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */,
 				5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */,
@@ -616,6 +624,7 @@
 				F5A055AF8989128A047D605C /* HealthSync.swift */,
 				F0C84294434D6D5A3845BD5D /* HealthUpload.swift */,
 				2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */,
+				ED3ABA244E566782292F4030 /* ImageFetcher.swift */,
 				C7F32FF80D3E90C60D06FDC3 /* InboundDispatcherV2.swift */,
 				BD51F238E46BCB805C742CEE /* LocationManager.swift */,
 				B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */,
@@ -858,6 +867,7 @@
 				3F712956E032728A955B67F8 /* HealthSync.swift in Sources */,
 				D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */,
 				A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */,
+				4851B97F7257765B86ACF934 /* ImageFetcher.swift in Sources */,
 				858C56E208CC44A2A7210E9B /* InboundDispatcherV2.swift in Sources */,
 				496C7C87D93A74983F21EF54 /* InputBar.swift in Sources */,
 				3502D3234561E8F256B9EAD5 /* JarvisApp.swift in Sources */,
@@ -940,9 +950,11 @@
 				B377A0764FF637C59A620237 /* HealthHistoryTests.swift in Sources */,
 				C00FE8906E1739C80BA7568D /* HealthSyncTests.swift in Sources */,
 				57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */,
+				D4A1E360C123657ADD04F83E /* ImageReadyProtocolTests.swift in Sources */,
 				56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */,
 				250E4BBF96D871228E8E7C41 /* MarkdownTextTests.swift in Sources */,
 				44C86F549EEFDBA9707EDAF3 /* MessageMappingTests.swift in Sources */,
+				AFB2633AA962239F6E7381CE /* MessageOrderingTests.swift in Sources */,
 				8531C905F9FA67452EC50A43 /* MessageTimelineTests.swift in Sources */,
 				BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */,
 				1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */,
@@ -1015,7 +1027,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 65;
+				CURRENT_PROJECT_VERSION = 66;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1261,7 +1273,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 65;
+				CURRENT_PROJECT_VERSION = 66;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;

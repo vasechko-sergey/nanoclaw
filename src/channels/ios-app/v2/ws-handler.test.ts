@@ -191,4 +191,27 @@ describe('WsHandler', () => {
     expect(env.seq).toBe(1);
     ws.close();
   });
+
+  it('drained frame carries the enqueue created_at as ts, not the send time', async () => {
+    // Regression: an offline-queued reply drained late must keep its authored
+    // timestamp so the iOS client (orders chat by `ts`) doesn't sort it after
+    // newer messages.
+    h.db.upsertDevice(h.platformId, {});
+    const id = '66666666-6666-4666-8666-666666666666';
+    h.queue.enqueue(h.platformId, {
+      id,
+      kind: 'data',
+      type: 'message',
+      payload: { thread_id: 'thr', text: 'stable ts' },
+    });
+    // Backdate the row so the send-time (now) cannot coincide with created_at.
+    const authoredMs = 1_700_000_000_000; // 2023-11-14T22:13:20.000Z
+    h.db.raw.prepare('UPDATE outbound_queue SET created_at = ? WHERE id = ?').run(authoredMs, id);
+
+    const ws = await h.connectAuthed({ lastSeenInbound: 0 });
+    const drained = await h.expectIncoming(ws);
+    expect(drained.id).toBe(id);
+    expect(drained.ts).toBe(new Date(authoredMs).toISOString());
+    ws.close();
+  });
 });

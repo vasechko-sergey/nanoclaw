@@ -32,6 +32,21 @@ final class ConversationStoreV2 {
     let writer: any DatabaseWriter
     init(writer: any DatabaseWriter) { self.writer = writer }
 
+    /// Parse a wire `ts` (ISO-8601 from the host, e.g. "2026-06-27T09:16:58.000Z")
+    /// to epoch milliseconds. Returns nil on unparseable input so callers can
+    /// fall back to local time.
+    static func epochMillis(fromISO s: String) -> Int? {
+        if let d = isoWithFraction.date(from: s) { return Int((d.timeIntervalSince1970 * 1000).rounded()) }
+        if let d = isoPlain.date(from: s) { return Int((d.timeIntervalSince1970 * 1000).rounded()) }
+        return nil
+    }
+    private static let isoWithFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+    }()
+    private static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
+    }()
+
     func insertOutboundUserMessage(
         id: String,
         text: String,
@@ -198,11 +213,15 @@ final class ConversationStoreV2 {
             } else {
                 actionsJSON = nil
             }
+            // Order by AUTHORED time (server `ts`), not local receipt: an
+            // offline-queued reply drained late must not sort after newer
+            // messages. Fall back to `now` if the wire ts can't be parsed.
+            let authored = Self.epochMillis(fromISO: envelope.ts) ?? now
             try db.execute(sql: """
                 INSERT INTO messages
                   (id, dir, seq, text, attachments_json, actions_json, status, ts, created_at, agent_id, voice_only)
                 VALUES (?, 'in', ?, ?, ?, ?, 'new', ?, ?, ?, ?)
-            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, now, now, agentId, (message.voice_only ?? false)])
+            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, authored, authored, agentId, (message.voice_only ?? false)])
         }
     }
 
