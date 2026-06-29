@@ -445,7 +445,7 @@ describe('GET /ios/pending', () => {
     expect(h.queue.list(PLATFORM_ID)).toHaveLength(3);
   });
 
-  it('honors ?since= and never leaks another device, and requires auth', async () => {
+  it('honors ?since= and requires auth', async () => {
     const s1 = h.queue.enqueue(PLATFORM_ID, { id: 'm1', kind: 'data', type: 'message', payload: { text: 'a' } });
     h.queue.enqueue(PLATFORM_ID, { id: 'm2', kind: 'data', type: 'message', payload: { text: 'b' } });
 

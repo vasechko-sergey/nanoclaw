@@ -14,6 +14,9 @@
 //                                    Routes by the token's platform_id; any
 //                                    body.platformId is ignored (no cross-
 //                                    person injection).
+//   GET  /ios/pending?since=N    — pull queued notification-worthy messages
+//                                    (read-only; does not consume the queue).
+//                                    Bearer auth; token's platform_id only.
 //
 // Extracted into a standalone factory so tests can mount it on a stub
 // `http.Server` without spinning up the full adapter (which requires env
