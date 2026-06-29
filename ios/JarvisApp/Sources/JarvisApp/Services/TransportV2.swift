@@ -327,6 +327,10 @@ actor TransportV2 {
         let agentId = message.agent_id ?? "jarvis"
         try store.insertInbound(envelope: envelope, message: message, agentId: agentId)
         try? store.prune() // global retention; cheap no-op while under cap
+        // Backgrounded-but-alive: surface a local notification. No-op when the
+        // app is foreground-active (already on screen) or the notifier is
+        // unconfigured (e.g. tests). Dedups against notified_at.
+        LocalNotifier.shared.raise(id: envelope.id, agentId: agentId, text: message.text, seq: envelope.seq ?? 0)
         try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
         try await sendStatus(.delivered, ids: [envelope.id])
         if let seq = envelope.seq {

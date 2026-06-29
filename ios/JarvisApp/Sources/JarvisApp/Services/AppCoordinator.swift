@@ -91,6 +91,10 @@ final class AppCoordinator {
         if let storage {
             self.timeline = storage.timeline
             self.chatStore = storage.store   // prewarmed in startBackgroundPrep (post-splash)
+            // Wire the dedup store into the shared notifier. Runs on every
+            // launch (foreground or BGTask-driven background), so the pull path
+            // has a configured notifier during background wakes too.
+            LocalNotifier.shared.configure(store: storage.store)
         }
         self.ws = WebSocketClientV2(
             location: location,
