@@ -108,8 +108,8 @@ struct StateBoardView: View {
 
             if isOpen {
                 if let d = a.detail, !d.isEmpty {
-                    Text(d).font(.system(size: Theme.fontCaption))
-                        .foregroundColor(Theme.textSecondary).padding(.top, 2)
+                    MarkdownText(d, fontSize: Theme.fontCaption)
+                        .padding(.top, 2)
                 }
                 if a.key == "greg", let series = service.state?.levels.recovery7d, series.count > 1 {
                     Sparkline(values: series)
