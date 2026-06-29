@@ -10,7 +10,7 @@ enum AppForegroundState {
     private static var _active = false
 
     static var isActive: Bool {
-        get { lock.lock(); defer { lock.unlock() }; return _active }
-        set { lock.lock(); _active = newValue; lock.unlock() }
+        get { lock.withLock { _active } }
+        set { lock.withLock { _active = newValue } }
     }
 }
