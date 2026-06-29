@@ -63,6 +63,8 @@ struct SettingsFormBody: View {
                     settingsToggle(icon: "heart", label: "Здоровье", isOn: $settings.useHealth)
                     settingsDivider()
                     settingsToggle(icon: "calendar", label: "Календарь", isOn: $settings.useCalendar)
+                    settingsDivider()
+                    settingsToggle(icon: "bell", label: "Уведомления", isOn: $settings.notificationsEnabled)
                 }
 
                 // Voice section
