@@ -9,13 +9,8 @@ final class StateService: ObservableObject {
 
     func refresh() {
         let defaults = UserDefaults.standard
-        let server = ServerConfig.url
         guard let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else { return }
-        var base = server
-        if base.hasPrefix("wss://") { base = "https://" + base.dropFirst(6) }
-        else if base.hasPrefix("ws://") { base = "http://" + base.dropFirst(5) }
-        else if !base.hasPrefix("http") { base = "http://" + base }
-        guard let url = URL(string: base.hasSuffix("/") ? base + "ios/state" : base + "/ios/state") else { return }
+        guard let url = ServerConfig.httpURL(path: "ios/state") else { return }
 
         var req = URLRequest(url: url)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

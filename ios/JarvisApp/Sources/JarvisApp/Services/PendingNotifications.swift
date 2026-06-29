@@ -24,11 +24,7 @@ enum PendingNotifications {
         guard let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
             completion?(); return
         }
-        var base = ServerConfig.url
-        if base.hasPrefix("wss://") { base = "https://" + base.dropFirst(6) }
-        else if base.hasPrefix("ws://") { base = "http://" + base.dropFirst(5) }
-        else if !base.hasPrefix("http") { base = "http://" + base }
-        guard let url = URL(string: base.hasSuffix("/") ? base + "ios/pending" : base + "/ios/pending") else {
+        guard let url = ServerConfig.httpURL(path: "ios/pending") else {
             completion?(); return
         }
 

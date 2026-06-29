@@ -87,12 +87,9 @@ final class ImageFetcher: @unchecked Sendable {
     }
 
     /// Build `<httpBase>/ios/image?slug=&sha=` from the ws/host server string.
-    /// Mirrors `HealthUpload`'s ws→http(s) normalization.
+    /// Uses `ServerConfig.httpBase(from:)` for the shared ws→http(s) normalization.
     static func imageURL(base server: String, slug: String, sha256: String) -> URL? {
-        var base = server
-        if base.hasPrefix("wss://") { base = "https://" + base.dropFirst(6) }
-        else if base.hasPrefix("ws://") { base = "http://" + base.dropFirst(5) }
-        else if !base.hasPrefix("http") { base = "http://" + base }
+        var base = ServerConfig.httpBase(from: server)
         if base.hasSuffix("/") { base.removeLast() }
         guard var comps = URLComponents(string: base + "/ios/image") else { return nil }
         comps.queryItems = [

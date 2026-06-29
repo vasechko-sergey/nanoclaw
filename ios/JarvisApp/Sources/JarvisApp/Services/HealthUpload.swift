@@ -9,19 +9,13 @@ enum HealthUpload {
     static func upload(requestId: String?, days: [V2.HealthUpload.Day], completion: (() -> Void)? = nil) {
         guard !days.isEmpty else { completion?(); return }
         let defaults = UserDefaults.standard
-        let server = ServerConfig.url
         guard let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
             completion?(); return
         }
         let platformId = defaults.string(forKey: "platformId")
             ?? ("ios:" + (UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString))
 
-        // serverURL is a ws/host string; normalize to http(s) base + /ios/health/upload.
-        var base = server
-        if base.hasPrefix("wss://") { base = "https://" + base.dropFirst(6) }
-        else if base.hasPrefix("ws://") { base = "http://" + base.dropFirst(5) }
-        else if !base.hasPrefix("http") { base = "http://" + base }
-        guard let url = URL(string: base.hasSuffix("/") ? base + "ios/health/upload" : base + "/ios/health/upload") else {
+        guard let url = ServerConfig.httpURL(path: "ios/health/upload") else {
             completion?(); return
         }
 

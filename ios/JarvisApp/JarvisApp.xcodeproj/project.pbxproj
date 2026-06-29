@@ -20,6 +20,7 @@
 		1091D28461A2EBCE460F25DD /* AppContextCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */; };
 		111316843C98101D95B9912B /* DraftAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F99A4953300541E52CE55B /* DraftAttachment.swift */; };
 		11B08BC875BE39607D9034DF /* MessageListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C576CDFA7FEBFCE26DA9BFD0 /* MessageListView.swift */; };
+		16A35A00C45932635364EDAB /* ServerConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2250C57E19EC871F52553D27 /* ServerConfigTests.swift */; };
 		16F08295FEABD86492DF119B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8D87E938816ECB8B161DBD /* ContentView.swift */; };
 		1893E8E0527760F1BA33302A /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */; };
 		1A1DCE4804FEC3BFCDBA3B05 /* ContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */; };
@@ -217,6 +218,7 @@
 		1DDE0559A1153247D9E152ED /* DurationCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationCard.swift; sourceTree = "<group>"; };
 		1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSynthesizer.swift; sourceTree = "<group>"; };
 		1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppV2Bootstrap.swift; sourceTree = "<group>"; };
+		2250C57E19EC871F52553D27 /* ServerConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfigTests.swift; sourceTree = "<group>"; };
 		24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryChecksTests.swift; sourceTree = "<group>"; };
 		24E75D5AB84CECDD2D10E119 /* TransportV2WorkoutInboundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2WorkoutInboundTests.swift; sourceTree = "<group>"; };
 		2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingScenariosE2ETests.swift; sourceTree = "<group>"; };
@@ -546,6 +548,7 @@
 				5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */,
 				32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */,
 				BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */,
+				2250C57E19EC871F52553D27 /* ServerConfigTests.swift */,
 				BC64D6340917C38B04005455 /* SetLogQueueTests.swift */,
 				72069FC546766200DF7310C7 /* StateBoardViewTests.swift */,
 				A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */,
@@ -995,6 +998,7 @@
 				D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */,
 				4BF4C88458642156C18BD71E /* RestTimerTests.swift in Sources */,
 				448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */,
+				16A35A00C45932635364EDAB /* ServerConfigTests.swift in Sources */,
 				59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */,
 				7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */,
 				8B8DBA1244BFD9A7D1B54CF0 /* StateModelTests.swift in Sources */,
