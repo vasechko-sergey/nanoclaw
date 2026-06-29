@@ -195,6 +195,30 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// True if this inbound id has already raised a local notification.
+    func notifiedSeen(id: String) throws -> Bool {
+        try writer.read { db in
+            try Bool.fetchOne(db,
+                sql: "SELECT EXISTS(SELECT 1 FROM inbound_dedup WHERE id=? AND notified_at IS NOT NULL)",
+                arguments: [id]) ?? false
+        }
+    }
+
+    /// Stamp an inbound id as notified. Upserts: the live path already wrote a
+    /// dedup row (only notified_at flips); the pull path may insert fresh.
+    func recordNotified(id: String, seq: Int) throws {
+        try writer.write { db in
+            let now = Int(Date().timeIntervalSince1970 * 1000)
+            try db.execute(
+                sql: """
+                INSERT INTO inbound_dedup (id, seq, received_at, notified_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET notified_at = excluded.notified_at
+                """,
+                arguments: [id, seq, now, now])
+        }
+    }
+
     func insertInbound(envelope: V2.Envelope, message: V2.Message, agentId: String = "jarvis") throws {
         try writer.write { db in
             let now = Int(Date().timeIntervalSince1970 * 1000)

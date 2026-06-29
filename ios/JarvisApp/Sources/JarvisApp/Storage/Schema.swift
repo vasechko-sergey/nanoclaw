@@ -154,6 +154,12 @@ enum Schema {
             // render failure (text revealed).
             try db.execute(sql: "ALTER TABLE messages ADD COLUMN voice_only INTEGER NOT NULL DEFAULT 0;")
         }
+        m.registerMigration("v11-dedup-notified-at") { db in
+            // Tracks which inbound message ids have already raised a local
+            // notification, so live-push and background-pull never double-notify.
+            // NULL = not yet notified.
+            try db.execute(sql: "ALTER TABLE inbound_dedup ADD COLUMN notified_at INTEGER;")
+        }
         try m.migrate(writer)
     }
 }
