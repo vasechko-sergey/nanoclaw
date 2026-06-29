@@ -79,6 +79,10 @@ enum HealthSync {
     /// `minPushInterval`. Always invokes `completion` so HealthKit's background
     /// task isn't left hanging.
     private static func handleObserverFire(_ completion: @escaping () -> Void) {
+        // Independent of the health-upload coalesce gate: a background wake is a
+        // chance to surface queued agent messages even if we just pushed health.
+        PendingNotifications.drain()
+
         pushLock.lock()
         let now = Date()
         let recentlyPushed = lastPushAt.map { now.timeIntervalSince($0) < minPushInterval } ?? false

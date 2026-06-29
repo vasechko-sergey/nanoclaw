@@ -42,6 +42,7 @@ targets:
           - processing
         BGTaskSchedulerPermittedIdentifiers:
           - com.vasechko.jarvis.morning-health
+          - com.vasechko.jarvis.pending-pull
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"

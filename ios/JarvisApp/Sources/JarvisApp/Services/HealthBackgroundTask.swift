@@ -54,9 +54,14 @@ enum HealthBackgroundTask {
         }
         // Drain any pending server fetch requests, then push recent days. Same path
         // the observers use; completion fires once after the HTTP upload returns.
-        HealthRequests.drain {
-            HealthSync.pushRecent {
-                task.setTaskCompleted(success: true)
+        // Chain the notification pull BEFORE marking the BGTask complete: otherwise
+        // setTaskCompleted lets iOS suspend the app while drain's URLSession dataTask
+        // (default session, not background-configured) is still in flight.
+        PendingNotifications.drain {
+            HealthRequests.drain {
+                HealthSync.pushRecent {
+                    task.setTaskCompleted(success: true)
+                }
             }
         }
     }

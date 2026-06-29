@@ -113,6 +113,7 @@
 		A05233D6EF80D4FEF4A63605 /* WorkoutFinishView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692F9E85378427AA7C0DC3B6 /* WorkoutFinishView.swift */; };
 		A19C0788C26EB264554E9F0B /* HomeViewSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */; };
 		A2C29BF4D8C4AEF8C0B41128 /* HealthBackgroundTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B40F32A70A80FF764EB592B /* HealthBackgroundTask.swift */; };
+		A2C390C762DBE686BA825819 /* PendingRefreshTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DAC924AFD013798B90C5B8 /* PendingRefreshTask.swift */; };
 		A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */; };
 		A49EE6DDF7DC25A2C72175B3 /* WorkoutCardIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0383120D36D58F5C1BE35994 /* WorkoutCardIntegrationTests.swift */; };
 		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
@@ -233,6 +234,7 @@
 		30F0387B3C8F325056A3E714 /* TransportV2ImageReadyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2ImageReadyTests.swift; sourceTree = "<group>"; };
 		30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTimelineTests.swift; sourceTree = "<group>"; };
 		32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerTests.swift; sourceTree = "<group>"; };
+		33DAC924AFD013798B90C5B8 /* PendingRefreshTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRefreshTask.swift; sourceTree = "<group>"; };
 		3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextBuilder.swift; sourceTree = "<group>"; };
 		356D5EEBE95E4BA3082109E3 /* WorkoutRunnerLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutRunnerLogicTests.swift; sourceTree = "<group>"; };
 		3784B2D589C11B07F162E081 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
@@ -651,6 +653,7 @@
 				C1EA4A185CBE9C9FEC184E90 /* LocalNotifier.swift */,
 				BD51F238E46BCB805C742CEE /* LocationManager.swift */,
 				DC2BA2D8D959E602E8E6DA7A /* PendingNotifications.swift */,
+				33DAC924AFD013798B90C5B8 /* PendingRefreshTask.swift */,
 				B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */,
 				8B288DE4478FD534ADB9C861 /* RestTimer.swift */,
 				E8D8F2B9D8F6461190029F75 /* SpeechManager.swift */,
@@ -911,6 +914,7 @@
 				E653E1C200C705930FF7958A /* OrbView.swift in Sources */,
 				E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */,
 				E3F90FEA5F2BAB9EFF947C53 /* PendingNotifications.swift in Sources */,
+				A2C390C762DBE686BA825819 /* PendingRefreshTask.swift in Sources */,
 				D8C071DDEDA0C58A157A3EA7 /* ProactiveDispatcher.swift in Sources */,
 				98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */,
 				BF50AF6B8D8D1D5E89097A68 /* RecommendationPanel.swift in Sources */,

@@ -18,6 +18,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // (BGTaskScheduler requirement), so it stays synchronous here.
         HealthBackgroundTask.register()
         HealthBackgroundTask.schedule()
+        PendingRefreshTask.register()
+        PendingRefreshTask.schedule()
         // Passive background health sync (HealthKit background delivery → HTTP
         // upload). Deferred OFF the launch critical path: registering 12
         // observers + their first-fire fetch/upload fan-out at cold launch
@@ -88,14 +90,16 @@ struct JarvisApp: App {
                 .environment(coordinator)
                 .environment(activeAgent)
                 .onChange(of: scenePhase) { _, new in
+                    AppForegroundState.isActive = (new == .active)
                     if new == .active {
                         Theme.refreshScale()
                         Theme.refreshDrawerWidth()
                         HealthSync.kickIfStale()
                     }
                     if new == .background {
-                        // Re-arm the morning upload each time we background.
+                        // Re-arm the morning upload + pending pull each time we background.
                         HealthBackgroundTask.schedule()
+                        PendingRefreshTask.schedule()
                     }
                     Task { @MainActor in
                         coordinator.ws.handleScenePhase(new)
