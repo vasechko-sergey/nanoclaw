@@ -138,6 +138,7 @@
 		C209817F4DB4B298ACFD7237 /* RestTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B288DE4478FD534ADB9C861 /* RestTimer.swift */; };
 		C26C3D044EC984039953DA2B /* WatchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 554BF5C37C33D1542F61065C /* WatchTheme.swift */; };
 		C30B04EF089F683141E1AFA9 /* AttachmentMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903F8E4E445A8A4777CE3812 /* AttachmentMigration.swift */; };
+		C8704F78ADC9324A854BD1C6 /* AppForegroundState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CDC923153512922F4DA91F /* AppForegroundState.swift */; };
 		C89312E75CDC997C143CD8CF /* SummaryEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A05B976C9CA7CCBCC693097 /* SummaryEntryView.swift */; };
 		D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
@@ -242,6 +243,7 @@
 		3F4B9D1F796C301C15ED1A3D /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		407AF8586506D0610BCD4DC7 /* Workout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workout.swift; sourceTree = "<group>"; };
 		41BCF57926DDA2C4BAF8106F /* WorkoutFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFormatTests.swift; sourceTree = "<group>"; };
+		41CDC923153512922F4DA91F /* AppForegroundState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppForegroundState.swift; sourceTree = "<group>"; };
 		43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisApp.swift; sourceTree = "<group>"; };
 		44C051ECA1BBC173253E5FF4 /* HeaderStatusDotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderStatusDotTests.swift; sourceTree = "<group>"; };
 		4540556E737B1FF782CE9556 /* ChatPrewarmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPrewarmer.swift; sourceTree = "<group>"; };
@@ -619,6 +621,7 @@
 			children = (
 				F655A8E66E4870DFFB6EBA41 /* AppContextCoordinator.swift */,
 				E1E7FBAD4AE7AF8E526AC62E /* AppCoordinator.swift */,
+				41CDC923153512922F4DA91F /* AppForegroundState.swift */,
 				1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */,
 				5CF4706CEA962FA2A8E7F5D4 /* AudioPlaybackService.swift */,
 				D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */,
@@ -839,6 +842,7 @@
 				0C45EE262A878A3D450B2829 /* AnimatedExerciseImage.swift in Sources */,
 				1091D28461A2EBCE460F25DD /* AppContextCoordinator.swift in Sources */,
 				F41988AFB951764121A3B9D6 /* AppCoordinator.swift in Sources */,
+				C8704F78ADC9324A854BD1C6 /* AppForegroundState.swift in Sources */,
 				6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */,
 				AB14A705BBEB71BA032EC292 /* AppV2Bootstrap.swift in Sources */,
 				323B15E35E629EC77D90958C /* AttachmentBar.swift in Sources */,

@@ -38,6 +38,10 @@ final class AppSettings {
     // MARK: – Watch companion
     @ObservationIgnored @AppStorage("watchCompanionEnabled") var watchCompanionEnabled = true
 
+    // MARK: – Notifications
+    /// Master switch for agent-message local notifications (default on).
+    @ObservationIgnored @AppStorage("notificationsEnabled") var notificationsEnabled = true
+
     /// Whether a given trigger type is allowed to fire. Used by ProactiveDispatcher.fire.
     func proactiveEnabled(_ triggerType: String) -> Bool {
         switch triggerType {
