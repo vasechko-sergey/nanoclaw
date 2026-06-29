@@ -464,6 +464,7 @@ function createV2Adapter(): ChannelAdapter | null {
         healthAgentFolder: HEALTH_AGENT_FOLDER,
         getChannelSetup: () => cfg,
         imageCache,
+        listPending: (pid, since) => queue.listPendingNotify(pid, since),
         log: logV2,
         logWarn: logV2Warn,
       });

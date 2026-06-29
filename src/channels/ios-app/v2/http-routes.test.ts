@@ -20,6 +20,7 @@ import { DATA_DIR } from '../../../config.js';
 import { userMemoryRoot, userGlobalRoot } from '../../../user-memory.js';
 import { openTransportDb } from './transport-db.js';
 import { HealthRequestsStore } from './health-requests-store.js';
+import { OutboundQueue } from './outbound-queue.js';
 import { createIosHttpHandler } from './http-handler.js';
 import { openHealthDb, readHealthDays } from './health-db.js';
 import type { ChannelSetup } from '../../adapter.js';
@@ -27,6 +28,7 @@ import type { ChannelSetup } from '../../adapter.js';
 interface Harness {
   url: string;
   store: HealthRequestsStore;
+  queue: OutboundQueue;
   inboundCalls: Array<{ pid: string; tid: string | null; msg: Record<string, unknown> }>;
   cfg: { current: ChannelSetup | null };
   close: () => Promise<void>;
@@ -42,6 +44,10 @@ const HEALTH_AGENT = 'greg';
 async function bootHarness(): Promise<Harness> {
   const db = openTransportDb(':memory:');
   const store = new HealthRequestsStore(db);
+  const queue = new OutboundQueue(db);
+  // Register the test devices so enqueue can allocate seq numbers.
+  db.upsertDevice(PLATFORM_ID, {});
+  db.upsertDevice('ios-app-v2:someone-else', {});
   const inboundCalls: Harness['inboundCalls'] = [];
   const cfg: { current: ChannelSetup | null } = {
     current: {
@@ -57,6 +63,7 @@ async function bootHarness(): Promise<Harness> {
     healthRequestsStore: store,
     healthAgentFolder: HEALTH_AGENT,
     getChannelSetup: () => cfg.current,
+    listPending: (pid, since) => queue.listPendingNotify(pid, since),
     log: () => {},
     logWarn: () => {},
   });
@@ -68,6 +75,7 @@ async function bootHarness(): Promise<Harness> {
   return {
     url: `http://127.0.0.1:${port}`,
     store,
+    queue,
     inboundCalls,
     cfg,
     async close() {
@@ -403,6 +411,53 @@ describe('GET /ios/state', () => {
       { v: '68', l: 'готовность', t: 'warn' },
       { v: '6.2ч', l: 'сон' },
     ]);
+  });
+});
+
+describe('GET /ios/pending', () => {
+  it('returns notification-worthy messages for the token device, parsed, oldest first', async () => {
+    h.queue.enqueue(PLATFORM_ID, {
+      id: 'm1',
+      kind: 'data',
+      type: 'message',
+      payload: { text: 'hello', agent_id: 'jarvis' },
+    });
+    h.queue.enqueue(PLATFORM_ID, { id: 'w1', kind: 'data', type: 'workout_plan', payload: { x: 1 } });
+    h.queue.enqueue(PLATFORM_ID, {
+      id: 'm2',
+      kind: 'data',
+      type: 'message',
+      payload: { text: 'second', agent_id: 'greg' },
+    });
+    h.queue.enqueue('ios-app-v2:someone-else', { id: 'mX', kind: 'data', type: 'message', payload: { text: 'leak' } });
+
+    const r = await fetchJson(`${h.url}/ios/pending`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    const body = r.json() as { messages: Array<{ id: string; seq: number; agent_id: string | null; text: string }> };
+    expect(body.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+    expect(body.messages[0]).toMatchObject({ id: 'm1', agent_id: 'jarvis', text: 'hello' });
+    expect(body.messages[1]).toMatchObject({ id: 'm2', agent_id: 'greg', text: 'second' });
+
+    // The queue is NOT consumed by the pull.
+    expect(h.queue.list(PLATFORM_ID)).toHaveLength(3);
+  });
+
+  it('honors ?since= and never leaks another device, and requires auth', async () => {
+    const s1 = h.queue.enqueue(PLATFORM_ID, { id: 'm1', kind: 'data', type: 'message', payload: { text: 'a' } });
+    h.queue.enqueue(PLATFORM_ID, { id: 'm2', kind: 'data', type: 'message', payload: { text: 'b' } });
+
+    const r = await fetchJson(`${h.url}/ios/pending?since=${s1}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    expect((r.json() as { messages: Array<{ id: string }> }).messages.map((m) => m.id)).toEqual(['m2']);
+
+    const noAuth = await fetchJson(`${h.url}/ios/pending`, { method: 'GET' });
+    expect(noAuth.status).toBe(401);
   });
 });
 

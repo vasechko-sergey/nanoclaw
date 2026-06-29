@@ -58,6 +58,7 @@ beforeEach(async () => {
     healthAgentFolder: 'greg',
     getChannelSetup: () => null as unknown as ChannelSetup,
     imageCache,
+    listPending: () => [],
     log: () => {},
     logWarn: () => {},
   });

@@ -33,6 +33,7 @@ import { userMemoryRoot, userGlobalRoot } from '../../../user-memory.js';
 import { appendHealthHistory } from './health-ingest.js';
 import { openHealthDb, readHealthDays } from './health-db.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
+import type { OutboundQueueRow } from './types.js';
 import { parseProfile } from './profiles.js';
 
 function loadAllHealthRows(agentRoot: string): HealthUploadDay[] {
@@ -56,6 +57,11 @@ export interface HttpHandlerDeps {
   resolveToken: (rawToken: string) => { platform_id: string; person_key: string } | null;
   healthRequestsStore: HealthRequestsStore;
   /**
+   * Read queued notification-worthy envelopes for a device (token-resolved
+   * platform_id), seq > sinceSeq. Read-only — see OutboundQueue.listPendingNotify.
+   */
+  listPending: (platformId: string, sinceSeq: number) => OutboundQueueRow[];
+  /**
    * Folder name of the agent that owns health data (e.g. `greg`). Health
    * uploads land under `data/user-memory/<person>/<healthAgentFolder>`.
    */
@@ -72,7 +78,16 @@ export interface HttpHandlerDeps {
 }
 
 export function createIosHttpHandler(deps: HttpHandlerDeps) {
-  const { resolveToken, healthRequestsStore, healthAgentFolder, getChannelSetup, imageCache, log, logWarn } = deps;
+  const {
+    resolveToken,
+    healthRequestsStore,
+    healthAgentFolder,
+    getChannelSetup,
+    imageCache,
+    listPending,
+    log,
+    logWarn,
+  } = deps;
 
   const AGENT_META: Record<string, { title: string; icon: string }> = {
     greg: { title: 'Здоровье · Greg', icon: '🩺' },
@@ -348,6 +363,31 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
         };
       });
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ levels, agents }));
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/ios/pending') {
+      const id = authIdentity(req);
+      if (!id) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
+        return;
+      }
+      const sinceRaw = url.searchParams.get('since');
+      const since = sinceRaw ? parseInt(sinceRaw, 10) : 0;
+      const safeSince = Number.isFinite(since) && since > 0 ? since : 0;
+      const messages = listPending(id.platform_id, safeSince).map((row) => {
+        let agent_id: string | null = null;
+        let text = '';
+        try {
+          const p = JSON.parse(row.payload_json) as { text?: unknown; agent_id?: unknown };
+          if (typeof p.text === 'string') text = p.text;
+          if (typeof p.agent_id === 'string') agent_id = p.agent_id;
+        } catch {
+          /* malformed payload — surface id/seq with empty text */
+        }
+        return { id: row.id, seq: row.seq, agent_id, text };
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ messages }));
       return;
     }
 
