@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { extractDataNumbers, normalizeNumber } from './numbers.js';
+import { extractClaimedNumbers, extractDataNumbers, normalizeNumber } from './numbers.js';
 
 test('normalizeNumber strips currency, %, thousands separators', () => {
   expect(normalizeNumber('$1.60')).toBe('1.6');
@@ -35,4 +35,34 @@ test('extractDataNumbers keeps real grouped numbers (thousands separators)', () 
   expect(got.has('1234.56')).toBe(true);
   expect(got.has('1000000')).toBe(true);
   expect(got.has('8728')).toBe(true);
+});
+
+test('extractClaimedNumbers exposes component parts for separator-grouped tokens', () => {
+  const got = extractClaimedNumbers('значения 100,200,300');
+  expect(got).toHaveLength(1);
+  expect(got[0].norm).toBe('100200300');
+  expect(got[0].parts).toEqual(['100', '200', '300']);
+});
+
+test('extractClaimedNumbers splits space-grouped tokens too', () => {
+  const got = extractClaimedNumbers('точки 100 200 300');
+  expect(got).toHaveLength(1);
+  expect(got[0].norm).toBe('100200300');
+  expect(got[0].parts).toEqual(['100', '200', '300']);
+});
+
+test('extractClaimedNumbers leaves parts empty for single-group tokens', () => {
+  const got = extractClaimedNumbers('итого $12009.34');
+  expect(got).toHaveLength(1);
+  expect(got[0].norm).toBe('12009.34');
+  expect(got[0].parts).toEqual([]);
+});
+
+test('extractClaimedNumbers parts for a real thousands number always include a sub-100 group', () => {
+  // The leading "1" guarantees a <100 part. The gate relies on this: a real
+  // grouped number can never decompose into an all-grounded list because a
+  // <100 group is never admitted to the grounding set (magnitude filter).
+  const got = extractClaimedNumbers('выручка 1,234,567');
+  expect(got[0].norm).toBe('1234567');
+  expect(got[0].parts).toEqual(['1', '234', '567']);
 });

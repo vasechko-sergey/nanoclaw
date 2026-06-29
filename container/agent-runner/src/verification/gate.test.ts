@@ -33,3 +33,41 @@ test('still flags a genuinely different number, not a rounding', () => {
   expect(r.grounded).toBe(false);
   expect(r.ungrounded).toContain('12500');
 });
+
+test('grounds a comma list when every part is individually grounded', () => {
+  // "105,212,309" fuses to a phantom "105212309" the agent never claimed; the
+  // gate must read it as a list of three grounded numbers, not one ungrounded number.
+  const grounding = new Set(['105', '212', '309']);
+  const r = checkProvenance('встречи 105,212,309', grounding);
+  expect(r.grounded).toBe(true);
+  expect(r.ungrounded).toEqual([]);
+});
+
+test('grounds a space-separated 3-digit list by its parts', () => {
+  const grounding = new Set(['100', '200', '300']);
+  const r = checkProvenance('точки 100 200 300', grounding);
+  expect(r.grounded).toBe(true);
+});
+
+test('flags the real list parts, never the fused phantom, when one part is missing', () => {
+  const grounding = new Set(['105', '309']); // 212 missing
+  const r = checkProvenance('встречи 105,212,309', grounding);
+  expect(r.grounded).toBe(false);
+  expect(r.ungrounded).toContain('212');
+  expect(r.ungrounded).not.toContain('105212309'); // no alien phantom
+  expect(r.ungrounded).not.toContain('105'); // grounded part not reported
+  expect(r.ungrounded).not.toContain('309');
+});
+
+test('a real grounded thousands-number passes by its fused value', () => {
+  const grounding = new Set(['1234567']);
+  expect(checkProvenance('выручка 1,234,567', grounding).grounded).toBe(true);
+});
+
+test('a fabricated thousands-number cannot false-pass via parts (sub-100 leading group never grounds)', () => {
+  // Even with 234 and 567 in the grounding set, the leading "1" (<100) is never
+  // admitted, so 1,234,567 can never decompose into an all-grounded list.
+  const grounding = new Set(['234', '567']);
+  const r = checkProvenance('выручка 1,234,567', grounding);
+  expect(r.grounded).toBe(false);
+});

@@ -1,4 +1,4 @@
-import { extractDataNumbers } from './numbers.js';
+import { extractClaimedNumbers } from './numbers.js';
 
 export interface ProvenanceResult {
   grounded: boolean;
@@ -25,15 +25,24 @@ function groundedByRounding(claimed: string, groundNums: number[]): boolean {
  * A message body is grounded iff every data-number in it traces to the grounding
  * set (this turn's tool outputs ∪ the user's own message) — exactly or as a
  * rounding of a source number. Phase 1 is numeric-only; prose is Phase 2.
+ *
+ * Separator-grouped tokens get a decomposition escape hatch: "100,200,300"
+ * fuses to a phantom "100200300" the agent never wrote, doom-looping the gate.
+ * If a token's value isn't grounded, we treat it as grounded when every
+ * component group is — i.e. it was a LIST whose items each trace to a source.
+ * A real thousands-grouped number can't slip through this way: it always has a
+ * <100 group (leading digit or "000") that the magnitude filter never admits to
+ * the grounding set. When a list is only partly grounded we flag the real
+ * offending parts, never the alien fused phantom.
  */
 export function checkProvenance(body: string, grounding: Set<string>): ProvenanceResult {
-  const claimed = extractDataNumbers(body);
   const groundNums = [...grounding].map(Number).filter((n) => !Number.isNaN(n));
+  const isGrounded = (x: string) => grounding.has(x) || groundedByRounding(x, groundNums);
   const ungrounded: string[] = [];
-  for (const n of claimed) {
-    if (grounding.has(n)) continue;
-    if (groundedByRounding(n, groundNums)) continue;
-    ungrounded.push(n);
+  for (const { norm, parts } of extractClaimedNumbers(body)) {
+    if (isGrounded(norm)) continue;
+    const atoms = parts.length >= 2 ? parts : [norm];
+    for (const a of atoms) if (!isGrounded(a)) ungrounded.push(a);
   }
   return { grounded: ungrounded.length === 0, ungrounded };
 }
