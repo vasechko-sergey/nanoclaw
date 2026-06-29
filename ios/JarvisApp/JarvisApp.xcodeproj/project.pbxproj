@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		001749B059E353F7F0B30ADF /* WorkoutInbound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294C253860B67EF3201B2370 /* WorkoutInbound.swift */; };
 		019B3D35D6FD41DEF8A1FCCF /* LeftDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 163CA94C66DC661EC836E607 /* LeftDrawerContent.swift */; };
+		03F7226E129A613CB80D6CBD /* LocalNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1EA4A185CBE9C9FEC184E90 /* LocalNotifier.swift */; };
 		04BF92A9F9E6F66E24B402AF /* WebSocketClientV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703546F90859B4BA021E0CC9 /* WebSocketClientV2.swift */; };
 		08609E4F72E218AADF502AA6 /* AudioPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF4706CEA962FA2A8E7F5D4 /* AudioPlaybackService.swift */; };
 		08FB138313D1EC3412C3F20E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3784B2D589C11B07F162E081 /* ChatView.swift */; };
@@ -27,6 +28,7 @@
 		1D26F1F3F0A2B7924261909D /* WorkoutCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F03A28FA27D78891B79DD64F /* WorkoutCoordinatorTests.swift */; };
 		1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B165040849DF187E7D1113C /* OrbInputBar.swift */; };
 		1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */; };
+		1FB22DB3AC46D6DC773E9148 /* LocalNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692FF9CBB21BDC62448E95E9 /* LocalNotifierTests.swift */; };
 		250E4BBF96D871228E8E7C41 /* MarkdownTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */; };
 		25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */; };
 		298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */; };
@@ -266,6 +268,7 @@
 		63F99A4953300541E52CE55B /* DraftAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftAttachment.swift; sourceTree = "<group>"; };
 		679495851538B21ECAB0FF20 /* TransportV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2.swift; sourceTree = "<group>"; };
 		692F9E85378427AA7C0DC3B6 /* WorkoutFinishView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFinishView.swift; sourceTree = "<group>"; };
+		692FF9CBB21BDC62448E95E9 /* LocalNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotifierTests.swift; sourceTree = "<group>"; };
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthRequests.swift; sourceTree = "<group>"; };
 		6B165040849DF187E7D1113C /* OrbInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInputBar.swift; sourceTree = "<group>"; };
@@ -325,6 +328,7 @@
 		BD51F238E46BCB805C742CEE /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
 		BD6558F7C0D54EB55E6DFD1C /* ActiveAgentStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAgentStateTests.swift; sourceTree = "<group>"; };
 		BE6005C35E95197C886F0DDA /* MessageOrderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageOrderingTests.swift; sourceTree = "<group>"; };
+		C1EA4A185CBE9C9FEC184E90 /* LocalNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotifier.swift; sourceTree = "<group>"; };
 		C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncTests.swift; sourceTree = "<group>"; };
 		C3E5E42CC2C921F15C37BEC3 /* E2EHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EHarness.swift; sourceTree = "<group>"; };
 		C576CDFA7FEBFCE26DA9BFD0 /* MessageListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageListView.swift; sourceTree = "<group>"; };
@@ -526,6 +530,7 @@
 				3024A6C9AA5F6E49D34C1456 /* ImageFetcherTests.swift */,
 				7D6EACA13E995C3D3DF962EE /* ImageReadyProtocolTests.swift */,
 				3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */,
+				692FF9CBB21BDC62448E95E9 /* LocalNotifierTests.swift */,
 				008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */,
 				834E333F228FB23CEB38FB63 /* MessageMappingTests.swift */,
 				BE6005C35E95197C886F0DDA /* MessageOrderingTests.swift */,
@@ -638,6 +643,7 @@
 				2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */,
 				ED3ABA244E566782292F4030 /* ImageFetcher.swift */,
 				C7F32FF80D3E90C60D06FDC3 /* InboundDispatcherV2.swift */,
+				C1EA4A185CBE9C9FEC184E90 /* LocalNotifier.swift */,
 				BD51F238E46BCB805C742CEE /* LocationManager.swift */,
 				B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */,
 				8B288DE4478FD534ADB9C861 /* RestTimer.swift */,
@@ -884,6 +890,7 @@
 				496C7C87D93A74983F21EF54 /* InputBar.swift in Sources */,
 				3502D3234561E8F256B9EAD5 /* JarvisApp.swift in Sources */,
 				019B3D35D6FD41DEF8A1FCCF /* LeftDrawerContent.swift in Sources */,
+				03F7226E129A613CB80D6CBD /* LocalNotifier.swift in Sources */,
 				54243BCC1655A76DE5E1F02F /* LocationManager.swift in Sources */,
 				73B70554FE102A25FBBF7E6B /* Log.swift in Sources */,
 				F9AA4DB0A7E030CC95152A3F /* LoggedSetChips.swift in Sources */,
@@ -966,6 +973,7 @@
 				FBB7A39746F87E19195D0F6C /* ImageFetcherTests.swift in Sources */,
 				D4A1E360C123657ADD04F83E /* ImageReadyProtocolTests.swift in Sources */,
 				56B061FF1873633D7665141C /* InboundDispatcherV2Tests.swift in Sources */,
+				1FB22DB3AC46D6DC773E9148 /* LocalNotifierTests.swift in Sources */,
 				250E4BBF96D871228E8E7C41 /* MarkdownTextTests.swift in Sources */,
 				44C86F549EEFDBA9707EDAF3 /* MessageMappingTests.swift in Sources */,
 				AFB2633AA962239F6E7381CE /* MessageOrderingTests.swift in Sources */,
