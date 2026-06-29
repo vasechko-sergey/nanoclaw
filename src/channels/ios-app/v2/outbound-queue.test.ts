@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openTransportDb, type TransportDb } from './transport-db.js';
 import { OutboundQueue, type EnqueueInput } from './outbound-queue.js';
-import { MAX_QUEUE_PER_DEVICE } from './types.js';
+import { MAX_QUEUE_PER_DEVICE, NOTIFY_TYPES } from './types.js';
 
 let db: TransportDb;
 let q: OutboundQueue;
@@ -73,5 +73,33 @@ describe('OutboundQueue', () => {
     // Sleep then verify
     await new Promise((r) => setTimeout(r, 10));
     expect(q.listOlderThan('ios-app:dev-1', Date.now() - 5)).toHaveLength(1);
+  });
+});
+
+describe('listPendingNotify', () => {
+  it('returns only NOTIFY_TYPES rows with seq greater than since, oldest first', () => {
+    const db = openTransportDb(':memory:');
+    const q = new OutboundQueue(db);
+    const pid = 'ios-app-v2:p1';
+    db.upsertDevice(pid, {});
+    const s1 = q.enqueue(pid, { id: 'm1', kind: 'data', type: 'message', payload: { text: 'a' } });
+    q.enqueue(pid, { id: 'w1', kind: 'data', type: 'workout_plan', payload: { x: 1 } });
+    const s3 = q.enqueue(pid, { id: 'm2', kind: 'data', type: 'message', payload: { text: 'b' } });
+
+    // since = 0 → both message rows, workout excluded, oldest first.
+    const all = q.listPendingNotify(pid, 0);
+    expect(all.map((r) => r.id)).toEqual(['m1', 'm2']);
+
+    // since = s1 → only the later message row.
+    const after = q.listPendingNotify(pid, s1);
+    expect(after.map((r) => r.id)).toEqual(['m2']);
+
+    // scoped per device.
+    expect(q.listPendingNotify('ios-app-v2:other', 0)).toEqual([]);
+
+    // read-only — the queue is unchanged.
+    expect(q.list(pid)).toHaveLength(3);
+    void s3;
+    db.raw.close();
   });
 });

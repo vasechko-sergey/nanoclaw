@@ -1,5 +1,5 @@
 import type { TransportDb } from './transport-db.js';
-import { MAX_QUEUE_PER_DEVICE, type OutboundQueueRow } from './types.js';
+import { MAX_QUEUE_PER_DEVICE, NOTIFY_TYPES, type OutboundQueueRow } from './types.js';
 
 export interface EnqueueInput {
   id: string;
@@ -76,6 +76,24 @@ export class OutboundQueue {
     this.db.raw
       .prepare(`DELETE FROM outbound_queue WHERE platform_id = ? AND seq <= ? AND type = ?`)
       .run(platform_id, seq, CURSOR_ACKED_TYPE);
+  }
+
+  /**
+   * Read-only: queued envelopes the device should raise a notification for —
+   * `NOTIFY_TYPES` only, with seq strictly greater than `sinceSeq`, oldest
+   * first. Does NOT delete anything; the WS drain + ack path remains the sole
+   * consumer. The device dedups per-id, so re-returning an un-acked row is a
+   * no-op there.
+   */
+  listPendingNotify(platform_id: string, sinceSeq: number): OutboundQueueRow[] {
+    const placeholders = NOTIFY_TYPES.map(() => '?').join(', ');
+    return this.db.raw
+      .prepare(
+        `SELECT * FROM outbound_queue
+         WHERE platform_id = ? AND seq > ? AND type IN (${placeholders})
+         ORDER BY seq ASC`,
+      )
+      .all(platform_id, sinceSeq, ...NOTIFY_TYPES) as OutboundQueueRow[];
   }
 
   list(platform_id: string): OutboundQueueRow[] {
