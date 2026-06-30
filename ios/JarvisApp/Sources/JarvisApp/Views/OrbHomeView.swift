@@ -219,7 +219,14 @@ struct OrbHomeView: View {
                 onStartChat(nil)
             }
         }
-        .onAppear { stateService.refresh() }
+        .onAppear {
+            stateService.refresh()
+            openSummaryBoardIfRequested()
+        }
+        // Deep-link: a summary-ready tap routes here. Covers both "flag already
+        // true at mount" (cold launch) via onAppear and "becomes true while
+        // mounted" via onChange.
+        .onChange(of: coordinator.pendingOpenSummaryBoard) { _, _ in openSummaryBoardIfRequested() }
         .sheet(isPresented: $showStateBoard) {
             NavigationView { StateBoardView(service: stateService) }
                 .presentationDragIndicator(.visible)
@@ -523,6 +530,14 @@ struct OrbHomeView: View {
                     withAnimation { leftDrawerDragOffset = 0 }
                 }
             }
+    }
+
+    /// Present the Сводка board if a notification tap requested it, then clear
+    /// the flag so a re-render doesn't re-present.
+    private func openSummaryBoardIfRequested() {
+        guard coordinator.pendingOpenSummaryBoard else { return }
+        showStateBoard = true
+        coordinator.pendingOpenSummaryBoard = false
     }
 
     /// Insert U+2009 (thin space) between every character to match the

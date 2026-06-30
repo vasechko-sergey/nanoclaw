@@ -77,6 +77,25 @@ struct ContentView: View {
                 showSetupOnSplash = true
             }
         }
+        // Deep-link nav from a tapped notification. Re-apply on the
+        // splash→connected transition too, so a cold-launch tap (flag set before
+        // we're connected) still navigates once past the splash.
+        .onChange(of: coordinator.pendingOpenAgentChat) { _, _ in applyPendingNav() }
+        .onChange(of: coordinator.pendingOpenSummaryBoard) { _, _ in applyPendingNav() }
+        .onChange(of: coordinator.connectionPhase) { _, _ in applyPendingNav() }
+    }
+
+    private func applyPendingNav() {
+        // Wait past splash on cold launch — only navigate once connected.
+        guard coordinator.connectionPhase == .connected else { return }
+        if let agent = coordinator.pendingOpenAgentChat {
+            active.active = agent
+            coordinator.pendingOpenAgentChat = nil
+            withAnimation(.easeOut(duration: 0.4)) { appPhase = .chat }
+        } else if coordinator.pendingOpenSummaryBoard {
+            // Ensure home is mounted; OrbHomeView presents the board sheet.
+            withAnimation(.easeOut(duration: 0.4)) { appPhase = .home }
+        }
     }
 
     private func goHome() {

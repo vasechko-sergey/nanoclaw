@@ -52,6 +52,17 @@ final class AppCoordinator {
         case failed
     }
 
+    // MARK: – Deep-link nav intents
+    /// Set by a tapped notification (via the AppDelegate hooks) and consumed by
+    /// the view layer: `ContentView` applies the chat intent (once connected),
+    /// `OrbHomeView` applies the board intent. Cleared by the consumer after
+    /// applying so a re-render doesn't re-navigate.
+    var pendingOpenSummaryBoard = false
+    var pendingOpenAgentChat: AgentIdentity?
+
+    func requestOpenSummaryBoard() { pendingOpenSummaryBoard = true }
+    func requestOpenAgentChat(_ agent: AgentIdentity) { pendingOpenAgentChat = agent }
+
     @ObservationIgnored private var settings: AppSettings
     /// Whether the last sent message was dictated — gates auto-speak of the reply.
     @ObservationIgnored private var lastSendWasVoice = false
@@ -144,6 +155,15 @@ final class AppCoordinator {
             Task { @MainActor in
                 self?.proactiveDispatcher?.fire(type: type, payload: payload)
             }
+        }
+
+        // Deep-link nav: a tapped notification routes here via static hooks.
+        // Set the nav-intent flags on the main actor; the view layer applies them.
+        AppDelegate.openSummaryBoard = { [weak self] in
+            Task { @MainActor in self?.requestOpenSummaryBoard() }
+        }
+        AppDelegate.openAgentChat = { [weak self] agent in
+            Task { @MainActor in self?.requestOpenAgentChat(agent) }
         }
 
         self.watchBridge = WatchConnectivityBridge()

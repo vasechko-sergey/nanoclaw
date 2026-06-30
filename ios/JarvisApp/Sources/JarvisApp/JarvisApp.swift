@@ -7,6 +7,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// from the notification delegate. Production wiring lives in AppCoordinator.
     static var dispatchProactive: ((String, [String: Any]) -> Void)?
 
+    /// Deep-link hooks the coordinator wires at init: a tapped notification is
+    /// routed (via `NotificationTapRouter`) into one of these, which set the
+    /// coordinator's nav-intent flags. The view layer applies the navigation.
+    static var openSummaryBoard: (() -> Void)?
+    static var openAgentChat: ((AgentIdentity) -> Void)?
+
     func application(
         _ app: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -70,20 +76,32 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         completionHandler([.banner, .sound])
     }
 
-    // Tap on a proactive push — single-chat mode has no per-conversation
-    // deep-link, so we just dismiss the notification.
+    // Tap (or reply-action) on a notification. `NotificationTapRouter` maps the
+    // category/action to a target: reply → POST to host (unchanged behavior);
+    // summary-ready → open the Сводка board; agent-message default tap →
+    // deep-link into that agent's chat. `.none` just dismisses.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if response.actionIdentifier == NotificationCategories.replyAction,
-           let textResponse = response as? UNTextInputNotificationResponse {
-            let agentId = response.notification.request.content.userInfo["agentId"] as? String ?? "jarvis"
-            NotificationReplySender.shared.send(agentId: agentId, text: textResponse.userText) { _ in
-                completionHandler()
-            }
+        let replyText = (response as? UNTextInputNotificationResponse)?.userText
+        let target = NotificationTapRouter.route(
+            categoryId: response.notification.request.content.categoryIdentifier,
+            actionId: response.actionIdentifier,
+            replyText: replyText,
+            userInfo: response.notification.request.content.userInfo
+        )
+        switch target {
+        case let .reply(agentId, text):
+            NotificationReplySender.shared.send(agentId: agentId, text: text) { _ in completionHandler() }
             return
+        case .openSummaryBoard:
+            AppDelegate.openSummaryBoard?()
+        case let .openAgentChat(agent):
+            AppDelegate.openAgentChat?(agent)
+        case .none:
+            break
         }
         completionHandler()
     }
