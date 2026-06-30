@@ -95,6 +95,7 @@ final class AppCoordinator {
             // launch (foreground or BGTask-driven background), so the pull path
             // has a configured notifier during background wakes too.
             LocalNotifier.shared.configure(store: storage.store)
+            NotificationReplySender.shared.configure(store: storage.store)
         }
         self.ws = WebSocketClientV2(
             location: location,

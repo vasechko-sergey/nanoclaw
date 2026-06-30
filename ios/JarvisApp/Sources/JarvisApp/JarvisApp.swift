@@ -13,6 +13,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        NotificationCategories.register()
         // Authoritative foreground tracking for the notification gate. SwiftUI
         // scenePhase.onChange does NOT fire for the launch phase (initial value),
         // so AppForegroundState could stay stale and the gate read "active" while
@@ -76,6 +77,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        if response.actionIdentifier == NotificationCategories.replyAction,
+           let textResponse = response as? UNTextInputNotificationResponse {
+            let agentId = response.notification.request.content.userInfo["agentId"] as? String ?? "jarvis"
+            NotificationReplySender.shared.send(agentId: agentId, text: textResponse.userText) { _ in
+                completionHandler()
+            }
+            return
+        }
         completionHandler()
     }
 }
