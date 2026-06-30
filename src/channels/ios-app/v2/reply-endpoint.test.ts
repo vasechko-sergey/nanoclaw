@@ -95,11 +95,13 @@ describe('POST /ios/reply', () => {
   it('400 on missing text', async () => {
     const r = await post(`${h.url}/ios/reply`, JSON.stringify({ agent_id: 'greg' }), TOKEN);
     expect(r.status).toBe(400);
+    expect(h.calls).toHaveLength(0);
   });
 
   it('400 on over-cap text', async () => {
     const r = await post(`${h.url}/ios/reply`, JSON.stringify({ text: 'x'.repeat(5000) }), TOKEN);
     expect(r.status).toBe(400);
+    expect(h.calls).toHaveLength(0);
   });
 
   it('ignores body.platformId — routes by token identity', async () => {
