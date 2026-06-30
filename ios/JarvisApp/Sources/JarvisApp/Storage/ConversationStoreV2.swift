@@ -241,8 +241,13 @@ final class ConversationStoreV2 {
             // offline-queued reply drained late must not sort after newer
             // messages. Fall back to `now` if the wire ts can't be parsed.
             let authored = Self.epochMillis(fromISO: envelope.ts) ?? now
+            // OR IGNORE → idempotent on the id PK. recordDedup now runs only
+            // AFTER a message is fully handled (see TransportV2.routeInboundMessage),
+            // so a redelivery of a message that was inserted but not yet
+            // dedup-recorded must be a safe no-op rather than a UNIQUE-constraint
+            // throw that strands the message.
             try db.execute(sql: """
-                INSERT INTO messages
+                INSERT OR IGNORE INTO messages
                   (id, dir, seq, text, attachments_json, actions_json, status, ts, created_at, agent_id, voice_only)
                 VALUES (?, 'in', ?, ?, ?, ?, 'new', ?, ?, ?, ?)
             """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, authored, authored, agentId, (message.voice_only ?? false)])

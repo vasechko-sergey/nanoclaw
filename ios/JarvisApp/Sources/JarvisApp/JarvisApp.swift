@@ -13,6 +13,22 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        // Authoritative foreground tracking for the notification gate. SwiftUI
+        // scenePhase.onChange does NOT fire for the launch phase (initial value),
+        // so AppForegroundState could stay stale and the gate read "active" while
+        // backgrounded — suppressing a background notification. UIApplication
+        // lifecycle notifications fire on the main thread for every real
+        // transition, including the first activation. didEnterBackground (not
+        // willResignActive) so a transient .inactive (control center / shade)
+        // doesn't flip us to "backgrounded" while still on screen.
+        AppForegroundState.isActive = (app.applicationState == .active)
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            AppForegroundState.isActive = true
+        }
+        nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            AppForegroundState.isActive = false
+        }
         // Time-based morning backstop: a daily ~08:00 upload floor even when no
         // new-sample wake fires. register() MUST run before launch finishes
         // (BGTaskScheduler requirement), so it stays synchronous here.
@@ -90,7 +106,8 @@ struct JarvisApp: App {
                 .environment(coordinator)
                 .environment(activeAgent)
                 .onChange(of: scenePhase) { _, new in
-                    AppForegroundState.isActive = (new == .active)
+                    // isActive is tracked authoritatively via UIApplication
+                    // lifecycle notifications (see AppDelegate) — not here.
                     if new == .active {
                         Theme.refreshScale()
                         Theme.refreshDrawerWidth()

@@ -286,10 +286,16 @@ actor TransportV2 {
 
     private func routeInboundMessage(envelope: V2.Envelope, message: V2.Message) async throws {
         if try store.dedupSeen(id: envelope.id) {
+            // Already handled. Still re-confirm to the host so a redelivery
+            // clears server-side: ack + delivered + advance the inbound cursor.
+            // Previously this returned WITHOUT advancing the cursor, so a message
+            // recorded in dedup whose cursor never reached the host was re-drained
+            // forever — the wedge that stranded the morning brief.
             try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
+            try await sendStatus(.delivered, ids: [envelope.id])
+            try advanceInboundCursor(envelope.seq)
             return
         }
-        try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
 
         // Voice-only render failed: reveal the text that was held behind the
         // placeholder for that row. Carries reply_to_id + voice_failed, no audio.
@@ -297,10 +303,8 @@ actor TransportV2 {
             _ = try? store.clearVoiceOnly(rowId: target)
             try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
             try await sendStatus(.delivered, ids: [envelope.id])
-            if let seq = envelope.seq {
-                let current = try store.cursor(.lastSeenInbound)
-                if seq > current { try store.setCursor(.lastSeenInbound, seq) }
-            }
+            try advanceInboundCursor(envelope.seq)
+            try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
             return
         }
 
@@ -317,10 +321,8 @@ actor TransportV2 {
            try store.appendAttachment(toRowId: replyTo, attachment: audio) {
             try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
             try await sendStatus(.delivered, ids: [envelope.id])
-            if let seq = envelope.seq {
-                let current = try store.cursor(.lastSeenInbound)
-                if seq > current { try store.setCursor(.lastSeenInbound, seq) }
-            }
+            try advanceInboundCursor(envelope.seq)
+            try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
             return
         }
 
@@ -333,10 +335,23 @@ actor TransportV2 {
         LocalNotifier.shared.raise(id: envelope.id, agentId: agentId, text: message.text, seq: envelope.seq ?? 0)
         try await sendAck(id: envelope.id, seq: envelope.seq ?? 0)
         try await sendStatus(.delivered, ids: [envelope.id])
-        if let seq = envelope.seq {
-            let current = try store.cursor(.lastSeenInbound)
-            if seq > current { try store.setCursor(.lastSeenInbound, seq) }
-        }
+        try advanceInboundCursor(envelope.seq)
+        // Record dedup LAST — only once the message is persisted, notified, and
+        // acked. If anything above throws (or the socket dies mid-flight) the
+        // dedup row is NOT written, so the redelivery reprocesses cleanly
+        // (insertInbound is INSERT OR IGNORE → no double row). Recording it
+        // before insertInbound was the wedge: a message could be marked "seen"
+        // yet never rendered, then suppressed forever by the dedup-return above.
+        try store.recordDedup(id: envelope.id, seq: envelope.seq ?? 0)
+    }
+
+    /// Advance the lastSeenInbound cursor to `seq` (monotonic). The host clears
+    /// chat `message` rows from its queue via this cursor (`ackUpTo`), so it must
+    /// move forward whenever we've handled a message — including redeliveries.
+    private func advanceInboundCursor(_ seq: Int?) throws {
+        guard let seq else { return }
+        let current = try store.cursor(.lastSeenInbound)
+        if seq > current { try store.setCursor(.lastSeenInbound, seq) }
     }
 
     private func sendAck(id: String, seq: Int) async throws {
