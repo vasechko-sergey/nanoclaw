@@ -550,7 +550,12 @@ actor TransportV2 {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             if Task.isCancelled { return }
             guard let self else { return }
-            try? await self.connect()
+            do { try await self.connect() }
+            catch {
+                // connect() reset state to .idle on throw; arm another backoff
+                // retry so the reconnect loop doesn't die on one failed attempt.
+                await self.scheduleReconnect()
+            }
         }
     }
 
