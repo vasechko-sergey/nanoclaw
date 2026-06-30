@@ -242,16 +242,45 @@ final class ConversationStoreV2 {
             // offline-queued reply drained late must not sort after newer
             // messages. Fall back to `now` if the wire ts can't be parsed.
             let authored = Self.epochMillis(fromISO: envelope.ts) ?? now
-            // OR IGNORE → idempotent on the id PK. recordDedup now runs only
-            // AFTER a message is fully handled (see TransportV2.routeInboundMessage),
-            // so a redelivery of a message that was inserted but not yet
-            // dedup-recorded must be a safe no-op rather than a UNIQUE-constraint
-            // throw that strands the message.
+            // UPSERT: a WS delivery is authoritative for CONTENT — it upgrades a
+            // prior row (e.g. the text-only stub the background pull path inserts)
+            // to the full version (attachments/actions). Two carve-outs:
+            //  • status + created_at are NOT in the SET clause → a redelivery of
+            //    an already-`read` message doesn't flip it back to unread.
+            //  • WHERE edited = 0 → an agent correction (update envelope) is never
+            //    reverted by a later redelivery of the original.
+            // ON CONFLICT DO UPDATE never throws, so a redelivery stays a safe
+            // upgrade-or-no-op (preserves the build-72 "don't strand" guarantee).
             try db.execute(sql: """
-                INSERT OR IGNORE INTO messages
+                INSERT INTO messages
                   (id, dir, seq, text, attachments_json, actions_json, status, ts, created_at, agent_id, voice_only)
                 VALUES (?, 'in', ?, ?, ?, ?, 'new', ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  text = excluded.text,
+                  attachments_json = excluded.attachments_json,
+                  actions_json = excluded.actions_json,
+                  seq = excluded.seq,
+                  ts = excluded.ts,
+                  agent_id = excluded.agent_id,
+                  voice_only = excluded.voice_only
+                WHERE messages.edited = 0
             """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, authored, authored, agentId, (message.voice_only ?? false)])
+        }
+    }
+
+    /// Idempotent text-row insert for the background PULL path
+    /// (`PendingNotifications`). Mirrors `insertInbound`'s row shape minus
+    /// attachments/actions. `INSERT OR IGNORE` on the `id` PK so a re-pull
+    /// doesn't duplicate; a later WS `insertInbound` UPSERTs over this stub and
+    /// upgrades it to the full content. Does NOT advance the inbound cursor or
+    /// record dedup — only the WS path owns those.
+    func insertInboundFromPull(id: String, seq: Int?, text: String, agentId: String, ts: Int) throws {
+        try writer.write { db in
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO messages
+                  (id, dir, seq, text, status, ts, created_at, agent_id)
+                VALUES (?, 'in', ?, ?, 'new', ?, ?, ?)
+            """, arguments: [id, seq, text, ts, ts, agentId])
         }
     }
 
