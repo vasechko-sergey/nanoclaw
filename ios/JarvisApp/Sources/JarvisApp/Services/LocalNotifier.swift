@@ -24,6 +24,7 @@ final class LocalNotifier {
     private let isEnabled: () -> Bool
     private let isMuted: (String) -> Bool
     private let inQuietHours: () -> Bool
+    private let isSummaryEnabled: () -> Bool
     private let storeLock = NSLock()
     private var _store: ConversationStoreV2?
     private var store: ConversationStoreV2? { storeLock.withLock { _store } }
@@ -47,6 +48,9 @@ final class LocalNotifier {
             let now = Date()
             let t = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
             return QuietHours.contains(minutes: t, start: start, end: end, enabled: enabled)
+        },
+        isSummaryEnabled: @escaping () -> Bool = {
+            UserDefaults.standard.object(forKey: "summaryNotificationsEnabled") as? Bool ?? true
         }
     ) {
         self.center = center
@@ -54,6 +58,7 @@ final class LocalNotifier {
         self.isEnabled = isEnabled
         self.isMuted = isMuted
         self.inQuietHours = inQuietHours
+        self.isSummaryEnabled = isSummaryEnabled
     }
 
     /// Wire the dedup store. Called once at app init (foreground or background
@@ -85,5 +90,29 @@ final class LocalNotifier {
         let req = UNNotificationRequest(identifier: "msg-\(id)", content: content, trigger: nil)
         center.schedule(req)
         try? store.recordNotified(id: id, seq: seq)
+    }
+
+    /// Raises the «Сводка готова» morning summary notification.
+    /// Gating: not foreground + global enable + isSummaryEnabled + not quiet hours + dedup by id.
+    /// Per-agent mute is intentionally NOT checked — this is a cross-agent dashboard summary.
+    func raiseSummaryReady(id: String, date: String, count: Int, agentId: String) {
+        guard !isForeground() else { return }
+        guard isEnabled() else { return }
+        guard isSummaryEnabled() else { return }   // dedicated «Сводка» toggle (not per-agent mute)
+        guard !inQuietHours() else { return }
+        guard let store else { return }
+        if (try? store.notifiedSeen(id: id)) == true { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Сводка"
+        content.body = "Сводка готова · \(count) карточек"
+        content.sound = .default
+        content.threadIdentifier = "summary"
+        content.categoryIdentifier = NotificationCategories.summaryReady
+        content.userInfo = ["summary": true, "date": date]
+
+        let req = UNNotificationRequest(identifier: "summary-\(id)", content: content, trigger: nil)
+        center.schedule(req)
+        try? store.recordNotified(id: id, seq: 0)
     }
 }

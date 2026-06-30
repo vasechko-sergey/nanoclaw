@@ -32,6 +32,7 @@
 		1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B165040849DF187E7D1113C /* OrbInputBar.swift */; };
 		1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */; };
 		1FB22DB3AC46D6DC773E9148 /* LocalNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692FF9CBB21BDC62448E95E9 /* LocalNotifierTests.swift */; };
+		23DA7C08B5BB329264C71290 /* V2SummaryReadyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1862BB4D1C3A773681EBB8 /* V2SummaryReadyTests.swift */; };
 		250E4BBF96D871228E8E7C41 /* MarkdownTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */; };
 		25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */; };
 		298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */; };
@@ -156,6 +157,7 @@
 		D76B99448549A036E84A20B1 /* VoiceFullscreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6D22E07581550F2379E4CC3 /* VoiceFullscreenTests.swift */; };
 		D8C071DDEDA0C58A157A3EA7 /* ProactiveDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2BB3949271147491E3FA597 /* ProactiveDispatcher.swift */; };
 		D9D85A8E3CB2F7583D9CCBB7 /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0295CB82FF20C8764842F6 /* CameraPicker.swift */; };
+		DE5C8805D896F3B1D64E53E5 /* SummaryNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92B1D7610DFD9ABC073694FC /* SummaryNotifierTests.swift */; };
 		DEFAB6DF33649249BC9C24E7 /* ConversationStoreV2AgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9EB1688DB74A7280A71824 /* ConversationStoreV2AgentTests.swift */; };
 		E0C11524F945712AD1DD5BED /* WatchConnectivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17C0619207CE65994BF0385 /* WatchConnectivityBridge.swift */; };
 		E2C6CF0C56A5CE5C34033B66 /* NotificationReplySender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A9CEE91F5EB65998B79A8E2 /* NotificationReplySender.swift */; };
@@ -310,6 +312,7 @@
 		903F8E4E445A8A4777CE3812 /* AttachmentMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMigration.swift; sourceTree = "<group>"; };
 		907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewSmokeTests.swift; sourceTree = "<group>"; };
 		9143ED9DD7B640862D468B63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		92B1D7610DFD9ABC073694FC /* SummaryNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryNotifierTests.swift; sourceTree = "<group>"; };
 		95313AA88BC90EB29D9840E9 /* NotificationGatingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationGatingTests.swift; sourceTree = "<group>"; };
 		9592AD08ED6648DF9CCC7149 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		97D8CEE69D33E1581710A543 /* ConversationStoreV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2.swift; sourceTree = "<group>"; };
@@ -385,6 +388,7 @@
 		FC317B371153E91110B04D96 /* WorkoutCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinator.swift; sourceTree = "<group>"; };
 		FC413AB63E0CA681D14B53B1 /* GreetingBank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreetingBank.swift; sourceTree = "<group>"; };
 		FC430323408B66D7F47AA5B8 /* ChatImageStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageStoreTests.swift; sourceTree = "<group>"; };
+		FD1862BB4D1C3A773681EBB8 /* V2SummaryReadyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2SummaryReadyTests.swift; sourceTree = "<group>"; };
 		FE1A573133241875D7269CED /* HealthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -570,11 +574,13 @@
 				A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */,
 				E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */,
 				5476BBF578AEF9B336DAE3CC /* StoreNotifiedTests.swift */,
+				92B1D7610DFD9ABC073694FC /* SummaryNotifierTests.swift */,
 				9C7B608446E68C7DF9024CE9 /* SwapSheetTests.swift */,
 				30F0387B3C8F325056A3E714 /* TransportV2ImageReadyTests.swift */,
 				0056A55985BB7DB31F765116 /* TransportV2Tests.swift */,
 				24E75D5AB84CECDD2D10E119 /* TransportV2WorkoutInboundTests.swift */,
 				834FF3E88E233A898EDBA444 /* TransportV2WorkoutTests.swift */,
+				FD1862BB4D1C3A773681EBB8 /* V2SummaryReadyTests.swift */,
 				2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */,
 				1B15C373E9A1A762EDBE060A /* VoiceOnlyStoreTests.swift */,
 				5763584CB5FE92DAB00C7C57 /* WatchConnectivityBridgeTests.swift */,
@@ -1028,11 +1034,13 @@
 				8B8DBA1244BFD9A7D1B54CF0 /* StateModelTests.swift in Sources */,
 				ADB927AF6429AD509FE016CE /* StoreNotifiedTests.swift in Sources */,
 				E45B2D67CDD9B59EBFC1ADD3 /* StoredAttachmentTests.swift in Sources */,
+				DE5C8805D896F3B1D64E53E5 /* SummaryNotifierTests.swift in Sources */,
 				645FF687262BEFAE63D2A508 /* SwapSheetTests.swift in Sources */,
 				F8538F2059631A6888C489B0 /* TransportV2ImageReadyTests.swift in Sources */,
 				E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */,
 				920E2AE3DB5215DAE666BF65 /* TransportV2WorkoutInboundTests.swift in Sources */,
 				3CBB91784B65C8CA4A702AF6 /* TransportV2WorkoutTests.swift in Sources */,
+				23DA7C08B5BB329264C71290 /* V2SummaryReadyTests.swift in Sources */,
 				2F3C11438165573EE2B54B7D /* VoiceLoopControllerTests.swift in Sources */,
 				79863C9C38EE621B71898E1D /* VoiceOnlyStoreTests.swift in Sources */,
 				ED86C8462FA285929BB5D83B /* WatchConnectivityBridgeTests.swift in Sources */,
@@ -1091,7 +1099,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 75;
+				CURRENT_PROJECT_VERSION = 76;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1100,7 +1108,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.17.0;
+				MARKETING_VERSION = 1.18.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;
@@ -1337,7 +1345,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 75;
+				CURRENT_PROJECT_VERSION = 76;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1346,7 +1354,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.17.0;
+				MARKETING_VERSION = 1.18.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;

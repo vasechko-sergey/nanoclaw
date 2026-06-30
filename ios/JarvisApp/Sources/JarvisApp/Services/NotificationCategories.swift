@@ -6,6 +6,7 @@ import UserNotifications
 enum NotificationCategories {
     static let agentMessage = "agent-message"
     static let replyAction = "reply"
+    static let summaryReady = "summary-ready"
 
     static func agentMessageCategory() -> UNNotificationCategory {
         let reply = UNTextInputNotificationAction(
@@ -23,7 +24,14 @@ enum NotificationCategories {
         )
     }
 
+    static func summaryReadyCategory() -> UNNotificationCategory {
+        UNNotificationCategory(identifier: summaryReady, actions: [], intentIdentifiers: [], options: [])
+    }
+
     static func register() {
-        UNUserNotificationCenter.current().setNotificationCategories([agentMessageCategory()])
+        UNUserNotificationCenter.current().setNotificationCategories([
+            agentMessageCategory(),
+            summaryReadyCategory(),
+        ])
     }
 }
