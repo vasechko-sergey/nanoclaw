@@ -60,47 +60,51 @@ Fix:
 
 Files: host `src/channels/ios-app/v2/http-handler.ts`; iOS `Services/PendingNotifications.swift`, `Storage/ConversationStoreV2.swift`.
 
-**Host — `/ios/pending` carries render fields.** The response map currently returns `{ id, seq, type, agent_id, text }`. Add `thread_id`, `ts`, `has_attachments` parsed from `payload_json` (the `message` envelope payload carries `thread_id`; `attachments` presence → `has_attachments`; `ts` from the row's `created_at` or the envelope ts). Backward-compatible additive fields.
+The pull path renders **all** messages as text-only stubs; the WS path, when it later delivers the same id, **upgrades** the row to the authoritative full version (text + attachments + actions). "A WS dup by id = the more-correct version → update it." This removes the attachment special-casing entirely.
 
-**iOS — `drain()` renders text messages.** In `PendingNotifications.drain()`, for each message row:
+**Host — `/ios/pending` carries `ts`.** The response map currently returns `{ id, seq, type, agent_id, text }`. Add `ts` (parsed from `payload_json`, else the row's `created_at`) so the pull-inserted row sorts by authored time. (No `thread_id` — `insertInbound` writes no `conversation_id`; rows are keyed by `id` and filtered by `agent_id`. No `has_attachments` — see the upgrade model below.)
+
+**iOS — `drain()` renders every text message.** In `PendingNotifications.drain()`, for each message row:
 - `type == "summary_ready"` → `raiseSummaryReady` (unchanged).
-- else (agent message):
-  - notify via `raise(...)` (unchanged), AND
-  - if `has_attachments == false` and `thread_id != nil`: persist the chat row idempotently via a new store method `insertInboundFromPull(id:threadId:agentId:text:seq:ts:)` (`INSERT OR IGNORE`, `dir = .in`, `status = .delivered`). Row identity = the message `id`, matching what the WS path's `insertInbound` uses, so a later WS delivery is a no-op (`INSERT OR IGNORE`) and the WS path still records dedup + advances the cursor normally.
-  - with attachments → notify only (WS renders the rich version; a text-only pull insert would strand the attachment under `INSERT OR IGNORE`).
+- else (agent message): notify via `raise(...)`, AND persist the chat row via a new store method `insertInboundFromPull(id:seq:text:agentId:ts:)` (`INSERT OR IGNORE`, `dir='in'`, `status='new'`). Text-only; if the message had attachments they arrive when the WS upgrades the row. Row identity = the message `id` (matches the WS path's `insertInbound`). Does NOT advance `lastSeenInbound` or `recordDedup` — only the WS path owns the cursor + dedup.
 
-`insertInboundFromPull` does NOT advance `lastSeenInbound` and does NOT `recordDedup` — only the WS path owns the cursor + dedup. This guarantees: (1) the message is rendered even if WS never re-delivers it; (2) if WS does deliver, it's idempotent.
+**iOS — WS `insertInbound` becomes an UPSERT (the upgrade).** Change `insertInbound` from `INSERT OR IGNORE` to `INSERT … ON CONFLICT(id) DO UPDATE SET text=excluded.text, attachments_json=excluded.attachments_json, actions_json=excluded.actions_json, seq=excluded.seq, ts=excluded.ts, agent_id=excluded.agent_id, voice_only=excluded.voice_only WHERE messages.edited = 0`. So a WS delivery overwrites a pull stub (or any prior row) with the complete content. Two carve-outs:
+- **Preserve delivery status + `created_at`** — NOT in the `SET` clause, so a WS redelivery of an already-`read` message doesn't flip it back to unread.
+- **`WHERE messages.edited = 0`** — an agent correction (via the `update` envelope) is never reverted by a later redelivery of the original.
 
-**Why not "fix the cursor so WS re-delivers"?** The cursor advanced past 725 on the device; making the server re-deliver `delivered`-but-not-`read` messages would change the protocol's cursor contract and risk re-delivery storms. Rendering on the pull path is local, additive, and closes the gap without protocol changes.
+This keeps the build-72 guarantee (a redelivery is a safe no-op, never a `UNIQUE` throw that strands the message — `ON CONFLICT DO UPDATE` doesn't throw) while making WS authoritative for content.
+
+**Why not "fix the cursor so WS re-delivers"?** The cursor advanced past 725 on the device; making the server re-deliver `delivered`-but-not-`read` messages would change the protocol's cursor contract and risk re-delivery storms. Pull-render + WS-upgrade is local, additive, and closes the gap without protocol changes.
 
 ## Error handling / edge cases
 
-- **Pure-attachment message (no caption) stranded via pull:** notify-only (has_attachments=true); renders when WS reconnects. Accepted — rare, and not a text loss.
+- **Attachment message rendered via pull before WS upgrade:** shows text-only (caption) until the WS delivery upserts the full row (attachments appear). If WS never re-delivers (cursor past), it stays text-only — accepted (caption preserved; not a total loss). A pure-image message with no caption shows a blank text row until the WS upgrade — rare; acceptable.
+- **WS upsert vs read state / edits:** status + `created_at` are preserved (no unread-flip on redelivery); `WHERE edited = 0` protects agent corrections.
 - **Watchdog vs slow auth:** the generation token ensures the watchdog only resets the connection it was scheduled for; a later healthy `.authed` is untouched.
 - **Double reconnect (pending `reconnectTask` + foreground clean reconnect):** the foreground path cancels the pending task via `disconnect()` before connecting; the reentrancy guard prevents overlap.
 - **`drain()` insert before the store/timeline exists:** drain runs in background self-wake after `AppV2Bootstrap`; the store is available. If not, the insert is a guarded no-op (notify still fires).
 
 ## Testing
 
-Host (vitest): `/ios/pending` returns `thread_id`/`ts`/`has_attachments`; a `summary_ready` row and a `message` row both surface their fields; a message with attachments sets `has_attachments=true`.
+Host (vitest): `/ios/pending` returns `ts`; a `summary_ready` row and a `message` row both surface their fields.
 
 iOS (XCTest, `@testable import Jarvis`):
-- `TransportV2`: `connect()` failure path resets `state` to `.idle` (injectable failing `WebSocketLike`); `handleSocketClose` no-ops when `state == .idle`; watchdog resets a stuck `.connecting` after the interval (inject a socket that never auths + a short watchdog interval); `resetReconnectBackoff`/`isAuthed` behave.
-- `WebSocketClientV2`: `handleScenePhase(.active)` drives disconnect→connect and sets `isConnected` on auth (fake transport/stack).
-- `PendingNotifications`: a no-attachment message row → `insertInboundFromPull` called (route assertion at the decode/dispatch seam, mirroring the existing summary test limitation); attachment row → notify only.
-- `ConversationStoreV2`: `insertInboundFromPull` inserts a text row idempotently (second call / later `insertInbound` with same id = no duplicate).
+- `TransportV2`: `connect()` failure path resets `state` to `.idle` (injectable failing `WebSocketLike`); `handleSocketClose` no-ops when `state == .idle`; watchdog resets a stuck `.connecting` after the interval (inject a socket that never auths + a short watchdog interval); `resetReconnectBackoff`/`isAuthed`/`onStateChange` behave.
+- `WebSocketClientV2`: `handleScenePhase(.active)` drives disconnect→connect; `onStateChange` sets `isConnected`.
+- `PendingNotifications`: decode seam carries `ts` (route-to-insert covered at the decode level, mirroring the summary test limitation).
+- `ConversationStoreV2`: `insertInboundFromPull` inserts a text row idempotently; **WS `insertInbound` upserts** — a pull stub (`id=X`, text-only) followed by `insertInbound(id=X, +attachments)` ends with one row carrying the attachments; an `insertInbound` over a row with `status=read` keeps `read`; an `insertInbound` over an `edited=1` row does NOT overwrite the text.
 
 ## Files touched
 
 Host:
-- `src/channels/ios-app/v2/http-handler.ts` — `/ios/pending` map adds `thread_id`/`ts`/`has_attachments`.
+- `src/channels/ios-app/v2/http-handler.ts` — `/ios/pending` map adds `ts`.
 - `src/channels/ios-app/v2/http-routes.test.ts` — extend pending assertions.
 
 iOS (`ios/JarvisApp/Sources/JarvisApp/`):
 - `Services/TransportV2.swift` — connect reset-on-failure + auth watchdog + `handleSocketClose` idle-guard + `resetReconnectBackoff()` + `isAuthed()` + state-change callback.
 - `Services/WebSocketClientV2.swift` — `handleScenePhase(.active)` clean reconnect + `isConnected` wiring.
-- `Services/PendingNotifications.swift` — `PendingMessage` gains `thread_id`/`ts`/`has_attachments`; `drain()` inserts text rows.
-- `Storage/ConversationStoreV2.swift` — `insertInboundFromPull(...)`.
+- `Services/PendingNotifications.swift` — `PendingMessage` gains `ts`; `drain()` inserts text rows for all messages.
+- `Storage/ConversationStoreV2.swift` — `insertInboundFromPull(...)` + `insertInbound` → UPSERT (content-upgrade, preserve status/created_at, `WHERE edited=0`).
 - Tests: `TransportV2*Tests`, `WebSocketClientV2Tests` (or new), `PendingNotificationsTests`, `ConversationStoreV2Tests`.
 - `project.yml` — build 77 / 1.19.0 (single final bump).
 

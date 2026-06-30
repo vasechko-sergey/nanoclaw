@@ -386,7 +386,7 @@ git commit -m "fix(ios): clean WS reconnect on foreground + isConnected tracks a
 
 ---
 
-## Task 5: Host — `/ios/pending` carries `ts` + `has_attachments`
+## Task 5: Host — `/ios/pending` carries `ts`
 
 **Files:**
 - Modify: `src/channels/ios-app/v2/http-handler.ts` (the `/ios/pending` map, ~line 392-403)
@@ -394,7 +394,7 @@ git commit -m "fix(ios): clean WS reconnect on foreground + isConnected tracks a
 
 - [ ] **Step 1: Write the failing test**
 
-Read the existing `/ios/pending` test in `http-routes.test.ts` for its harness (how it seeds an `outbound_queue` row + calls the route). Add/extend a case that enqueues a `message` row whose `payload_json` has `text`, `agent_id`, a `ts`, and an `attachments` array, then asserts the response message includes `ts` (number) and `has_attachments === true`; and a no-attachment row → `has_attachments === false`.
+Read the existing `/ios/pending` test in `http-routes.test.ts` for its harness (how it seeds an `outbound_queue` row + calls the route). Add/extend a case that enqueues a `message` row whose `payload_json` has `text`, `agent_id`, and a `ts`, then asserts the response message includes `ts` (number). If you implement the `created_at` fallback (below), also assert a row whose payload has no `ts` surfaces `ts` from `created_at`.
 
 - [ ] **Step 2: Run — verify FAIL**
 
@@ -409,22 +409,19 @@ In the `/ios/pending` `.map((row) => {...})`, extend the payload parse + returne
         let agent_id: string | null = null;
         let text = '';
         let ts: number | null = null;
-        let has_attachments = false;
         try {
-          const p = JSON.parse(row.payload_json) as {
-            text?: unknown; agent_id?: unknown; ts?: unknown; attachments?: unknown;
-          };
+          const p = JSON.parse(row.payload_json) as { text?: unknown; agent_id?: unknown; ts?: unknown };
           if (typeof p.text === 'string') text = p.text;
           if (typeof p.agent_id === 'string') agent_id = p.agent_id;
           if (typeof p.ts === 'number') ts = p.ts;
-          has_attachments = Array.isArray(p.attachments) && p.attachments.length > 0;
         } catch {
           /* malformed payload — surface id/seq with empty text */
         }
-        return { id: row.id, seq: row.seq, type: row.type, agent_id, text, ts, has_attachments };
+        if (ts === null) ts = row.created_at; // OutboundQueueRow always has created_at
+        return { id: row.id, seq: row.seq, type: row.type, agent_id, text, ts };
 ```
 
-NOTE: confirm the `message` envelope payload actually carries `ts`. Read how `deliver()` builds the `message` envelope payload in `src/channels/ios-app/v2/index.ts`; if the payload has no `ts`, fall back to the row's `created_at` (the `OutboundQueueRow` has `created_at`) — i.e. `ts = row.created_at` when `p.ts` is absent. Use whichever the row reliably has; the iOS side only needs a monotonic authored-ish timestamp for ordering.
+NOTE: the `message` envelope payload may not carry `ts`; the `created_at` fallback (a column on `OutboundQueueRow`) guarantees a monotonic authored-ish timestamp for ordering. (No `has_attachments` — the WS path upgrades the row, see Task 6.)
 
 - [ ] **Step 4: Run — verify PASS**
 
@@ -435,14 +432,14 @@ Expected: PASS; build clean.
 
 ```bash
 git add src/channels/ios-app/v2/http-handler.ts src/channels/ios-app/v2/http-routes.test.ts
-git commit -m "feat(ios-app): /ios/pending carries ts + has_attachments for pull-render"
+git commit -m "feat(ios-app): /ios/pending carries ts for pull-render"
 ```
 
 ---
 
-## Task 6: iOS — `ConversationStoreV2.insertInboundFromPull`
+## Task 6: iOS — store: pull-insert + WS upsert (`ConversationStoreV2`)
 
-A lightweight idempotent text-row insert for the pull path. Mirrors `insertInbound`'s row shape (line ~250) minus attachments/actions, so a later WS `insertInbound` with the same `id` is a no-op (`INSERT OR IGNORE`).
+Two related changes in one file. (a) `insertInboundFromPull`: a lightweight idempotent text-row insert for the pull path, mirroring `insertInbound`'s row shape (line ~250) minus attachments/actions. (b) `insertInbound` (WS path) becomes an **UPSERT** so a later WS delivery **upgrades** a pull stub (or any prior row) to the authoritative full content — "WS dup by id = more-correct → update" — with two carve-outs (preserve delivery status + `created_at`; skip `edited` rows).
 
 **Files:**
 - Modify: `ios/JarvisApp/Sources/JarvisApp/Storage/ConversationStoreV2.swift`
@@ -485,10 +482,10 @@ Add to `ConversationStoreV2` (near `insertInbound`):
 ```swift
     /// Idempotent text-row insert for the background PULL path
     /// (`PendingNotifications`). Mirrors `insertInbound`'s row shape (no
-    /// attachments/actions). `INSERT OR IGNORE` on the `id` PK so a later WS
-    /// `insertInbound` for the same message is a safe no-op, and a re-pull
-    /// doesn't duplicate. Does NOT advance the inbound cursor or record dedup —
-    /// only the WS path owns those.
+    /// attachments/actions). `INSERT OR IGNORE` on the `id` PK so a re-pull
+    /// doesn't duplicate; a later WS `insertInbound` UPSERTs over this stub and
+    /// upgrades it to the full content. Does NOT advance the inbound cursor or
+    /// record dedup — only the WS path owns those.
     func insertInboundFromPull(id: String, seq: Int?, text: String, agentId: String, ts: Int) throws {
         try writer.write { db in
             try db.execute(sql: """
@@ -505,11 +502,89 @@ Add to `ConversationStoreV2` (near `insertInbound`):
 Run: `cd ios/JarvisApp && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/ConversationStoreV2PullTests 2>&1 | tail -20`
 Expected: `** TEST SUCCEEDED **`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Write the failing UPSERT test**
+
+Append to `ConversationStoreV2PullTests.swift`. These need a real `V2.Envelope` + `V2.Message` (build minimal ones — read `insertInbound`'s signature + `V2.Message`/`V2.Attachment` from `Protocol/V2.swift`). Helpers to read a row's columns may already exist (`countAllMessages`, a fetch-by-id); if not, add a tiny test reader.
+
+```swift
+    func testWSUpsertUpgradesPullStub() throws {
+        let store = try makeStore()
+        // Pull stub: text only.
+        try store.insertInboundFromPull(id: "m1", seq: 5, text: "caption", agentId: "jarvis", ts: 1000)
+        // WS delivery of the SAME id, now with an attachment.
+        let att = V2.Attachment(id: "a1", kind: "image", name: "p.jpg", mime_type: "image/jpeg",
+                                byte_size: 10, bytes_base64: "AAAA", remote_id: nil)
+        let msg = V2.Message(thread_id: "t", text: "caption", attachments: [att], agent_id: "jarvis")
+        let env = V2.Envelope(v: 2, kind: .data, type: .message, id: "m1", seq: 5,
+                              ts: "2026-06-30T00:00:01.000Z", payload: .message(msg))
+        try store.insertInbound(envelope: env, message: msg, agentId: "jarvis")
+        XCTAssertEqual(try store.countAllMessages(), 1)               // still one row
+        XCTAssertNotNil(try store.attachmentsJSONForTesting(id: "m1")) // upgraded with attachment
+    }
+
+    func testWSUpsertPreservesReadStatus() throws {
+        let store = try makeStore()
+        try store.insertInboundFromPull(id: "m2", seq: 6, text: "hi", agentId: "jarvis", ts: 1000)
+        try store.markRead(ids: ["m2"])                               // status → read (use the real API)
+        let msg = V2.Message(thread_id: "t", text: "hi", attachments: nil, agent_id: "jarvis")
+        let env = V2.Envelope(v: 2, kind: .data, type: .message, id: "m2", seq: 6,
+                              ts: "2026-06-30T00:00:01.000Z", payload: .message(msg))
+        try store.insertInbound(envelope: env, message: msg, agentId: "jarvis")
+        XCTAssertEqual(try store.statusForTesting(id: "m2"), "read")  // NOT reset to 'new'
+    }
+
+    func testWSUpsertSkipsEditedRow() throws {
+        let store = try makeStore()
+        try store.insertInboundFromPull(id: "m3", seq: 7, text: "orig", agentId: "jarvis", ts: 1000)
+        _ = try store.updateMessageText(id: "m3", text: "corrected") // sets edited=1 (real API)
+        let msg = V2.Message(thread_id: "t", text: "orig", attachments: nil, agent_id: "jarvis")
+        let env = V2.Envelope(v: 2, kind: .data, type: .message, id: "m3", seq: 7,
+                              ts: "2026-06-30T00:00:01.000Z", payload: .message(msg))
+        try store.insertInbound(envelope: env, message: msg, agentId: "jarvis")
+        XCTAssertEqual(try store.textForTesting(id: "m3"), "corrected") // edit NOT reverted
+    }
+```
+
+Add minimal test readers if absent: `attachmentsJSONForTesting(id:)`, `statusForTesting(id:)`, `textForTesting(id:)` (one-line `writer.read` SELECTs). Match the real `markRead`/`updateMessageText` signatures from `ConversationStoreV2.swift`.
+
+- [ ] **Step 6: Run — verify FAIL**
+
+Run: `cd ios/JarvisApp && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/ConversationStoreV2PullTests 2>&1 | tail -20`
+Expected: FAIL — current `insertInbound` is `INSERT OR IGNORE` (no upgrade); upgrade/preserve assertions fail.
+
+- [ ] **Step 7: Convert `insertInbound` to an UPSERT**
+
+In `insertInbound` (the existing method, ~line 250), change the `INSERT OR IGNORE` statement to an upsert that upgrades content but preserves delivery state + skips edited rows:
+
+```swift
+            try db.execute(sql: """
+                INSERT INTO messages
+                  (id, dir, seq, text, attachments_json, actions_json, status, ts, created_at, agent_id, voice_only)
+                VALUES (?, 'in', ?, ?, ?, ?, 'new', ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  text = excluded.text,
+                  attachments_json = excluded.attachments_json,
+                  actions_json = excluded.actions_json,
+                  seq = excluded.seq,
+                  ts = excluded.ts,
+                  agent_id = excluded.agent_id,
+                  voice_only = excluded.voice_only
+                WHERE messages.edited = 0
+            """, arguments: [envelope.id, envelope.seq, message.text, attachmentsJSON, actionsJSON, authored, authored, agentId, (message.voice_only ?? false)])
+```
+
+`status` and `created_at` are intentionally absent from the `SET` clause (preserved). `WHERE messages.edited = 0` protects agent corrections. Update the method's docblock (the old "OR IGNORE → idempotent ... safe no-op" note) to describe the upsert + carve-outs. NOTE: confirm the `messages` table has an `edited` column (it's referenced by `row.edited` in `WebSocketClientV2.toChatMessage` + set by `updateMessageText`); if the column name differs, match it.
+
+- [ ] **Step 8: Run — verify PASS**
+
+Run: `cd ios/JarvisApp && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:JarvisAppTests/ConversationStoreV2PullTests 2>&1 | tail -20`
+Expected: `** TEST SUCCEEDED **` (idempotent pull + 3 upsert cases). Then run the existing store/transport tests to confirm the upsert didn't regress normal inbound: `-only-testing:JarvisAppTests/TransportSummaryTests -only-testing:JarvisAppTests/TransportV2Tests`.
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add ios/JarvisApp/Sources/JarvisApp/Storage/ConversationStoreV2.swift ios/JarvisApp/Sources/JarvisAppTests/ConversationStoreV2PullTests.swift
-git commit -m "feat(ios): insertInboundFromPull — idempotent pull-path chat row"
+git commit -m "feat(ios): pull-path text row + WS insertInbound upserts (upgrade content, keep status/edits)"
 ```
 
 ---
@@ -522,17 +597,15 @@ git commit -m "feat(ios): insertInboundFromPull — idempotent pull-path chat ro
 
 - [ ] **Step 1: Write failing test**
 
-Extend the existing `PendingNotificationsTests` (the pure `parse` seam). Add a decode case asserting `PendingMessage` now carries `ts` and `has_attachments`:
+Extend the existing `PendingNotificationsTests` (the pure `parse` seam). Add a decode case asserting `PendingMessage` now carries `ts`:
 
 ```swift
-    func testParseCarriesTsAndHasAttachments() {
+    func testParseCarriesTs() {
         let json = """
-        {"messages":[{"id":"msg-1","seq":10,"type":"message","agent_id":"jarvis",
-          "text":"hi","ts":1000,"has_attachments":false}]}
+        {"messages":[{"id":"msg-1","seq":10,"type":"message","agent_id":"jarvis","text":"hi","ts":1000}]}
         """.data(using: .utf8)!
         let msgs = PendingNotifications.parse(json)
         XCTAssertEqual(msgs.first?.ts, 1000)
-        XCTAssertEqual(msgs.first?.has_attachments, false)
     }
 ```
 
@@ -549,7 +622,6 @@ In `PendingMessage`, add:
 
 ```swift
         let ts: Int?
-        let has_attachments: Bool?
 ```
 
 In `drain()`, change the non-summary branch to also persist a text row (read the store from the shared app stack — use the same accessor `LocalNotifier.shared` uses to reach the store, or `AppV2Bootstrap`'s shared store; confirm how `drain` can reach a `ConversationStoreV2`). The branch becomes:
@@ -559,11 +631,11 @@ In `drain()`, change the non-summary branch to also persist a text row (read the
                     LocalNotifier.shared.raiseSummaryReady(id: m.id, body: m.text, agentId: m.agent_id ?? "jarvis")
                 } else {
                     LocalNotifier.shared.raise(id: m.id, agentId: m.agent_id ?? "jarvis", text: m.text, seq: m.seq)
-                    // Render attachment-free messages into the chat so a
-                    // backgrounded message can't be stranded (notified-but-not-
-                    // rendered). Attachment messages stay notify-only — WS renders
-                    // the rich version (a text-only pull insert would strand it).
-                    if m.has_attachments != true, let store = PendingNotifications.chatStore {
+                    // Render EVERY message as a text stub so a backgrounded
+                    // message can't be stranded (notified-but-not-rendered). If it
+                    // had attachments, the WS delivery upserts the row to the full
+                    // version (Task 6). INSERT OR IGNORE → a re-pull is a no-op.
+                    if let store = PendingNotifications.chatStore {
                         try? store.insertInboundFromPull(
                             id: m.id, seq: m.seq, text: m.text,
                             agentId: m.agent_id ?? "jarvis", ts: m.ts ?? m.seq)
@@ -586,7 +658,7 @@ Expected: `** TEST SUCCEEDED **`; `** BUILD SUCCEEDED **`.
 
 ```bash
 git add ios/JarvisApp/Sources/JarvisApp/Services/PendingNotifications.swift ios/JarvisApp/Sources/JarvisAppTests/PendingNotificationsTests.swift <bootstrap file>
-git commit -m "fix(ios): pull path renders attachment-free messages into the chat"
+git commit -m "fix(ios): pull path renders every message into the chat (text stub)"
 ```
 
 ---
@@ -620,7 +692,7 @@ git commit -m "chore(ios): bump build 77 / 1.19.0 — messaging-rail robustness"
 
 ## Self-review notes
 
-- **Spec coverage:** A defect 1 (stranded .connecting) → T2; A defect 2 (disconnect re-arm) → T1; A defect 3 (isConnected) → T3+T4; foreground clean reconnect → T4; auth watchdog → T2. B host fields → T5; pull-insert → T6; drain render → T7; version → T8; deploy → T9. All spec sections mapped.
-- **Deviation from spec (noted):** `insertInboundFromPull` takes NO `thread_id` — `insertInbound` writes no `conversation_id` (rows keyed by `id`, filtered by `agent_id`), so the pull insert mirrors it without a conversation. The spec's `thread_id` field on `/ios/pending` is therefore dropped; only `ts` + `has_attachments` are added.
-- **Type consistency:** `onStateChange`/`setOnStateChange`/`isAuthed`/`resetReconnectBackoff`/`scheduleReconnect`/`armConnectWatchdog`/`connectWatchdogFired` (T2/T3) consistent. `insertInboundFromPull(id:seq:text:agentId:ts:)` identical in T6 (def) and T7 (call). `PendingMessage.ts/has_attachments` (T7) match the host fields (T5). `State` cases `.idle/.connecting/.authed/.reconnecting(delaySeconds:)` per the real enum.
+- **Spec coverage:** A defect 1 (stranded .connecting) → T2; A defect 2 (disconnect re-arm) → T1; A defect 3 (isConnected) → T3+T4; foreground clean reconnect → T4; auth watchdog → T2. B host `ts` → T5; pull text-stub insert + WS `insertInbound` UPSERT (upgrade, preserve status/edits) → T6; drain renders every message → T7; version → T8; deploy → T9. All spec sections mapped.
+- **Deviation from spec (noted):** `insertInboundFromPull` takes NO `thread_id` — `insertInbound` writes no `conversation_id` (rows keyed by `id`, filtered by `agent_id`). `/ios/pending` adds only `ts` (no `thread_id`, no `has_attachments` — the WS UPSERT upgrades attachment messages, so the pull side renders every message as a text stub).
+- **Type consistency:** `onStateChange`/`setOnStateChange`/`isAuthed`/`resetReconnectBackoff`/`scheduleReconnect`/`armConnectWatchdog`/`connectWatchdogFired` (T2/T3) consistent. `insertInboundFromPull(id:seq:text:agentId:ts:)` identical in T6 (def) and T7 (call). `PendingMessage.ts` (T7) matches the host `ts` field (T5). WS `insertInbound` UPSERT preserves `status`/`created_at`, guards `WHERE edited = 0` (T6). `State` cases `.idle/.connecting/.authed/.reconnecting(delaySeconds:)` per the real enum.
 - **Placeholders:** harness-specific names (`makeTransport`, `MockWebSocket`, `chatStore` bootstrap site, `countAllMessages`, `Schema.migrate`) are flagged for the implementer to confirm against the real test files/bootstrap — they are pre-existing utilities, not inventions.
