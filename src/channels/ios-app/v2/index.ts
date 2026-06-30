@@ -154,6 +154,39 @@ function resolveSessionForPlatform(platformId: PlatformId, agentId: string | und
   return sess?.id ?? null;
 }
 
+/** Build a `chat` inbound message and route it to a specific agent group.
+ *  Single routing path shared by the WS dispatcher and the HTTP reply endpoint. */
+function routeChatToAgent(input: {
+  platform_id: string;
+  agent_group_id: string;
+  thread_id: string | null;
+  id: string;
+  text: string;
+  context?: unknown;
+  attachments?: unknown[];
+  timestamp?: string;
+}): void {
+  void adapterRouteToAgent(
+    {
+      channelType: CHANNEL_TYPE,
+      platformId: input.platform_id,
+      threadId: input.thread_id,
+      message: {
+        id: input.id,
+        kind: 'chat',
+        content: JSON.stringify({
+          text: input.text,
+          senderId: input.platform_id,
+          ios_context: input.context ?? null,
+          attachments: input.attachments ?? [],
+        }),
+        timestamp: input.timestamp ?? new Date().toISOString(),
+      },
+    },
+    input.agent_group_id,
+  ).catch((err) => logV2Warn('routeChatToAgent threw', { err: String(err), agent_group_id: input.agent_group_id }));
+}
+
 /**
  * Reverse of the above: given a session id, what device should we ask?
  *
@@ -267,27 +300,17 @@ function createV2Adapter(): ChannelAdapter | null {
     receipts,
     resolveSessionForPlatform,
     defaultAgentSlug,
-    routeToAgent: ({ platform_id, agent_group_id, envelope }) => {
-      void adapterRouteToAgent(
-        {
-          channelType: CHANNEL_TYPE,
-          platformId: platform_id,
-          threadId: envelope.payload.thread_id ?? null,
-          message: {
-            id: envelope.id,
-            kind: 'chat',
-            content: JSON.stringify({
-              text: envelope.payload.text ?? '',
-              senderId: platform_id,
-              ios_context: envelope.payload.context ?? null,
-              attachments: envelope.payload.attachments ?? [],
-            }),
-            timestamp: envelope.ts ?? new Date().toISOString(),
-          },
-        },
+    routeToAgent: ({ platform_id, agent_group_id, envelope }) =>
+      routeChatToAgent({
+        platform_id,
         agent_group_id,
-      ).catch((err) => logV2Warn('routeToAgent threw', { err: String(err), agent_group_id }));
-    },
+        thread_id: envelope.payload.thread_id ?? null,
+        id: envelope.id,
+        text: envelope.payload.text ?? '',
+        context: envelope.payload.context ?? null,
+        attachments: envelope.payload.attachments ?? [],
+        timestamp: envelope.ts ?? undefined,
+      }),
     onContextResponse: ({ envelope }) => {
       const requestId = envelope.payload.request_id;
       const resolved = contextBridge.resolveDeviceResponse(requestId);
