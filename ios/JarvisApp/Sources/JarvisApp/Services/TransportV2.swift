@@ -482,6 +482,9 @@ actor TransportV2 {
     /// the attempt counter, and schedule `connect()` after that delay. The
     /// counter is reset to 0 in `handleAuthOk` on successful auth.
     private func handleSocketClose(_ error: Error?) async {
+        // An intentional disconnect parks at `.idle`; the close it triggers
+        // must NOT auto-reconnect (that re-armed the loop + inflated backoff).
+        if state == .idle { return }
         if case .reconnecting = state { return }
         // Stop in-flight ack-retry tasks before reconnecting — they
         // self-reschedule and would keep re-sending on the dead socket.
