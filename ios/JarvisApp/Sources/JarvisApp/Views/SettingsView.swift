@@ -88,6 +88,8 @@ struct SettingsFormBody: View {
                             settingsDivider()
                             quietHoursRow(label: "До", minutes: $settings.quietEndMinutes)
                         }
+                        settingsDivider()
+                        settingsToggle(icon: "square.text.square", label: "Сводка", isOn: $settings.summaryNotificationsEnabled)
                     }
                 }
 

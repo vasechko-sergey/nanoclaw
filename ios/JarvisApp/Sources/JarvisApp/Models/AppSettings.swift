@@ -41,6 +41,8 @@ final class AppSettings {
     // MARK: – Notifications
     /// Master switch for agent-message local notifications (default on).
     @ObservationIgnored @AppStorage("notificationsEnabled") var notificationsEnabled = true
+    /// Allow notifications for «Сводка» (summary-ready) messages (default on).
+    @ObservationIgnored @AppStorage("summaryNotificationsEnabled") var summaryNotificationsEnabled = true
     /// Per-agent mute (JSON-array string of agent slugs). Empty = nothing muted.
     @ObservationIgnored @AppStorage("mutedAgents") var mutedAgentsRaw = "[]"
     @ObservationIgnored @AppStorage("quietHoursEnabled") var quietHoursEnabled = false
