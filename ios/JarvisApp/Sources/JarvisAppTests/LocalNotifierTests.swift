@@ -28,6 +28,9 @@ final class LocalNotifierTests: XCTestCase {
         XCTAssertEqual(content.threadIdentifier, "greg")
         // Title comes from the agent's display name.
         XCTAssertEqual(content.title, AgentIdentity(rawValue: "greg")?.displayName ?? "Jarvis")
+        XCTAssertEqual(content.categoryIdentifier, "agent-message")
+        XCTAssertEqual(content.userInfo["agentId"] as? String, "greg")
+        XCTAssertEqual(content.userInfo["msgId"] as? String, "m1")
         XCTAssertTrue(try store.notifiedSeen(id: "m1"))
     }
 

@@ -58,6 +58,8 @@ final class LocalNotifier {
         content.body = String(text.prefix(160))
         content.sound = .default
         content.threadIdentifier = agentId
+        content.categoryIdentifier = NotificationCategories.agentMessage
+        content.userInfo = ["agentId": agentId, "msgId": id]
 
         // nil trigger → delivered immediately. Identifier keyed by message id so
         // a repeat (belt-and-suspenders vs the dedup) replaces rather than dups.
