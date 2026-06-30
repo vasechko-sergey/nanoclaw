@@ -49,6 +49,9 @@ import { openInboundDb, openOutboundDb, openOutboundDbRw, inboundDbPath, heartbe
 import { projectAllPublicProfiles } from './public-profiles.js';
 import { isContainerRunning, killContainer, wakeContainer } from './container-runner.js';
 import type { Session } from './types.js';
+import { runSummaryNotify } from './modules/summary-notify/sweep.js';
+import { DEFAULT_SUMMARY_CFG } from './modules/summary-notify/detector.js';
+import { getDb } from './db/index.js';
 
 /**
  * SQLite TIMESTAMP columns store UTC without a timezone marker. Date.parse
@@ -142,6 +145,20 @@ async function sweep(): Promise<void> {
     if (written > 0) log.info('Projected public profiles', { written });
   } catch (err) {
     log.error('Public profile projection error', { err });
+  }
+
+  // After projection, observe the morning card batch and fire one grouped
+  // "Сводка готова" notification once it settles (host-only; channel provides
+  // the emitter via registerSummaryEmitter). Own try so it never skips sessions.
+  try {
+    runSummaryNotify({
+      userMemoryBase: path.join(DATA_DIR, 'user-memory'),
+      db: getDb(),
+      nowMs: Date.now(),
+      cfg: DEFAULT_SUMMARY_CFG,
+    });
+  } catch (err) {
+    log.error('Summary-notify sweep error', { err });
   }
 
   try {
