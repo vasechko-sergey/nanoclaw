@@ -44,6 +44,7 @@ enum V2 {
         case coachMessage = "coach_message"
         case introRequest = "intro_request"
         case update
+        case summaryReady = "summary_ready"
     }
 
     // Discriminated payload union driven by the outer `type` field.
@@ -77,6 +78,7 @@ enum V2 {
         case coachMessage(CoachMessage)
         case introRequest(IntroRequest)
         case update(Update)
+        case summaryReady(SummaryReady)
     }
 
     struct Envelope: Equatable {
@@ -436,6 +438,16 @@ enum V2 {
         }
     }
 
+    struct SummaryReady: Codable, Equatable {
+        let date: String
+        let count: Int
+        var text: String?
+        var agent_id: String?
+        init(date: String, count: Int, text: String? = nil, agent_id: String? = nil) {
+            self.date = date; self.count = count; self.text = text; self.agent_id = agent_id
+        }
+    }
+
     // MARK: - Type-erased JSON value
     //
     // Used for ContextRequest.params and ContextResponse.data, which the
@@ -627,6 +639,8 @@ extension V2.Envelope: Codable {
             payload = .introRequest(try V2.IntroRequest(from: payloadDecoder))
         case .update:
             payload = .update(try V2.Update(from: payloadDecoder))
+        case .summaryReady:
+            payload = .summaryReady(try V2.SummaryReady(from: payloadDecoder))
         }
     }
 
@@ -672,6 +686,7 @@ extension V2.Envelope: Codable {
         case .coachMessage(let p): try p.encode(to: payloadEncoder)
         case .introRequest(let p): try p.encode(to: payloadEncoder)
         case .update(let p): try p.encode(to: payloadEncoder)
+        case .summaryReady(let p): try p.encode(to: payloadEncoder)
         }
     }
 }
