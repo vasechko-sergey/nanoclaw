@@ -30,7 +30,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         switch rawValue {
         case "jarvis": self = .jarvis
         case "payne": self = .payne
-        case "greg", "health-analyzer": self = .greg
+        case "greg": self = .greg
         case "scrooge": self = .scrooge
         case "gordon": self = .gordon
         default: return nil
@@ -76,7 +76,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .jarvis:  return "дворецкий"
         case .payne:   return "тренер"
-        case .greg:    return "врач-диагност"
+        case .greg:    return "диагност"
         case .scrooge: return "казначей"
         case .gordon:  return "повар"
         }
@@ -101,10 +101,10 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .jarvis:
             return [
-                AgentSuggestion(text: "Погода",            icon: "cloud.sun"),
-                AgentSuggestion(text: "Расписание",        icon: "calendar"),
-                AgentSuggestion(text: "Новости",           icon: "newspaper"),
-                AgentSuggestion(text: "Итоги дня",         icon: "chart.bar"),
+                AgentSuggestion(text: "Прогноз серфинга", icon: "cloud.sun"),
+                AgentSuggestion(text: "Список встреч",    icon: "calendar"),
+                AgentSuggestion(text: "Новости",          icon: "newspaper"),
+                AgentSuggestion(text: "Итоги дня",        icon: "chart.bar"),
             ]
         case .payne:
             return [
@@ -115,24 +115,24 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
             ]
         case .greg:
             return [
-                AgentSuggestion(text: "Как мой сон?",      icon: "bed.double"),
-                AgentSuggestion(text: "Готовность сегодня", icon: "bolt.heart"),
-                AgentSuggestion(text: "Тренды здоровья",   icon: "waveform.path.ecg"),
-                AgentSuggestion(text: "Пульс покоя",       icon: "heart"),
+                AgentSuggestion(text: "Как мой сон?",            icon: "bed.double"),
+                AgentSuggestion(text: "Готовность сегодня",      icon: "bolt.heart"),
+                AgentSuggestion(text: "Состояние здоровья",      icon: "waveform.path.ecg"),
+                AgentSuggestion(text: "Пожаловаться на симптом", icon: "heart"),
             ]
         case .gordon:
             return [
-                AgentSuggestion(text: "Залогировать еду",  icon: "fork.knife"),
-                AgentSuggestion(text: "Что съесть?",       icon: "carrot"),
-                AgentSuggestion(text: "Белок за день",     icon: "chart.bar.doc.horizontal"),
-                AgentSuggestion(text: "Рекомпозиция",      icon: "figure.arms.open"),
+                AgentSuggestion(text: "Залогировать еду", icon: "fork.knife"),
+                AgentSuggestion(text: "Что съесть?",      icon: "carrot"),
+                AgentSuggestion(text: "Белок за день",    icon: "chart.bar.doc.horizontal"),
+                AgentSuggestion(text: "Рекомпозиция",     icon: "figure.arms.open"),
             ]
         case .scrooge:
             return [
-                AgentSuggestion(text: "Импорт выписки",    icon: "doc.text.magnifyingglass"),
-                AgentSuggestion(text: "Траты за месяц",    icon: "creditcard"),
-                AgentSuggestion(text: "Категории",         icon: "tag"),
-                AgentSuggestion(text: "Отчёт",             icon: "chart.pie"),
+                AgentSuggestion(text: "Импорт выписки", icon: "doc.text.magnifyingglass"),
+                AgentSuggestion(text: "Траты за месяц", icon: "creditcard"),
+                AgentSuggestion(text: "Категории",      icon: "tag"),
+                AgentSuggestion(text: "Отчёт",          icon: "chart.pie"),
             ]
         }
     }
