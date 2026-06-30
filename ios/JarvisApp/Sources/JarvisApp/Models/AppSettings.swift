@@ -41,6 +41,19 @@ final class AppSettings {
     // MARK: – Notifications
     /// Master switch for agent-message local notifications (default on).
     @ObservationIgnored @AppStorage("notificationsEnabled") var notificationsEnabled = true
+    /// Per-agent mute (JSON-array string of agent slugs). Empty = nothing muted.
+    @ObservationIgnored @AppStorage("mutedAgents") var mutedAgentsRaw = "[]"
+    @ObservationIgnored @AppStorage("quietHoursEnabled") var quietHoursEnabled = false
+    @ObservationIgnored @AppStorage("quietStartMinutes") var quietStartMinutes = 1380  // 23:00
+    @ObservationIgnored @AppStorage("quietEndMinutes")   var quietEndMinutes   = 480   // 08:00
+
+    func isAgentMuted(_ slug: String) -> Bool { MutedAgents.decode(mutedAgentsRaw).contains(slug) }
+
+    func setAgentMuted(_ slug: String, _ muted: Bool) {
+        var s = MutedAgents.decode(mutedAgentsRaw)
+        if muted { s.insert(slug) } else { s.remove(slug) }
+        mutedAgentsRaw = MutedAgents.encode(s)
+    }
 
     /// Whether a given trigger type is allowed to fire. Used by ProactiveDispatcher.fire.
     func proactiveEnabled(_ triggerType: String) -> Bool {

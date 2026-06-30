@@ -23,6 +23,7 @@
 		11B08BC875BE39607D9034DF /* MessageListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C576CDFA7FEBFCE26DA9BFD0 /* MessageListView.swift */; };
 		16A35A00C45932635364EDAB /* ServerConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2250C57E19EC871F52553D27 /* ServerConfigTests.swift */; };
 		16F08295FEABD86492DF119B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8D87E938816ECB8B161DBD /* ContentView.swift */; };
+		17B3B6CC40E2E3B6EB64E189 /* NotificationGating.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69538BC969A8B6C8645731A4 /* NotificationGating.swift */; };
 		1893E8E0527760F1BA33302A /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79BA0C6F1B3FEBDF845A2F74 /* MarkdownText.swift */; };
 		1A1DCE4804FEC3BFCDBA3B05 /* ContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463D1D36ABB670A0DAC6243 /* ContextBuilder.swift */; };
 		1B33CCD98E3BD43B19837659 /* WorkoutFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41BCF57926DDA2C4BAF8106F /* WorkoutFormatTests.swift */; };
@@ -63,6 +64,7 @@
 		4E3C2BC7DEE98EE4B972F929 /* StatusV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08ADF5C053B4AD89D3CD44E /* StatusV2.swift */; };
 		4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114A888276D0E083FC387EB /* ContextBuilderTests.swift */; };
 		50C5C4BB9518C430E4CC3188 /* AgentIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38E1835A732AD75F82D9CEF /* AgentIdentity.swift */; };
+		524734853743667AD66E9392 /* NotificationGatingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95313AA88BC90EB29D9840E9 /* NotificationGatingTests.swift */; };
 		54243BCC1655A76DE5E1F02F /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD51F238E46BCB805C742CEE /* LocationManager.swift */; };
 		54B5F596338B0F2E4A7224E2 /* E2EHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E5E42CC2C921F15C37BEC3 /* E2EHarness.swift */; };
 		54CEE570C41AE7314548DBB8 /* CalendarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */; };
@@ -281,6 +283,7 @@
 		692F9E85378427AA7C0DC3B6 /* WorkoutFinishView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFinishView.swift; sourceTree = "<group>"; };
 		692FF9CBB21BDC62448E95E9 /* LocalNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotifierTests.swift; sourceTree = "<group>"; };
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		69538BC969A8B6C8645731A4 /* NotificationGating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationGating.swift; sourceTree = "<group>"; };
 		6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthRequests.swift; sourceTree = "<group>"; };
 		6B165040849DF187E7D1113C /* OrbInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInputBar.swift; sourceTree = "<group>"; };
 		6C18FEBC87883D1730806373 /* ActiveAgentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAgentState.swift; sourceTree = "<group>"; };
@@ -307,6 +310,7 @@
 		903F8E4E445A8A4777CE3812 /* AttachmentMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMigration.swift; sourceTree = "<group>"; };
 		907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewSmokeTests.swift; sourceTree = "<group>"; };
 		9143ED9DD7B640862D468B63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		95313AA88BC90EB29D9840E9 /* NotificationGatingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationGatingTests.swift; sourceTree = "<group>"; };
 		9592AD08ED6648DF9CCC7149 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		97D8CEE69D33E1581710A543 /* ConversationStoreV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2.swift; sourceTree = "<group>"; };
 		9825F81040F6DD9FE0033F85 /* StoredAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredAction.swift; sourceTree = "<group>"; };
@@ -509,6 +513,7 @@
 				38A007C4C73B5CD2D3AC048B /* ChatListItem.swift */,
 				63F99A4953300541E52CE55B /* DraftAttachment.swift */,
 				9592AD08ED6648DF9CCC7149 /* Message.swift */,
+				69538BC969A8B6C8645731A4 /* NotificationGating.swift */,
 				F4212E96E265F732C0CA6A0F /* StateModel.swift */,
 				9825F81040F6DD9FE0033F85 /* StoredAction.swift */,
 				4D4FF344A7F45A86D8241127 /* StoredAttachment.swift */,
@@ -552,6 +557,7 @@
 				BE6005C35E95197C886F0DDA /* MessageOrderingTests.swift */,
 				30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */,
 				A8DC2C6F28E57760BA8AB3FB /* NotificationCategoriesTests.swift */,
+				95313AA88BC90EB29D9840E9 /* NotificationGatingTests.swift */,
 				DA9F0E05EDBF7FC722A11D56 /* NotificationReplySenderTests.swift */,
 				F278DA68DFA8B5D2C25D8EB3 /* PendingNotificationsTests.swift */,
 				7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */,
@@ -925,6 +931,7 @@
 				5F58758FB0396652855980DE /* MessageTimeline.swift in Sources */,
 				B88D79F57FB96DD1EE3F983E /* MiniOrbView.swift in Sources */,
 				EA9AB1DF3F520257C5926611 /* NotificationCategories.swift in Sources */,
+				17B3B6CC40E2E3B6EB64E189 /* NotificationGating.swift in Sources */,
 				E2C6CF0C56A5CE5C34033B66 /* NotificationReplySender.swift in Sources */,
 				88708A700369B47D5472A1C2 /* OrbHomeView.swift in Sources */,
 				1F82065F678FCE50DD97667F /* OrbInputBar.swift in Sources */,
@@ -1007,6 +1014,7 @@
 				AFB2633AA962239F6E7381CE /* MessageOrderingTests.swift in Sources */,
 				8531C905F9FA67452EC50A43 /* MessageTimelineTests.swift in Sources */,
 				0AD669A06FFCF065991D9126 /* NotificationCategoriesTests.swift in Sources */,
+				524734853743667AD66E9392 /* NotificationGatingTests.swift in Sources */,
 				CB4BED062CCC0B06F7DBDDE3 /* NotificationReplySenderTests.swift in Sources */,
 				990A6AC60FEA355802A51AA1 /* PendingNotificationsTests.swift in Sources */,
 				BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */,
