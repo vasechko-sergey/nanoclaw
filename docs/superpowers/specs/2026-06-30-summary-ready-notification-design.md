@@ -24,6 +24,7 @@ they all wake in one host sweep, so cards land within a short window (~08:46–0
 - True notification: **no chat bubble**; tapping opens the Сводка board.
 - Respects quiet hours; independently muteable.
 - Once per day; manual midday republishes never fire it.
+- **Bonus (same nav plumbing):** tapping a **chat** (agent-message) notification deep-links straight into that agent's chat, instead of just opening the app. Today the default tap does nothing.
 
 ## Non-goals (v1)
 
@@ -135,10 +136,8 @@ live; the background-pull path picks it up otherwise.
 - `LocalNotifier` + `NotificationGating` (build 75): schedule a local notification
   "Сводка готова · N карточек", gated by quiet hours **and** a new dedicated «Сводка»
   toggle (independent of per-agent mute). Dedup by the stable id (don't double-schedule
-  if both WS and pull deliver).
-- Tap: a `UNNotificationCategory` whose default action sets a nav flag (e.g.
-  `AppState.pendingOpenSummaryBoard = true`); `OrbHomeView` observes it and presents
-  the existing `StateBoardView` sheet (`showStateBoard = true`).
+  if both WS and pull deliver). New `UNNotificationCategory` `summary-ready`.
+- Tap → opens the Сводка board (see Component 5 — Deep-link navigation).
 - Settings: add «Сводка» row under «Уведомления».
 - Version: bump `CURRENT_PROJECT_VERSION` (+ `MARKETING_VERSION` for the feature),
   `xcodegen generate`, commit the regenerated `pbxproj`.
@@ -148,6 +147,40 @@ live; the background-pull path picks it up otherwise.
 Reuse build-75 `NotificationGating`. The summary is not per-agent, so it is **not**
 subject to per-agent mute. It is subject to: quiet hours, and a new «Сводка» on/off
 toggle persisted in the same notification-settings store.
+
+## Component 5 — Deep-link navigation (shared)
+
+Today notification taps don't navigate: the default tap just calls `completionHandler()`
+(reply-action excepted). The nav we add for the summary board generalizes into a single
+deep-link mechanism, and we reuse it so a **chat** notification tap drops straight into
+that agent's chat.
+
+Opening an agent's chat requires two writes: `ActiveAgentState.active = <agent>` and
+`ContentView.appPhase = .chat`. The board requires `appPhase = .home` + `OrbHomeView`'s
+`showStateBoard = true`. These live in separate state objects, so we route both through
+nav-intent flags on the already-`@Observable` `AppCoordinator` (injected into
+`ContentView`):
+
+- `AppCoordinator.pendingOpenSummaryBoard: Bool`
+- `AppCoordinator.pendingOpenAgentChat: AgentIdentity?`
+
+Flow:
+1. `AppDelegate.didReceive` (tap): reply-action path unchanged. Otherwise branch on
+   `categoryIdentifier`: `summary-ready` → `AppDelegate.openSummaryBoard?()`;
+   `agent-message` (default tap) → `AppDelegate.openAgentChat?(agentId)` (agentId from
+   `userInfo`, mapped via `AgentIdentity(rawValue:)`). These static hooks are wired by
+   `AppCoordinator` at init (same pattern as the existing `dispatchProactive` hook) to set
+   the two flags on the main actor.
+2. `ContentView` observes both flags (and re-applies on the splash→connected transition so
+   a **cold launch** from a tap still navigates): `pendingOpenAgentChat` → set
+   `active.active` + `appPhase = .chat`; `pendingOpenSummaryBoard` → `appPhase = .home`
+   (so `OrbHomeView` is mounted). Clear each flag after applying.
+3. `OrbHomeView` opens the board: `.onAppear` + `.onChange(of: coordinator.pendingOpenSummaryBoard)`
+   → `showStateBoard = true`, then clears the flag (covers both "already true at mount"
+   from a cold launch and "becomes true while mounted").
+
+Chat notifications already carry `userInfo["agentId"]`. `AgentIdentity(rawValue:)` maps
+the slug (`jarvis`/`payne`/`greg`/`scrooge`/`gordon`) to the enum; unknown slug → no-op.
 
 ## Error handling / edge cases
 
@@ -186,12 +219,17 @@ Host:
 Protocol:
 - `shared/ios-app-protocol/v2.ts` — `summary_ready` envelope.
 
-iOS (`ios/JarvisApp/`):
-- `Sources/JarvisApp/.../Protocol/V2.swift` — decode case.
-- `Sources/JarvisApp/Services/TransportV2.swift` (or inbound dispatch) — route to notifier, not chat.
-- `Sources/JarvisApp/Services/LocalNotifier.swift` + `NotificationGating` — schedule + gate.
-- `Sources/JarvisApp/Views/OrbHomeView.swift` — nav flag → present `StateBoardView` sheet.
-- Settings view — «Сводка» toggle.
+iOS (`ios/JarvisApp/Sources/JarvisApp/`):
+- `Protocol/V2.swift` — decode `summary_ready` case.
+- `Services/TransportV2.swift` — route `summary_ready` to notifier, not chat.
+- `Services/LocalNotifier.swift` + `Models/NotificationGating.swift` — schedule + gate (+ «Сводка» toggle closure).
+- `Services/NotificationCategories.swift` — `summary-ready` category.
+- `Models/AppSettings.swift` — `summaryNotificationsEnabled`.
+- `Views/SettingsView.swift` — «Сводка» toggle row.
+- `Services/AppCoordinator.swift` — `pendingOpenSummaryBoard` + `pendingOpenAgentChat` intents + hook wiring.
+- `JarvisApp.swift` — `AppDelegate` `didReceive` routing (summary tap + chat default-tap) + static hooks.
+- `Views/ContentView.swift` — observe intents → `appPhase`/`ActiveAgentState` (incl. cold-launch apply).
+- `Views/OrbHomeView.swift` — open `StateBoardView` sheet on the board intent.
 - `project.yml` — version bump; regenerate pbxproj.
 
 ## Out of scope / future

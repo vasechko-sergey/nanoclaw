@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Send one lock-screen notification each morning once the dashboard cards have settled; tapping it opens the Сводка board. No chat bubble.
+**Goal:** Send one lock-screen notification each morning once the dashboard cards have settled; tapping it opens the Сводка board (no chat bubble). Reuse the same deep-link nav so tapping a chat notification opens that agent's chat.
 
 **Architecture:** Host `host-sweep` already projects each agent's `public.md` → `profiles/<agent>.md` every 60s. A new host module observes those projection mtimes, and once the morning batch has settled (debounce inside a morning window, once/day), emits a new `summary_ready` envelope to the owner's device(s) via a registry callback the ios-app-v2 channel plugs into. iOS decodes `summary_ready`, schedules a local notification (gated, not stored as chat), and routes a tap to the existing `StateBoardView` sheet.
 
@@ -36,7 +36,11 @@ Spec: `docs/superpowers/specs/2026-06-30-summary-ready-notification-design.md`.
 - `Services/TransportV2.swift` — `summary_ready` branch (notify, no store insert).
 - `Models/AppSettings.swift` — `summaryNotificationsEnabled`.
 - `Views/SettingsView.swift` — «Сводка» toggle row.
-- `Services/AppCoordinator.swift` + `JarvisApp.swift` + `Views/OrbHomeView.swift` — tap → open board.
+- `Services/NotificationTapRouter.swift` — pure tap→target router (board / agent chat / reply).
+- `Services/AppCoordinator.swift` — `pendingOpenSummaryBoard` + `pendingOpenAgentChat` intents + hook wiring.
+- `JarvisApp.swift` — AppDelegate `didReceive` routes via the router; static hooks.
+- `Views/ContentView.swift` — apply intents → `appPhase`/`ActiveAgentState` (cold-launch guard).
+- `Views/OrbHomeView.swift` — open `StateBoardView` sheet on the board intent.
 - `project.yml` — version bump.
 
 ---
@@ -1262,47 +1266,148 @@ git commit -m "feat(ios): «Сводка» notification toggle in settings"
 
 ---
 
-## Task 13: iOS — tap opens the Сводка board
+## Task 13: iOS — deep-link navigation (Сводка board + chat)
+
+One mechanism for both deep-links. A **pure** `NotificationTapRouter` maps a tapped
+notification → a target; `AppCoordinator` holds two nav intents; `ContentView` applies
+them (with a cold-launch guard); `OrbHomeView` opens the board. Chat-notification taps
+now deep-link into that agent's chat (today the default tap does nothing).
 
 **Files:**
-- Modify: `ios/JarvisApp/Sources/JarvisApp/Services/AppCoordinator.swift` (add observable flag + static hook wiring)
-- Modify: `ios/JarvisApp/Sources/JarvisApp/JarvisApp.swift` (AppDelegate `didReceive` summary tap)
-- Modify: `ios/JarvisApp/Sources/JarvisApp/Views/OrbHomeView.swift` (observe flag → present board)
+- Create: `ios/JarvisApp/Sources/JarvisApp/Services/NotificationTapRouter.swift`
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Services/AppCoordinator.swift`
+- Modify: `ios/JarvisApp/Sources/JarvisApp/JarvisApp.swift` (AppDelegate)
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Views/ContentView.swift`
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Views/OrbHomeView.swift`
+- Test: `ios/JarvisApp/Sources/JarvisAppTests/NotificationTapRouterTests.swift`, `.../CoordinatorNavTests.swift`
 
-This is UI wiring; verify via the build + a coordinator unit test for the flag.
+- [ ] **Step 1: Write the failing router test**
 
-- [ ] **Step 1: Write the failing test**
-
-`ios/JarvisApp/Sources/JarvisAppTests/CoordinatorSummaryNavTests.swift`:
+`ios/JarvisApp/Sources/JarvisAppTests/NotificationTapRouterTests.swift`:
 
 ```swift
 import XCTest
+import UserNotifications
 @testable import Jarvis
 
-@MainActor
-final class CoordinatorSummaryNavTests: XCTestCase {
-    func testRequestOpenSummaryBoardSetsFlag() {
-        let c = AppCoordinator(settings: AppSettings())
-        XCTAssertFalse(c.pendingOpenSummaryBoard)
-        c.requestOpenSummaryBoard()
-        XCTAssertTrue(c.pendingOpenSummaryBoard)
+final class NotificationTapRouterTests: XCTestCase {
+    func testReplyAction() {
+        let t = NotificationTapRouter.route(
+            categoryId: NotificationCategories.agentMessage,
+            actionId: NotificationCategories.replyAction,
+            replyText: "ok", userInfo: ["agentId": "greg"])
+        XCTAssertEqual(t, .reply(agentId: "greg", text: "ok"))
+    }
+    func testSummaryTapOpensBoard() {
+        let t = NotificationTapRouter.route(
+            categoryId: NotificationCategories.summaryReady,
+            actionId: UNNotificationDefaultActionIdentifier,
+            replyText: nil, userInfo: [:])
+        XCTAssertEqual(t, .openSummaryBoard)
+    }
+    func testChatDefaultTapOpensAgentChat() {
+        let t = NotificationTapRouter.route(
+            categoryId: NotificationCategories.agentMessage,
+            actionId: UNNotificationDefaultActionIdentifier,
+            replyText: nil, userInfo: ["agentId": "payne"])
+        XCTAssertEqual(t, .openAgentChat(.payne))
+    }
+    func testUnknownAgentIsNoop() {
+        let t = NotificationTapRouter.route(
+            categoryId: NotificationCategories.agentMessage,
+            actionId: UNNotificationDefaultActionIdentifier,
+            replyText: nil, userInfo: ["agentId": "nope"])
+        XCTAssertEqual(t, .none)
     }
 }
 ```
 
 - [ ] **Step 2: Run it — verify FAIL**
 
-Run: `cd ios/JarvisApp && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/CoordinatorSummaryNavTests 2>&1 | tail -20`
-Expected: FAIL — member missing.
+Run: `cd ios/JarvisApp && xcodegen generate && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/NotificationTapRouterTests 2>&1 | tail -20`
+Expected: FAIL — `NotificationTapRouter` missing.
 
-- [ ] **Step 3: Add the coordinator flag + hook**
+- [ ] **Step 3: Implement the pure router**
+
+`ios/JarvisApp/Sources/JarvisApp/Services/NotificationTapRouter.swift`:
+
+```swift
+import UserNotifications
+
+enum NotificationTapTarget: Equatable {
+    case reply(agentId: String, text: String)
+    case openSummaryBoard
+    case openAgentChat(AgentIdentity)
+    case none
+}
+
+enum NotificationTapRouter {
+    static func route(
+        categoryId: String,
+        actionId: String,
+        replyText: String?,
+        userInfo: [AnyHashable: Any]
+    ) -> NotificationTapTarget {
+        if actionId == NotificationCategories.replyAction, let text = replyText {
+            let agentId = userInfo["agentId"] as? String ?? "jarvis"
+            return .reply(agentId: agentId, text: text)
+        }
+        switch categoryId {
+        case NotificationCategories.summaryReady:
+            return .openSummaryBoard
+        case NotificationCategories.agentMessage:
+            let slug = userInfo["agentId"] as? String ?? "jarvis"
+            if let agent = AgentIdentity(rawValue: slug) { return .openAgentChat(agent) }
+            return .none
+        default:
+            return .none
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Run it — verify PASS**
+
+Run: `cd ios/JarvisApp && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/NotificationTapRouterTests 2>&1 | tail -20`
+Expected: `** TEST SUCCEEDED **`.
+
+- [ ] **Step 5: Write the failing coordinator test**
+
+`ios/JarvisApp/Sources/JarvisAppTests/CoordinatorNavTests.swift`:
+
+```swift
+import XCTest
+@testable import Jarvis
+
+@MainActor
+final class CoordinatorNavTests: XCTestCase {
+    func testNavIntents() {
+        let c = AppCoordinator(settings: AppSettings())
+        XCTAssertFalse(c.pendingOpenSummaryBoard)
+        XCTAssertNil(c.pendingOpenAgentChat)
+        c.requestOpenSummaryBoard()
+        XCTAssertTrue(c.pendingOpenSummaryBoard)
+        c.requestOpenAgentChat(.greg)
+        XCTAssertEqual(c.pendingOpenAgentChat, .greg)
+    }
+}
+```
+
+- [ ] **Step 6: Run it — verify FAIL**
+
+Run: `cd ios/JarvisApp && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/CoordinatorNavTests 2>&1 | tail -20`
+Expected: FAIL — members missing.
+
+- [ ] **Step 7: Add coordinator intents + hook wiring**
 
 In `AppCoordinator.swift` (an `@Observable @MainActor final class`), add:
 
 ```swift
     var pendingOpenSummaryBoard = false
+    var pendingOpenAgentChat: AgentIdentity?
 
     func requestOpenSummaryBoard() { pendingOpenSummaryBoard = true }
+    func requestOpenAgentChat(_ agent: AgentIdentity) { pendingOpenAgentChat = agent }
 ```
 
 In the coordinator's init (where `AppDelegate.dispatchProactive` is wired), add:
@@ -1311,42 +1416,104 @@ In the coordinator's init (where `AppDelegate.dispatchProactive` is wired), add:
         AppDelegate.openSummaryBoard = { [weak self] in
             Task { @MainActor in self?.requestOpenSummaryBoard() }
         }
+        AppDelegate.openAgentChat = { [weak self] agent in
+            Task { @MainActor in self?.requestOpenAgentChat(agent) }
+        }
 ```
 
-- [ ] **Step 4: Add the AppDelegate hook + tap routing**
+- [ ] **Step 8: Run it — verify PASS**
 
-In `JarvisApp.swift` `AppDelegate`, add the static hook next to `dispatchProactive`:
+Run: `cd ios/JarvisApp && xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:JarvisAppTests/CoordinatorNavTests 2>&1 | tail -20`
+Expected: `** TEST SUCCEEDED **`.
+
+- [ ] **Step 9: Route taps in AppDelegate**
+
+In `JarvisApp.swift` `AppDelegate`, add the static hooks next to `dispatchProactive`:
 
 ```swift
     static var openSummaryBoard: (() -> Void)?
+    static var openAgentChat: ((AgentIdentity) -> Void)?
 ```
 
-In `userNotificationCenter(_:didReceive:withCompletionHandler:)`, before the final `completionHandler()`, add:
+Replace the body of `userNotificationCenter(_:didReceive:withCompletionHandler:)` with router-driven dispatch (keeps the existing reply behavior):
 
 ```swift
-        if response.notification.request.content.categoryIdentifier == NotificationCategories.summaryReady {
-            AppDelegate.openSummaryBoard?()
-            completionHandler()
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let replyText = (response as? UNTextInputNotificationResponse)?.userText
+        let target = NotificationTapRouter.route(
+            categoryId: response.notification.request.content.categoryIdentifier,
+            actionId: response.actionIdentifier,
+            replyText: replyText,
+            userInfo: response.notification.request.content.userInfo
+        )
+        switch target {
+        case let .reply(agentId, text):
+            NotificationReplySender.shared.send(agentId: agentId, text: text) { _ in completionHandler() }
             return
+        case .openSummaryBoard:
+            AppDelegate.openSummaryBoard?()
+        case let .openAgentChat(agent):
+            AppDelegate.openAgentChat?(agent)
+        case .none:
+            break
         }
+        completionHandler()
+    }
 ```
 
-- [ ] **Step 5: Observe in OrbHomeView**
+- [ ] **Step 10: Apply intents in ContentView (incl. cold launch)**
 
-In `OrbHomeView.swift`, the view already holds `var coordinator: AppCoordinator` and `@State private var showStateBoard`. Add a modifier on the same view that owns the `.sheet` (where `showStateBoard` is bound):
+In `ContentView.swift`, add modifiers to the root `ZStack` (the view owning `appPhase`):
 
 ```swift
-        .onChange(of: coordinator.pendingOpenSummaryBoard) { _, open in
-            if open {
-                showStateBoard = true
-                coordinator.pendingOpenSummaryBoard = false
-            }
-        }
+        .onChange(of: coordinator.pendingOpenAgentChat) { _, _ in applyPendingNav() }
+        .onChange(of: coordinator.pendingOpenSummaryBoard) { _, _ in applyPendingNav() }
+        .onChange(of: coordinator.connectionPhase) { _, _ in applyPendingNav() }
 ```
 
-(If `coordinator` is not already in scope in `OrbHomeView`, inject it via `@Environment(AppCoordinator.self) private var coordinator` — the app already puts it in the environment in `JarvisApp.swift`.)
+Add the method (in the `ContentView` struct; `active` is its existing `@Environment(ActiveAgentState.self)`, `appPhase` its `@State`):
 
-- [ ] **Step 6: Run it — verify PASS + full clean build**
+```swift
+    private func applyPendingNav() {
+        // Wait past splash on cold launch — only navigate once connected.
+        guard coordinator.connectionPhase == .connected else { return }
+        if let agent = coordinator.pendingOpenAgentChat {
+            active.active = agent
+            coordinator.pendingOpenAgentChat = nil
+            withAnimation(.easeOut(duration: 0.4)) { appPhase = .chat }
+        } else if coordinator.pendingOpenSummaryBoard {
+            // Ensure home is mounted; OrbHomeView presents the board sheet.
+            withAnimation(.easeOut(duration: 0.4)) { appPhase = .home }
+        }
+    }
+```
+
+- [ ] **Step 11: Open the board in OrbHomeView**
+
+In `OrbHomeView.swift`, on the view owning the `.sheet(isPresented: $showStateBoard)`:
+
+```swift
+        .onAppear { openSummaryBoardIfRequested() }
+        .onChange(of: coordinator.pendingOpenSummaryBoard) { _, _ in openSummaryBoardIfRequested() }
+```
+
+Add the method:
+
+```swift
+    private func openSummaryBoardIfRequested() {
+        guard coordinator.pendingOpenSummaryBoard else { return }
+        showStateBoard = true
+        coordinator.pendingOpenSummaryBoard = false
+    }
+```
+
+(`coordinator` is already `var coordinator: AppCoordinator` on `OrbHomeView`.)
+
+- [ ] **Step 12: Full clean build + test**
 
 Run:
 ```bash
@@ -1355,11 +1522,11 @@ xcodebuild test -scheme JarvisApp -destination 'platform=iOS Simulator,name=iPho
 ```
 Expected: `** TEST SUCCEEDED **` (whole JarvisAppTests suite green, clean build).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
-git add ios/JarvisApp/Sources/JarvisApp/Services/AppCoordinator.swift ios/JarvisApp/Sources/JarvisApp/JarvisApp.swift ios/JarvisApp/Sources/JarvisApp/Views/OrbHomeView.swift ios/JarvisApp/Sources/JarvisAppTests/CoordinatorSummaryNavTests.swift
-git commit -m "feat(ios): summary notification tap opens the Сводка board"
+git add ios/JarvisApp/Sources/JarvisApp/Services/NotificationTapRouter.swift ios/JarvisApp/Sources/JarvisApp/Services/AppCoordinator.swift ios/JarvisApp/Sources/JarvisApp/JarvisApp.swift ios/JarvisApp/Sources/JarvisApp/Views/ContentView.swift ios/JarvisApp/Sources/JarvisApp/Views/OrbHomeView.swift ios/JarvisApp/Sources/JarvisAppTests/NotificationTapRouterTests.swift ios/JarvisApp/Sources/JarvisAppTests/CoordinatorNavTests.swift
+git commit -m "feat(ios): deep-link nav — summary tap → board, chat tap → agent chat"
 ```
 
 ---
@@ -1441,6 +1608,6 @@ Expected (after ~08:50 WITA): a line with `personKey=owner`, `count=N`.
 
 ## Self-review notes
 
-- **Spec coverage:** flow (T6/T7/T8), debounce detector (T4), morning-window + once/day (T4/T6), protocol envelope (T1), NOTIFY_TYPES + pull body (T2/T8), iOS notify-only no-bubble (T11), gating + «Сводка» toggle (T10/T12), tap→board (T13), tests every task, version bump (T14), owner-only + deploy (T8 device query / T15). All spec sections map to a task.
-- **Type consistency:** `summary_ready` (wire) ↔ `.summaryReady` (Swift) ↔ `SummaryReady` payload `{date, count, text?, agent_id?}` consistent across T1/T8/T9/T11. `SummaryPayload {date,count}` (host registry) vs envelope payload (adds `text`,`agent_id` at emit) — intentional: the registry passes minimal data; the channel composes the body. `decideSummaryNotify` / `runSummaryNotify` / `registerSummaryEmitter` / `getDevicePlatformIds` names consistent across T4/T5/T6/T7/T8.
+- **Spec coverage:** flow (T6/T7/T8), debounce detector (T4), morning-window + once/day (T4/T6), protocol envelope (T1), NOTIFY_TYPES + pull body (T2/T8), iOS notify-only no-bubble (T11), gating + «Сводка» toggle (T10/T12), deep-link nav — summary tap→board + chat tap→agent chat, incl. cold launch (Component 5 → T13), tests every task, version bump (T14), owner-only + deploy (T8 device query / T15). All spec sections map to a task.
+- **Type consistency:** `summary_ready` (wire) ↔ `.summaryReady` (Swift) ↔ `SummaryReady` payload `{date, count, text?, agent_id?}` consistent across T1/T8/T9/T11. `SummaryPayload {date,count}` (host registry) vs envelope payload (adds `text`,`agent_id` at emit) — intentional: the registry passes minimal data; the channel composes the body. `decideSummaryNotify` / `runSummaryNotify` / `registerSummaryEmitter` / `getDevicePlatformIds` names consistent across T4/T5/T6/T7/T8. Nav (T13): `NotificationTapTarget` cases ↔ `AppCoordinator.pendingOpenSummaryBoard`/`pendingOpenAgentChat` ↔ `AppDelegate.openSummaryBoard`/`openAgentChat` hooks ↔ category ids `summary-ready`/`agent-message` — consistent; `AgentIdentity(rawValue:)` is the single slug→enum map.
 - **Placeholders:** none — every code step shows real code. Harness-specific helper names (iOS `MockCenter`, `makeTransportHarness`; host `makeQueue`, `testing/harness.ts`) are flagged to match the existing test files because those are pre-existing test utilities the implementer must read, not invent.
