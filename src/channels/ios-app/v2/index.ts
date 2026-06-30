@@ -40,6 +40,9 @@ import { HealthRequestsStore } from './health-requests-store.js';
 import { createIosHttpHandler } from './http-handler.js';
 import { PlanJsonSchema } from '../../../../shared/ios-app-protocol/index.js';
 import type { PlatformId, ContextField } from './types.js';
+import { registerSummaryEmitter } from '../../../modules/summary-notify/emit-registry.js';
+import { getDevicePlatformIds } from '../../../modules/permissions/db/users.js';
+import { pluralRu } from '../../../modules/summary-notify/detector.js';
 
 // During the transition window the v2 adapter coexists with the legacy
 // `ios-app` adapter. They register under distinct channel names so the
@@ -448,6 +451,23 @@ function createV2Adapter(): ChannelAdapter | null {
       }
       return identity.platform_id;
     },
+  });
+
+  // Morning "Сводка готова" notification. The host detector calls this when the
+  // card batch settles; we fan it out to the person's registered devices as a
+  // notify-only summary_ready envelope (no chat bubble — iOS handles the type).
+  registerSummaryEmitter((personKey, payload) => {
+    const platformIds = getDevicePlatformIds(personKey, CHANNEL_TYPE);
+    if (platformIds.length === 0) return;
+    const body = `Сводка готова · ${pluralRu(payload.count)}`;
+    for (const platformId of platformIds) {
+      handler.sendEnvelopeToDevice(platformId, {
+        kind: 'data',
+        type: 'summary_ready',
+        id: `summary-${personKey}-${payload.date}`,
+        payload: { date: payload.date, count: payload.count, text: body, agent_id: 'jarvis' },
+      });
+    }
   });
 
   return {
