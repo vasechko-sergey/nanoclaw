@@ -25,7 +25,7 @@ final class AgentDashboardTests: XCTestCase {
     func testProfessions() {
         XCTAssertEqual(AgentIdentity.jarvis.profession, "дворецкий")
         XCTAssertEqual(AgentIdentity.payne.profession, "тренер")
-        XCTAssertEqual(AgentIdentity.greg.profession, "врач-диагност")
+        XCTAssertEqual(AgentIdentity.greg.profession, "диагност")
         XCTAssertEqual(AgentIdentity.scrooge.profession, "казначей")
         XCTAssertEqual(AgentIdentity.gordon.profession, "повар")
     }
