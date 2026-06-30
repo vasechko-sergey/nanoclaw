@@ -178,7 +178,11 @@ export const Envelopes = {
     kind: z.literal('control'),
     type: z.literal('feedback'),
     payload: z.object({
-      message_id: z.string().uuid(),
+      // The rated message's id — NOT a uuid for proactive/drained agent
+      // messages (delivery.ts stamps content.id = the outbound row id,
+      // "msg-…"/"new-…"). See the Ack note below; accept any non-empty id so
+      // 👍/👎 on a proactive message can't 4002 the socket.
+      message_id: z.string().min(1),
       kind: z.enum(['up', 'down']),
     }),
   }),
@@ -187,7 +191,13 @@ export const Envelopes = {
     type: z.literal('ack'),
     seq: z.null(),
     payload: z.object({
-      id: z.string().uuid(),
+      // The acked message's id — NOT a uuid for proactive/drained messages
+      // (delivery.ts stamps content.id = the outbound row id, "msg-…"/"new-…").
+      // Requiring .uuid() here made the device's ack of any such message fail
+      // AnyEnvelope.parse → host closed the socket (4002) → reconnect storm,
+      // and the message never cleared. Identical to the Status* fix below;
+      // this instance was missed. Any non-empty id.
+      id: z.string().min(1),
       seq: z.number().int().nonnegative(),
     }),
   }),
