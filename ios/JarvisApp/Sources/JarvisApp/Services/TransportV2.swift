@@ -46,7 +46,7 @@ actor TransportV2 {
     /// Count of consecutive `handleSocketClose` invocations since the last
     /// successful auth. Drives exponential backoff in `handleSocketClose`.
     /// Resets to 0 in `handleAuthOk` once the server has accepted us.
-    private var reconnectAttempt: Int = 0
+    private(set) var reconnectAttempt: Int = 0
 
     /// Fired with the decoded `auth_ok` payload every time the server accepts
     /// the handshake. Wired by `WebSocketClientV2` to publish the optional
@@ -59,6 +59,21 @@ actor TransportV2 {
     func setOnAuthOkPayload(_ cb: (@Sendable (V2.AuthOk) -> Void)?) {
         onAuthOkPayload = cb
     }
+
+    /// Fired with the connection's authed-ness whenever it changes: true on
+    /// `auth_ok`, false on intentional disconnect or when a reconnect is
+    /// scheduled. `WebSocketClientV2` wires this to drive `isConnected` so the
+    /// UI tracks the whole session, not just the foreground moment.
+    private(set) var onStateChange: (@Sendable (Bool) -> Void)?
+    func setOnStateChange(_ cb: (@Sendable (Bool) -> Void)?) { onStateChange = cb }
+
+    /// Whether the socket is currently authenticated. Read by the facade right
+    /// after a foreground reconnect (best-effort; `onStateChange` is authoritative).
+    func isAuthed() -> Bool { state == .authed }
+
+    /// Restart the exponential backoff at the base delay — called on a
+    /// foreground clean reconnect so a long prior backoff doesn't carry over.
+    func resetReconnectBackoff() { reconnectAttempt = 0 }
 
     /// Fired with the raw inbound envelope for any workout-family type
     /// (`workout_plan`, `image_blob`, `coach_message`, `exercise_swap_options`,
@@ -172,6 +187,7 @@ actor TransportV2 {
         try store.confirmAckedUpTo(maxSeq: lastSeenOutboundSeq)
         try store.resetSendingToQueued(maxSeq: lastSeenOutboundSeq)
         state = .authed
+        onStateChange?(true)
         // Auth succeeded: cancel the connect watchdog so it doesn't fire
         // and schedule a spurious reconnect.
         watchdogTask?.cancel()
@@ -508,6 +524,7 @@ actor TransportV2 {
     /// churn once it starts.
     func disconnect() {
         state = .idle
+        onStateChange?(false)
         reconnectTask?.cancel()
         reconnectTask = nil
         watchdogTask?.cancel()
@@ -545,6 +562,7 @@ actor TransportV2 {
         )
         reconnectAttempt += 1
         state = .reconnecting(delaySeconds: delay)
+        onStateChange?(false)
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

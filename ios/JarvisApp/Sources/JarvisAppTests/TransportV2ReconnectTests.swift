@@ -116,4 +116,32 @@ final class TransportV2ReconnectTests: XCTestCase {
         let after = await h.transport.state
         XCTAssertNotEqual(after, .connecting, "watchdog must clear a stuck .connecting")
     }
+
+    // MARK: - Task 3: onStateChange + isAuthed + resetReconnectBackoff
+
+    func testStateCallbackAndIsAuthed() async throws {
+        let h = try makeTransport()
+        var states: [Bool] = []
+        await h.transport.setOnStateChange { states.append($0) }
+        try await h.transport.handleAuthOk(lastSeenOutboundSeq: 0)
+        let authedAfterAuth = await h.transport.isAuthed()
+        await h.transport.disconnect()
+        let authedAfterDisconnect = await h.transport.isAuthed()
+        XCTAssertEqual(states, [true, false], "onStateChange: true on auth, false on disconnect")
+        XCTAssertTrue(authedAfterAuth)
+        XCTAssertFalse(authedAfterDisconnect)
+    }
+
+    func testResetReconnectBackoff() async throws {
+        let h = try makeTransport()
+        try await h.transport.connect()    // wires socket.onClose; state .connecting
+        h.socket.onClose?(nil)             // → handleSocketClose → scheduleReconnect (attempt → 1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let bumped = await h.transport.reconnectAttempt
+        XCTAssertGreaterThan(bumped, 0)
+        await h.transport.resetReconnectBackoff()
+        let afterReset = await h.transport.reconnectAttempt
+        XCTAssertEqual(afterReset, 0)
+        await h.transport.disconnect()     // cancel the pending reconnectTask
+    }
 }
