@@ -63,8 +63,32 @@ struct SettingsFormBody: View {
                     settingsToggle(icon: "heart", label: "Здоровье", isOn: $settings.useHealth)
                     settingsDivider()
                     settingsToggle(icon: "calendar", label: "Календарь", isOn: $settings.useCalendar)
-                    settingsDivider()
+                }
+
+                // Notifications section
+                settingsSection(title: "Уведомления") {
                     settingsToggle(icon: "bell", label: "Уведомления", isOn: $settings.notificationsEnabled)
+                    if settings.notificationsEnabled {
+                        ForEach(AgentIdentity.allCases) { agent in
+                            settingsDivider()
+                            settingsToggle(
+                                icon: "person.fill",
+                                label: agent.displayName,
+                                isOn: Binding(
+                                    get: { !settings.isAgentMuted(agent.rawValue) },
+                                    set: { settings.setAgentMuted(agent.rawValue, !$0) }
+                                )
+                            )
+                        }
+                        settingsDivider()
+                        settingsToggle(icon: "moon", label: "Тихие часы", isOn: $settings.quietHoursEnabled)
+                        if settings.quietHoursEnabled {
+                            settingsDivider()
+                            quietHoursRow(label: "С", minutes: $settings.quietStartMinutes)
+                            settingsDivider()
+                            quietHoursRow(label: "До", minutes: $settings.quietEndMinutes)
+                        }
+                    }
                 }
 
                 // Voice section
@@ -247,6 +271,39 @@ struct SettingsFormBody: View {
         Divider()
             .background(Theme.accent.opacity(0.06))
             .padding(.leading, Theme.scaled(46))
+    }
+
+    private func quietHoursRow(label: String, minutes: Binding<Int>) -> some View {
+        HStack {
+            Image(systemName: "clock")
+                .font(.system(size: Theme.fontCaption))
+                .foregroundStyle(Theme.accentMedium)
+                .frame(width: Theme.scaled(20))
+            Text(label)
+                .font(.system(size: Theme.fontSubhead))
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            DatePicker(
+                "",
+                selection: Binding(
+                    get: { Self.date(fromMinutes: minutes.wrappedValue) },
+                    set: { minutes.wrappedValue = Self.minutes(fromDate: $0) }
+                ),
+                displayedComponents: .hourAndMinute
+            )
+            .labelsHidden()
+        }
+        .padding(.horizontal, Theme.hPadding)
+        .frame(minHeight: Theme.minTapSize)
+    }
+
+    private static func date(fromMinutes m: Int) -> Date {
+        Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
+    }
+
+    private static func minutes(fromDate d: Date) -> Int {
+        let c = Calendar.current
+        return c.component(.hour, from: d) * 60 + c.component(.minute, from: d)
     }
 }
 
