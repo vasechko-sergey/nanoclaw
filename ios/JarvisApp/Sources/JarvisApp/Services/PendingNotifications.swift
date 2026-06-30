@@ -12,8 +12,14 @@ enum PendingNotifications {
         let type: String?
         let agent_id: String?
         let text: String
+        let ts: Int?
     }
     private struct Envelope: Decodable { let messages: [PendingMessage] }
+
+    /// Chat store for rendering pulled messages into the timeline (set at app
+    /// bootstrap, next to `LocalNotifier.configure(store:)`). Weak — the
+    /// coordinator owns the store's lifetime.
+    static weak var chatStore: ConversationStoreV2?
 
     /// Pure decode seam (unit-tested). Tolerant: any decode failure → empty.
     static func parse(_ data: Data) -> [PendingMessage] {
@@ -46,6 +52,14 @@ enum PendingNotifications {
                     LocalNotifier.shared.raiseSummaryReady(id: m.id, body: m.text, agentId: m.agent_id ?? "jarvis")
                 } else {
                     LocalNotifier.shared.raise(id: m.id, agentId: m.agent_id ?? "jarvis", text: m.text, seq: m.seq)
+                    // Render EVERY message as a text stub so a backgrounded message
+                    // can't be stranded (notified-but-not-rendered). If it carried
+                    // attachments, the WS delivery upserts the row to full content.
+                    if let store = PendingNotifications.chatStore {
+                        try? store.insertInboundFromPull(
+                            id: m.id, seq: m.seq, text: m.text,
+                            agentId: m.agent_id ?? "jarvis", ts: m.ts ?? m.seq)
+                    }
                 }
             }
             completion?()

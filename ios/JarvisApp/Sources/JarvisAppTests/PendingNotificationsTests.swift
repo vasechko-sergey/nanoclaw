@@ -56,4 +56,12 @@ final class PendingNotificationsTests: XCTestCase {
         XCTAssertEqual(msgs[0].text, "Сводка готова · 5 карточек")
         XCTAssertEqual(msgs[1].type, "message")
     }
+
+    func testParseCarriesTs() throws {
+        let json = Data(#"""
+        {"messages":[{"id":"m1","seq":10,"type":"message","agent_id":"jarvis","text":"hi","ts":1782800000000}]}
+        """#.utf8)
+        let msgs = PendingNotifications.parse(json)
+        XCTAssertEqual(msgs.first?.ts, 1782800000000)
+    }
 }

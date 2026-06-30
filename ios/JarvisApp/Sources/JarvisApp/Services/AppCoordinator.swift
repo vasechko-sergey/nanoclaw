@@ -107,6 +107,8 @@ final class AppCoordinator {
             // has a configured notifier during background wakes too.
             LocalNotifier.shared.configure(store: storage.store)
             NotificationReplySender.shared.configure(store: storage.store)
+            // Pull path renders pulled messages into the chat via this store.
+            PendingNotifications.chatStore = storage.store
         }
         self.ws = WebSocketClientV2(
             location: location,
