@@ -12,6 +12,19 @@
 
 ---
 
+## ⚠️ Execution context (revised mid-flight 2026-06-30)
+
+A parallel session was actively committing iOS fixes (WS-4002 debugging, dashboard, build 72→74) to `main` during execution. To isolate:
+
+- **Work in the worktree `/Users/serg/git/nanoclaw-notif` on branch `feat/lockscreen-reply`** (based on origin build 74 + the merged ServerConfig.httpBase refactor + host T1/T2). Do NOT work on `main` in `/Users/serg/git/nanoclaw`.
+- **Append-only.** Subagents make fresh commits only — NEVER `git amend`/`rebase`/`reset`/force on already-pushed commits. If git reports divergence, STOP and report.
+- **Read current files, adapt anchors.** Parallel work changed `JarvisApp.swift`, `ConversationStoreV2.swift`, `TransportV2.swift` since this plan was written. Subagents must read the CURRENT file and adapt the plan's snippets/anchors, preserving intent.
+- **Task 5 revision:** `ServerConfig.httpBase(from:)` and `ServerConfig.httpURL(path:)` ALREADY EXIST (merged from the chip refactor). Do NOT re-add them. `ReplyRequest.build` uses `ServerConfig.httpURL(path: "ios/reply")`. Drop the add-httpBase step and the `testHttpBaseNormalizesWss` test (covered by `ServerConfigTests`).
+- **Task 10 revision:** version is now **build 74 → 75**, MARKETING 1.16.0 → 1.17.0 (read project.yml fresh at execution; the parallel session may bump further — use current+1).
+- **Final integration:** at the end, rebase `feat/lockscreen-reply` onto the then-current `origin/main`, resolve `project.yml` (keep highest build, set to current+1) + regenerate `project.pbxproj` via xcodegen, run full tests, then merge/push.
+
+---
+
 ## File Structure
 
 **Host (create):**
