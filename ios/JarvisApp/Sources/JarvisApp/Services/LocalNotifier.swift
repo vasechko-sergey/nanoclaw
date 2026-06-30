@@ -22,6 +22,8 @@ final class LocalNotifier {
     private let center: NotificationScheduling
     private let isForeground: () -> Bool
     private let isEnabled: () -> Bool
+    private let isMuted: (String) -> Bool
+    private let inQuietHours: () -> Bool
     private let storeLock = NSLock()
     private var _store: ConversationStoreV2?
     private var store: ConversationStoreV2? { storeLock.withLock { _store } }
@@ -32,11 +34,26 @@ final class LocalNotifier {
         isEnabled: @escaping () -> Bool = {
             // Mirrors @AppStorage("notificationsEnabled") default = true.
             UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true
+        },
+        isMuted: @escaping (String) -> Bool = { agentId in
+            MutedAgents.decode(UserDefaults.standard.string(forKey: "mutedAgents") ?? "[]").contains(agentId)
+        },
+        inQuietHours: @escaping () -> Bool = {
+            let d = UserDefaults.standard
+            let enabled = d.object(forKey: "quietHoursEnabled") as? Bool ?? false
+            let start = d.object(forKey: "quietStartMinutes") as? Int ?? 1380
+            let end = d.object(forKey: "quietEndMinutes") as? Int ?? 480
+            let cal = Calendar.current
+            let now = Date()
+            let t = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
+            return QuietHours.contains(minutes: t, start: start, end: end, enabled: enabled)
         }
     ) {
         self.center = center
         self.isForeground = isForeground
         self.isEnabled = isEnabled
+        self.isMuted = isMuted
+        self.inQuietHours = inQuietHours
     }
 
     /// Wire the dedup store. Called once at app init (foreground or background
@@ -48,6 +65,8 @@ final class LocalNotifier {
     func raise(id: String, agentId: String, text: String, seq: Int = 0) {
         guard !isForeground() else { return }   // already on screen
         guard isEnabled() else { return }
+        guard !isMuted(agentId) else { return }
+        guard !inQuietHours() else { return }
         guard let store else { return }
         // A DB error → treated as not-yet-notified → we re-notify (prefer a
         // duplicate banner over silently suppressing a real message).

@@ -76,4 +76,24 @@ final class LocalNotifierTests: XCTestCase {
         n.raise(id: "m1", agentId: "jarvis", text: String(repeating: "x", count: 400), seq: 1)
         XCTAssertLessThanOrEqual(rec.requests[0].content.body.count, 160)
     }
+
+    func testSuppressedWhenAgentMuted() throws {
+        let rec = RecordingCenter(); let store = try makeStore()
+        let n = LocalNotifier(center: rec, isForeground: { false }, isEnabled: { true },
+                              isMuted: { $0 == "greg" }, inQuietHours: { false })
+        n.configure(store: store)
+        n.raise(id: "m1", agentId: "greg", text: "x", seq: 1)
+        XCTAssertEqual(rec.requests.count, 0, "muted agent → no notification")
+        n.raise(id: "m2", agentId: "jarvis", text: "y", seq: 1)
+        XCTAssertEqual(rec.requests.count, 1, "non-muted agent still notifies")
+    }
+
+    func testSuppressedDuringQuietHours() throws {
+        let rec = RecordingCenter(); let store = try makeStore()
+        let n = LocalNotifier(center: rec, isForeground: { false }, isEnabled: { true },
+                              isMuted: { _ in false }, inQuietHours: { true })
+        n.configure(store: store)
+        n.raise(id: "m1", agentId: "jarvis", text: "x", seq: 1)
+        XCTAssertEqual(rec.requests.count, 0, "quiet hours → no notification")
+    }
 }
