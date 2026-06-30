@@ -222,6 +222,7 @@ struct OrbHomeView: View {
         .onAppear { stateService.refresh() }
         .sheet(isPresented: $showStateBoard) {
             NavigationView { StateBoardView(service: stateService) }
+                .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showVoiceFullscreen) {
             OrbVoiceView(coordinator: coordinator, onHandoffToChat: {
