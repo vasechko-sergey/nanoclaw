@@ -202,6 +202,19 @@ actor TransportV2 {
             let hit = try store.updateMessageText(id: u.id, text: u.text)
             Log.info(.ws, "[delivery] applied update target=\(u.id) hit=\(hit)")
             try await sendStatus(.delivered, ids: [env.id])
+        case .summaryReady(let sr):
+            // Notify-only: never insert a chat row. Dedup across WS + pull by id.
+            if try store.dedupSeen(id: env.id) {
+                try await sendStatus(.delivered, ids: [env.id])
+                try advanceInboundCursor(env.seq)
+                return
+            }
+            LocalNotifier.shared.raiseSummaryReady(
+                id: env.id, date: sr.date, count: sr.count, agentId: sr.agent_id ?? "jarvis"
+            )
+            try await sendStatus(.delivered, ids: [env.id])
+            try advanceInboundCursor(env.seq)
+            try store.recordDedup(id: env.id, seq: env.seq ?? 0)
         case .workoutPlan, .imageBlob, .imageReady, .coachMessage, .exerciseSwapOptions, .programUpdate:
             // Forward to the facade for typed decode + UI bus publication.
             // (image_ready triggers an off-main HTTP byte fetch in AppCoordinator;
