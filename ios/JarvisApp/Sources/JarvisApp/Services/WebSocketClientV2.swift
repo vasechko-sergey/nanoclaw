@@ -372,10 +372,28 @@ final class WebSocketClientV2 {
         guard stack != nil else { return }
         switch phase {
         case .active:
+            // Reconnect (we tear the socket down on .background) then flush any
+            // queued outbound. connect() is a no-op when already authed, and
+            // SwiftUI does NOT re-fire view .onAppear on background→foreground,
+            // so this is the only reliable reconnect trigger after a background
+            // cycle.
             Task { [weak self] in
+                try? await self?.stack.transport.connect()
                 try? await self?.stack.transport.tickDispatcher()
             }
-        case .background, .inactive:
+        case .background:
+            // Tear the WS down on background. Without this the transport's
+            // reconnect loop churns for the entire background window — and the
+            // self-wake machinery (health observers + BGProcessing/BGAppRefresh)
+            // keeps the app alive long enough to storm: each socket dies ~1s after
+            // auth, before a drained message can be persisted/acked, then
+            // reconnects at the base delay. Background delivery + notification is
+            // handled by the GET /ios/pending pull (PendingNotifications); a live
+            // WS in the background isn't sustainable here, so don't keep one.
+            disconnect()
+        case .inactive:
+            // Transient (app switcher, notification shade, incoming call). Keep
+            // the socket; .background fires if we actually leave.
             break
         @unknown default:
             break
