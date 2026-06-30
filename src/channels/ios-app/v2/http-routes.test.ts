@@ -64,6 +64,8 @@ async function bootHarness(): Promise<Harness> {
     healthAgentFolder: HEALTH_AGENT,
     getChannelSetup: () => cfg.current,
     listPending: (pid, since) => queue.listPendingNotify(pid, since),
+    defaultAgentSlug: 'jarvis',
+    routeReply: () => {},
     log: () => {},
     logWarn: () => {},
   });

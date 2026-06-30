@@ -17,6 +17,8 @@
 //   GET  /ios/pending?since=N    — pull queued notification-worthy messages
 //                                    (read-only; does not consume the queue).
 //                                    Bearer auth; token's platform_id only.
+//   POST /ios/reply              — lock-screen reply → user message to the
+//                                    token's agent session. Bearer auth.
 //
 // Extracted into a standalone factory so tests can mount it on a stub
 // `http.Server` without spinning up the full adapter (which requires env
@@ -64,6 +66,11 @@ export interface HttpHandlerDeps {
    * platform_id), seq > sinceSeq. Read-only — see OutboundQueue.listPendingNotify.
    */
   listPending: (platformId: string, sinceSeq: number) => OutboundQueueRow[];
+  /** Default agent slug when a reply omits agent_id. */
+  defaultAgentSlug: string;
+  /** Route a lock-screen reply as a user message to the named agent's session.
+   *  platform_id is the token's identity (never body.platformId). */
+  routeReply: (platform_id: string, agentId: string, text: string) => void;
   /**
    * Folder name of the agent that owns health data (e.g. `greg`). Health
    * uploads land under `data/user-memory/<person>/<healthAgentFolder>`.
@@ -88,9 +95,13 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
     getChannelSetup,
     imageCache,
     listPending,
+    defaultAgentSlug,
+    routeReply,
     log,
     logWarn,
   } = deps;
+
+  const MAX_REPLY_CHARS = 4000;
 
   const AGENT_META: Record<string, { title: string; icon: string }> = {
     greg: { title: 'Здоровье · Greg', icon: '🩺' },
@@ -391,6 +402,34 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
         return { id: row.id, seq: row.seq, agent_id, text };
       });
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ messages }));
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/ios/reply') {
+      const id = authIdentity(req);
+      if (!id) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
+        return;
+      }
+      readBody(req)
+        .then((body) => {
+          const obj = JSON.parse(body) as { text?: unknown; agent_id?: unknown };
+          const text = typeof obj.text === 'string' ? obj.text.trim() : '';
+          if (!text || text.length > MAX_REPLY_CHARS) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }).end('{"error":"text required (1..4000 chars)"}');
+            return;
+          }
+          const agentId = typeof obj.agent_id === 'string' && obj.agent_id ? obj.agent_id : defaultAgentSlug;
+          // Routing is by TOKEN identity, never body.platformId (confused-deputy guard).
+          routeReply(id.platform_id, agentId, text);
+          res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
+        })
+        .catch((err) => {
+          logWarn('reply failed', { err: err instanceof Error ? err.message : String(err) });
+          res
+            .writeHead(400, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ error: String(err instanceof Error ? err.message : err) }));
+        });
       return;
     }
 

@@ -488,6 +488,9 @@ function createV2Adapter(): ChannelAdapter | null {
         getChannelSetup: () => cfg,
         imageCache,
         listPending: (pid, since) => queue.listPendingNotify(pid, since),
+        defaultAgentSlug,
+        routeReply: (platform_id, agentId, text) =>
+          routeChatToAgent({ platform_id, agent_group_id: agentId, thread_id: null, id: randomUUID(), text }),
         log: logV2,
         logWarn: logV2Warn,
       });

@@ -59,6 +59,8 @@ beforeEach(async () => {
     getChannelSetup: () => null as unknown as ChannelSetup,
     imageCache,
     listPending: () => [],
+    defaultAgentSlug: 'jarvis',
+    routeReply: () => {},
     log: () => {},
     logWarn: () => {},
   });
