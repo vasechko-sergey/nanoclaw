@@ -41,3 +41,10 @@ export function updateDisplayName(id: string, displayName: string): void {
 export function deleteUser(id: string): void {
   getDb().prepare('DELETE FROM users WHERE id = ?').run(id);
 }
+
+/** Platform ids of a person's registered devices for a given channel kind. */
+export function getDevicePlatformIds(personKey: string, kind: string): string[] {
+  return (
+    getDb().prepare('SELECT id FROM users WHERE person_key = ? AND kind = ?').all(personKey, kind) as { id: string }[]
+  ).map((r) => r.id);
+}
