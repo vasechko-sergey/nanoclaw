@@ -20,9 +20,15 @@ final class NotificationReplySender {
               let req = ReplyRequest.build(token: token, agentId: agentId, text: trimmed)
         else { completion(false); return }
 
-        URLSession.shared.dataTask(with: req) { [weak self] _, resp, _ in
+        URLSession.shared.dataTask(with: req) { [weak self] _, resp, err in
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
-            if ok { self?.recordEcho(agentId: agentId, text: trimmed) }
+            if ok {
+                self?.recordEcho(agentId: agentId, text: trimmed)
+            } else {
+                let detail = err.map { "error: \($0.localizedDescription)" }
+                    ?? "status: \((resp as? HTTPURLResponse)?.statusCode ?? -1)"
+                Log.warn(.outbox, "lock-screen reply POST /ios/reply failed (\(detail))")
+            }
             completion(ok)
         }.resume()
     }
@@ -32,7 +38,7 @@ final class NotificationReplySender {
     private func recordEcho(agentId: String, text: String) {
         guard let store else { return }
         try? store.insertOutboundUserMessage(
-            id: UUID().uuidString, text: text, attachments: [], context: nil, agentId: agentId, status: "sent"
+            id: UUID().uuidString, text: text, attachments: [], context: nil, agentId: agentId, status: .sent
         )
     }
 }

@@ -21,7 +21,7 @@ final class NotificationReplySenderTests: XCTestCase {
         let store = ConversationStoreV2(writer: dbq)
         // status 'sent' (terminal) — the WS drain (queuedOutbound filters status='queued') must NOT pick it up.
         try store.insertOutboundUserMessage(
-            id: "echo-1", text: "hi", attachments: [], context: nil, agentId: "greg", status: "sent"
+            id: "echo-1", text: "hi", attachments: [], context: nil, agentId: "greg", status: .sent
         )
         XCTAssertTrue(try store.queuedOutbound(agentId: "greg").isEmpty, "echo must not be re-sent")
         let total = try dbq.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM messages WHERE dir='out'") }
