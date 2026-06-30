@@ -31,11 +31,18 @@ actor TransportV2 {
     private var ackTasks: [String: Task<Void, Never>] = [:]
     /// In-flight auto-reconnect task; nil while connected or idle.
     private var reconnectTask: Task<Void, Never>?
+    /// Bumped on each connect() entry; lets a watchdog tell "the connection I
+    /// was scheduled for" from a later healthy one.
+    private var connectGeneration: Int = 0
+    private var watchdogTask: Task<Void, Never>?
 
     private let ackTimeoutSeconds: Double
     private let dispatcherIntervalMs: Int
     private let baseReconnectDelaySeconds: Double
     private let maxReconnectDelaySeconds: Double
+    /// Seconds before a still-`.connecting` (auth never arrived) connection is
+    /// reset + reconnected. Injectable for tests.
+    private let connectWatchdogSeconds: Double
     /// Count of consecutive `handleSocketClose` invocations since the last
     /// successful auth. Drives exponential backoff in `handleSocketClose`.
     /// Resets to 0 in `handleAuthOk` once the server has accepted us.
@@ -71,7 +78,8 @@ actor TransportV2 {
         ackTimeoutSeconds: Double = 5.0,
         dispatcherIntervalMs: Int = 200,
         baseReconnectDelaySeconds: Double = 1.0,
-        maxReconnectDelaySeconds: Double = 60.0
+        maxReconnectDelaySeconds: Double = 60.0,
+        connectWatchdogSeconds: Double = 8.0
     ) {
         self.store = store
         self.socket = socket
@@ -81,6 +89,7 @@ actor TransportV2 {
         self.dispatcherIntervalMs = dispatcherIntervalMs
         self.baseReconnectDelaySeconds = baseReconnectDelaySeconds
         self.maxReconnectDelaySeconds = maxReconnectDelaySeconds
+        self.connectWatchdogSeconds = connectWatchdogSeconds
     }
 
     func connect() async throws {
@@ -90,6 +99,9 @@ actor TransportV2 {
         // reconnect churn. Already connecting/authed → no-op.
         if state == .connecting || state == .authed { return }
         state = .connecting
+        connectGeneration += 1
+        let gen = connectGeneration
+        armConnectWatchdog(gen)
         // Wire socket callbacks BEFORE opening the socket so the first inbound
         // frame can't race the assignment. The closures bounce back into the
         // actor via a detached `Task` — `WebSocketLike` callbacks fire on the
@@ -106,28 +118,53 @@ actor TransportV2 {
                 await self?.handleSocketClose(error)
             }
         }
-        try await socket.connect()
-        let lastSeenInbound = try store.cursor(.lastSeenInbound)
-        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
-        let authEnv = V2.Envelope(
-            v: V2.protocolVersion,
-            kind: .control,
-            type: .auth,
-            id: UUID().uuidString,
-            seq: nil,
-            ts: ISO8601DateFormatter().string(from: Date()),
-            payload: .auth(V2.Auth(
-                token: token,
-                last_seen_inbound_seq: lastSeenInbound,
-                // Tell the host this client fetches images by reference, so it
-                // sends tiny `image_ready` refs instead of inline base64 blobs.
-                capabilities: ["image_ref"],
-                app_version: appVersion,
-                build: appBuild
-            ))
-        )
-        try await sendEnvelope(authEnv)
+        do {
+            try await socket.connect()
+            let lastSeenInbound = try store.cursor(.lastSeenInbound)
+            let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+            let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+            let authEnv = V2.Envelope(
+                v: V2.protocolVersion,
+                kind: .control,
+                type: .auth,
+                id: UUID().uuidString,
+                seq: nil,
+                ts: ISO8601DateFormatter().string(from: Date()),
+                payload: .auth(V2.Auth(
+                    token: token,
+                    last_seen_inbound_seq: lastSeenInbound,
+                    // Tell the host this client fetches images by reference, so it
+                    // sends tiny `image_ready` refs instead of inline base64 blobs.
+                    capabilities: ["image_ref"],
+                    app_version: appVersion,
+                    build: appBuild
+                ))
+            )
+            try await sendEnvelope(authEnv)
+        } catch {
+            // Never strand `.connecting`: reset so a later connect() can proceed.
+            if state == .connecting { state = .idle }
+            throw error
+        }
+    }
+
+    private func armConnectWatchdog(_ gen: Int) {
+        watchdogTask?.cancel()
+        // Capture the interval before spawning the Task so the closure doesn't
+        // need to read a nonisolated actor property.
+        let seconds = connectWatchdogSeconds
+        watchdogTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            if Task.isCancelled { return }
+            await self?.connectWatchdogFired(gen)
+        }
+    }
+
+    private func connectWatchdogFired(_ gen: Int) {
+        guard connectGeneration == gen, state == .connecting else { return }
+        Log.warn(.ws, "connect watchdog: auth never arrived, resetting + reconnecting")
+        state = .idle
+        scheduleReconnect()
     }
 
     /// Test-friendly: drive auth_ok handling directly.
@@ -135,6 +172,10 @@ actor TransportV2 {
         try store.confirmAckedUpTo(maxSeq: lastSeenOutboundSeq)
         try store.resetSendingToQueued(maxSeq: lastSeenOutboundSeq)
         state = .authed
+        // Auth succeeded: cancel the connect watchdog so it doesn't fire
+        // and schedule a spurious reconnect.
+        watchdogTask?.cancel()
+        watchdogTask = nil
         // Server accepted us — clear the backoff counter so the next clean
         // disconnect retries at the base delay rather than the prior peak.
         reconnectAttempt = 0
@@ -469,6 +510,8 @@ actor TransportV2 {
         state = .idle
         reconnectTask?.cancel()
         reconnectTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
         for (_, t) in ackTasks { t.cancel() }
         ackTasks.removeAll()
         socket.close()
@@ -477,10 +520,8 @@ actor TransportV2 {
     // MARK: - Reconnect
 
     /// Called from the socket's `onClose` callback. Coalesces overlapping closes:
-    /// if a reconnect is already pending, ignore. Otherwise compute the next
-    /// exponential-backoff delay (`base * 2^attempt`, capped at `max`), bump
-    /// the attempt counter, and schedule `connect()` after that delay. The
-    /// counter is reset to 0 in `handleAuthOk` on successful auth.
+    /// if a reconnect is already pending, ignore. Otherwise delegates to
+    /// `scheduleReconnect()` which computes backoff + arms the reconnect Task.
     private func handleSocketClose(_ error: Error?) async {
         // An intentional disconnect parks at `.idle`; the close it triggers
         // must NOT auto-reconnect (that re-armed the loop + inflated backoff).
@@ -490,6 +531,14 @@ actor TransportV2 {
         // self-reschedule and would keep re-sending on the dead socket.
         for (_, t) in ackTasks { t.cancel() }
         ackTasks.removeAll()
+        scheduleReconnect()
+    }
+
+    /// Compute the next exponential-backoff delay, bump the attempt counter,
+    /// set `.reconnecting`, and schedule the reconnect Task. Called from both
+    /// `handleSocketClose` and `connectWatchdogFired` so there is one
+    /// implementation of the backoff math.
+    private func scheduleReconnect() {
         let delay = min(
             maxReconnectDelaySeconds,
             baseReconnectDelaySeconds * pow(2.0, Double(reconnectAttempt))
