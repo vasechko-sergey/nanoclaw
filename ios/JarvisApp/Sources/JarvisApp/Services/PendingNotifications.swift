@@ -9,6 +9,7 @@ enum PendingNotifications {
     struct PendingMessage: Decodable {
         let id: String
         let seq: Int
+        let type: String?
         let agent_id: String?
         let text: String
     }
@@ -36,7 +37,16 @@ enum PendingNotifications {
             guard let data else { completion?(); return }
             let messages = parse(data)
             for m in messages {
-                LocalNotifier.shared.raise(id: m.id, agentId: m.agent_id ?? "jarvis", text: m.text, seq: m.seq)
+                // Route by type: `summary_ready` rows go to the «Сводка» board
+                // notifier (summary category + summary gating, no per-agent mute);
+                // everything else is an agent chat message. The host stamps `type`
+                // on every pending row; a missing/unknown type falls through to the
+                // agent-message path (back-compat with pre-`type` hosts).
+                if m.type == "summary_ready" {
+                    LocalNotifier.shared.raiseSummaryReady(id: m.id, body: m.text, agentId: m.agent_id ?? "jarvis")
+                } else {
+                    LocalNotifier.shared.raise(id: m.id, agentId: m.agent_id ?? "jarvis", text: m.text, seq: m.seq)
+                }
             }
             completion?()
         }.resume()

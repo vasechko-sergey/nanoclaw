@@ -95,7 +95,9 @@ final class LocalNotifier {
     /// Raises the «Сводка готова» morning summary notification.
     /// Gating: not foreground + global enable + isSummaryEnabled + not quiet hours + dedup by id.
     /// Per-agent mute is intentionally NOT checked — this is a cross-agent dashboard summary.
-    func raiseSummaryReady(id: String, date: String, count: Int, agentId: String) {
+    /// `body` is composed host-side (correct Russian plural via `pluralRu`) and passed
+    /// through verbatim on BOTH the live WS path and the background pull path.
+    func raiseSummaryReady(id: String, body: String, agentId: String) {
         guard !isForeground() else { return }
         guard isEnabled() else { return }
         guard isSummaryEnabled() else { return }   // dedicated «Сводка» toggle (not per-agent mute)
@@ -105,11 +107,11 @@ final class LocalNotifier {
 
         let content = UNMutableNotificationContent()
         content.title = "Сводка"
-        content.body = "Сводка готова · \(count) карточек"
+        content.body = body
         content.sound = .default
         content.threadIdentifier = "summary"
         content.categoryIdentifier = NotificationCategories.summaryReady
-        content.userInfo = ["summary": true, "date": date]
+        content.userInfo = ["summary": true, "agentId": agentId, "msgId": id]
 
         let req = UNNotificationRequest(identifier: "summary-\(id)", content: content, trigger: nil)
         center.schedule(req)

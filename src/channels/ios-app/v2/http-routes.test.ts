@@ -438,13 +438,42 @@ describe('GET /ios/pending', () => {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
     expect(r.status).toBe(200);
-    const body = r.json() as { messages: Array<{ id: string; seq: number; agent_id: string | null; text: string }> };
+    const body = r.json() as {
+      messages: Array<{ id: string; seq: number; type: string; agent_id: string | null; text: string }>;
+    };
     expect(body.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
-    expect(body.messages[0]).toMatchObject({ id: 'm1', agent_id: 'jarvis', text: 'hello' });
-    expect(body.messages[1]).toMatchObject({ id: 'm2', agent_id: 'greg', text: 'second' });
+    // `type` is surfaced so the iOS pull path can route (summary_ready → board
+    // notifier; everything else → agent-message notifier).
+    expect(body.messages[0]).toMatchObject({ id: 'm1', type: 'message', agent_id: 'jarvis', text: 'hello' });
+    expect(body.messages[1]).toMatchObject({ id: 'm2', type: 'message', agent_id: 'greg', text: 'second' });
 
     // The queue is NOT consumed by the pull.
     expect(h.queue.list(PLATFORM_ID)).toHaveLength(3);
+  });
+
+  it('surfaces type:"summary_ready" so the pull path can route it to the board notifier', () => {
+    h.queue.enqueue(PLATFORM_ID, {
+      id: 'summary-p2-2026-06-30',
+      kind: 'data',
+      type: 'summary_ready',
+      payload: { date: '2026-06-30', count: 5, text: 'Сводка готова · 5 карточек', agent_id: 'jarvis' },
+    });
+
+    return fetchJson(`${h.url}/ios/pending`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    }).then((r) => {
+      expect(r.status).toBe(200);
+      const body = r.json() as {
+        messages: Array<{ id: string; type: string; agent_id: string | null; text: string }>;
+      };
+      const summary = body.messages.find((m) => m.id === 'summary-p2-2026-06-30');
+      expect(summary).toMatchObject({
+        type: 'summary_ready',
+        agent_id: 'jarvis',
+        text: 'Сводка готова · 5 карточек',
+      });
+    });
   });
 
   it('honors ?since= and requires auth', async () => {

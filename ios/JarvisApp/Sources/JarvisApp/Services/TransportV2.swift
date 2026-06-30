@@ -210,7 +210,9 @@ actor TransportV2 {
                 return
             }
             LocalNotifier.shared.raiseSummaryReady(
-                id: env.id, date: sr.date, count: sr.count, agentId: sr.agent_id ?? "jarvis"
+                id: env.id,
+                body: sr.text ?? "Сводка готова · \(sr.count) карточек",
+                agentId: sr.agent_id ?? "jarvis"
             )
             try await sendStatus(.delivered, ids: [env.id])
             try advanceInboundCursor(env.seq)

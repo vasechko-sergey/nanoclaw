@@ -399,7 +399,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
         } catch {
           /* malformed payload — surface id/seq with empty text */
         }
-        return { id: row.id, seq: row.seq, agent_id, text };
+        return { id: row.id, seq: row.seq, type: row.type, agent_id, text };
       });
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ messages }));
       return;

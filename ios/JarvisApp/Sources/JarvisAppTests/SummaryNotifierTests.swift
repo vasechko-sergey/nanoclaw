@@ -30,8 +30,10 @@ final class SummaryNotifierTests: XCTestCase {
             isSummaryEnabled: { true }
         )
         n.configure(store: store)
-        n.raiseSummaryReady(id: "summary-owner-2026-06-30", date: "2026-06-30", count: 5, agentId: "jarvis")
+        n.raiseSummaryReady(id: "summary-owner-2026-06-30", body: "Сводка готова · 5 карточек", agentId: "jarvis")
         XCTAssertEqual(center.requests.count, 1)
+        // Host-composed body is passed through verbatim (correct Russian plural).
+        XCTAssertEqual(center.requests[0].content.body, "Сводка готова · 5 карточек")
         XCTAssertTrue(center.requests[0].content.body.contains("5"))
         XCTAssertEqual(center.requests[0].content.categoryIdentifier, NotificationCategories.summaryReady)
     }
@@ -49,7 +51,7 @@ final class SummaryNotifierTests: XCTestCase {
             isSummaryEnabled: { false }
         )
         n.configure(store: store)
-        n.raiseSummaryReady(id: "x", date: "2026-06-30", count: 5, agentId: "jarvis")
+        n.raiseSummaryReady(id: "x", body: "Сводка готова · 5 карточек", agentId: "jarvis")
         XCTAssertEqual(center.requests.count, 0)
     }
 
@@ -66,7 +68,7 @@ final class SummaryNotifierTests: XCTestCase {
             isSummaryEnabled: { true }
         )
         n.configure(store: store)
-        n.raiseSummaryReady(id: "y", date: "2026-06-30", count: 3, agentId: "jarvis")
+        n.raiseSummaryReady(id: "y", body: "Сводка готова · 3 карточки", agentId: "jarvis")
         XCTAssertEqual(center.requests.count, 0)
     }
 
@@ -83,7 +85,7 @@ final class SummaryNotifierTests: XCTestCase {
             isSummaryEnabled: { true }
         )
         n.configure(store: store)
-        n.raiseSummaryReady(id: "z", date: "2026-06-30", count: 3, agentId: "jarvis")
+        n.raiseSummaryReady(id: "z", body: "Сводка готова · 3 карточки", agentId: "jarvis")
         XCTAssertEqual(center.requests.count, 0)
     }
 
@@ -100,8 +102,8 @@ final class SummaryNotifierTests: XCTestCase {
             isSummaryEnabled: { true }
         )
         n.configure(store: store)
-        n.raiseSummaryReady(id: "summary-owner-2026-06-30", date: "2026-06-30", count: 5, agentId: "jarvis")
-        n.raiseSummaryReady(id: "summary-owner-2026-06-30", date: "2026-06-30", count: 5, agentId: "jarvis")
+        n.raiseSummaryReady(id: "summary-owner-2026-06-30", body: "Сводка готова · 5 карточек", agentId: "jarvis")
+        n.raiseSummaryReady(id: "summary-owner-2026-06-30", body: "Сводка готова · 5 карточек", agentId: "jarvis")
         XCTAssertEqual(center.requests.count, 1, "same id must not notify twice")
     }
 }
