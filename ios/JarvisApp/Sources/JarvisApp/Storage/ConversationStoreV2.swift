@@ -52,7 +52,8 @@ final class ConversationStoreV2 {
         text: String,
         attachments: [V2.Attachment],
         context: V2.InlineContext?,
-        agentId: String = "jarvis"
+        agentId: String = "jarvis",
+        status: String = "queued"
     ) throws {
         try writer.write { db in
             let now = Int(Date().timeIntervalSince1970 * 1000)
@@ -73,8 +74,8 @@ final class ConversationStoreV2 {
             try db.execute(sql: """
                 INSERT INTO messages
                   (id, dir, seq, text, attachments_json, context_json, status, ts, created_at, agent_id)
-                VALUES (?, 'out', NULL, ?, ?, ?, 'queued', ?, ?, ?)
-            """, arguments: [id, text, attachmentsJSON, contextJSON, now, now, agentId])
+                VALUES (?, 'out', NULL, ?, ?, ?, ?, ?, ?, ?)
+            """, arguments: [id, text, attachmentsJSON, contextJSON, status, now, now, agentId])
         }
     }
 
