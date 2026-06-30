@@ -72,8 +72,8 @@ targets:
         # per feature, CURRENT_PROJECT_VERSION on every build you install. The app
         # reports both to the host on connect (auth envelope) — so the running
         # build is knowable server-side, not guessed. Run `xcodegen generate` after.
-        MARKETING_VERSION: "1.18.0"
-        CURRENT_PROJECT_VERSION: "76"
+        MARKETING_VERSION: "1.17.0"
+        CURRENT_PROJECT_VERSION: "75"
 
   JarvisUITests:
     type: bundle.ui-testing
