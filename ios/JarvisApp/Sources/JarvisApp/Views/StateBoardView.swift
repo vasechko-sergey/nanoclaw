@@ -111,11 +111,6 @@ struct StateBoardView: View {
                     MarkdownText(d, fontSize: Theme.fontCaption)
                         .padding(.top, 2)
                 }
-                if a.key == "greg", let series = service.state?.levels.recovery7d, series.count > 1 {
-                    Sparkline(values: series)
-                        .stroke(AgentIdentity.greg.accentColor, lineWidth: 2)
-                        .frame(height: 26).padding(.top, 4)
-                }
             }
         }
         .padding(.horizontal, Theme.scaled(13))
@@ -143,22 +138,5 @@ struct StateBoardView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-/// Normalized 0-100 series → path in unit rect. Used for Greg's recovery7d.
-struct Sparkline: Shape {
-    let values: [Int]
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        guard values.count > 1 else { return p }
-        let maxV = max(values.max() ?? 100, 1)
-        let step = rect.width / CGFloat(values.count - 1)
-        for (i, v) in values.enumerated() {
-            let pt = CGPoint(x: rect.minX + CGFloat(i) * step,
-                             y: rect.maxY - (CGFloat(v) / CGFloat(maxV)) * rect.height)
-            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-        }
-        return p
     }
 }
