@@ -192,8 +192,16 @@ export class WsHandler {
       let env: AnyEnvelope;
       try {
         env = AnyEnvelope.parse(JSON.parse(raw.toString()));
-      } catch {
+      } catch (err) {
         clearTimeout(authTimer);
+        // [delivery] diag: capture the exact frame the device sent that fails
+        // AnyEnvelope — this is what triggers the 4002 reconnect storm. Truncated
+        // to keep the log sane; the Zod message names the failing field/type.
+        log.warn('[delivery] protocol_violation — unparseable frame', {
+          platform_id: platform_id ?? '(pre-auth)',
+          raw: raw.toString().slice(0, 600),
+          error: String((err as Error)?.message ?? err).slice(0, 500),
+        });
         ws.close(CLOSE_CODES.protocol_violation, 'protocol_violation');
         return;
       }
