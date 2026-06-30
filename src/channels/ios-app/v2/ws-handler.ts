@@ -217,6 +217,10 @@ export class WsHandler {
       }
 
       // Post-auth dispatch.
+      // [delivery] diag: what the device sends back post-auth (ack/delivered/
+      // read/pong). Tells us whether a drained message was processed before the
+      // socket died — pairs with `[delivery] socket close` below.
+      log.info('[delivery] recv-from-device', { platform_id, type: env.type, id: env.id });
       const action = this.deps.dispatcher.dispatch(platform_id, env);
       if (action.kind === 'ack') {
         this.sendRaw(ws, {
@@ -242,8 +246,16 @@ export class WsHandler {
       // 'noop' (e.g. ack/delivered/read envelopes from the client) — nothing.
     });
 
-    ws.on('close', () => {
+    ws.on('close', (code: number, reason: Buffer) => {
       clearTimeout(authTimer);
+      // [delivery] diag: WS close code + reason. 1000=normal, 1001=going away
+      // (backgrounded), 1006=abnormal/no-close-frame (network/proxy drop),
+      // 1002/1003=protocol/unsupported-data, 4xxx=our CLOSE_CODES (superseded etc).
+      log.info('[delivery] socket close', {
+        platform_id: platform_id ?? '(pre-auth)',
+        code,
+        reason: reason?.toString() || undefined,
+      });
       if (!platform_id) return;
       const conn = this.sockets.get(platform_id);
       if (conn && conn.ws === ws) {
@@ -253,7 +265,11 @@ export class WsHandler {
       }
     });
 
-    ws.on('error', () => {
+    ws.on('error', (err: Error) => {
+      log.warn('[delivery] socket error', {
+        platform_id: platform_id ?? '(pre-auth)',
+        error: String(err?.message ?? err),
+      });
       // ws library will follow with 'close' — cleanup handled there.
     });
   }
