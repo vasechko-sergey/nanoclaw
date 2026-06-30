@@ -372,14 +372,20 @@ final class WebSocketClientV2 {
         guard stack != nil else { return }
         switch phase {
         case .active:
-            // Reconnect (we tear the socket down on .background) then flush any
-            // queued outbound. connect() is a no-op when already authed, and
-            // SwiftUI does NOT re-fire view .onAppear on background→foreground,
-            // so this is the only reliable reconnect trigger after a background
-            // cycle.
+            // Force a CLEAN reconnect: a prior connect may be stranded
+            // (.connecting) or parked in a long backoff after a background cycle.
+            // disconnect() resets to .idle + cancels pending reconnect/watchdog;
+            // resetReconnectBackoff() restarts at the base delay; connect() then
+            // proceeds (the reentrancy guard only blocks .connecting/.authed).
+            // SwiftUI does NOT re-fire view .onAppear on background→foreground, so
+            // this is the only reliable reconnect trigger. `isConnected` is driven
+            // by the transport's onStateChange callback (wired in wireAuthOkCallback).
             Task { [weak self] in
-                try? await self?.stack.transport.connect()
-                try? await self?.stack.transport.tickDispatcher()
+                guard let self, let stack = self.stack else { return }
+                await stack.transport.disconnect()
+                await stack.transport.resetReconnectBackoff()
+                try? await stack.transport.connect()
+                try? await stack.transport.tickDispatcher()
             }
         case .background:
             // Tear the WS down on background. Without this the transport's
@@ -719,6 +725,11 @@ final class WebSocketClientV2 {
                 Task { @MainActor [weak self] in
                     self?.onWorkoutEnvelope?(env)
                 }
+            }
+            // Track auth state so `isConnected` reflects the whole session
+            // (reconnects, drops), not just the foreground moment.
+            await transport.setOnStateChange { [weak self] authed in
+                Task { @MainActor [weak self] in self?.isConnected = authed }
             }
         }
     }
