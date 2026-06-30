@@ -49,7 +49,7 @@ export const MAX_QUEUE_PER_DEVICE = 1000;
  * both restricted to these. `message` only for the MVP; extend (e.g.
  * `coach_message`) when those become notification-worthy.
  */
-export const NOTIFY_TYPES = ['message'] as const;
+export const NOTIFY_TYPES = ['message', 'summary_ready'] as const;
 export const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 export const ACK_RETRY_MS = 5_000;
 export const APP_PING_INTERVAL_MS = 60_000;

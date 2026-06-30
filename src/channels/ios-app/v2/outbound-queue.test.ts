@@ -102,4 +102,20 @@ describe('listPendingNotify', () => {
     void s3;
     db.raw.close();
   });
+
+  it('listPendingNotify includes summary_ready rows', () => {
+    const db = openTransportDb(':memory:');
+    const q = new OutboundQueue(db);
+    const pid = 'ios-app-v2:device-1';
+    db.upsertDevice(pid, {});
+    q.enqueue(pid, {
+      id: 'summary-owner-2026-06-30',
+      kind: 'data',
+      type: 'summary_ready',
+      payload: { date: '2026-06-30', count: 5, text: 'Сводка готова · 5 карточек', agent_id: 'jarvis' },
+    });
+    const rows = q.listPendingNotify(pid, 0);
+    expect(rows.map((r) => r.type)).toContain('summary_ready');
+    db.raw.close();
+  });
 });
