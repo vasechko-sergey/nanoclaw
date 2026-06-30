@@ -392,14 +392,20 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
       const messages = listPending(id.platform_id, safeSince).map((row) => {
         let agent_id: string | null = null;
         let text = '';
+        let ts: number | null = null;
         try {
-          const p = JSON.parse(row.payload_json) as { text?: unknown; agent_id?: unknown };
+          const p = JSON.parse(row.payload_json) as { text?: unknown; agent_id?: unknown; ts?: unknown };
           if (typeof p.text === 'string') text = p.text;
           if (typeof p.agent_id === 'string') agent_id = p.agent_id;
+          if (typeof p.ts === 'number') ts = p.ts;
         } catch {
           /* malformed payload — surface id/seq with empty text */
         }
-        return { id: row.id, seq: row.seq, type: row.type, agent_id, text };
+        // `ts` lets the iOS pull path insert a chat row sorted by authored time.
+        // The message payload may omit it; `created_at` (always on the row) is a
+        // safe monotonic fallback.
+        if (ts === null) ts = row.created_at;
+        return { id: row.id, seq: row.seq, type: row.type, agent_id, text, ts };
       });
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ messages }));
       return;

@@ -476,6 +476,29 @@ describe('GET /ios/pending', () => {
     });
   });
 
+  it('surfaces ts (payload.ts, else created_at) for the pull-render path', async () => {
+    h.queue.enqueue(PLATFORM_ID, {
+      id: 'mts',
+      kind: 'data',
+      type: 'message',
+      payload: { text: 'hi', agent_id: 'jarvis', ts: 1782800000000 },
+    });
+    h.queue.enqueue(PLATFORM_ID, {
+      id: 'mnots',
+      kind: 'data',
+      type: 'message',
+      payload: { text: 'no ts', agent_id: 'jarvis' },
+    });
+    const r = await fetchJson(`${h.url}/ios/pending`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    const body = r.json() as { messages: Array<{ id: string; ts: number }> };
+    expect(body.messages.find((m) => m.id === 'mts')?.ts).toBe(1782800000000);
+    expect(typeof body.messages.find((m) => m.id === 'mnots')?.ts).toBe('number');
+  });
+
   it('honors ?since= and requires auth', async () => {
     const s1 = h.queue.enqueue(PLATFORM_ID, { id: 'm1', kind: 'data', type: 'message', payload: { text: 'a' } });
     h.queue.enqueue(PLATFORM_ID, { id: 'm2', kind: 'data', type: 'message', payload: { text: 'b' } });
