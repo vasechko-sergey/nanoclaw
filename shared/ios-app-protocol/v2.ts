@@ -229,6 +229,18 @@ export const Envelopes = {
     seq: z.null(),
     payload: z.object({ ids: z.array(z.string().min(1)).min(1) }),
   }),
+  SummaryReady: EnvelopeBase.extend({
+    kind: z.literal('data'),
+    type: z.literal('summary_ready'),
+    // Stable per-day id like "summary-<personKey>-<date>"; not a UUID.
+    id: z.string().min(1),
+    payload: z.object({
+      date: z.string().min(1), // YYYY-MM-DD in person TZ
+      count: z.number().int().nonnegative(),
+      text: z.string(), // notification body; also surfaced by GET /ios/pending
+      agent_id: z.string().min(1).optional(),
+    }),
+  }),
   WorkoutStartRequest: EnvelopeBase.extend({
     kind: z.literal('control'),
     type: z.literal('workout_start_request'),
@@ -457,6 +469,7 @@ export const AnyEnvelope = z.discriminatedUnion('type', [
   Envelopes.NewConversation, Envelopes.ActionResponse, Envelopes.Feedback,
   Envelopes.Ack, Envelopes.Ping, Envelopes.Pong,
   Envelopes.StatusDelivered, Envelopes.StatusRead,
+  Envelopes.SummaryReady,
   // Workout-mode envelopes (P3.T1)
   Envelopes.WorkoutStartRequest, Envelopes.WorkoutPlan, Envelopes.SetLog,
   Envelopes.ExerciseDone, Envelopes.WorkoutComplete, Envelopes.WorkoutAbort,

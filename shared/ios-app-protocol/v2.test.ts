@@ -221,6 +221,35 @@ describe('v2 voice fields', () => {
   });
 });
 
+describe('summary_ready envelope', () => {
+  it('parses a valid summary_ready envelope', () => {
+    const env = {
+      v: 2,
+      kind: 'data',
+      type: 'summary_ready',
+      id: 'summary-owner-2026-06-30',
+      seq: 12,
+      ts: '2026-06-30T00:52:00.000Z',
+      payload: { date: '2026-06-30', count: 5, text: 'Сводка готова · 5 карточек', agent_id: 'jarvis' },
+    };
+    const parsed = AnyEnvelope.parse(env);
+    expect(parsed.type).toBe('summary_ready');
+    if (parsed.type === 'summary_ready') {
+      expect(parsed.payload.count).toBe(5);
+      expect(parsed.payload.date).toBe('2026-06-30');
+    }
+  });
+
+  it('rejects summary_ready with non-integer count', () => {
+    const bad = {
+      v: 2, kind: 'data', type: 'summary_ready', id: 'x',
+      seq: 1, ts: '2026-06-30T00:52:00.000Z',
+      payload: { date: '2026-06-30', count: 'five', text: 'x' },
+    };
+    expect(() => AnyEnvelope.parse(bad)).toThrow();
+  });
+});
+
 describe('workout envelopes', () => {
   const base = {
     v: 2 as const,
