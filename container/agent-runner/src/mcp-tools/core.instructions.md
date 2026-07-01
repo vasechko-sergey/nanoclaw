@@ -24,7 +24,11 @@ Use `mcp__nanoclaw__add_reaction({ messageId, emoji })` to react to a specific i
 
 ### Editing a message (`edit_message`)
 
-Use `mcp__nanoclaw__edit_message({ text, messageId? })` to correct a message you already sent — it replaces the whole text in place (the user sees the same bubble update, marked edited). To fix the message you JUST sent, call it with only the new `text` and **omit** `messageId`. Pass the numeric `messageId` (the `#N` id shown next to messages, as an integer) only to edit an OLDER message **you** sent — you can only edit your own messages, never the user's (a user `#N` is rejected). Never invent a messageId — if you don't have the number, omit it.
+`edit_message` is ONLY for correcting an **inaccuracy** in a message you already sent — a factual error, a wrong number, a typo. It replaces the whole text in place (the user sees the same bubble update, marked edited).
+
+**Never edit to deliver new content.** A new answer, a list, an added detail, or any reply is a NEW message — send it with `send_message`. Do not fold new information into an old bubble by editing it. When in doubt, send a new message. (This is what went wrong once: a list answer was pushed by editing an old message instead of sending it as a reply — don't do that.)
+
+Mechanics: `mcp__nanoclaw__edit_message({ text, messageId? })`. To fix the message you JUST sent, call it with only the new `text` and **omit** `messageId`. Pass the numeric `messageId` (the `#N` id shown next to messages, as an integer) only to correct an OLDER message **you** sent — you can only edit your own messages, never the user's (a user `#N` is rejected). Never invent a messageId — if you don't have the number, omit it.
 
 ### Internal thoughts
 

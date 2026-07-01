@@ -256,7 +256,11 @@ export const editMessage: McpToolDefinition = {
   tool: {
     name: 'edit_message',
     description:
-      'Edit a message you already sent — replaces its full text in place (the user sees the bubble change, marked edited). ' +
+      'Correct an INACCURACY in a message you ALREADY sent — a factual error, a wrong number, a typo. ' +
+      'Replaces its full text in place (the user sees the bubble change, marked edited). ' +
+      'STRICT — this is ONLY for fixing something wrong in an already-sent message. NEW content ' +
+      '(a new answer, a list, an added detail, any reply) must be a NEW message via send_message, ' +
+      'NEVER an edit of an old bubble. When in doubt, send a new message. ' +
       'Omit `messageId` to edit the LAST message you sent (the common "fix what I just said" case). ' +
       'Pass `messageId` (the numeric id shown in messages) only to target an OLDER message YOU sent — ' +
       'you cannot edit the user\'s messages, only your own. ' +
