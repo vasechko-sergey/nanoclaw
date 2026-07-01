@@ -541,7 +541,12 @@ final class WebSocketClientV2 {
     // then the attachment. Returning an array (flat-mapped at the call sites)
     // keeps the typed text visible instead of being swallowed by the attachment.
     static func toChatMessage(_ row: StoredMessage) -> [ChatMessage] {
-        let timestamp = Date(timeIntervalSince1970: TimeInterval(row.ts) / 1000)
+        // Prefer the host-clock `server_ts` (present once an outbound message is
+        // acked) over the device-clock `ts`, so the displayed time matches the
+        // host-clock sort order (windowedRows) and a skewed phone clock doesn't
+        // print a wrong time. Inbound rows have no server_ts → device shows `ts`
+        // (already host-authored). See windowedRows for the single-clock rationale.
+        let timestamp = Date(timeIntervalSince1970: TimeInterval(row.serverTS ?? row.ts) / 1000)
         let role: ChatMessage.Role = row.dir == .out ? .user : .assistant
 
         // Inbound action card (ask_user_question). Built before the text/
@@ -745,7 +750,7 @@ final class WebSocketClientV2 {
             let rows = try stack.dbq.read { db -> [StoredMessage] in
                 let rs = try Row.fetchAll(db, sql: """
                     SELECT * FROM messages
-                    ORDER BY ts DESC
+                    ORDER BY COALESCE(server_ts, ts) DESC
                     LIMIT 500
                 """)
                 return rs.reversed().map { row in

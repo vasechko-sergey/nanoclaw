@@ -31,7 +31,7 @@ final class MessageTimeline {
         self.messages = try await dbq.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT * FROM messages
-                ORDER BY ts DESC, rowid DESC
+                ORDER BY COALESCE(server_ts, ts) DESC, rowid DESC
                 LIMIT ?
             """, arguments: [self.retention]).reversed().map { row in
                 StoredMessage(

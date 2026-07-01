@@ -75,6 +75,32 @@ final class ConversationStoreV2AgentTests: XCTestCase {
         XCTAssertEqual(after.first { $0.id == "m-a" }?.text, "A-edited")
     }
 
+    func test_windowedRows_ordersByServerTs_whenDeviceClockSkewed() throws {
+        let store = try makeStore()
+        // Reproduces the reported reorder: the phone clock runs ~2h ahead of the
+        // VDS. The user's OUTBOUND question is stamped with device-now (skewed
+        // far into the future) but the host ack gives it a correct `server_ts`.
+        // The agent's INBOUND reply is stamped with the host clock (`ts`, no
+        // server_ts). Sorting by raw `ts` puts the reply ABOVE the question
+        // (2h earlier); sorting by COALESCE(server_ts, ts) — a single host clock —
+        // restores question→reply order.
+        try store.writer.write { db in
+            // Outbound question: device ts +2h ahead (9_000_000), host ack 1000.
+            try db.execute(
+                sql: "INSERT INTO messages (id,dir,seq,text,status,ts,server_ts,created_at,agent_id,edited) VALUES (?,?,NULL,?,?,?,?,?,?,0)",
+                arguments: ["q", "out", "Q", "sent", 9_000_000, 1000, 9_000_000, "scrooge"]
+            )
+            // Inbound reply: host ts 2000, no server_ts.
+            try db.execute(
+                sql: "INSERT INTO messages (id,dir,seq,text,status,ts,created_at,agent_id,edited) VALUES (?,?,NULL,?,?,?,?,?,0)",
+                arguments: ["r", "in", "R", "new", 2000, 2000, "scrooge"]
+            )
+        }
+        let rows = try store.writer.read { db in try ConversationStoreV2.windowedRows(db, perAgent: 500) }
+        XCTAssertEqual(rows.map(\.id), ["q", "r"],
+                       "acked outbound must sort by host server_ts, not skewed device ts")
+    }
+
     func test_defaultAgentId_isJarvis_forBackCompat() throws {
         let store = try makeStore()
 
