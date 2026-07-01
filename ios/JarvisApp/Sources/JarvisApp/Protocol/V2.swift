@@ -142,6 +142,31 @@ enum V2 {
             self.voice_failed = voice_failed
             self.actions = actions
         }
+
+        private enum CodingKeys: String, CodingKey {
+            case thread_id, text, attachments, context, agent_id, reply_to_id, voice_only, voice_failed, actions
+        }
+
+        /// Tolerant decode: `thread_id` falls back to `"default"` when the server
+        /// omits it (the host itself always emits `thread_id ?? 'default'`, so the
+        /// key can only be absent on a malformed/hand-injected row). Without this,
+        /// a `thread_id`-less `message` throws inside `V2.Envelope`'s all-or-nothing
+        /// decode (`TransportV2.handleIncoming` ~line 215) — the frame then never
+        /// acks and re-fails on every reconnect, wedging the outbound queue as a
+        /// poison pill. `text` stays required (a message with no body is nonsense);
+        /// genuinely-undecodable frames still surface rather than being dropped.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.thread_id = try c.decodeIfPresent(String.self, forKey: .thread_id) ?? "default"
+            self.text = try c.decode(String.self, forKey: .text)
+            self.attachments = try c.decodeIfPresent([Attachment].self, forKey: .attachments)
+            self.context = try c.decodeIfPresent(InlineContext.self, forKey: .context)
+            self.agent_id = try c.decodeIfPresent(String.self, forKey: .agent_id)
+            self.reply_to_id = try c.decodeIfPresent(String.self, forKey: .reply_to_id)
+            self.voice_only = try c.decodeIfPresent(Bool.self, forKey: .voice_only)
+            self.voice_failed = try c.decodeIfPresent(Bool.self, forKey: .voice_failed)
+            self.actions = try c.decodeIfPresent([Action].self, forKey: .actions)
+        }
     }
 
     struct Update: Codable, Equatable {

@@ -76,6 +76,26 @@ final class ProtocolFixtureTests: XCTestCase {
         XCTAssertEqual(msg.agent_id, "payne")
     }
 
+    /// A `message` envelope missing `thread_id` must decode (→ "default"), not
+    /// throw. A throw here wedges the outbound queue: `V2.Envelope`'s all-or-
+    /// nothing decode fails, the frame never acks, and it re-fails on every
+    /// reconnect (poison pill). The host always emits `thread_id`, so this only
+    /// guards malformed / hand-injected rows — but it must never strand the queue.
+    func testMessageWithoutThreadIdDecodesToDefault() throws {
+        let json = Data("""
+        {"v":2,"kind":"data","type":"message","id":"m-poison","seq":729,"ts":"2026-07-01T04:00:00.000Z",
+         "payload":{"text":"no thread_id here","agent_id":"jarvis"}}
+        """.utf8)
+        let env = try JSONDecoder().decode(V2.Envelope.self, from: json)
+        guard case let .message(msg) = env.payload else {
+            XCTFail("expected message payload, got \(env.payload)")
+            return
+        }
+        XCTAssertEqual(msg.thread_id, "default")
+        XCTAssertEqual(msg.text, "no thread_id here")
+        XCTAssertEqual(msg.agent_id, "jarvis")
+    }
+
     func testHealthUploadFixturesRoundTrip() throws {
         let dir = try fixturesDir().appendingPathComponent("health")
         let urls = try FileManager.default
