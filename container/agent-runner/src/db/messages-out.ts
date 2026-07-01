@@ -286,6 +286,26 @@ export function isOutboundSeq(seq: number): boolean {
   return !!getOutboundDb().prepare('SELECT 1 FROM messages_out WHERE seq = ?').get(seq);
 }
 
+/**
+ * The `text` of an outbound message by seq (or null if the row/text is missing).
+ * Used by `edit_message` to compare the current text against the proposed edit
+ * so a near-total rewrite (delivering new content) can be refused. Reads the
+ * original row's content — good enough as the correction baseline (re-edits of
+ * the same bubble target the same chat seq, so this stays the anchor).
+ */
+export function getOutboundTextBySeq(seq: number): string | null {
+  const row = getOutboundDb().prepare('SELECT content FROM messages_out WHERE seq = ?').get(seq) as
+    | { content: string }
+    | undefined;
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(row.content) as { text?: unknown };
+    return typeof parsed.text === 'string' ? parsed.text : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Get undelivered messages (for host polling — reads from outbound.db). */
 export function getUndeliveredMessages(): MessageOutRow[] {
   return getOutboundDb()

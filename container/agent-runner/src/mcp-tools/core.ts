@@ -14,11 +14,13 @@ import { findByName, getAllDestinations } from '../destinations.js';
 import {
   getLatestUserFacingOutboundSeq,
   getMessageIdBySeq,
+  getOutboundTextBySeq,
   getRoutingBySeq,
   isOutboundSeq,
   writeMessageOut,
 } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
+import { isReplacementEdit } from './edit-guard.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -261,6 +263,7 @@ export const editMessage: McpToolDefinition = {
       'STRICT — this is ONLY for fixing something wrong in an already-sent message. NEW content ' +
       '(a new answer, a list, an added detail, any reply) must be a NEW message via send_message, ' +
       'NEVER an edit of an old bubble. When in doubt, send a new message. ' +
+      'An edit that rewrites most of the message is rejected automatically. ' +
       'Omit `messageId` to edit the LAST message you sent (the common "fix what I just said" case). ' +
       'Pass `messageId` (the numeric id shown in messages) only to target an OLDER message YOU sent — ' +
       'you cannot edit the user\'s messages, only your own. ' +
@@ -298,6 +301,21 @@ export const editMessage: McpToolDefinition = {
     // that would rewrite the user's bubble. Refuse; nudge toward omit-id.
     if (!isOutboundSeq(seq)) {
       return err(`#${seq} isn't a message you sent — you can only edit your own. Omit messageId to edit your last message.`);
+    }
+
+    // Corrections only. A near-total rewrite — or stuffing a long list onto an
+    // old bubble — is delivering NEW content, which must be a new send_message,
+    // not an edit. Editing an old message moves the new text back to that
+    // message's timestamp, reordering the chat and hiding the update (the
+    // reported Scrooge bug). Refuse when the proposed text replaces most of the
+    // current one; small corrections and short messages pass. See edit-guard.ts.
+    const prevText = getOutboundTextBySeq(seq);
+    if (prevText !== null && isReplacementEdit(prevText, text)) {
+      return err(
+        `That edit replaces most of message #${seq} — edit_message is only for correcting an inaccuracy ` +
+          `(a wrong number, a typo, a bad clause). New content — a list, a fresh answer, an addition — must be a ` +
+          `NEW message: use send_message instead.`,
+      );
     }
 
     const platformId = getMessageIdBySeq(seq);

@@ -90,4 +90,23 @@ describe('edit_message targeting', () => {
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("isn't a message you sent");
   });
+
+  it('refuses an edit that replaces most of the message (delivering new content)', async () => {
+    const seq = writeMessageOut({
+      id: 'orig', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null,
+      content: JSON.stringify({ text: 'Контекст сброшен. Начинаем с чистого листа.' }),
+    });
+    const res = await editMessage.handler({
+      messageId: seq,
+      text:
+        'Балансы на 1 июля: SafePal earn 855.16$, SafePal wallet 66.65$, ' +
+        'Telegram wallet 1712$, Bybit 340$, итого около 2973$ по кошелькам.',
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('send_message');
+    // No edit was queued — the replacement was refused, not written.
+    const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
+    expect(edit).toBeUndefined();
+  });
 });
