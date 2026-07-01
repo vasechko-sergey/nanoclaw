@@ -4,6 +4,7 @@ import path from 'path';
 import { query as sdkQuery, type HookCallback, type PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
 
 import { clearContainerToolInFlight, setContainerToolInFlight } from '../db/connection.js';
+import { lockForToolCall, unlockAfterToolCall } from '../shared-code-lock.js';
 import { registerProvider } from './provider-registry.js';
 import type { AgentProvider, AgentQuery, McpServerConfig, ProviderEvent, ProviderOptions, QueryInput } from './types.js';
 
@@ -195,11 +196,25 @@ const preToolUseHook: HookCallback = async (input) => {
   } catch (err) {
     log(`PreToolUse: failed to record container_state: ${err instanceof Error ? err.message : String(err)}`);
   }
+  // Serialize shared-code writes across this agent's concurrent session containers
+  // (skills/ and scripts/ are one RW mount shared by all of them). No-op for any
+  // other write. Released in postToolUseHook.
+  try {
+    const locked = await lockForToolCall(toolName, i.tool_input);
+    if (locked === false) log(`code-lock: ${toolName} proceeding unlocked (fail-open)`);
+  } catch (err) {
+    log(`PreToolUse: code-lock failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   return { continue: true };
 };
 
-/** Clear in-flight tool on PostToolUse / PostToolUseFailure. */
+/** Clear in-flight tool + release any shared-code lock on PostToolUse / PostToolUseFailure. */
 const postToolUseHook: HookCallback = async () => {
+  try {
+    unlockAfterToolCall();
+  } catch (err) {
+    log(`PostToolUse: code-lock release failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   try {
     clearContainerToolInFlight();
   } catch (err) {
