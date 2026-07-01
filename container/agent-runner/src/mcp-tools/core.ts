@@ -15,12 +15,13 @@ import {
   getLatestUserFacingOutboundSeq,
   getMessageIdBySeq,
   getOutboundTextBySeq,
+  getOutboundTimestampBySeq,
   getRoutingBySeq,
   isOutboundSeq,
   writeMessageOut,
 } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
-import { isReplacementEdit } from './edit-guard.js';
+import { humanizeAge, isReplacementEdit, isStaleLastEdit } from './edit-guard.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -288,6 +289,19 @@ export const editMessage: McpToolDefinition = {
     if (args.messageId === undefined || args.messageId === null || args.messageId === '') {
       const last = getLatestUserFacingOutboundSeq();
       if (last === null) return err('No recent message to edit');
+      // "Edit my last message" (no id) is for a FRESH fix. If the latest message
+      // is stale, the agent almost certainly means to say something new; editing
+      // it silently would drop the content back to that old timestamp and
+      // reorder the chat. Refuse and make the target explicit.
+      const lastTs = getOutboundTimestampBySeq(last);
+      if (lastTs && isStaleLastEdit(lastTs, Date.now())) {
+        const age = humanizeAge(Date.now() - new Date(lastTs.replace(' ', 'T') + 'Z').getTime());
+        return err(
+          `Your last message is ${age} old — "edit my last message" is only for a fresh fix, not for ` +
+            `speaking now. To correct that specific old message pass its #id explicitly; to say something ` +
+            `new, use send_message.`,
+        );
+      }
       seq = last;
     } else {
       seq = Number(args.messageId);

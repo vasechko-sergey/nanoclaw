@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'bun:test';
 
-import { changeRatio, isReplacementEdit } from './edit-guard.js';
+import {
+  changeRatio,
+  isReplacementEdit,
+  parseSqliteUtcMs,
+  isStaleLastEdit,
+  humanizeAge,
+  EDIT_STALE_LAST_MS,
+} from './edit-guard.js';
 
 describe('changeRatio', () => {
   it('is 0 for identical text', () => {
@@ -48,5 +55,54 @@ describe('isReplacementEdit', () => {
 
   it('exempts an empty prior text (nothing to compare)', () => {
     expect(isReplacementEdit('', 'a brand new long-enough message body here')).toBe(false);
+  });
+});
+
+describe('parseSqliteUtcMs', () => {
+  it('parses a datetime(now) string as UTC', () => {
+    // "2026-07-01 05:29:59" UTC == 1782883799000 ms.
+    expect(parseSqliteUtcMs('2026-07-01 05:29:59')).toBe(Date.UTC(2026, 6, 1, 5, 29, 59));
+  });
+
+  it('is NaN for garbage', () => {
+    expect(Number.isNaN(parseSqliteUtcMs('not a date'))).toBe(true);
+  });
+});
+
+describe('isStaleLastEdit', () => {
+  const base = Date.UTC(2026, 6, 1, 6, 0, 0);
+
+  it('is false for a fresh message (a few minutes old)', () => {
+    const ts = '2026-07-01 05:58:00'; // 2 min before base
+    expect(isStaleLastEdit(ts, base)).toBe(false);
+  });
+
+  it('is true for a message older than the threshold', () => {
+    const ts = '2026-07-01 04:30:00'; // 90 min before base
+    expect(isStaleLastEdit(ts, base)).toBe(true);
+  });
+
+  it('is true for a days-old message (the Scrooge case)', () => {
+    expect(isStaleLastEdit('2026-06-25 02:34:33', base)).toBe(true);
+  });
+
+  it('does not block on an unparseable timestamp', () => {
+    expect(isStaleLastEdit('garbage', base)).toBe(false);
+  });
+
+  it('boundary: just under the threshold is fresh, just over is stale', () => {
+    const justUnder = base - (EDIT_STALE_LAST_MS - 60000);
+    const justOver = base - (EDIT_STALE_LAST_MS + 60000);
+    const fmt = (ms: number) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
+    expect(isStaleLastEdit(fmt(justUnder), base)).toBe(false);
+    expect(isStaleLastEdit(fmt(justOver), base)).toBe(true);
+  });
+});
+
+describe('humanizeAge', () => {
+  it('formats minutes, hours, days', () => {
+    expect(humanizeAge(12 * 60000)).toBe('12 min');
+    expect(humanizeAge(5 * 3600000)).toBe('5h');
+    expect(humanizeAge(6 * 24 * 3600000)).toBe('6d');
   });
 });

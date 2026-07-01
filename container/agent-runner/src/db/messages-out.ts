@@ -306,6 +306,18 @@ export function getOutboundTextBySeq(seq: number): string | null {
   }
 }
 
+/**
+ * The `timestamp` (SQLite `datetime('now')` string, UTC) of an outbound message
+ * by seq, or null. Used by `edit_message` to reject an omit-id "edit my last"
+ * when the latest message is stale (would drop content back to an old ts).
+ */
+export function getOutboundTimestampBySeq(seq: number): string | null {
+  const row = getOutboundDb().prepare('SELECT timestamp FROM messages_out WHERE seq = ?').get(seq) as
+    | { timestamp: string }
+    | undefined;
+  return row?.timestamp ?? null;
+}
+
 /** Get undelivered messages (for host polling — reads from outbound.db). */
 export function getUndeliveredMessages(): MessageOutRow[] {
   return getOutboundDb()

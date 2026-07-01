@@ -20,6 +20,37 @@
 export const MIN_COMPARE_LEN = 40;
 export const MAX_CHANGE_RATIO = 0.6;
 
+/**
+ * "Edit my last message" (no explicit id) is a convenience for a FRESH fix. If
+ * the latest message is older than this, the convenience no longer applies — the
+ * agent almost certainly means to say something new, and silently editing a
+ * stale bubble drops the content back to that old timestamp and reorders the
+ * chat (Scrooge's 6-day-old target). Past this age, refuse the omit-id edit and
+ * make the agent be explicit (pass the #id) or send a new message.
+ */
+export const EDIT_STALE_LAST_MS = 60 * 60 * 1000; // 60 min
+
+/** Epoch ms of a SQLite `datetime('now')` value ("YYYY-MM-DD HH:MM:SS", UTC). NaN on garbage. */
+export function parseSqliteUtcMs(ts: string): number {
+  return new Date(ts.replace(' ', 'T') + 'Z').getTime();
+}
+
+/** True when the omit-id "edit my last" target is too old to be a fresh fix. */
+export function isStaleLastEdit(timestampSqlite: string, nowMs: number): boolean {
+  const t = parseSqliteUtcMs(timestampSqlite);
+  if (Number.isNaN(t)) return false; // unparseable → don't block
+  return nowMs - t > EDIT_STALE_LAST_MS;
+}
+
+/** Compact age for an agent-facing message: "12 min", "5h", "6d". */
+export function humanizeAge(ms: number): string {
+  const min = Math.max(0, Math.round(ms / 60000));
+  if (min < 90) return `${min} min`;
+  const hr = Math.round(min / 60);
+  if (hr < 48) return `${hr}h`;
+  return `${Math.round(hr / 24)}d`;
+}
+
 /** Normalized Levenshtein distance in [0,1]: 0 = identical, 1 = nothing shared. */
 export function changeRatio(a: string, b: string): number {
   if (a === b) return 0;

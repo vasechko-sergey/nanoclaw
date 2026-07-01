@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
-import { initTestSessionDb, closeSessionDb, getInboundDb } from '../db/connection.js';
+import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from '../db/connection.js';
 import { getUndeliveredMessages, writeMessageOut } from '../db/messages-out.js';
 import { setCurrentInReplyTo, clearCurrentInReplyTo } from '../current-batch.js';
 import { sendMessage, editMessage } from './core.js';
@@ -106,6 +106,22 @@ describe('edit_message targeting', () => {
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain('send_message');
     // No edit was queued — the replacement was refused, not written.
+    const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
+    expect(edit).toBeUndefined();
+  });
+
+  it('refuses an omit-id "edit my last" when the last message is stale', async () => {
+    const seq = writeMessageOut({
+      id: 'stale', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'сообщение достаточной длины, отправленное давно' }),
+    });
+    // Backdate it 2h so the "fix what I just said" convenience no longer applies.
+    const old = new Date(Date.now() - 2 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    getOutboundDb().prepare('UPDATE messages_out SET timestamp = ? WHERE seq = ?').run(old, seq);
+
+    const res = await editMessage.handler({ text: 'небольшая правка текста' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('send_message');
     const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
     expect(edit).toBeUndefined();
   });
