@@ -439,23 +439,26 @@ export function buildMounts(
   initUserMemory(ownerKey, agentGroup.folder);
   const memRoot = userMemoryRoot(ownerKey, agentGroup.folder);
 
-  // Sync shared CODE from the group dir into the per-person agent dir, so the
-  // agent's ENTIRE working dir (/workspace/agent) can be mounted writable while
-  // shared code keeps a single source of truth in groups/<folder>. The whole
-  // group dir is code — data was migrated out to user-memory — so copy it
-  // wholesale: cpSync MERGES, overwriting matching code but never deleting the
-  // per-person DATA dirs (memories, conversations, health, scratch, nutrition,
-  // …) that exist only under user-memory. The owner edits code on the host
-  // (groups/) and it propagates into every person's dir on the next spawn; the
-  // agent may write anywhere (RW), its code edits reset to the host source next
-  // spawn. SECRETS are excluded (isSecretEnv): each person's scripts/.env lives
-  // only under their own user-memory tree — it is never sourced from, reset by,
-  // or leaked through the shared group dir. `.env.example` (a template) stays.
+  // Shared per-agent CODE root (new model): agents/<folder>/ holds identity
+  // (CLAUDE.md), skills/, scripts/, node_modules as a SINGLE source that is
+  // MOUNTED (not copied) into every person's container below — skills/ + scripts/
+  // read-write so the agent's own improvements persist across respawns AND are
+  // shared across its users; CLAUDE.md + node_modules read-only. When this dir
+  // exists we skip the copy model. Absent → legacy per-person copy (below).
+  const agentRoot = path.join(projectRoot, 'agents', agentGroup.folder);
+  const useSharedCode = fs.existsSync(agentRoot);
+
+  // Legacy copy model: sync shared CODE from groups/<folder> into the per-person
+  // agent dir. cpSync MERGES (overwrites matching code, never deletes the
+  // per-person DATA dirs). SECRETS excluded (isSecretEnv) — each person's
+  // scripts/.env lives only under their own tree. The agent's code edits reset to
+  // the host source next spawn (the exact limitation the shared-mount model above
+  // removes). `.env.example` (a template) stays.
   const isSecretEnv = (p: string): boolean => {
     const b = path.basename(p);
     return b === '.env' || (b.startsWith('.env.') && b !== '.env.example');
   };
-  if (fs.existsSync(groupDir)) {
+  if (!useSharedCode && fs.existsSync(groupDir)) {
     // node_modules is EXCLUDED here and synced separately (syncNodeModules):
     // pnpm lays it out as a symlink farm that fs.cpSync's default copy can't
     // traverse (ERR_FS_CP_EINVAL "cannot copy to a subdirectory of self"),
@@ -468,10 +471,10 @@ export function buildMounts(
     syncNodeModules(groupDir, memRoot);
   }
   // Shared INSTRUCTIONS.md — one static file under GROUPS_DIR, referenced by
-  // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. Synced in last so the
-  // shared copy wins over any per-agent placeholder copied above.
+  // every agent's CLAUDE.md via `@./INSTRUCTIONS.md`. Legacy: copied into memRoot.
+  // Shared-code model: bind-mounted RO at /workspace/agent/INSTRUCTIONS.md below.
   const instructionsPath = path.join(GROUPS_DIR, 'INSTRUCTIONS.md');
-  if (fs.existsSync(instructionsPath)) {
+  if (!useSharedCode && fs.existsSync(instructionsPath)) {
     fs.cpSync(instructionsPath, path.join(memRoot, 'INSTRUCTIONS.md'), { force: true });
   }
 
@@ -495,11 +498,34 @@ export function buildMounts(
     }
   }
 
-  // /workspace/agent — the per-person WRITABLE working dir, FULLY read-write.
-  // Holds the synced code (above) + all agent data. THIS is the isolation
-  // boundary: it resolves under user-memory/<owner_key>/<folder>, never another
-  // person's tree. No nested read-only mounts — the agent's whole scope is RW.
+  // /workspace/agent — the per-person WRITABLE working dir. Base resolves under
+  // user-memory/<owner_key>/<folder> (isolation boundary), holding this person's
+  // DATA (memories/, finance/ledger.db, scratch/, .claude). In the legacy model
+  // the synced code lives here too; in the shared-code model the code is overlaid
+  // from agents/<folder>/ via the nested mounts below.
   mounts.push({ hostPath: memRoot, containerPath: '/workspace/agent', readonly: false });
+  if (useSharedCode) {
+    // Nested bind-mounts overlay the shared per-agent CODE onto the per-person
+    // data base. skills/ + scripts/ are RW — one shared copy, so the agent's
+    // improvements persist across respawns and across its users. CLAUDE.md
+    // (identity, same for every user) + node_modules are RO. The per-person
+    // scripts/.env secret is mounted LAST, over the shared scripts/, so it stays
+    // private to this person and never leaks through the shared source.
+    mounts.push({ hostPath: path.join(agentRoot, 'CLAUDE.md'), containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
+    mounts.push({ hostPath: path.join(agentRoot, 'skills'), containerPath: '/workspace/agent/skills', readonly: false });
+    mounts.push({ hostPath: path.join(agentRoot, 'scripts'), containerPath: '/workspace/agent/scripts', readonly: false });
+    const sharedNodeModules = path.join(agentRoot, 'node_modules');
+    if (fs.existsSync(sharedNodeModules)) {
+      mounts.push({ hostPath: sharedNodeModules, containerPath: '/workspace/agent/node_modules', readonly: true });
+    }
+    if (fs.existsSync(instructionsPath)) {
+      mounts.push({ hostPath: instructionsPath, containerPath: '/workspace/agent/INSTRUCTIONS.md', readonly: true });
+    }
+    const personalEnv = path.join(memRoot, '.env');
+    if (fs.existsSync(personalEnv)) {
+      mounts.push({ hostPath: personalEnv, containerPath: '/workspace/agent/scripts/.env', readonly: false });
+    }
+  }
 
   // Per-person global memory at /workspace/global. Writable only when this
   // person's writer agent (named in their global/.writer) is this folder.
@@ -582,11 +608,15 @@ function syncSkillSymlinks(
     sharedDesired = containerConfig.skills;
   }
 
-  // Per-group skills — always all subdirectories in groups/<folder>/skills/
-  // that contain a SKILL.md. Per-group skills are read-only from inside the
-  // container (/workspace/agent is mounted RO), so skill changes must be made
-  // via host edits + redeploy, not by the agent at runtime.
-  const groupSkillsDir = path.join(GROUPS_DIR, agentGroup.folder, 'skills');
+  // Per-group skills — all subdirs with a SKILL.md. Source is the shared-code
+  // root agents/<folder>/skills when present (mounted RW → the agent can improve
+  // these at runtime and the change persists), else the legacy
+  // groups/<folder>/skills (copied per person, resets each spawn). Symlink target
+  // is /workspace/agent/skills/<name> in both cases.
+  const sharedCodeSkills = path.join(process.cwd(), 'agents', agentGroup.folder, 'skills');
+  const groupSkillsDir = fs.existsSync(sharedCodeSkills)
+    ? sharedCodeSkills
+    : path.join(GROUPS_DIR, agentGroup.folder, 'skills');
   const groupDesired: string[] = fs.existsSync(groupSkillsDir)
     ? fs.readdirSync(groupSkillsDir).filter((e) => {
         try {

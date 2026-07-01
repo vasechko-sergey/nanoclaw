@@ -241,6 +241,7 @@ describe('buildMounts owner isolation', () => {
     fs.rmSync(path.join(DATA_DIR, 'user-memory', 'isomnt', 'global'), { recursive: true, force: true });
     fs.rmSync(path.join(DATA_DIR, 'user-memory', 'isomnt', 'shared'), { recursive: true, force: true });
     fs.rmSync(path.join(DATA_DIR, 'v2-sessions', ISO_AG), { recursive: true, force: true });
+    fs.rmSync(path.join(process.cwd(), 'agents', ISO_FOLDER), { recursive: true, force: true });
   });
 
   it('mounts the agent dir (RW) + .claude from the session owner tree, never another person', () => {
@@ -311,6 +312,42 @@ describe('buildMounts owner isolation', () => {
     // The shared mount resolves through the same ownerKey fallback.
     const sharedMount = mounts.find((m) => m.containerPath === '/workspace/shared');
     expect(sharedMount?.hostPath).toBe(path.join(DATA_DIR, 'user-memory', OWNER_PERSON_KEY, 'shared'));
+  });
+
+  it('shared-code model (agents/<folder> present): MOUNTS code instead of copying', () => {
+    // Seed the shared per-agent code root: identity + a skill + scripts dir.
+    const agentDir = path.join(process.cwd(), 'agents', ISO_FOLDER);
+    fs.mkdirSync(path.join(agentDir, 'skills', 'demo'), { recursive: true });
+    fs.writeFileSync(path.join(agentDir, 'skills', 'demo', 'SKILL.md'), '# demo');
+    fs.mkdirSync(path.join(agentDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(agentDir, 'CLAUDE.md'), '# identity');
+    // The person's own secret lives in their tree, overlaid over shared scripts/.
+    const mem = path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER);
+    fs.mkdirSync(mem, { recursive: true });
+    fs.writeFileSync(path.join(mem, '.env'), 'SECRET=1');
+
+    const mounts = mountsFor('isomnt');
+    const by = (p: string) => mounts.find((m) => m.containerPath === p);
+
+    // Per-person data base stays RW; code was NOT copied into it.
+    expect(by('/workspace/agent')).toMatchObject({ hostPath: mem, readonly: false });
+    expect(fs.existsSync(path.join(mem, 'CLAUDE.md'))).toBe(false);
+    // Identity RO from the single shared source.
+    expect(by('/workspace/agent/CLAUDE.md')).toMatchObject({ hostPath: path.join(agentDir, 'CLAUDE.md'), readonly: true });
+    // skills + scripts RW from the shared source → the agent's edits persist.
+    expect(by('/workspace/agent/skills')).toMatchObject({ hostPath: path.join(agentDir, 'skills'), readonly: false });
+    expect(by('/workspace/agent/scripts')).toMatchObject({ hostPath: path.join(agentDir, 'scripts'), readonly: false });
+    // Per-person .env overlays the shared scripts/ so the secret stays private.
+    expect(by('/workspace/agent/scripts/.env')).toMatchObject({ hostPath: path.join(mem, '.env'), readonly: false });
+  });
+
+  it('shared-code model: symlinks per-agent skills from agents/<folder>/skills', () => {
+    const agentDir = path.join(process.cwd(), 'agents', ISO_FOLDER);
+    fs.mkdirSync(path.join(agentDir, 'skills', 'demo'), { recursive: true });
+    fs.writeFileSync(path.join(agentDir, 'skills', 'demo', 'SKILL.md'), '# demo');
+    mountsFor('isomnt');
+    const link = path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER, '.claude', 'skills', 'demo');
+    expect(fs.readlinkSync(link)).toBe('/workspace/agent/skills/demo');
   });
 });
 
