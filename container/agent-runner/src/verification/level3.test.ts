@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { aggregateVerdicts, runLevel3, type ClaimOutcome } from './level3.js';
+import { aggregateVerdicts, runLevel3, isToolGrounded, type ClaimOutcome } from './level3.js';
 
 test('aggregateVerdicts: web refuted => fail', () => {
   const outcomes: ClaimOutcome[] = [{ claim: 'a', action_relevant: true, cove: 'contradicted', web: 'refuted' }];
@@ -48,7 +48,7 @@ test('runLevel3: action+contradicted claim escalates to web and is failed when r
       : '{"verdict":"contradicted","why":"too high"}';
     return new Response(JSON.stringify({ content: [{ type: 'text', text }] }), { status: 200 });
   }) as unknown as typeof fetch;
-  const r = await runLevel3('reply', 'sources', fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
+  const r = await runLevel3('reply', 'sources', new Set(), fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
   expect(r.failed).toHaveLength(1);
   expect(r.escalated).toBe(1);
 });
@@ -64,7 +64,31 @@ test('runLevel3: non-action claim never escalates to web', async () => {
       : '{"verdict":"contradicted","why":"x"}';
     return new Response(JSON.stringify({ content: [{ type: 'text', text }] }), { status: 200 });
   }) as unknown as typeof fetch;
-  const r = await runLevel3('reply', 'sources', fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
+  const r = await runLevel3('reply', 'sources', new Set(), fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
   expect(webCalls).toBe(0);            // non-action never hits web
   expect(r.failed).toHaveLength(1);    // but a non-action contradicted still fails (hedge)
+});
+
+test('runLevel3: a tool-grounded numeric claim skips CoVe + web (extract call only)', async () => {
+  let calls = 0;
+  const fakeFetch = (async () => {
+    calls++; // any call past the first (extract) would be a CoVe/web escalation
+    return new Response(
+      JSON.stringify({ content: [{ type: 'text', text: '{"claims":[{"claim":"Оборот ₾49,324 за июнь","action_relevant":true}]}' }] }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  const grounding = new Set(['49323.76']); // raw tool value; reply shows rounded 49,324
+  const r = await runLevel3('reply', 'sources', grounding, fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
+  expect(calls).toBe(1); // extract only — NO CoVe, NO web for a tool-grounded value
+  expect(r.failed).toHaveLength(0); // grounded → supported
+});
+
+test('isToolGrounded: numeric claim traces to sources (rounding-aware); no-number claim does not', () => {
+  const g = new Set(['49323.76', '13975']);
+  expect(isToolGrounded('Оборот ₾49,324', g)).toBe(true); // 49324 rounds to 49323.76
+  expect(isToolGrounded('Поступление £13,975', g)).toBe(true); // exact
+  expect(isToolGrounded('Оборот ₾50,000', g)).toBe(false); // no source rounds to 50000
+  expect(isToolGrounded('Paris is in France', g)).toBe(false); // no numbers → never auto-grounded
+  expect(isToolGrounded('₾49,324', new Set())).toBe(false); // empty grounding
 });

@@ -1,6 +1,20 @@
 import { extractClaims, L3_MAX_CLAIMS, type ExtractedClaim } from './claims.js';
 import { coveCheck, type CoveVerdict } from './cove.js';
 import { webVerify, type WebVerdict } from './web-verify.js';
+import { checkProvenance } from './gate.js';
+import { extractClaimedNumbers } from './numbers.js';
+
+// A claim is already TOOL-GROUNDED when it carries data-numbers and every one
+// traces to this turn's grounding set (exactly or as a rounding of a source
+// value — checkProvenance). The value came from a script, not the model, so
+// re-verifying it via CoVe/web is both wrong (private data isn't a web fact) and
+// the source of an API-call burst that rate-limits the turn. No-number claims are
+// never auto-grounded — those are the genuine external assertions L3 exists for.
+export function isToolGrounded(claim: string, grounding: Set<string>): boolean {
+  if (grounding.size === 0) return false;
+  if (extractClaimedNumbers(claim).length === 0) return false;
+  return checkProvenance(claim, grounding).grounded;
+}
 
 export const L3_MAX_WEB = 3;
 
@@ -53,6 +67,7 @@ export function aggregateVerdicts(outcomes: ClaimOutcome[]): Level3Result {
 export async function runLevel3(
   replyText: string,
   sourcesText: string,
+  grounding: Set<string> = new Set(),
   fetchImpl: typeof fetch = globalThis.fetch,
   env: Record<string, string | undefined> = process.env,
 ): Promise<Level3Result> {
@@ -63,6 +78,12 @@ export async function runLevel3(
   const outcomes: ClaimOutcome[] = [];
   let webBudget = L3_MAX_WEB;
   for (const c of claims.slice(0, L3_MAX_CLAIMS)) {
+    // Tool-grounded claims skip CoVe + web entirely — no API calls for values
+    // that already came from this turn's script/tool output.
+    if (isToolGrounded(c.claim, grounding)) {
+      outcomes.push({ claim: c.claim, action_relevant: c.action_relevant, cove: 'supported', web: null });
+      continue;
+    }
     let cove: CoveVerdict = 'uncertain';
     try { cove = (await coveCheck(c.claim, fetchImpl, env)).verdict; } catch { cove = 'uncertain'; }
     let web: WebVerdict | null = null;

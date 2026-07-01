@@ -57,6 +57,13 @@ const STREAM_IDLE_TIMEOUT_MS = 240_000;
  * version. Keeps a stubborn fabricator from looping forever.
  */
 const FACTUALITY_MAX_RETRIES = 2;
+// Char budget for the raw tool-output "sources" string handed to the prose judge
+// and L3. 8000 was too small for an agent that runs several data scripts a turn
+// (bybit-balance + networth + tax-ge + list-tx): the RELAYED script's output got
+// truncated out, so its own content read as "unsupported by tool output" and
+// bounced. A wider budget keeps every tool's output in view. The number-grounding
+// Set is separate and uncapped, so L3's tool-grounded skip is unaffected either way.
+const GROUNDING_TEXT_BUDGET = 32000;
 
 function log(msg: string): void {
   console.error(`[poll-loop] ${msg}`);
@@ -865,7 +872,7 @@ async function processQuery(
           for (const n of extractDataNumbers(event.output)) grounding.add(n);
           if (level >= 2) {
             const used = groundingText.reduce((a, s) => a + s.length, 0);
-            if (used < 8000) groundingText.push(event.output.slice(0, 8000 - used));
+            if (used < GROUNDING_TEXT_BUDGET) groundingText.push(event.output.slice(0, GROUNDING_TEXT_BUDGET - used));
           }
         }
       }
@@ -1007,7 +1014,7 @@ async function processQuery(
                 // DELIVERY (which is gated anyway) to verify it — a conscious
                 // latency-for-correctness tradeoff, same posture as the prose judge.
                 if (hasEnoughProse(event.text)) {
-                  const l3 = await runLevel3(event.text, sources);
+                  const l3 = await runLevel3(event.text, sources, grounding);
                   log(`Factuality L3: checked=${l3.checked} escalated=${l3.escalated} failed=${l3.failed.length}`);
                   if (l3.failed.length > 0 && l3Retries < FACTUALITY_MAX_RETRIES) {
                     l3Retries++;

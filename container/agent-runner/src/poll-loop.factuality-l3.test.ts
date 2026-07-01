@@ -15,6 +15,6 @@ test('runLevel3 surfaces a refuted action-relevant claim as failed', async () =>
       : '{"verdict":"contradicted","why":"way too high"}';
     return new Response(JSON.stringify({ content: [{ type: 'text', text }] }), { status: 200 });
   }) as unknown as typeof fetch;
-  const r = await runLevel3('reply', 'sources', fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
+  const r = await runLevel3('reply', 'sources', new Set(), fakeFetch, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
   expect(r.failed).toHaveLength(1);
 });
