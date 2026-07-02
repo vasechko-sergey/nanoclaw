@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { DATA_DIR, GROUPS_DIR } from './config.js';
+import { AGENTS_DIR, DATA_DIR, GROUPS_DIR } from './config.js';
 import { ensureContainerConfig } from './db/container-configs.js';
 import { log } from './log.js';
 import type { AgentGroup } from './types.js';
@@ -47,14 +47,24 @@ const DEFAULT_SETTINGS_JSON =
  * is likewise static and mounted read-only by `buildMounts()`. Nothing seeds
  * `CLAUDE.local.md`; per-group memory lives in `memories/` and CLAUDE.md.
  */
-export function initGroupFilesystem(group: AgentGroup): void {
+export function initGroupFilesystem(group: AgentGroup, opts?: { instructions?: string | null }): void {
   const initialized: string[] = [];
 
-  // 1. groups/<folder>/ — group memory + working dir
+  // 1. groups/<folder>/ — holds the materialized container.json (and, for
+  // not-yet-migrated groups, legacy code that buildMounts' cpSync fallback copies).
   const groupDir = path.resolve(GROUPS_DIR, group.folder);
   if (!fs.existsSync(groupDir)) {
     fs.mkdirSync(groupDir, { recursive: true });
     initialized.push('groupDir');
+  }
+
+  // 1b. When called from a CREATION flow (opts passed), seed the shared CODE root
+  // agents/<folder>/ so the new agent is born into the shared-code mount model.
+  // The defensive call from buildMounts() passes no opts and skips this, leaving a
+  // pre-existing legacy group on the cpSync fallback (never emptying its code).
+  if (opts) {
+    scaffoldAgentCode(group, opts.instructions);
+    initialized.push('agents/<folder> (shared code)');
   }
 
   // Ensure container_configs row exists in the DB. Idempotent — no-op if
@@ -92,6 +102,27 @@ export function initGroupFilesystem(group: AgentGroup): void {
       id: group.id,
       steps: initialized,
     });
+  }
+}
+
+/**
+ * Seed a new agent's shared CODE root: agents/<folder>/{CLAUDE.md, skills/, scripts/}.
+ * These are bind-mounted into every session container by buildMounts (shared-code
+ * model), so the agent's skill/script edits persist and are shared across its users.
+ *
+ * Idempotent: the code dirs are ensured (mkdir -p), and CLAUDE.md is written ONLY if
+ * absent — an agent's own edits to its persona (or Phase 1-3 migrated content) are
+ * never clobbered. CLAUDE.md imports the shared `@./INSTRUCTIONS.md`, then the
+ * caller-supplied persona (or a bare `# <name>` heading when none is given).
+ */
+export function scaffoldAgentCode(group: Pick<AgentGroup, 'folder' | 'name'>, instructions?: string | null): void {
+  const agentRoot = path.resolve(AGENTS_DIR, group.folder);
+  fs.mkdirSync(path.join(agentRoot, 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(agentRoot, 'scripts'), { recursive: true });
+  const claudeMd = path.join(agentRoot, 'CLAUDE.md');
+  if (!fs.existsSync(claudeMd)) {
+    const persona = instructions?.trim() ? `${instructions.trim()}\n` : `# ${group.name}\n`;
+    fs.writeFileSync(claudeMd, `@./INSTRUCTIONS.md\n\n${persona}`);
   }
 }
 

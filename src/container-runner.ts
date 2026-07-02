@@ -511,9 +511,22 @@ export function buildMounts(
     // (identity, same for every user) + node_modules are RO. The per-person
     // scripts/.env secret is mounted LAST, over the shared scripts/, so it stays
     // private to this person and never leaks through the shared source.
-    mounts.push({ hostPath: path.join(agentRoot, 'CLAUDE.md'), containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
-    mounts.push({ hostPath: path.join(agentRoot, 'skills'), containerPath: '/workspace/agent/skills', readonly: false });
-    mounts.push({ hostPath: path.join(agentRoot, 'scripts'), containerPath: '/workspace/agent/scripts', readonly: false });
+    //
+    // Each piece is existence-guarded: a partial agents/<folder> (mid-scaffold, or
+    // an agent that deleted its own skills/) degrades gracefully instead of Docker
+    // materializing a root-owned empty dir/file at a missing bind source.
+    const claudeSrc = path.join(agentRoot, 'CLAUDE.md');
+    if (fs.existsSync(claudeSrc)) {
+      mounts.push({ hostPath: claudeSrc, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
+    }
+    const skillsSrc = path.join(agentRoot, 'skills');
+    if (fs.existsSync(skillsSrc)) {
+      mounts.push({ hostPath: skillsSrc, containerPath: '/workspace/agent/skills', readonly: false });
+    }
+    const scriptsSrc = path.join(agentRoot, 'scripts');
+    if (fs.existsSync(scriptsSrc)) {
+      mounts.push({ hostPath: scriptsSrc, containerPath: '/workspace/agent/scripts', readonly: false });
+    }
     const sharedNodeModules = path.join(agentRoot, 'node_modules');
     if (fs.existsSync(sharedNodeModules)) {
       mounts.push({ hostPath: sharedNodeModules, containerPath: '/workspace/agent/node_modules', readonly: true });

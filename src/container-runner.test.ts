@@ -333,12 +333,30 @@ describe('buildMounts owner isolation', () => {
     expect(by('/workspace/agent')).toMatchObject({ hostPath: mem, readonly: false });
     expect(fs.existsSync(path.join(mem, 'CLAUDE.md'))).toBe(false);
     // Identity RO from the single shared source.
-    expect(by('/workspace/agent/CLAUDE.md')).toMatchObject({ hostPath: path.join(agentDir, 'CLAUDE.md'), readonly: true });
+    expect(by('/workspace/agent/CLAUDE.md')).toMatchObject({
+      hostPath: path.join(agentDir, 'CLAUDE.md'),
+      readonly: true,
+    });
     // skills + scripts RW from the shared source → the agent's edits persist.
     expect(by('/workspace/agent/skills')).toMatchObject({ hostPath: path.join(agentDir, 'skills'), readonly: false });
     expect(by('/workspace/agent/scripts')).toMatchObject({ hostPath: path.join(agentDir, 'scripts'), readonly: false });
     // Per-person .env overlays the shared scripts/ so the secret stays private.
     expect(by('/workspace/agent/scripts/.env')).toMatchObject({ hostPath: path.join(mem, '.env'), readonly: false });
+  });
+
+  it('shared-code model: a PARTIAL agents/<folder> degrades gracefully (no mount for a missing piece)', () => {
+    // agents/<folder> exists (→ shared-code) but skills/ is absent. buildMounts must
+    // NOT push a skills mount — else Docker would create a root-owned empty dir.
+    const agentDir = path.join(process.cwd(), 'agents', ISO_FOLDER);
+    fs.mkdirSync(path.join(agentDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(agentDir, 'CLAUDE.md'), '# identity');
+    // no skills/ dir
+
+    const mounts = mountsFor('isomnt');
+    const by = (p: string) => mounts.find((m) => m.containerPath === p);
+    expect(by('/workspace/agent/skills')).toBeUndefined(); // missing → guarded out
+    expect(by('/workspace/agent/scripts')).toBeDefined(); // present → mounted
+    expect(by('/workspace/agent/CLAUDE.md')).toBeDefined(); // present → mounted
   });
 
   it('shared-code model: symlinks per-agent skills from agents/<folder>/skills', () => {
