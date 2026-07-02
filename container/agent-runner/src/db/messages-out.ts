@@ -287,11 +287,10 @@ export function isOutboundSeq(seq: number): boolean {
 }
 
 /**
- * The `text` of an outbound message by seq (or null if the row/text is missing).
- * Used by `edit_message` to compare the current text against the proposed edit
- * so a near-total rewrite (delivering new content) can be refused. Reads the
- * original row's content — good enough as the correction baseline (re-edits of
- * the same bubble target the same chat seq, so this stays the anchor).
+ * The RAW original `text` of an outbound message by seq (or null if the row/text
+ * is missing) — the text as first sent, ignoring any later edits. The current
+ * baseline for `edit_message`'s replacement-gate is `getCurrentOutboundTextBySeq`
+ * (below), which layers edits on top of this.
  */
 export function getOutboundTextBySeq(seq: number): string | null {
   const row = getOutboundDb().prepare('SELECT content FROM messages_out WHERE seq = ?').get(seq) as
@@ -304,6 +303,47 @@ export function getOutboundTextBySeq(seq: number): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The CURRENT text of an outbound message by seq: the original text with the
+ * most recent edit applied (if any). `edit_message`'s replacement-gate must
+ * compare the proposed text against what the user CURRENTLY sees — not the
+ * frozen original — otherwise a run of small corrections to the same bubble
+ * accumulates against a stale anchor and a legitimate later fix gets rejected.
+ *
+ * Edits are written as SEPARATE rows (`{operation:'edit', messageId:<platformId>,
+ * text}`) that never mutate the original row, so the current text is the text of
+ * the newest edit row targeting this message's platform id, else the original.
+ * The only link back to the origin is that platform id (edit rows carry no seq),
+ * so we resolve it via `getMessageIdBySeq` and match. If it can't be resolved we
+ * return the original — degrading to the stricter original-baseline behavior,
+ * never a looser one.
+ */
+export function getCurrentOutboundTextBySeq(seq: number): string | null {
+  const original = getOutboundTextBySeq(seq);
+  const platformId = getMessageIdBySeq(seq);
+  if (!platformId) return original;
+  const rows = getOutboundDb()
+    .prepare(
+      `SELECT content FROM messages_out
+       WHERE kind = 'chat'
+         AND content LIKE '%"operation":"edit"%'
+         AND content LIKE ?
+       ORDER BY seq DESC`,
+    )
+    .all(`%${platformId}%`) as { content: string }[];
+  for (const r of rows) {
+    try {
+      const parsed = JSON.parse(r.content) as { operation?: string; messageId?: unknown; text?: unknown };
+      if (parsed.operation === 'edit' && parsed.messageId === platformId && typeof parsed.text === 'string') {
+        return parsed.text;
+      }
+    } catch {
+      // Skip an unparseable row; keep scanning older edits.
+    }
+  }
+  return original;
 }
 
 /**

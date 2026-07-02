@@ -12,9 +12,9 @@ import path from 'path';
 import { getCurrentInReplyTo } from '../current-batch.js';
 import { findByName, getAllDestinations } from '../destinations.js';
 import {
+  getCurrentOutboundTextBySeq,
   getLatestUserFacingOutboundSeq,
   getMessageIdBySeq,
-  getOutboundTextBySeq,
   getOutboundTimestampBySeq,
   getRoutingBySeq,
   isOutboundSeq,
@@ -321,9 +321,11 @@ export const editMessage: McpToolDefinition = {
     // old bubble — is delivering NEW content, which must be a new send_message,
     // not an edit. Editing an old message moves the new text back to that
     // message's timestamp, reordering the chat and hiding the update (the
-    // reported Scrooge bug). Refuse when the proposed text replaces most of the
-    // current one; small corrections and short messages pass. See edit-guard.ts.
-    const prevText = getOutboundTextBySeq(seq);
+    // reported Scrooge bug). Compare against the CURRENT text (original + any
+    // prior edits) so a run of small corrections doesn't accumulate against a
+    // stale anchor and reject a legitimate later fix. Small corrections and
+    // short messages pass. See edit-guard.ts.
+    const prevText = getCurrentOutboundTextBySeq(seq);
     if (prevText !== null && isReplacementEdit(prevText, text)) {
       return err(
         `That edit replaces most of message #${seq} — edit_message is only for correcting an inaccuracy ` +

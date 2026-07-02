@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from '../db/connection.js';
-import { getUndeliveredMessages, writeMessageOut } from '../db/messages-out.js';
+import { getCurrentOutboundTextBySeq, getUndeliveredMessages, writeMessageOut } from '../db/messages-out.js';
 import { setCurrentInReplyTo, clearCurrentInReplyTo } from '../current-batch.js';
 import { sendMessage, editMessage } from './core.js';
 
@@ -108,6 +108,57 @@ describe('edit_message targeting', () => {
     // No edit was queued — the replacement was refused, not written.
     const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
     expect(edit).toBeUndefined();
+  });
+
+  it('compares a re-edit against the CURRENT text, not the frozen original', async () => {
+    // A sequence of small corrections to the same bubble must not accumulate
+    // past the replacement threshold: the baseline is what the user sees NOW
+    // (original + latest edit), not the original text that was long since fixed.
+    const original = 'a'.repeat(50);
+    const seq = writeMessageOut({
+      id: 'orig', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: original }),
+    });
+
+    // Edit 1: first half a→b. changeRatio vs original = 0.5 ≤ 0.6 → allowed.
+    const e1 = 'b'.repeat(25) + 'a'.repeat(25);
+    const r1 = await editMessage.handler({ messageId: seq, text: e1 });
+    expect(r1.isError).toBeUndefined();
+
+    // Edit 2: second half a→c. vs the CURRENT text (e1) changeRatio = 0.5 → a
+    // legitimate correction. But vs the frozen ORIGINAL (50×a) it's 1.0 — the
+    // old original-baseline gate would have rejected it. Must be allowed now.
+    const e2 = 'b'.repeat(25) + 'c'.repeat(25);
+    const r2 = await editMessage.handler({ messageId: seq, text: e2 });
+    expect(r2.isError).toBeUndefined();
+
+    const edits = getUndeliveredMessages().filter((m) => JSON.parse(m.content).operation === 'edit');
+    expect(edits).toHaveLength(2);
+    expect(JSON.parse(edits[edits.length - 1].content).text).toBe(e2);
+  });
+
+  it('getCurrentOutboundTextBySeq returns the latest edit text, else the original', () => {
+    const seq = writeMessageOut({
+      id: 'orig', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'original body long enough to matter here' }),
+    });
+    // No edits yet → the original text.
+    expect(getCurrentOutboundTextBySeq(seq)).toBe('original body long enough to matter here');
+
+    // Mirror what the handler writes: an edit row keyed by the target's platform id.
+    // getMessageIdBySeq(seq) with no `delivered` row falls back to the internal id.
+    writeMessageOut({
+      id: 'e1', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2', thread_id: null,
+      content: JSON.stringify({ operation: 'edit', messageId: 'orig', text: 'the corrected body text here' }),
+    });
+    expect(getCurrentOutboundTextBySeq(seq)).toBe('the corrected body text here');
+
+    // A newer edit supersedes the older one.
+    writeMessageOut({
+      id: 'e2', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2', thread_id: null,
+      content: JSON.stringify({ operation: 'edit', messageId: 'orig', text: 'the twice-corrected body text' }),
+    });
+    expect(getCurrentOutboundTextBySeq(seq)).toBe('the twice-corrected body text');
   });
 
   it('refuses an omit-id "edit my last" when the last message is stale', async () => {
