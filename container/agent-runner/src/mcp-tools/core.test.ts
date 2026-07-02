@@ -177,3 +177,61 @@ describe('edit_message targeting', () => {
     expect(edit).toBeUndefined();
   });
 });
+
+describe('edit_message gate telemetry', () => {
+  const gateEvents = () =>
+    getUndeliveredMessages()
+      .map((m) => JSON.parse(m.content))
+      .filter((c) => c.action === 'log_gate_event');
+
+  it('logs an allowed edit with its change ratio and lengths', async () => {
+    writeMessageOut({
+      id: 'm', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'a'.repeat(50) }),
+    });
+    // 20/50 chars differ → ratio 0.4, allowed.
+    await editMessage.handler({ text: 'b'.repeat(20) + 'a'.repeat(30) });
+    const ev = gateEvents();
+    expect(ev).toHaveLength(1);
+    expect(ev[0].decision).toBe('allowed');
+    expect(ev[0].ratio).toBeGreaterThan(0);
+    expect(ev[0].ratio).toBeLessThan(0.6);
+    expect(ev[0].nextLen).toBe(50);
+    expect(ev[0].omitId).toBe(true);
+  });
+
+  it('logs a refused replacement with the ratio', async () => {
+    const seq = writeMessageOut({
+      id: 'm', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'a'.repeat(50) }),
+    });
+    await editMessage.handler({ messageId: seq, text: 'b'.repeat(50) });
+    const ev = gateEvents();
+    expect(ev.some((e) => e.decision === 'refused_replacement' && e.ratio > 0.6 && e.omitId === false)).toBe(true);
+  });
+
+  it('logs a refused stale omit-id edit with its age', async () => {
+    const seq = writeMessageOut({
+      id: 'm', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'сообщение достаточной длины для гейта здесь' }),
+    });
+    const old = new Date(Date.now() - 2 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    getOutboundDb().prepare('UPDATE messages_out SET timestamp = ? WHERE seq = ?').run(old, seq);
+    await editMessage.handler({ text: 'мелкая правка' });
+    const ev = gateEvents();
+    expect(ev.some((e) => e.decision === 'refused_stale' && e.ageMs > 3600 * 1000 && e.omitId === true)).toBe(true);
+  });
+
+  it('truncates stored text to the cap', async () => {
+    writeMessageOut({
+      id: 'm', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'x'.repeat(50) }),
+    });
+    // A long edit (this one refuses as a replacement — truncation applies to
+    // the stored text either way; we assert the cap, not the decision).
+    await editMessage.handler({ text: 'x'.repeat(48) + 'y'.repeat(400) });
+    const ev = gateEvents();
+    expect(ev[0].nextLen).toBe(448); // real length recorded
+    expect(ev[0].next.length).toBe(200); // stored text capped
+  });
+});

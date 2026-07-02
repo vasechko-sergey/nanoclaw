@@ -61,16 +61,27 @@ export function changeRatio(a: string, b: string): number {
 }
 
 /**
- * True when `next` is a replacement of `prev` rather than a correction — i.e.
- * the edit should have been a new message. Short messages (both ends below
- * MIN_COMPARE_LEN) are exempt; an empty `prev` is exempt (nothing to compare).
+ * Classify an edit: the change ratio (or null when exempt) and whether it counts
+ * as a replacement. Short messages (both ends below MIN_COMPARE_LEN) and an empty
+ * `prev` are exempt — nothing meaningful to compare — and report a null ratio so
+ * telemetry can tell "not evaluated" from "evaluated at 0". Single source of
+ * truth for the gate decision AND its logged ratio.
  */
-export function isReplacementEdit(prev: string, next: string): boolean {
+export function classifyReplacement(prev: string, next: string): { ratio: number | null; isReplacement: boolean } {
   const p = prev.trim();
   const n = next.trim();
-  if (p.length === 0) return false;
-  if (Math.max(p.length, n.length) < MIN_COMPARE_LEN) return false;
-  return changeRatio(p, n) > MAX_CHANGE_RATIO;
+  if (p.length === 0) return { ratio: null, isReplacement: false };
+  if (Math.max(p.length, n.length) < MIN_COMPARE_LEN) return { ratio: null, isReplacement: false };
+  const ratio = changeRatio(p, n);
+  return { ratio, isReplacement: ratio > MAX_CHANGE_RATIO };
+}
+
+/**
+ * True when `next` is a replacement of `prev` rather than a correction — i.e.
+ * the edit should have been a new message. Delegates to classifyReplacement.
+ */
+export function isReplacementEdit(prev: string, next: string): boolean {
+  return classifyReplacement(prev, next).isReplacement;
 }
 
 /** Space-optimized Levenshtein (two rolling rows → O(min(n,m)) memory). */

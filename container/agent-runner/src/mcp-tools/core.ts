@@ -21,7 +21,8 @@ import {
   writeMessageOut,
 } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
-import { humanizeAge, isReplacementEdit, isStaleLastEdit } from './edit-guard.js';
+import { classifyReplacement, humanizeAge, isStaleLastEdit, parseSqliteUtcMs } from './edit-guard.js';
+import { emitGateEvent, type GateEvent } from './gate-events.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -285,8 +286,18 @@ export const editMessage: McpToolDefinition = {
     const text = args.text as string;
     if (!text) return err('text is required');
 
+    // Best-effort telemetry — a logging failure must never break the edit.
+    const logGate = (ev: GateEvent): void => {
+      try {
+        emitGateEvent(ev);
+      } catch (e) {
+        log(`gate-event emit failed: ${e}`);
+      }
+    };
+
+    const omitId = args.messageId === undefined || args.messageId === null || args.messageId === '';
     let seq: number;
-    if (args.messageId === undefined || args.messageId === null || args.messageId === '') {
+    if (omitId) {
       const last = getLatestUserFacingOutboundSeq();
       if (last === null) return err('No recent message to edit');
       // "Edit my last message" (no id) is for a FRESH fix. If the latest message
@@ -295,10 +306,11 @@ export const editMessage: McpToolDefinition = {
       // reorder the chat. Refuse and make the target explicit.
       const lastTs = getOutboundTimestampBySeq(last);
       if (lastTs && isStaleLastEdit(lastTs, Date.now())) {
-        const age = humanizeAge(Date.now() - new Date(lastTs.replace(' ', 'T') + 'Z').getTime());
+        const ageMs = Date.now() - parseSqliteUtcMs(lastTs);
+        logGate({ decision: 'refused_stale', seq: last, omitId: true, ageMs, prev: getCurrentOutboundTextBySeq(last), next: text });
         return err(
-          `Your last message is ${age} old — "edit my last message" is only for a fresh fix, not for ` +
-            `speaking now. To correct that specific old message pass its #id explicitly; to say something ` +
+          `Your last message is ${humanizeAge(ageMs)} old — "edit my last message" is only for a fresh fix, ` +
+            `not for speaking now. To correct that specific old message pass its #id explicitly; to say something ` +
             `new, use send_message.`,
         );
       }
@@ -314,6 +326,7 @@ export const editMessage: McpToolDefinition = {
     // to a user/inbound message (getMessageIdBySeq checks inbound too) — editing
     // that would rewrite the user's bubble. Refuse; nudge toward omit-id.
     if (!isOutboundSeq(seq)) {
+      logGate({ decision: 'refused_not_own', seq, omitId, next: text });
       return err(`#${seq} isn't a message you sent — you can only edit your own. Omit messageId to edit your last message.`);
     }
 
@@ -326,7 +339,9 @@ export const editMessage: McpToolDefinition = {
     // stale anchor and reject a legitimate later fix. Small corrections and
     // short messages pass. See edit-guard.ts.
     const prevText = getCurrentOutboundTextBySeq(seq);
-    if (prevText !== null && isReplacementEdit(prevText, text)) {
+    const cls = classifyReplacement(prevText ?? '', text);
+    if (prevText !== null && cls.isReplacement) {
+      logGate({ decision: 'refused_replacement', seq, omitId, ratio: cls.ratio, prev: prevText, next: text });
       return err(
         `That edit replaces most of message #${seq} — edit_message is only for correcting an inaccuracy ` +
           `(a wrong number, a typo, a bad clause). New content — a list, a fresh answer, an addition — must be a ` +
@@ -352,6 +367,7 @@ export const editMessage: McpToolDefinition = {
       content: JSON.stringify({ operation: 'edit', messageId: platformId, text }),
     });
 
+    logGate({ decision: 'allowed', seq, omitId, ratio: cls.ratio, prev: prevText, next: text });
     log(`edit_message: #${seq} → ${platformId}`);
     return ok(`Message edit queued for #${seq}`);
   },

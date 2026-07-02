@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test';
 
 import {
   changeRatio,
+  classifyReplacement,
   isReplacementEdit,
   parseSqliteUtcMs,
   isStaleLastEdit,
@@ -55,6 +56,33 @@ describe('isReplacementEdit', () => {
 
   it('exempts an empty prior text (nothing to compare)', () => {
     expect(isReplacementEdit('', 'a brand new long-enough message body here')).toBe(false);
+  });
+});
+
+describe('classifyReplacement', () => {
+  it('returns the change ratio alongside the replacement verdict', () => {
+    const prev = 'Контекст сброшен. Начинаем с чистого листа.';
+    const next =
+      'Балансы на 1 июля: SafePal earn 855.16$, SafePal wallet 66.65$, ' +
+      'Telegram wallet 1712$, Bybit 340$, итого около 2973$ по кошелькам.';
+    const c = classifyReplacement(prev, next);
+    expect(c.isReplacement).toBe(true);
+    expect(c.ratio).not.toBeNull();
+    expect(c.ratio!).toBeGreaterThan(0.6);
+  });
+
+  it('reports a null ratio when exempt (short pair or empty prev)', () => {
+    expect(classifyReplacement('oops', 'corrected')).toEqual({ ratio: null, isReplacement: false });
+    expect(classifyReplacement('', 'a brand new long-enough message body here')).toEqual({
+      ratio: null,
+      isReplacement: false,
+    });
+  });
+
+  it('agrees with isReplacementEdit', () => {
+    const prev = 'a'.repeat(50);
+    const next = 'b'.repeat(50);
+    expect(isReplacementEdit(prev, next)).toBe(classifyReplacement(prev, next).isReplacement);
   });
 });
 
