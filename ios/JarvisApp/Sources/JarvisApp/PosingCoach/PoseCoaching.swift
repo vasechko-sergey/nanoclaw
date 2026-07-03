@@ -63,16 +63,14 @@ public enum PoseCoach {
             .prefix(maxSuggestions)
         guard !picked.isEmpty else { return PoseGuidance(hints: [], ghost: nil, arrows: []) }
         var deltas: [BodyJoint: CGPoint] = [:]
-        var changed: [BodyJoint] = []
         var hints: [Hint] = []
         for sug in picked {
             hints.append(Hint(kind: .pose, severity: .info, text: sug.text, code: sug.code))
             for (j, p) in sug.targetDeltas { deltas[j] = p }
-            changed.append(contentsOf: sug.changedJoints)
         }
         let ghost = applyDeltas(s, deltas)
-        let arrows: [(CGPoint, CGPoint)] = changed.compactMap { j in
-            guard let from = s.point(j)?.position, let to = deltas[j] else { return nil }
+        let arrows: [(CGPoint, CGPoint)] = deltas.compactMap { (j, to) in
+            guard let from = s.point(j)?.position else { return nil }
             return (from, to)
         }
         return PoseGuidance(hints: hints, ghost: ghost, arrows: arrows)

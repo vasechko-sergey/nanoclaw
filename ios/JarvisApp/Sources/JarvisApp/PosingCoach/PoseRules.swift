@@ -54,11 +54,13 @@ public struct KneeBendRule: PoseRule {
 /// C: ankles side by side (same level, close in x) → stagger one foot forward.
 public struct FeetStaggerRule: PoseRule {
     public init() {}
+    static let sameLevelTol: CGFloat = 0.02
+    static let closeXTol: CGFloat = 0.12
     public func evaluate(_ s: Skeleton) -> PoseSuggestion? {
         guard let la = s.point(.leftAnkle)?.position, let ra = s.point(.rightAnkle)?.position
         else { return nil }
-        let sameLevel = abs(la.y - ra.y) < 0.02
-        let close = abs(la.x - ra.x) < 0.12
+        let sameLevel = abs(la.y - ra.y) < Self.sameLevelTol
+        let close = abs(la.x - ra.x) < Self.closeXTol
         guard sameLevel && close else { return nil }
         let target = CGPoint(x: la.x - 0.04, y: la.y + 0.03) // forward + slightly lower
         return PoseSuggestion(code: "feet.stagger", text: "Одну ногу чуть вперёд",
