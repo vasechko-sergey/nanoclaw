@@ -31,7 +31,7 @@ public enum CompositionEngine {
     }
 
     static let headroomTight = 0.05
-    static let headroomLoose = 0.22
+    static let headroomLoose = 0.28
 
     static func headroomHint(_ s: Skeleton) -> Hint? {
         guard let top = s.topOfHeadY() else { return nil }
@@ -40,7 +40,13 @@ public enum CompositionEngine {
                         text: "Мало места над головой — приподними камеру",
                         code: "headroom.tight")
         }
-        if top > headroomLoose {
+        // "Too much space above" only makes sense for a tight head/upper-body crop.
+        // For half/full-body framings (hips/knees/ankles in frame) big headroom is
+        // expected — nagging there is the common false positive.
+        let lowerBodyVisible = s.point(.leftHip) != nil || s.point(.rightHip) != nil
+            || s.point(.leftKnee) != nil || s.point(.rightKnee) != nil
+            || s.point(.leftAnkle) != nil || s.point(.rightAnkle) != nil
+        if top > headroomLoose && !lowerBodyVisible {
             return Hint(kind: .composition, severity: .info,
                         text: "Много пустоты сверху — опусти камеру",
                         code: "headroom.loose")

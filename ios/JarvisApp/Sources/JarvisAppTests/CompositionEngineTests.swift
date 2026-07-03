@@ -37,6 +37,18 @@ final class CompositionEngineTests: XCTestCase {
         XCTAssertFalse(hints.contains { $0.code.hasPrefix("headroom") })
     }
 
+    func test_headroom_loose_suppressed_for_full_body() {
+        // Nose low in frame but hips/knees visible = full/half body — big headroom is
+        // expected, so the "too much space above" hint must NOT fire.
+        let s = Skeleton(joints: [
+            .nose: JointPoint(position: CGPoint(x: 0.5, y: 0.30), confidence: 0.9),
+            .leftHip: JointPoint(position: CGPoint(x: 0.45, y: 0.7), confidence: 0.8),
+            .rightHip: JointPoint(position: CGPoint(x: 0.55, y: 0.7), confidence: 0.8),
+        ])
+        let hints = CompositionEngine.hints(skeleton: s, frame: frame())
+        XCTAssertFalse(hints.contains { $0.code == "headroom.loose" })
+    }
+
     func test_knees_visible_ankles_missing_warns_crop() {
         let s = Skeleton(joints: [
             .leftKnee: JointPoint(position: CGPoint(x: 0.45, y: 0.8), confidence: 0.8),
