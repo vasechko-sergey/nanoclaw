@@ -9,7 +9,11 @@ struct PosingOverlay: View {
     var rollDegrees: Double = 0
 
     private static let levelGreen = Color(red: 0.24, green: 0.86, blue: 0.52)
-    private var isLevel: Bool { abs(tiltDegrees) <= CompositionEngine.tiltThresholdDegrees }
+    /// Tight window where the horizon counts as truly level (line turns green).
+    private static let levelTolerance = 1.0
+    /// Show the line to help you level within the working band; green only when exact.
+    private var showLine: Bool { abs(tiltDegrees) <= CompositionEngine.tiltThresholdDegrees }
+    private var isLevel: Bool { abs(tiltDegrees) <= Self.levelTolerance }
 
     var body: some View {
         ZStack {
@@ -29,9 +33,9 @@ struct PosingOverlay: View {
             // raw roll — so it lies horizontal in the user's view in ANY device orientation
             // (the UI is portrait-locked, so we can't rely on UI-space "horizontal").
             // Beyond tolerance the line hides and the "Выровняй горизонт" text hint takes over.
-            if isLevel {
+            if showLine {
                 Rectangle()
-                    .fill(Self.levelGreen)
+                    .fill(isLevel ? Self.levelGreen : Color.white.opacity(0.85))
                     .frame(width: 160, height: 2)
                     .rotationEffect(.degrees(-rollDegrees))
                     .animation(.linear(duration: 0.08), value: rollDegrees)
