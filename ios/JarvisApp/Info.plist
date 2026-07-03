@@ -42,6 +42,8 @@
 	<string>Геолокация передаётся агенту как контекст</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Микрофон нужен для голосового ввода сообщений Jarvis</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Чтобы сохранять снятые в помощнике по позированию фото в галерею</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Распознавание речи превращает ваш голос в текст сообщения</string>
 	<key>UIBackgroundModes</key>

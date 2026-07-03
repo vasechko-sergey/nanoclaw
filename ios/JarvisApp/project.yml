@@ -49,6 +49,7 @@ targets:
         NSHealthShareUsageDescription: "Данные активности и сна передаются агенту как контекст"
         NSHealthUpdateUsageDescription: "Данные активности передаются агенту как контекст"
         NSCameraUsageDescription: "Камера нужна для съёмки, вложений и подсказок по позированию"
+        NSPhotoLibraryAddUsageDescription: "Чтобы сохранять снятые в помощнике по позированию фото в галерею"
         NSMicrophoneUsageDescription: "Микрофон нужен для голосового ввода сообщений Jarvis"
         NSSpeechRecognitionUsageDescription: "Распознавание речи превращает ваш голос в текст сообщения"
         NSCalendarsUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
@@ -73,7 +74,7 @@ targets:
         # reports both to the host on connect (auth envelope) — so the running
         # build is knowable server-side, not guessed. Run `xcodegen generate` after.
         MARKETING_VERSION: "1.20.0"
-        CURRENT_PROJECT_VERSION: "83"
+        CURRENT_PROJECT_VERSION: "84"
 
   JarvisUITests:
     type: bundle.ui-testing
