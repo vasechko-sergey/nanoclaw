@@ -87,6 +87,7 @@
 		6C12B47D35E55D7E04E09F4A /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F4B9D1F796C301C15ED1A3D /* AppSettings.swift */; };
 		6D8495EB5E5BBEC56CF69D29 /* StoredAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D4FF344A7F45A86D8241127 /* StoredAttachment.swift */; };
 		71563F3FE9AB291D623066B4 /* HappyPathE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */; };
+		72D18D9F22B3BB7DC10B1F1C /* PoseDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E23E65C393BB1CAEC96D9E3 /* PoseDetector.swift */; };
 		73B70554FE102A25FBBF7E6B /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79D4272E5619C20A18D50D9 /* Log.swift */; };
 		7538B26F3F54F0A20083FC22 /* ExerciseBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A07127DD756653FDA997A10 /* ExerciseBannerView.swift */; };
 		776CC332C08FABE24DB90627 /* AgentIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7602CA89C5703F581DB155 /* AgentIdentityTests.swift */; };
@@ -181,6 +182,7 @@
 		E7164107E2BB7BC0D8A356CB /* WorkoutPlanDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87683378CBFC1F9C7E4CEBC6 /* WorkoutPlanDecodeTests.swift */; };
 		E76647B937E3C7A455964FC8 /* WorkoutRunnerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 356D5EEBE95E4BA3082109E3 /* WorkoutRunnerLogicTests.swift */; };
 		E772C83F0C3EC1AFB1D8C7A7 /* FocusSetCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0C8F23441F1DD108E2C0EE /* FocusSetCard.swift */; };
+		E9F4D1DDEDE7F39D468EF493 /* PoseDetectorMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 295E45CDEC147280A8DC9A24 /* PoseDetectorMappingTests.swift */; };
 		EA5F7794D8CE0B26CC3A3D66 /* StateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF942308460AF6C2A8AE638E /* StateService.swift */; };
 		EA9AB1DF3F520257C5926611 /* NotificationCategories.swift in Sources */ = {isa = PBXBuildFile; fileRef = D159BB33D62E136CB6B980D0 /* NotificationCategories.swift */; };
 		EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 407AF8586506D0610BCD4DC7 /* Workout.swift */; };
@@ -246,6 +248,7 @@
 		2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingScenariosE2ETests.swift; sourceTree = "<group>"; };
 		26BA94A49F1811952082ACD1 /* HintStabilizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HintStabilizerTests.swift; sourceTree = "<group>"; };
 		294C253860B67EF3201B2370 /* WorkoutInbound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInbound.swift; sourceTree = "<group>"; };
+		295E45CDEC147280A8DC9A24 /* PoseDetectorMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseDetectorMappingTests.swift; sourceTree = "<group>"; };
 		2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HappyPathE2ETests.swift; sourceTree = "<group>"; };
 		2AF10B991F6600D17760B644 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2B40F32A70A80FF764EB592B /* HealthBackgroundTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBackgroundTask.swift; sourceTree = "<group>"; };
@@ -308,6 +311,7 @@
 		6B165040849DF187E7D1113C /* OrbInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInputBar.swift; sourceTree = "<group>"; };
 		6C18FEBC87883D1730806373 /* ActiveAgentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAgentState.swift; sourceTree = "<group>"; };
 		6C904740E5DA9FD762F5645C /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
+		6E23E65C393BB1CAEC96D9E3 /* PoseDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseDetector.swift; sourceTree = "<group>"; };
 		6F2F23DBFF6A1610BEE2FD31 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		6FD66A2437F0B2BEBD7D10FA /* ChatListItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListItemTests.swift; sourceTree = "<group>"; };
 		702ED902868F80C581339CA0 /* CompositionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionEngine.swift; sourceTree = "<group>"; };
@@ -471,6 +475,7 @@
 			children = (
 				702ED902868F80C581339CA0 /* CompositionEngine.swift */,
 				C4AAC1A2BCFBCA4F46ECB815 /* HintStabilizer.swift */,
+				6E23E65C393BB1CAEC96D9E3 /* PoseDetector.swift */,
 				52C019FC7A385453DA66AA97 /* PosingTypes.swift */,
 			);
 			path = PosingCoach;
@@ -607,6 +612,7 @@
 				DA9F0E05EDBF7FC722A11D56 /* NotificationReplySenderTests.swift */,
 				6316B6B9C92A4FBA72FB5739 /* NotificationTapRouterTests.swift */,
 				F278DA68DFA8B5D2C25D8EB3 /* PendingNotificationsTests.swift */,
+				295E45CDEC147280A8DC9A24 /* PoseDetectorMappingTests.swift */,
 				8552926E84000A29C89696E9 /* PosingTypesTests.swift */,
 				7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */,
 				5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */,
@@ -995,6 +1001,7 @@
 				E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */,
 				E3F90FEA5F2BAB9EFF947C53 /* PendingNotifications.swift in Sources */,
 				A2C390C762DBE686BA825819 /* PendingRefreshTask.swift in Sources */,
+				72D18D9F22B3BB7DC10B1F1C /* PoseDetector.swift in Sources */,
 				B6D3EAD5FB2E1798919D9639 /* PosingTypes.swift in Sources */,
 				D8C071DDEDA0C58A157A3EA7 /* ProactiveDispatcher.swift in Sources */,
 				98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */,
@@ -1081,6 +1088,7 @@
 				31B5B48EF90C4D26FBEBE745 /* NotificationTapRouterTests.swift in Sources */,
 				990A6AC60FEA355802A51AA1 /* PendingNotificationsTests.swift in Sources */,
 				BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */,
+				E9F4D1DDEDE7F39D468EF493 /* PoseDetectorMappingTests.swift in Sources */,
 				04F5E7368F123E28FBD32ED4 /* PosingTypesTests.swift in Sources */,
 				1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */,
 				D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */,
