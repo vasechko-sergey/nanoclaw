@@ -11,9 +11,15 @@ public final class CameraSession: NSObject, ObservableObject {
     /// Vision body-pose throughput (frames processed per second). Measured on the
     /// capture queue where `detect` actually runs, so it reflects the real pipeline rate.
     @Published public private(set) var fps: Int = 0
+    /// Current optical/digital zoom factor (1.0 = wide default).
+    @Published public private(set) var zoomFactor: CGFloat = 1
     public let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "posing.camera")
     private var configured = false
+    private var device: AVCaptureDevice?
+
+    /// Upper bound we expose to the pinch gesture (device max can be huge/soft-digital).
+    private let maxUserZoom: CGFloat = 8
 
     // Touched only from the serial capture queue in captureOutput — single-threaded there.
     private nonisolated(unsafe) var frameCount = 0
@@ -47,6 +53,22 @@ public final class CameraSession: NSObject, ObservableObject {
         queue.async { if s.isRunning { s.stopRunning() } }
     }
 
+    /// Set zoom, clamped to the device's range (capped at `maxUserZoom`).
+    public func setZoom(_ factor: CGFloat) {
+        guard let device else { return }
+        let lo = device.minAvailableVideoZoomFactor
+        let hi = min(device.maxAvailableVideoZoomFactor, maxUserZoom)
+        let clamped = max(lo, min(factor, hi))
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = clamped
+            device.unlockForConfiguration()
+            zoomFactor = clamped
+        } catch {
+            // Ignore transient lock failures; zoom is non-critical.
+        }
+    }
+
     private func configureIfNeeded() {
         guard !configured else { return }
         configured = true
@@ -55,6 +77,7 @@ public final class CameraSession: NSObject, ObservableObject {
         if let dev = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
            let input = try? AVCaptureDeviceInput(device: dev), session.canAddInput(input) {
             session.addInput(input)
+            device = dev
         }
         let out = AVCaptureVideoDataOutput()
         out.alwaysDiscardsLateVideoFrames = true

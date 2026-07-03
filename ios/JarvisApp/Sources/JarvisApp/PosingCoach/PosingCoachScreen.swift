@@ -8,6 +8,7 @@ public struct PosingCoachScreen: View {
     @State private var stabilizer = HintStabilizer()
     @State private var hints: [Hint] = []
     @State private var frameSize: CGSize = .zero
+    @State private var zoomBase: CGFloat = 1
 
     public init() {}
 
@@ -24,6 +25,11 @@ public struct PosingCoachScreen: View {
                                 .font(.title).foregroundStyle(.white.opacity(0.9))
                         }
                         Spacer()
+                        Text(String(format: "%.1f×", camera.zoomFactor))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(.black.opacity(0.45), in: Capsule())
                         Text("\(camera.fps) fps")
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(.white)
@@ -34,6 +40,12 @@ public struct PosingCoachScreen: View {
                     Spacer()
                 }
             }
+            .contentShape(Rectangle())
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { scale in camera.setZoom(zoomBase * scale) }
+                    .onEnded { _ in zoomBase = camera.zoomFactor }
+            )
             .onAppear { frameSize = geo.size; camera.start(); tilt.start() }
             .onChange(of: geo.size) { _, newValue in frameSize = newValue }
             .onDisappear { camera.stop(); tilt.stop() }
