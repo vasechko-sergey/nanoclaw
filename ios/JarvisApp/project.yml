@@ -48,7 +48,7 @@ targets:
         NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"
         NSHealthShareUsageDescription: "Данные активности и сна передаются агенту как контекст"
         NSHealthUpdateUsageDescription: "Данные активности передаются агенту как контекст"
-        NSCameraUsageDescription: "Камера нужна, чтобы прикреплять снимки к сообщениям Jarvis"
+        NSCameraUsageDescription: "Камера нужна для съёмки, вложений и подсказок по позированию"
         NSMicrophoneUsageDescription: "Микрофон нужен для голосового ввода сообщений Jarvis"
         NSSpeechRecognitionUsageDescription: "Распознавание речи превращает ваш голос в текст сообщения"
         NSCalendarsUsageDescription: "Ближайшее событие календаря передаётся агенту как контекст"
@@ -72,8 +72,8 @@ targets:
         # per feature, CURRENT_PROJECT_VERSION on every build you install. The app
         # reports both to the host on connect (auth envelope) — so the running
         # build is knowable server-side, not guessed. Run `xcodegen generate` after.
-        MARKETING_VERSION: "1.19.2"
-        CURRENT_PROJECT_VERSION: "79"
+        MARKETING_VERSION: "1.20.0"
+        CURRENT_PROJECT_VERSION: "80"
 
   JarvisUITests:
     type: bundle.ui-testing
