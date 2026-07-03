@@ -109,6 +109,7 @@
 		8531C905F9FA67452EC50A43 /* MessageTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */; };
 		855DBD4D65B38DEAF8208626 /* ChatListItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A007C4C73B5CD2D3AC048B /* ChatListItem.swift */; };
 		858C56E208CC44A2A7210E9B /* InboundDispatcherV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7F32FF80D3E90C60D06FDC3 /* InboundDispatcherV2.swift */; };
+		86D4DB8EB6F585F7C73FBAFF /* SkeletonSmootherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27DD6B64B0DEA1189138561 /* SkeletonSmootherTests.swift */; };
 		872DB653F4038C6F59322908 /* CameraSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB933588EEFCE16E36BD146 /* CameraSession.swift */; };
 		87AD40BFC10B1D04342B5E9D /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83BBF8E04395E33F04CDE186 /* EmojiPickerView.swift */; };
 		88708A700369B47D5472A1C2 /* OrbHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B254569C52137C9E716B3DCD /* OrbHomeView.swift */; };
@@ -137,6 +138,7 @@
 		A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB360836F87EDA3890F1E5B /* HrSpikeDetector.swift */; };
 		A49EE6DDF7DC25A2C72175B3 /* WorkoutCardIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0383120D36D58F5C1BE35994 /* WorkoutCardIntegrationTests.swift */; };
 		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
+		A931F871D560A422B4A32533 /* PoseSmoothing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F276D6227596883D564CA3B8 /* PoseSmoothing.swift */; };
 		AB14A705BBEB71BA032EC292 /* AppV2Bootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */; };
 		AB4EE93B40C86DA9562B6112 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4872976D5AE47EAE125433FA /* ServerConfig.swift */; };
 		AC192F428D673CBF7E4941F8 /* PoseRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B4C9B330457301981311EA /* PoseRulesTests.swift */; };
@@ -426,7 +428,9 @@
 		F0C84294434D6D5A3845BD5D /* HealthUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthUpload.swift; sourceTree = "<group>"; };
 		F236228C8C83CFFE21712C2B /* WorkoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPreviewView.swift; sourceTree = "<group>"; };
 		F25916E3D90DB6728E543810 /* LoggedSetChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggedSetChips.swift; sourceTree = "<group>"; };
+		F276D6227596883D564CA3B8 /* PoseSmoothing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseSmoothing.swift; sourceTree = "<group>"; };
 		F278DA68DFA8B5D2C25D8EB3 /* PendingNotificationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNotificationsTests.swift; sourceTree = "<group>"; };
+		F27DD6B64B0DEA1189138561 /* SkeletonSmootherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonSmootherTests.swift; sourceTree = "<group>"; };
 		F38E1835A732AD75F82D9CEF /* AgentIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIdentity.swift; sourceTree = "<group>"; };
 		F4212E96E265F732C0CA6A0F /* StateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateModel.swift; sourceTree = "<group>"; };
 		F4800B2F3554B52EE041BEAD /* VoiceLoopController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoopController.swift; sourceTree = "<group>"; };
@@ -503,6 +507,7 @@
 				6E23E65C393BB1CAEC96D9E3 /* PoseDetector.swift */,
 				3961B78FC3853A6B5FE8725F /* PoseGeometry.swift */,
 				439EDD296F2981B41244EB48 /* PoseRules.swift */,
+				F276D6227596883D564CA3B8 /* PoseSmoothing.swift */,
 				8D3FA0465EB5ED703BBBB027 /* PosingCoachScreen.swift */,
 				51E66F3C513D114532818A0B /* PosingOverlay.swift */,
 				52C019FC7A385453DA66AA97 /* PosingTypes.swift */,
@@ -653,6 +658,7 @@
 				BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */,
 				2250C57E19EC871F52553D27 /* ServerConfigTests.swift */,
 				BC64D6340917C38B04005455 /* SetLogQueueTests.swift */,
+				F27DD6B64B0DEA1189138561 /* SkeletonSmootherTests.swift */,
 				72069FC546766200DF7310C7 /* StateBoardViewTests.swift */,
 				A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */,
 				E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */,
@@ -1040,6 +1046,7 @@
 				72D18D9F22B3BB7DC10B1F1C /* PoseDetector.swift in Sources */,
 				EB2F42609A67C60505B51A67 /* PoseGeometry.swift in Sources */,
 				7C4ED462D05C8F190CB4C936 /* PoseRules.swift in Sources */,
+				A931F871D560A422B4A32533 /* PoseSmoothing.swift in Sources */,
 				7B99819DADE64DD76D06939B /* PosingCoachScreen.swift in Sources */,
 				BA0B8E24F732E7D10AC340A8 /* PosingOverlay.swift in Sources */,
 				B6D3EAD5FB2E1798919D9639 /* PosingTypes.swift in Sources */,
@@ -1140,6 +1147,7 @@
 				448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */,
 				16A35A00C45932635364EDAB /* ServerConfigTests.swift in Sources */,
 				59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */,
+				86D4DB8EB6F585F7C73FBAFF /* SkeletonSmootherTests.swift in Sources */,
 				7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */,
 				8B8DBA1244BFD9A7D1B54CF0 /* StateModelTests.swift in Sources */,
 				ADB927AF6429AD509FE016CE /* StoreNotifiedTests.swift in Sources */,
