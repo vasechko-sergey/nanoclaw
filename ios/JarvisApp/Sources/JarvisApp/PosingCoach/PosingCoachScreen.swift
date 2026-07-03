@@ -24,6 +24,11 @@ public struct PosingCoachScreen: View {
                                 .font(.title).foregroundStyle(.white.opacity(0.9))
                         }
                         Spacer()
+                        Text("\(camera.fps) fps")
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(.black.opacity(0.45), in: Capsule())
                     }
                     .padding()
                     Spacer()
