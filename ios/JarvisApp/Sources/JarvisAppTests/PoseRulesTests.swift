@@ -102,4 +102,14 @@ final class PoseRulesTests: XCTestCase {
         joints[.leftWrist] = JointPoint(position: CGPoint(x: 0.42, y: 0.56), confidence: 0.9)
         XCTAssertNil(ElbowBendRule().evaluate(Skeleton(joints: joints)))
     }
+
+    func test_chinNeck_fires_when_neck_short() {
+        var joints = Self.standingStraight().joints
+        joints[.nose] = JointPoint(position: CGPoint(x: 0.50, y: 0.20), confidence: 0.9) // close to shoulders
+        XCTAssertEqual(ChinNeckRule().evaluate(Skeleton(joints: joints))?.code, "chin.neck")
+    }
+    func test_chinNeck_silent_when_neck_long() {
+        // standingStraight nose is high (0.12) → long neck → silent
+        XCTAssertNil(ChinNeckRule().evaluate(Self.standingStraight()))
+    }
 }

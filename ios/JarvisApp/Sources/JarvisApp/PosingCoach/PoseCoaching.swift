@@ -38,6 +38,7 @@ public enum PoseCoach {
     public static let rules: [PoseRule] = [
         WeightShiftRule(), KneeBendRule(), FeetStaggerRule(),
         BodyAngleRule(), ArmsGapRule(), ElbowBendRule(),
+        ChinNeckRule(),
     ]
     public static let maxSuggestions = 2
 

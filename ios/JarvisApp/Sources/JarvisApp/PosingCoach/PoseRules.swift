@@ -136,3 +136,23 @@ public struct ElbowBendRule: PoseRule {
         return nil
     }
 }
+
+/// G (gentle): short apparent neck (chin up / head sunk) → elongate neck.
+public struct ChinNeckRule: PoseRule {
+    public init() {}
+    static let neckRatioThreshold: CGFloat = 0.35
+    public func evaluate(_ s: Skeleton) -> PoseSuggestion? {
+        guard let nose = s.point(.nose)?.position,
+              let ls = s.point(.leftShoulder)?.position, let rs = s.point(.rightShoulder)?.position,
+              let lh = s.point(.leftHip)?.position, let rh = s.point(.rightHip)?.position
+        else { return nil }
+        let shMidY = (ls.y + rs.y) / 2
+        let hipMidY = (lh.y + rh.y) / 2
+        let torso = hipMidY - shMidY          // > 0: shoulders above hips
+        let neck = shMidY - nose.y            // > 0: nose above shoulders
+        guard torso > 0.05, neck / torso < Self.neckRatioThreshold else { return nil }
+        return PoseSuggestion(code: "chin.neck", text: "Чуть опусти подбородок, вытяни шею",
+                              priority: 6, targetDeltas: [.nose: CGPoint(x: nose.x, y: nose.y - 0.03)],
+                              changedJoints: [.nose])
+    }
+}
