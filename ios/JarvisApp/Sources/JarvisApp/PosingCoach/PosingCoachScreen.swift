@@ -7,33 +7,55 @@ public struct PosingCoachScreen: View {
     @Environment(\.dismiss) private var dismiss
     private let stabilizer = HintStabilizer()
     @State private var hints: [Hint] = []
+    @State private var frameSize: CGSize = .zero
 
     public init() {}
 
     public var body: some View {
-        ZStack {
-            CameraPreviewView(session: camera.session).ignoresSafeArea()
-            PosingOverlay(hints: hints).ignoresSafeArea()
-            VStack {
-                HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title).foregroundStyle(.white.opacity(0.9))
+        GeometryReader { geo in
+            ZStack {
+                CameraPreviewView(session: camera.session).ignoresSafeArea()
+                PosingOverlay(hints: hints).ignoresSafeArea()
+                if camera.permissionDenied { permissionOverlay }
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title).foregroundStyle(.white.opacity(0.9))
+                        }
+                        Spacer()
                     }
+                    .padding()
                     Spacer()
                 }
-                .padding()
-                Spacer()
             }
+            .onAppear { frameSize = geo.size; camera.start(); tilt.start() }
+            .onChange(of: geo.size) { _, newValue in frameSize = newValue }
+            .onDisappear { camera.stop(); tilt.stop() }
+            .onReceive(camera.$skeleton) { recompute(skeleton: $0) }
         }
-        .onAppear { camera.start(); tilt.start() }
-        .onDisappear { camera.stop(); tilt.stop() }
-        .onReceive(camera.$skeleton) { recompute(skeleton: $0) }
-        .onReceive(tilt.$tiltDegrees) { _ in recompute(skeleton: camera.skeleton) }
+    }
+
+    private var permissionOverlay: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "camera.fill").font(.largeTitle).foregroundStyle(.white)
+            Text("Нужен доступ к камере").font(.headline).foregroundStyle(.white)
+            Text("Разреши доступ к камере в Настройках, чтобы получать подсказки по кадру.")
+                .font(.subheadline).foregroundStyle(.white.opacity(0.8))
+                .multilineTextAlignment(.center).padding(.horizontal, 32)
+            Button("Открыть Настройки") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.85).ignoresSafeArea())
     }
 
     private func recompute(skeleton: Skeleton?) {
-        let frame = FrameInfo(size: UIScreen.main.bounds.size, tiltDegrees: tilt.tiltDegrees)
+        let frame = FrameInfo(size: frameSize, tiltDegrees: tilt.tiltDegrees)
         let raw = skeleton.map { CompositionEngine.hints(skeleton: $0, frame: frame) } ?? []
         hints = stabilizer.step(raw)
     }
