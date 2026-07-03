@@ -13,6 +13,7 @@ public struct PosingCoachScreen: View {
     @State private var focusPoint: CGPoint?
     @State private var focusVisible = false
     @State private var poseMode = false
+    @State private var smoother = SkeletonSmoother()
     @State private var ghost: Skeleton?
     @State private var arrows: [(CGPoint, CGPoint)] = []
 
@@ -204,11 +205,17 @@ public struct PosingCoachScreen: View {
             raw.append(t)
         }
         if poseMode, let skeleton {
-            let g = PoseCoach.guide(skeleton)
+            let smoothed = smoother.smooth(skeleton) ?? skeleton
+            let g = PoseCoach.guide(smoothed)
             raw.append(contentsOf: g.hints)
+            let fullBody = smoothed.point(.leftAnkle) != nil || smoothed.point(.rightAnkle) != nil
+            if let cam = PoseCoach.cameraAboveHint(pitchDegrees: tilt.pitchDegrees, fullBody: fullBody) {
+                raw.append(cam)
+            }
             ghost = g.ghost
             arrows = g.arrows
         } else {
+            smoother.reset()
             ghost = nil
             arrows = []
         }
