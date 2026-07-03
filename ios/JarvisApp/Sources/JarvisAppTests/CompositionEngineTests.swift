@@ -17,4 +17,23 @@ final class CompositionEngineTests: XCTestCase {
         let hints = CompositionEngine.hints(skeleton: Skeleton(joints: [:]), frame: frame(tilt: 2))
         XCTAssertFalse(hints.contains { $0.code == "tilt.level" })
     }
+
+    private func skeleton(noseY: CGFloat) -> Skeleton {
+        Skeleton(joints: [.nose: JointPoint(position: CGPoint(x: 0.5, y: noseY), confidence: 0.9)])
+    }
+
+    func test_headroom_too_tight_warns() {
+        let hints = CompositionEngine.hints(skeleton: skeleton(noseY: 0.02), frame: frame())
+        XCTAssertTrue(hints.contains { $0.code == "headroom.tight" })
+    }
+
+    func test_headroom_too_loose_infos() {
+        let hints = CompositionEngine.hints(skeleton: skeleton(noseY: 0.30), frame: frame())
+        XCTAssertTrue(hints.contains { $0.code == "headroom.loose" })
+    }
+
+    func test_headroom_ok_no_hint() {
+        let hints = CompositionEngine.hints(skeleton: skeleton(noseY: 0.12), frame: frame())
+        XCTAssertFalse(hints.contains { $0.code.hasPrefix("headroom") })
+    }
 }

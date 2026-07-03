@@ -18,6 +18,7 @@ public enum CompositionEngine {
     public static func hints(skeleton: Skeleton, frame: FrameInfo) -> [Hint] {
         var out: [Hint] = []
         if let h = tiltHint(frame) { out.append(h) }
+        if let h = headroomHint(skeleton) { out.append(h) }
         return out
     }
 
@@ -25,5 +26,23 @@ public enum CompositionEngine {
         guard abs(frame.tiltDegrees) > tiltThresholdDegrees else { return nil }
         return Hint(kind: .composition, severity: .warn,
                     text: "Выровняй горизонт", code: "tilt.level")
+    }
+
+    static let headroomTight = 0.05
+    static let headroomLoose = 0.22
+
+    static func headroomHint(_ s: Skeleton) -> Hint? {
+        guard let top = s.topOfHeadY() else { return nil }
+        if top < headroomTight {
+            return Hint(kind: .composition, severity: .warn,
+                        text: "Мало места над головой — приподними камеру",
+                        code: "headroom.tight")
+        }
+        if top > headroomLoose {
+            return Hint(kind: .composition, severity: .info,
+                        text: "Много пустоты сверху — опусти камеру",
+                        code: "headroom.loose")
+        }
+        return nil
     }
 }
