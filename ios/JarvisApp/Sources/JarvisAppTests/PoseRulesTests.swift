@@ -44,4 +44,15 @@ final class PoseRulesTests: XCTestCase {
         joints[.leftKnee] = JointPoint(position: CGPoint(x: 0.38, y: 0.74), confidence: 0.9) // bent in
         XCTAssertNil(KneeBendRule().evaluate(Skeleton(joints: joints)))
     }
+
+    func test_feetStagger_fires_when_feet_side_by_side() {
+        let sug = FeetStaggerRule().evaluate(Self.standingStraight())
+        XCTAssertEqual(sug?.code, "feet.stagger")
+    }
+
+    func test_feetStagger_silent_when_feet_already_staggered() {
+        var joints = Self.standingStraight().joints
+        joints[.leftAnkle] = JointPoint(position: CGPoint(x: 0.40, y: 0.90), confidence: 0.9) // forward+up
+        XCTAssertNil(FeetStaggerRule().evaluate(Skeleton(joints: joints)))
+    }
 }
