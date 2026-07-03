@@ -11,6 +11,7 @@ import Foundation
 public final class TiltProvider: ObservableObject {
     @Published public private(set) var rollDegrees: Double = 0
     @Published public private(set) var tiltDegrees: Double = 0
+    @Published public private(set) var pitchDegrees: Double = 0
     private let motion = CMMotionManager()
     private var smoothedRoll: Double = 0
     private var seeded = false
@@ -31,6 +32,8 @@ public final class TiltProvider: ObservableObject {
             let nearestAxis = (self.smoothedRoll / 90).rounded() * 90
             self.rollDegrees = self.smoothedRoll
             self.tiltDegrees = self.smoothedRoll - nearestAxis
+            // Optical-axis pitch: ~0 upright portrait (level), positive when tilted down.
+            self.pitchDegrees = -asin(max(-1, min(1, g.z))) * 180 / .pi
         }
     }
 

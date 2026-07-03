@@ -41,6 +41,13 @@ public enum PoseCoach {
         ChinNeckRule(),
     ]
     public static let maxSuggestions = 2
+    static let cameraLevelThreshold: Double = 8
+
+    /// Full body framed and camera not tilted down enough → suggest shooting from higher.
+    public static func cameraAboveHint(pitchDegrees: Double, fullBody: Bool) -> Hint? {
+        guard fullBody, pitchDegrees < cameraLevelThreshold else { return nil }
+        return Hint(kind: .pose, severity: .info, text: "Сними чуть выше — ноги длиннее", code: "camera.above")
+    }
 
     /// Only coach when a standing body is framed (hips + at least one knee visible).
     public static func standingBody(_ s: Skeleton) -> Bool {

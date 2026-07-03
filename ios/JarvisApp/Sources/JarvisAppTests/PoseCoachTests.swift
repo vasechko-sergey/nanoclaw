@@ -27,4 +27,14 @@ final class PoseCoachTests: XCTestCase {
         XCTAssertEqual(moved.point(.leftHip)?.position, CGPoint(x: 0.1, y: 0.2))
         XCTAssertEqual(moved.point(.rightHip)?.position, base.point(.rightHip)?.position)
     }
+
+    func test_cameraAbove_fires_when_level_and_full_body() {
+        XCTAssertEqual(PoseCoach.cameraAboveHint(pitchDegrees: 0, fullBody: true)?.code, "camera.above")
+    }
+    func test_cameraAbove_silent_without_full_body() {
+        XCTAssertNil(PoseCoach.cameraAboveHint(pitchDegrees: 0, fullBody: false))
+    }
+    func test_cameraAbove_silent_when_pointing_down() {
+        XCTAssertNil(PoseCoach.cameraAboveHint(pitchDegrees: 30, fullBody: true))
+    }
 }
