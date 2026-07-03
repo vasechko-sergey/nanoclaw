@@ -94,6 +94,7 @@
 		779371D3E740BB8D1F5975A5 /* TransportV2ReconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8070F31CC16528B94A74CB77 /* TransportV2ReconnectTests.swift */; };
 		79863C9C38EE621B71898E1D /* VoiceOnlyStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B15C373E9A1A762EDBE060A /* VoiceOnlyStoreTests.swift */; };
 		7B99819DADE64DD76D06939B /* PosingCoachScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3FA0465EB5ED703BBBB027 /* PosingCoachScreen.swift */; };
+		7C4ED462D05C8F190CB4C936 /* PoseRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 439EDD296F2981B41244EB48 /* PoseRules.swift */; };
 		7C6244BC22EF9490B6F5527A /* WorkoutRunnerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAAE91150FB182B64898418C /* WorkoutRunnerLogic.swift */; };
 		7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72069FC546766200DF7310C7 /* StateBoardViewTests.swift */; };
 		7D18436EC35D9091B00810D4 /* TiltProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460C1A07FB04C3183C9C3FA5 /* TiltProvider.swift */; };
@@ -102,6 +103,7 @@
 		7EED161B6F0BB654D4D9EC3C /* ExerciseImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17900485123C543C21298F5A /* ExerciseImageCache.swift */; };
 		7FAF52A22114FBF880E1348F /* ExerciseImageCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08C410E0AB3268B2BF632EB /* ExerciseImageCacheTests.swift */; };
 		808F62D50A3B14CCF3E62EA5 /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00895EA002A4092BA433AF4C /* MessageRow.swift */; };
+		81599D3C5CE4A74866B639D6 /* PoseGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A9886BE3AAC62647423F94 /* PoseGeometryTests.swift */; };
 		81782C95746BFB6B3D396FF9 /* WorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D0FB537AE4C8BCE53B1A96 /* WorkoutView.swift */; };
 		826C5F6B64FEBC1EE5A38CA4 /* ConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DD83E71D9C3008ACBE81F2 /* ConnectionBanner.swift */; };
 		8531C905F9FA67452EC50A43 /* MessageTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FC5BD6D50254FA42A44C89 /* MessageTimelineTests.swift */; };
@@ -126,6 +128,7 @@
 		98F737F103D466758E1DAE3D /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D05F9A8E1DD2C726DCF0259 /* ProfileView.swift */; };
 		990A6AC60FEA355802A51AA1 /* PendingNotificationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F278DA68DFA8B5D2C25D8EB3 /* PendingNotificationsTests.swift */; };
 		9B25460C1039295CFA4B156D /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCBEC9BA80E9EC8768D5A6B /* Schema.swift */; };
+		9BB1196ED97A878EB2DDFEFC /* PoseCoachTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE87AC93B5A4392BDFFC147 /* PoseCoachTests.swift */; };
 		9EAAE08FD29BF1D0FADE364C /* ConversationStoreV2PullTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E7BD342BB4FAF31245A4375 /* ConversationStoreV2PullTests.swift */; };
 		A05233D6EF80D4FEF4A63605 /* WorkoutFinishView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692F9E85378427AA7C0DC3B6 /* WorkoutFinishView.swift */; };
 		A19C0788C26EB264554E9F0B /* HomeViewSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */; };
@@ -136,6 +139,7 @@
 		A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */; };
 		AB14A705BBEB71BA032EC292 /* AppV2Bootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FEDDA61FF05A486C8F95F98 /* AppV2Bootstrap.swift */; };
 		AB4EE93B40C86DA9562B6112 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4872976D5AE47EAE125433FA /* ServerConfig.swift */; };
+		AC192F428D673CBF7E4941F8 /* PoseRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B4C9B330457301981311EA /* PoseRulesTests.swift */; };
 		ADB927AF6429AD509FE016CE /* StoreNotifiedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5476BBF578AEF9B336DAE3CC /* StoreNotifiedTests.swift */; };
 		AFB2633AA962239F6E7381CE /* MessageOrderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE6005C35E95197C886F0DDA /* MessageOrderingTests.swift */; };
 		AFFBB9A3F440BF8A16D6FDCB /* AppV2BootstrapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */; };
@@ -166,6 +170,7 @@
 		C89312E75CDC997C143CD8CF /* SummaryEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A05B976C9CA7CCBCC693097 /* SummaryEntryView.swift */; };
 		C932C233002FF9A896AB67EB /* AppSettingsSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 072D8335D3E088E1E73C206C /* AppSettingsSummaryTests.swift */; };
 		CB4BED062CCC0B06F7DBDDE3 /* NotificationReplySenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9F0E05EDBF7FC722A11D56 /* NotificationReplySenderTests.swift */; };
+		CC7AED3D4078662D7DE00652 /* PoseCoaching.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55C4C0DAE7E070EEFE51009 /* PoseCoaching.swift */; };
 		CEB52B044C6381B532169FA7 /* HintStabilizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4AAC1A2BCFBCA4F46ECB815 /* HintStabilizer.swift */; };
 		D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
@@ -190,6 +195,7 @@
 		E9F4D1DDEDE7F39D468EF493 /* PoseDetectorMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 295E45CDEC147280A8DC9A24 /* PoseDetectorMappingTests.swift */; };
 		EA5F7794D8CE0B26CC3A3D66 /* StateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF942308460AF6C2A8AE638E /* StateService.swift */; };
 		EA9AB1DF3F520257C5926611 /* NotificationCategories.swift in Sources */ = {isa = PBXBuildFile; fileRef = D159BB33D62E136CB6B980D0 /* NotificationCategories.swift */; };
+		EB2F42609A67C60505B51A67 /* PoseGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3961B78FC3853A6B5FE8725F /* PoseGeometry.swift */; };
 		EBE65DB8F5AA50665E549127 /* Workout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 407AF8586506D0610BCD4DC7 /* Workout.swift */; };
 		EC8E2456A6CEDB92A85DF17E /* AgentDashboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDD1D3092CADFE728FBC6D9 /* AgentDashboardTests.swift */; };
 		ECABEF30369E237C4C4EFDA1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9143ED9DD7B640862D468B63 /* Assets.xcassets */; };
@@ -239,6 +245,7 @@
 		0B48F479168B41727E62B105 /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		146E88348A92657125F1592E /* ChatImageMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageMappingTests.swift; sourceTree = "<group>"; };
 		163CA94C66DC661EC836E607 /* LeftDrawerContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeftDrawerContent.swift; sourceTree = "<group>"; };
+		16B4C9B330457301981311EA /* PoseRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseRulesTests.swift; sourceTree = "<group>"; };
 		17900485123C543C21298F5A /* ExerciseImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseImageCache.swift; sourceTree = "<group>"; };
 		18C98262E67CAE6EAD54B784 /* AppV2BootstrapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppV2BootstrapTests.swift; sourceTree = "<group>"; };
 		19584709A9F814A108D69A97 /* WorkoutSetFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSetFormat.swift; sourceTree = "<group>"; };
@@ -274,6 +281,7 @@
 		3784B2D589C11B07F162E081 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		38A007C4C73B5CD2D3AC048B /* ChatListItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListItem.swift; sourceTree = "<group>"; };
 		3938A8FAFFE0C0AFCC9FEE38 /* InboundDispatcherV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundDispatcherV2Tests.swift; sourceTree = "<group>"; };
+		3961B78FC3853A6B5FE8725F /* PoseGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseGeometry.swift; sourceTree = "<group>"; };
 		39A1411D12B13E550ED69744 /* RightDrawerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightDrawerTests.swift; sourceTree = "<group>"; };
 		3C6A33B378AA0CC36F2DE37A /* ConnectivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectivityMonitor.swift; sourceTree = "<group>"; };
 		3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightDrawerContent.swift; sourceTree = "<group>"; };
@@ -284,6 +292,7 @@
 		407AF8586506D0610BCD4DC7 /* Workout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workout.swift; sourceTree = "<group>"; };
 		41BCF57926DDA2C4BAF8106F /* WorkoutFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFormatTests.swift; sourceTree = "<group>"; };
 		41CDC923153512922F4DA91F /* AppForegroundState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppForegroundState.swift; sourceTree = "<group>"; };
+		439EDD296F2981B41244EB48 /* PoseRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseRules.swift; sourceTree = "<group>"; };
 		43CE7D6D0EB2FA4A6B041454 /* JarvisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisApp.swift; sourceTree = "<group>"; };
 		44C051ECA1BBC173253E5FF4 /* HeaderStatusDotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderStatusDotTests.swift; sourceTree = "<group>"; };
 		4540556E737B1FF782CE9556 /* ChatPrewarmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPrewarmer.swift; sourceTree = "<group>"; };
@@ -349,6 +358,7 @@
 		903F8E4E445A8A4777CE3812 /* AttachmentMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMigration.swift; sourceTree = "<group>"; };
 		907A26F7D7D3118CDA3A340D /* HomeViewSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewSmokeTests.swift; sourceTree = "<group>"; };
 		9143ED9DD7B640862D468B63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		91A9886BE3AAC62647423F94 /* PoseGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseGeometryTests.swift; sourceTree = "<group>"; };
 		92B1D7610DFD9ABC073694FC /* SummaryNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryNotifierTests.swift; sourceTree = "<group>"; };
 		95313AA88BC90EB29D9840E9 /* NotificationGatingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationGatingTests.swift; sourceTree = "<group>"; };
 		9592AD08ED6648DF9CCC7149 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
@@ -360,6 +370,7 @@
 		9F0295CB82FF20C8764842F6 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		A07EC072A68CDC8A092D7A94 /* URLSessionWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionWebSocket.swift; sourceTree = "<group>"; };
 		A08C410E0AB3268B2BF632EB /* ExerciseImageCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseImageCacheTests.swift; sourceTree = "<group>"; };
+		A55C4C0DAE7E070EEFE51009 /* PoseCoaching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseCoaching.swift; sourceTree = "<group>"; };
 		A74E0FAB0E7A0CB250C4C306 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A8DC2C6F28E57760BA8AB3FB /* NotificationCategoriesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCategoriesTests.swift; sourceTree = "<group>"; };
 		A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateModelTests.swift; sourceTree = "<group>"; };
@@ -398,6 +409,7 @@
 		D79D4272E5619C20A18D50D9 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		DA9F0E05EDBF7FC722A11D56 /* NotificationReplySenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationReplySenderTests.swift; sourceTree = "<group>"; };
 		DB850E36A425CAB44537C68A /* TransportSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportSummaryTests.swift; sourceTree = "<group>"; };
+		DBE87AC93B5A4392BDFFC147 /* PoseCoachTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseCoachTests.swift; sourceTree = "<group>"; };
 		DC2BA2D8D959E602E8E6DA7A /* PendingNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNotifications.swift; sourceTree = "<group>"; };
 		E170C6CA46AA3734A80C81A2 /* FullScreenImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageView.swift; sourceTree = "<group>"; };
 		E1916FC4113359563C4205F1 /* SetLogQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetLogQueue.swift; sourceTree = "<group>"; };
@@ -487,7 +499,10 @@
 				4AB933588EEFCE16E36BD146 /* CameraSession.swift */,
 				702ED902868F80C581339CA0 /* CompositionEngine.swift */,
 				C4AAC1A2BCFBCA4F46ECB815 /* HintStabilizer.swift */,
+				A55C4C0DAE7E070EEFE51009 /* PoseCoaching.swift */,
 				6E23E65C393BB1CAEC96D9E3 /* PoseDetector.swift */,
+				3961B78FC3853A6B5FE8725F /* PoseGeometry.swift */,
+				439EDD296F2981B41244EB48 /* PoseRules.swift */,
 				8D3FA0465EB5ED703BBBB027 /* PosingCoachScreen.swift */,
 				51E66F3C513D114532818A0B /* PosingOverlay.swift */,
 				52C019FC7A385453DA66AA97 /* PosingTypes.swift */,
@@ -627,7 +642,10 @@
 				DA9F0E05EDBF7FC722A11D56 /* NotificationReplySenderTests.swift */,
 				6316B6B9C92A4FBA72FB5739 /* NotificationTapRouterTests.swift */,
 				F278DA68DFA8B5D2C25D8EB3 /* PendingNotificationsTests.swift */,
+				DBE87AC93B5A4392BDFFC147 /* PoseCoachTests.swift */,
 				295E45CDEC147280A8DC9A24 /* PoseDetectorMappingTests.swift */,
+				91A9886BE3AAC62647423F94 /* PoseGeometryTests.swift */,
+				16B4C9B330457301981311EA /* PoseRulesTests.swift */,
 				8552926E84000A29C89696E9 /* PosingTypesTests.swift */,
 				7ACF97B7F5A709D4D3152C6B /* ProactiveDispatcherTests.swift */,
 				5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */,
@@ -1018,7 +1036,10 @@
 				E6E530C0A21C5E4FFFC04F9A /* OrbVoiceView.swift in Sources */,
 				E3F90FEA5F2BAB9EFF947C53 /* PendingNotifications.swift in Sources */,
 				A2C390C762DBE686BA825819 /* PendingRefreshTask.swift in Sources */,
+				CC7AED3D4078662D7DE00652 /* PoseCoaching.swift in Sources */,
 				72D18D9F22B3BB7DC10B1F1C /* PoseDetector.swift in Sources */,
+				EB2F42609A67C60505B51A67 /* PoseGeometry.swift in Sources */,
+				7C4ED462D05C8F190CB4C936 /* PoseRules.swift in Sources */,
 				7B99819DADE64DD76D06939B /* PosingCoachScreen.swift in Sources */,
 				BA0B8E24F732E7D10AC340A8 /* PosingOverlay.swift in Sources */,
 				B6D3EAD5FB2E1798919D9639 /* PosingTypes.swift in Sources */,
@@ -1108,7 +1129,10 @@
 				31B5B48EF90C4D26FBEBE745 /* NotificationTapRouterTests.swift in Sources */,
 				990A6AC60FEA355802A51AA1 /* PendingNotificationsTests.swift in Sources */,
 				BF58EAFF2DE5684C36E1270D /* PendingScenariosE2ETests.swift in Sources */,
+				9BB1196ED97A878EB2DDFEFC /* PoseCoachTests.swift in Sources */,
 				E9F4D1DDEDE7F39D468EF493 /* PoseDetectorMappingTests.swift in Sources */,
+				81599D3C5CE4A74866B639D6 /* PoseGeometryTests.swift in Sources */,
+				AC192F428D673CBF7E4941F8 /* PoseRulesTests.swift in Sources */,
 				04F5E7368F123E28FBD32ED4 /* PosingTypesTests.swift in Sources */,
 				1FAD03AF3885E619267E3CA1 /* ProactiveDispatcherTests.swift in Sources */,
 				D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */,
@@ -1187,7 +1211,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 88;
+				CURRENT_PROJECT_VERSION = 89;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1196,7 +1220,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.20.0;
+				MARKETING_VERSION = 1.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;
@@ -1433,7 +1457,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 88;
+				CURRENT_PROJECT_VERSION = 89;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1442,7 +1466,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.20.0;
+				MARKETING_VERSION = 1.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;

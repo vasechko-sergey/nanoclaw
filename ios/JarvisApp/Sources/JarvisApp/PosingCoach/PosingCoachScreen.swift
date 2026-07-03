@@ -12,6 +12,9 @@ public struct PosingCoachScreen: View {
     @State private var zoomBase: CGFloat = 1
     @State private var focusPoint: CGPoint?
     @State private var focusVisible = false
+    @State private var poseMode = false
+    @State private var ghost: Skeleton?
+    @State private var arrows: [(CGPoint, CGPoint)] = []
 
     public init() {}
 
@@ -24,7 +27,8 @@ public struct PosingCoachScreen: View {
                 }
                 .ignoresSafeArea()
 
-                PosingOverlay(hints: hints, tiltDegrees: tilt.tiltDegrees, rollDegrees: tilt.rollDegrees)
+                PosingOverlay(hints: hints, tiltDegrees: tilt.tiltDegrees, rollDegrees: tilt.rollDegrees,
+                              ghost: poseMode ? ghost : nil, arrows: poseMode ? arrows : [])
                     .ignoresSafeArea()
 
                 if let fp = focusPoint {
@@ -65,6 +69,14 @@ public struct PosingCoachScreen: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 10) {
                     HStack(spacing: 14) {
+                        Button { poseMode.toggle() } label: {
+                            Image(systemName: "figure.stand")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(poseMode ? .yellow : .white)
+                                .frame(width: 40, height: 40)
+                                .background(.black.opacity(0.4), in: Circle())
+                        }
+                        .buttonStyle(.plain)
                         iconButton(flashIcon) { camera.cycleFlash() }
                         iconButton(camera.torchOn ? "flashlight.on.fill" : "flashlight.off.fill") {
                             camera.toggleTorch()
@@ -193,6 +205,15 @@ public struct PosingCoachScreen: View {
         var raw = skeleton.map { CompositionEngine.hints(skeleton: $0, frame: frame) } ?? []
         if skeleton == nil, let t = CompositionEngine.tiltHint(frame) {
             raw.append(t)
+        }
+        if poseMode, let skeleton {
+            let g = PoseCoach.guide(skeleton)
+            raw.append(contentsOf: g.hints)
+            ghost = g.ghost
+            arrows = g.arrows
+        } else {
+            ghost = nil
+            arrows = []
         }
         hints = stabilizer.step(raw)
     }
