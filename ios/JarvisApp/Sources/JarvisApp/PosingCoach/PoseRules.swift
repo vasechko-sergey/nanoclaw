@@ -1,0 +1,32 @@
+// Sources/JarvisApp/PosingCoach/PoseRules.swift
+import CoreGraphics
+
+// Shared thresholds (normalized screen space).
+private let levelTol: CGFloat = 0.03      // "level" y-difference
+private let straightAngle: CGFloat = 165  // knee/elbow angle counted as straight (deg)
+
+/// A: legs straight + hips level → shift weight to the far leg (creates the S-curve).
+public struct WeightShiftRule: PoseRule {
+    public init() {}
+    public func evaluate(_ s: Skeleton) -> PoseSuggestion? {
+        guard let lh = s.point(.leftHip)?.position, let rh = s.point(.rightHip)?.position,
+              let lk = s.point(.leftKnee)?.position, let rk = s.point(.rightKnee)?.position,
+              let la = s.point(.leftAnkle)?.position, let ra = s.point(.rightAnkle)?.position,
+              let ls = s.point(.leftShoulder)?.position, let rs = s.point(.rightShoulder)?.position
+        else { return nil }
+        let hipsLevel = abs(lh.y - rh.y) < levelTol
+        let legsStraight = PoseGeometry.angle(lh, lk, la) > straightAngle
+            && PoseGeometry.angle(rh, rk, ra) > straightAngle
+        guard hipsLevel && legsStraight else { return nil }
+        let tilt: CGFloat = 0.04
+        let deltas: [BodyJoint: CGPoint] = [
+            .leftHip: CGPoint(x: lh.x, y: lh.y + tilt),
+            .rightHip: CGPoint(x: rh.x, y: rh.y - tilt),
+            .leftShoulder: CGPoint(x: ls.x, y: ls.y - tilt * 0.5),
+            .rightShoulder: CGPoint(x: rs.x, y: rs.y + tilt * 0.5),
+        ]
+        return PoseSuggestion(code: "weight.shift", text: "Перенеси вес на дальнюю ногу",
+                              priority: 0, targetDeltas: deltas,
+                              changedJoints: [.leftHip, .rightHip, .leftShoulder, .rightShoulder])
+    }
+}
