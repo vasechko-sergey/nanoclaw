@@ -56,4 +56,22 @@ final class CompositionEngineTests: XCTestCase {
         let hints = CompositionEngine.hints(skeleton: s, frame: frame())
         XCTAssertFalse(hints.contains { $0.code == "crop.ankle" })
     }
+
+    private func shoulders(centerX: CGFloat) -> Skeleton {
+        Skeleton(joints: [
+            .leftShoulder: JointPoint(position: CGPoint(x: centerX - 0.05, y: 0.3), confidence: 0.9),
+            .rightShoulder: JointPoint(position: CGPoint(x: centerX + 0.05, y: 0.3), confidence: 0.9),
+            .nose: JointPoint(position: CGPoint(x: centerX, y: 0.15), confidence: 0.9),
+        ])
+    }
+
+    func test_dead_center_subject_nudged_to_third() {
+        let hints = CompositionEngine.hints(skeleton: shoulders(centerX: 0.5), frame: frame())
+        XCTAssertTrue(hints.contains { $0.code == "thirds.center" })
+    }
+
+    func test_subject_on_third_no_nudge() {
+        let hints = CompositionEngine.hints(skeleton: shoulders(centerX: 1.0/3), frame: frame())
+        XCTAssertFalse(hints.contains { $0.code == "thirds.center" })
+    }
 }

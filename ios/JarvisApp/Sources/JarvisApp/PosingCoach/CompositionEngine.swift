@@ -20,6 +20,7 @@ public enum CompositionEngine {
         if let h = tiltHint(frame) { out.append(h) }
         if let h = headroomHint(skeleton) { out.append(h) }
         out.append(contentsOf: cropHints(skeleton))
+        if let h = thirdsHint(skeleton) { out.append(h) }
         return out
     }
 
@@ -57,5 +58,20 @@ public enum CompositionEngine {
                             code: "crop.ankle"))
         }
         return out
+    }
+
+    static let centerBand = 0.06      // how close to 0.5 counts as "dead center"
+    static let thirdClearance = 0.10  // must be this far from a third line to bother nudging
+
+    static func thirdsHint(_ s: Skeleton) -> Hint? {
+        guard let cx = s.centerX() else { return nil }
+        let nearestThird = min(abs(cx - 1.0/3), abs(cx - 2.0/3))
+        let toCenter = abs(cx - 0.5)
+        if toCenter < centerBand && nearestThird > thirdClearance {
+            return Hint(kind: .composition, severity: .info,
+                        text: "Поставь модель на линию трети",
+                        code: "thirds.center")
+        }
+        return nil
     }
 }
