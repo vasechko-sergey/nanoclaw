@@ -21,4 +21,14 @@ final class HintStabilizerTests: XCTestCase {
         XCTAssertEqual(s.step([]).map(\.code), ["a"]) // 2 missing → still shown
         XCTAssertTrue(s.step([]).isEmpty)             // 3 missing → dropped
     }
+
+    func test_intermittent_hint_never_reaches_consecutive_threshold() {
+        let s = HintStabilizer(appearFrames: 4, disappearFrames: 6)
+        // present, present, ABSENT, present, present — never 4 in a row
+        XCTAssertTrue(s.step([hint("a")]).isEmpty)
+        XCTAssertTrue(s.step([hint("a")]).isEmpty)
+        XCTAssertTrue(s.step([]).isEmpty)
+        XCTAssertTrue(s.step([hint("a")]).isEmpty)
+        XCTAssertTrue(s.step([hint("a")]).isEmpty)
+    }
 }

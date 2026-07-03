@@ -18,6 +18,9 @@ public final class HintStabilizer {
         let codes = Set(raw.map(\.code))
         let byCode = Dictionary(raw.map { ($0.code, $0) }, uniquingKeysWith: { a, _ in a })
 
+        for code in Array(presentStreak.keys) where !codes.contains(code) {
+            presentStreak[code] = 0
+        }
         for h in raw {
             presentStreak[h.code, default: 0] += 1
             absentStreak[h.code] = 0
@@ -26,7 +29,11 @@ public final class HintStabilizer {
         for code in Array(shown.keys) where !codes.contains(code) {
             absentStreak[code, default: 0] += 1
             presentStreak[code] = 0
-            if absentStreak[code]! >= disappearFrames { shown[code] = nil }
+            if absentStreak[code]! >= disappearFrames {
+                shown[code] = nil
+                presentStreak[code] = nil
+                absentStreak[code] = nil
+            }
         }
         // Keep shown hints fresh with their latest text when still present.
         for (code, h) in byCode where shown[code] != nil { shown[code] = h }
