@@ -68,4 +68,18 @@ final class PoseRulesTests: XCTestCase {
         joints[.rightShoulder] = JointPoint(position: CGPoint(x: 0.52, y: 0.24), confidence: 0.9)
         XCTAssertNil(BodyAngleRule().evaluate(Skeleton(joints: joints)))
     }
+
+    func test_armsGap_fires_when_wrist_glued_to_hip() {
+        var joints = Self.standingStraight().joints
+        joints[.leftWrist] = JointPoint(position: CGPoint(x: 0.45, y: 0.56), confidence: 0.9) // at hip x
+        let sug = ArmsGapRule().evaluate(Skeleton(joints: joints))
+        XCTAssertEqual(sug?.code, "arms.gap")
+    }
+
+    func test_armsGap_silent_when_arms_already_out() {
+        var joints = Self.standingStraight().joints
+        joints[.leftWrist] = JointPoint(position: CGPoint(x: 0.30, y: 0.56), confidence: 0.9) // out
+        joints[.rightWrist] = JointPoint(position: CGPoint(x: 0.70, y: 0.56), confidence: 0.9)
+        XCTAssertNil(ArmsGapRule().evaluate(Skeleton(joints: joints)))
+    }
 }

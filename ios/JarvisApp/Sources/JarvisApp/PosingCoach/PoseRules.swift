@@ -91,3 +91,24 @@ public struct BodyAngleRule: PoseRule {
                               changedJoints: [.rightShoulder, .leftShoulder])
     }
 }
+
+/// E: a wrist hugging the torso (near its hip's x) → create a gap / hand on hip.
+public struct ArmsGapRule: PoseRule {
+    public init() {}
+    public func evaluate(_ s: Skeleton) -> PoseSuggestion? {
+        let gap: CGFloat = 0.06
+        if let lw = s.point(.leftWrist)?.position, let lh = s.point(.leftHip)?.position,
+           abs(lw.x - lh.x) < gap {
+            return PoseSuggestion(code: "arms.gap", text: "Оторви руки — рука на бедро или к ключице",
+                                  priority: 4, targetDeltas: [.leftWrist: CGPoint(x: lw.x - 0.09, y: lw.y)],
+                                  changedJoints: [.leftWrist])
+        }
+        if let rw = s.point(.rightWrist)?.position, let rh = s.point(.rightHip)?.position,
+           abs(rw.x - rh.x) < gap {
+            return PoseSuggestion(code: "arms.gap", text: "Оторви руки — рука на бедро или к ключице",
+                                  priority: 4, targetDeltas: [.rightWrist: CGPoint(x: rw.x + 0.09, y: rw.y)],
+                                  changedJoints: [.rightWrist])
+        }
+        return nil
+    }
+}
