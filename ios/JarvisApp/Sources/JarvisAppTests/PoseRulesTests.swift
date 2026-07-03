@@ -55,4 +55,17 @@ final class PoseRulesTests: XCTestCase {
         joints[.leftAnkle] = JointPoint(position: CGPoint(x: 0.40, y: 0.90), confidence: 0.9) // forward+up
         XCTAssertNil(FeetStaggerRule().evaluate(Skeleton(joints: joints)))
     }
+
+    func test_bodyAngle_fires_when_shoulders_square_and_wide() {
+        let sug = BodyAngleRule().evaluate(Self.standingStraight())
+        XCTAssertEqual(sug?.code, "body.angle")
+        XCTAssertNotNil(sug?.targetDeltas[.rightShoulder])
+    }
+
+    func test_bodyAngle_silent_when_shoulders_narrow() {
+        var joints = Self.standingStraight().joints
+        joints[.leftShoulder] = JointPoint(position: CGPoint(x: 0.48, y: 0.24), confidence: 0.9)
+        joints[.rightShoulder] = JointPoint(position: CGPoint(x: 0.52, y: 0.24), confidence: 0.9)
+        XCTAssertNil(BodyAngleRule().evaluate(Skeleton(joints: joints)))
+    }
 }

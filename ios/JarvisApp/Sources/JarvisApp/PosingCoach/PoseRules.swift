@@ -66,3 +66,28 @@ public struct FeetStaggerRule: PoseRule {
                               changedJoints: [.leftAnkle])
     }
 }
+
+/// D: shoulders square to camera (wide + level) → turn to a 3/4 angle.
+public struct BodyAngleRule: PoseRule {
+    public init() {}
+    public func evaluate(_ s: Skeleton) -> PoseSuggestion? {
+        guard let ls = s.point(.leftShoulder)?.position, let rs = s.point(.rightShoulder)?.position,
+              let lh = s.point(.leftHip)?.position, let rh = s.point(.rightHip)?.position
+        else { return nil }
+        let shoulderW = abs(ls.x - rs.x)
+        let hipW = abs(lh.x - rh.x)
+        let shouldersLevel = abs(ls.y - rs.y) < levelTol
+        let torsoH = abs(PoseGeometry.midpoint(ls, rs).y - PoseGeometry.midpoint(lh, rh).y)
+        let facingFront = shoulderW > max(hipW, torsoH * 0.5) && shouldersLevel
+        guard facingFront else { return nil }
+        let cx = PoseGeometry.midpoint(ls, rs).x
+        // Narrow the shoulder line: pull the right shoulder toward center (and left a touch).
+        let deltas: [BodyJoint: CGPoint] = [
+            .rightShoulder: CGPoint(x: rs.x + (cx - rs.x) * 0.35, y: rs.y),
+            .leftShoulder: CGPoint(x: ls.x + (cx - ls.x) * 0.15, y: ls.y),
+        ]
+        return PoseSuggestion(code: "body.angle", text: "Развернись на ¾ к камере",
+                              priority: 3, targetDeltas: deltas,
+                              changedJoints: [.rightShoulder, .leftShoulder])
+    }
+}
