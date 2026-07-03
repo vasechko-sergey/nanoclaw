@@ -69,27 +69,57 @@ public struct PosingCoachScreen: View {
                             camera.toggleTorch()
                         }
                     }
-                    HStack(spacing: 8) {
-                        pill(String(format: "%.1f×", camera.zoomFactor))
-                        pill("\(camera.fps) fps")
-                    }
+                    pill("\(camera.fps) fps")
                 }
             }
             .padding()
 
             Spacer()
 
-            ZStack {
-                shutterButton
-                HStack {
-                    Spacer()
-                    iconButton("arrow.triangle.2.circlepath.camera") { camera.switchCamera() }
-                        .font(.title2)
+            VStack(spacing: 16) {
+                zoomCluster
+                ZStack {
+                    shutterButton
+                    HStack {
+                        Spacer()
+                        iconButton("arrow.triangle.2.circlepath.camera") { camera.switchCamera() }
+                            .font(.title2)
+                    }
+                    .padding(.horizontal, 32)
                 }
-                .padding(.horizontal, 32)
             }
             .padding(.bottom, 28)
         }
+    }
+
+    private var zoomCluster: some View {
+        HStack(spacing: 6) {
+            ForEach(camera.zoomPresets, id: \.self) { preset in
+                let active = preset == activePreset
+                Button {
+                    camera.setZoom(preset)
+                    zoomBase = camera.zoomFactor
+                } label: {
+                    Text(active ? String(format: "%.1f×", camera.zoomFactor) : zoomLabel(preset))
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(active ? .yellow : .white)
+                        .frame(minWidth: active ? 44 : 34, minHeight: 34)
+                        .background(Circle().fill(.black.opacity(active ? 0.6 : 0.35)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(5)
+        .background(Capsule().fill(.black.opacity(0.25)))
+    }
+
+    /// Preset nearest the current zoom — the one shown as active.
+    private var activePreset: CGFloat? {
+        camera.zoomPresets.min { abs($0 - camera.zoomFactor) < abs($1 - camera.zoomFactor) }
+    }
+
+    private func zoomLabel(_ p: CGFloat) -> String {
+        p < 1 ? String(format: "%.1f", p) : String(format: "%.0f", p)
     }
 
     private var shutterButton: some View {
