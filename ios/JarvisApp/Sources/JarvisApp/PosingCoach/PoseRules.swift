@@ -30,3 +30,23 @@ public struct WeightShiftRule: PoseRule {
                               changedJoints: [.leftHip, .rightHip, .leftShoulder, .rightShoulder])
     }
 }
+
+/// B: both legs straight → bend the near (model's-left) knee. Pairs with A.
+public struct KneeBendRule: PoseRule {
+    public init() {}
+    public func evaluate(_ s: Skeleton) -> PoseSuggestion? {
+        guard let lh = s.point(.leftHip)?.position, let rh = s.point(.rightHip)?.position,
+              let lk = s.point(.leftKnee)?.position, let rk = s.point(.rightKnee)?.position,
+              let la = s.point(.leftAnkle)?.position, let ra = s.point(.rightAnkle)?.position
+        else { return nil }
+        let legsStraight = PoseGeometry.angle(lh, lk, la) > straightAngle
+            && PoseGeometry.angle(rh, rk, ra) > straightAngle
+        guard legsStraight else { return nil }
+        let hipsMidX = (lh.x + rh.x) / 2
+        // Push the near knee toward center + slightly up → a soft bend.
+        let target = CGPoint(x: lk.x + (hipsMidX - lk.x) * 0.4, y: lk.y - 0.02)
+        return PoseSuggestion(code: "knee.bend", text: "Согни ближнее колено",
+                              priority: 1, targetDeltas: [.leftKnee: target],
+                              changedJoints: [.leftKnee])
+    }
+}

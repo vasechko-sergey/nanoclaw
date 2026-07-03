@@ -32,4 +32,16 @@ final class PoseRulesTests: XCTestCase {
         joints[.rightHip] = JointPoint(position: CGPoint(x: 0.55, y: 0.50), confidence: 0.9) // raised
         XCTAssertNil(WeightShiftRule().evaluate(Skeleton(joints: joints)))
     }
+
+    func test_kneeBend_fires_when_both_legs_straight() {
+        let sug = KneeBendRule().evaluate(Self.standingStraight())
+        XCTAssertEqual(sug?.code, "knee.bend")
+        XCTAssertNotNil(sug?.targetDeltas[.leftKnee])
+    }
+
+    func test_kneeBend_silent_when_a_knee_already_bent() {
+        var joints = Self.standingStraight().joints
+        joints[.leftKnee] = JointPoint(position: CGPoint(x: 0.38, y: 0.74), confidence: 0.9) // bent in
+        XCTAssertNil(KneeBendRule().evaluate(Skeleton(joints: joints)))
+    }
 }
