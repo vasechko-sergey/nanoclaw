@@ -31,14 +31,7 @@ public struct PosingCoachScreen: View {
                               ghost: poseMode ? ghost : nil, arrows: poseMode ? arrows : [])
                     .ignoresSafeArea()
 
-                if let fp = focusPoint {
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.yellow, lineWidth: 1.5)
-                        .frame(width: 72, height: 72)
-                        .position(fp)
-                        .opacity(focusVisible ? 1 : 0)
-                        .allowsHitTesting(false)
-                }
+                focusSquare
 
                 if camera.permissionDenied { permissionOverlay }
 
@@ -69,14 +62,7 @@ public struct PosingCoachScreen: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 10) {
                     HStack(spacing: 14) {
-                        Button { poseMode.toggle() } label: {
-                            Image(systemName: "figure.stand")
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(poseMode ? .yellow : .white)
-                                .frame(width: 40, height: 40)
-                                .background(.black.opacity(0.4), in: Circle())
-                        }
-                        .buttonStyle(.plain)
+                        iconButton("figure.stand", tint: poseMode ? .yellow : .white) { poseMode.toggle() }
                         iconButton(flashIcon) { camera.cycleFlash() }
                         iconButton(camera.torchOn ? "flashlight.on.fill" : "flashlight.off.fill") {
                             camera.toggleTorch()
@@ -153,11 +139,11 @@ public struct PosingCoachScreen: View {
         }
     }
 
-    private func iconButton(_ system: String, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ system: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: system)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(tint)
                 .frame(width: 40, height: 40)
                 .background(.black.opacity(0.4), in: Circle())
         }
@@ -170,6 +156,17 @@ public struct PosingCoachScreen: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(.black.opacity(0.45), in: Capsule())
+    }
+
+    @ViewBuilder private var focusSquare: some View {
+        if let fp = focusPoint {
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(Color.yellow, lineWidth: 1.5)
+                .frame(width: 72, height: 72)
+                .position(fp)
+                .opacity(focusVisible ? 1 : 0)
+                .allowsHitTesting(false)
+        }
     }
 
     private var permissionOverlay: some View {
