@@ -109,6 +109,7 @@
 		8A65BFEE4DF577F0BCA79D78 /* HealthBackgroundTaskTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD1109858A9F6E479E286A1 /* HealthBackgroundTaskTests.swift */; };
 		8B020A074B4CA1BFB9F36238 /* CompositionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623AFCAECF0BCF966F4A18F5 /* CompositionEngineTests.swift */; };
 		8B8DBA1244BFD9A7D1B54CF0 /* StateModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */; };
+		8BBF3FD1891C1093525852FB /* HintStabilizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26BA94A49F1811952082ACD1 /* HintStabilizerTests.swift */; };
 		8CF67025E9C5AC703F0F422B /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9592AD08ED6648DF9CCC7149 /* Message.swift */; };
 		8D619B38C4EE99D072145A51 /* SwapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA9AB7ECDA3459F9A0C107B /* SwapSheet.swift */; };
 		8FD8CF0ADA1C202FEDA828D9 /* SetLogQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1916FC4113359563C4205F1 /* SetLogQueue.swift */; };
@@ -160,6 +161,7 @@
 		C89312E75CDC997C143CD8CF /* SummaryEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A05B976C9CA7CCBCC693097 /* SummaryEntryView.swift */; };
 		C932C233002FF9A896AB67EB /* AppSettingsSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 072D8335D3E088E1E73C206C /* AppSettingsSummaryTests.swift */; };
 		CB4BED062CCC0B06F7DBDDE3 /* NotificationReplySenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9F0E05EDBF7FC722A11D56 /* NotificationReplySenderTests.swift */; };
+		CEB52B044C6381B532169FA7 /* HintStabilizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4AAC1A2BCFBCA4F46ECB815 /* HintStabilizer.swift */; };
 		D05803775850CAC962777383 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */; };
 		D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C84294434D6D5A3845BD5D /* HealthUpload.swift */; };
 		D4A1E360C123657ADD04F83E /* ImageReadyProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D6EACA13E995C3D3DF962EE /* ImageReadyProtocolTests.swift */; };
@@ -242,6 +244,7 @@
 		24959CB110C9FBD30D2717F6 /* DeliveryChecksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryChecksTests.swift; sourceTree = "<group>"; };
 		24E75D5AB84CECDD2D10E119 /* TransportV2WorkoutInboundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportV2WorkoutInboundTests.swift; sourceTree = "<group>"; };
 		2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingScenariosE2ETests.swift; sourceTree = "<group>"; };
+		26BA94A49F1811952082ACD1 /* HintStabilizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HintStabilizerTests.swift; sourceTree = "<group>"; };
 		294C253860B67EF3201B2370 /* WorkoutInbound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInbound.swift; sourceTree = "<group>"; };
 		2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HappyPathE2ETests.swift; sourceTree = "<group>"; };
 		2AF10B991F6600D17760B644 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -370,6 +373,7 @@
 		C1EA4A185CBE9C9FEC184E90 /* LocalNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotifier.swift; sourceTree = "<group>"; };
 		C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncTests.swift; sourceTree = "<group>"; };
 		C3E5E42CC2C921F15C37BEC3 /* E2EHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EHarness.swift; sourceTree = "<group>"; };
+		C4AAC1A2BCFBCA4F46ECB815 /* HintStabilizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HintStabilizer.swift; sourceTree = "<group>"; };
 		C576CDFA7FEBFCE26DA9BFD0 /* MessageListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageListView.swift; sourceTree = "<group>"; };
 		C7F32FF80D3E90C60D06FDC3 /* InboundDispatcherV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboundDispatcherV2.swift; sourceTree = "<group>"; };
 		D10CF5BBED79F3B2BAA5A0B9 /* CalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarManager.swift; sourceTree = "<group>"; };
@@ -466,6 +470,7 @@
 			isa = PBXGroup;
 			children = (
 				702ED902868F80C581339CA0 /* CompositionEngine.swift */,
+				C4AAC1A2BCFBCA4F46ECB815 /* HintStabilizer.swift */,
 				52C019FC7A385453DA66AA97 /* PosingTypes.swift */,
 			);
 			path = PosingCoach;
@@ -587,6 +592,7 @@
 				3DD1109858A9F6E479E286A1 /* HealthBackgroundTaskTests.swift */,
 				F97CBF0AABC30420DADE7A50 /* HealthHistoryTests.swift */,
 				C364D6CA940FD4E119BBB4FF /* HealthSyncTests.swift */,
+				26BA94A49F1811952082ACD1 /* HintStabilizerTests.swift */,
 				F83A9350505267EC2E9CBEAD /* HrSpikeDetectorTests.swift */,
 				3024A6C9AA5F6E49D34C1456 /* ImageFetcherTests.swift */,
 				7D6EACA13E995C3D3DF962EE /* ImageReadyProtocolTests.swift */,
@@ -962,6 +968,7 @@
 				A5F8C491F5747A1968B734A1 /* HealthRequests.swift in Sources */,
 				3F712956E032728A955B67F8 /* HealthSync.swift in Sources */,
 				D1DEC103DC8758862B4FEF8A /* HealthUpload.swift in Sources */,
+				CEB52B044C6381B532169FA7 /* HintStabilizer.swift in Sources */,
 				A41D782127D52B65851766EB /* HrSpikeDetector.swift in Sources */,
 				4851B97F7257765B86ACF934 /* ImageFetcher.swift in Sources */,
 				858C56E208CC44A2A7210E9B /* InboundDispatcherV2.swift in Sources */,
@@ -1058,6 +1065,7 @@
 				8A65BFEE4DF577F0BCA79D78 /* HealthBackgroundTaskTests.swift in Sources */,
 				B377A0764FF637C59A620237 /* HealthHistoryTests.swift in Sources */,
 				C00FE8906E1739C80BA7568D /* HealthSyncTests.swift in Sources */,
+				8BBF3FD1891C1093525852FB /* HintStabilizerTests.swift in Sources */,
 				57F5539A7DC6FCCA4A9B559C /* HrSpikeDetectorTests.swift in Sources */,
 				FBB7A39746F87E19195D0F6C /* ImageFetcherTests.swift in Sources */,
 				D4A1E360C123657ADD04F83E /* ImageReadyProtocolTests.swift in Sources */,
