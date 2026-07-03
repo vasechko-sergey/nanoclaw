@@ -15,7 +15,7 @@ public struct PosingCoachScreen: View {
         GeometryReader { geo in
             ZStack {
                 CameraPreviewView(session: camera.session).ignoresSafeArea()
-                PosingOverlay(hints: hints).ignoresSafeArea()
+                PosingOverlay(hints: hints, tiltDegrees: tilt.tiltDegrees).ignoresSafeArea()
                 if camera.permissionDenied { permissionOverlay }
                 VStack {
                     HStack {

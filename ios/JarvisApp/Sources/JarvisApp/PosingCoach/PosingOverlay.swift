@@ -3,6 +3,11 @@ import SwiftUI
 
 struct PosingOverlay: View {
     let hints: [Hint]
+    /// Device roll off level, degrees ∈ [-45, 45], for the horizon indicator.
+    var tiltDegrees: Double = 0
+
+    private static let levelGreen = Color(red: 0.24, green: 0.86, blue: 0.52)
+    private var isLevel: Bool { abs(tiltDegrees) <= CompositionEngine.tiltThresholdDegrees }
 
     var body: some View {
         ZStack {
@@ -15,6 +20,19 @@ struct PosingOverlay: View {
                     }
                 }
                 .stroke(Color.white.opacity(0.25), lineWidth: 1)
+            }
+
+            // Horizon level indicator: fixed reference tick + a line that rolls with the
+            // device. When level, the line is horizontal, green, and covers the reference.
+            ZStack {
+                Rectangle()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 44, height: 2)
+                Rectangle()
+                    .fill(isLevel ? Self.levelGreen : Color.white.opacity(0.85))
+                    .frame(width: 150, height: 2)
+                    .rotationEffect(.degrees(-tiltDegrees))
+                    .animation(.linear(duration: 0.08), value: tiltDegrees)
             }
             VStack {
                 Spacer()
