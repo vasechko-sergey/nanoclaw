@@ -5,7 +5,7 @@ public struct PosingCoachScreen: View {
     @StateObject private var camera = CameraSession()
     @StateObject private var tilt = TiltProvider()
     @Environment(\.dismiss) private var dismiss
-    private let stabilizer = HintStabilizer()
+    @State private var stabilizer = HintStabilizer()
     @State private var hints: [Hint] = []
     @State private var frameSize: CGSize = .zero
 
@@ -56,7 +56,10 @@ public struct PosingCoachScreen: View {
 
     private func recompute(skeleton: Skeleton?) {
         let frame = FrameInfo(size: frameSize, tiltDegrees: tilt.tiltDegrees)
-        let raw = skeleton.map { CompositionEngine.hints(skeleton: $0, frame: frame) } ?? []
+        var raw = skeleton.map { CompositionEngine.hints(skeleton: $0, frame: frame) } ?? []
+        if skeleton == nil, let t = CompositionEngine.tiltHint(frame) {
+            raw.append(t)
+        }
         hints = stabilizer.step(raw)
     }
 }
