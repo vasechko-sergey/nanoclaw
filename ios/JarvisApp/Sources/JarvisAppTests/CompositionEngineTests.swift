@@ -36,4 +36,24 @@ final class CompositionEngineTests: XCTestCase {
         let hints = CompositionEngine.hints(skeleton: skeleton(noseY: 0.12), frame: frame())
         XCTAssertFalse(hints.contains { $0.code.hasPrefix("headroom") })
     }
+
+    func test_knees_visible_ankles_missing_warns_crop() {
+        let s = Skeleton(joints: [
+            .leftKnee: JointPoint(position: CGPoint(x: 0.45, y: 0.8), confidence: 0.8),
+            .rightKnee: JointPoint(position: CGPoint(x: 0.55, y: 0.8), confidence: 0.8),
+        ])
+        let hints = CompositionEngine.hints(skeleton: s, frame: frame())
+        XCTAssertTrue(hints.contains { $0.code == "crop.ankle" })
+    }
+
+    func test_full_legs_visible_no_crop_hint() {
+        let s = Skeleton(joints: [
+            .leftKnee: JointPoint(position: CGPoint(x: 0.45, y: 0.7), confidence: 0.8),
+            .rightKnee: JointPoint(position: CGPoint(x: 0.55, y: 0.7), confidence: 0.8),
+            .leftAnkle: JointPoint(position: CGPoint(x: 0.45, y: 0.9), confidence: 0.8),
+            .rightAnkle: JointPoint(position: CGPoint(x: 0.55, y: 0.9), confidence: 0.8),
+        ])
+        let hints = CompositionEngine.hints(skeleton: s, frame: frame())
+        XCTAssertFalse(hints.contains { $0.code == "crop.ankle" })
+    }
 }

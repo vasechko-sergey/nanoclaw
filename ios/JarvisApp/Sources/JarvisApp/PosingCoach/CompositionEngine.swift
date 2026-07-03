@@ -19,6 +19,7 @@ public enum CompositionEngine {
         var out: [Hint] = []
         if let h = tiltHint(frame) { out.append(h) }
         if let h = headroomHint(skeleton) { out.append(h) }
+        out.append(contentsOf: cropHints(skeleton))
         return out
     }
 
@@ -44,5 +45,17 @@ public enum CompositionEngine {
                         code: "headroom.loose")
         }
         return nil
+    }
+
+    static func cropHints(_ s: Skeleton) -> [Hint] {
+        var out: [Hint] = []
+        let kneesVisible = s.point(.leftKnee) != nil || s.point(.rightKnee) != nil
+        let anklesVisible = s.point(.leftAnkle) != nil || s.point(.rightAnkle) != nil
+        if kneesVisible && !anklesVisible {
+            out.append(Hint(kind: .composition, severity: .warn,
+                            text: "Не режь по щиколотке — влезь целиком или кадрируй выше колена",
+                            code: "crop.ankle"))
+        }
+        return out
     }
 }
