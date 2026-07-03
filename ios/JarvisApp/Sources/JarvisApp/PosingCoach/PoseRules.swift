@@ -112,3 +112,27 @@ public struct ArmsGapRule: PoseRule {
         return nil
     }
 }
+
+/// F: a straight, near-vertical arm (shoulder-elbow-wrist in a line) → bend the elbow.
+public struct ElbowBendRule: PoseRule {
+    public init() {}
+    public func evaluate(_ s: Skeleton) -> PoseSuggestion? {
+        func straightVertical(_ sh: CGPoint, _ el: CGPoint, _ wr: CGPoint) -> Bool {
+            PoseGeometry.angle(sh, el, wr) > straightAngle
+                && abs(sh.x - wr.x) < 0.05 && wr.y > sh.y
+        }
+        if let sh = s.point(.leftShoulder)?.position, let el = s.point(.leftElbow)?.position,
+           let wr = s.point(.leftWrist)?.position, straightVertical(sh, el, wr) {
+            return PoseSuggestion(code: "elbow.bend", text: "Согни локоть, смени угол",
+                                  priority: 5, targetDeltas: [.leftElbow: CGPoint(x: el.x - 0.06, y: el.y)],
+                                  changedJoints: [.leftElbow])
+        }
+        if let sh = s.point(.rightShoulder)?.position, let el = s.point(.rightElbow)?.position,
+           let wr = s.point(.rightWrist)?.position, straightVertical(sh, el, wr) {
+            return PoseSuggestion(code: "elbow.bend", text: "Согни локоть, смени угол",
+                                  priority: 5, targetDeltas: [.rightElbow: CGPoint(x: el.x + 0.06, y: el.y)],
+                                  changedJoints: [.rightElbow])
+        }
+        return nil
+    }
+}

@@ -82,4 +82,24 @@ final class PoseRulesTests: XCTestCase {
         joints[.rightWrist] = JointPoint(position: CGPoint(x: 0.70, y: 0.56), confidence: 0.9)
         XCTAssertNil(ArmsGapRule().evaluate(Skeleton(joints: joints)))
     }
+
+    func test_elbowBend_fires_on_straight_vertical_arm() {
+        var joints = Self.standingStraight().joints
+        // left arm straight & vertical: shoulder, elbow, wrist all ~x=0.42
+        joints[.leftShoulder] = JointPoint(position: CGPoint(x: 0.42, y: 0.24), confidence: 0.9)
+        joints[.leftElbow] = JointPoint(position: CGPoint(x: 0.42, y: 0.40), confidence: 0.9)
+        joints[.leftWrist] = JointPoint(position: CGPoint(x: 0.42, y: 0.56), confidence: 0.9)
+        let sug = ElbowBendRule().evaluate(Skeleton(joints: joints))
+        XCTAssertEqual(sug?.code, "elbow.bend")
+    }
+
+    func test_elbowBend_silent_when_elbow_bent_out() {
+        var joints = Self.standingStraight().joints
+        // Left arm vertical shoulder↔wrist but elbow kicked out → bent, must stay silent.
+        // (Right arm in the fixture is diagonal, so it never fires.)
+        joints[.leftShoulder] = JointPoint(position: CGPoint(x: 0.42, y: 0.24), confidence: 0.9)
+        joints[.leftElbow] = JointPoint(position: CGPoint(x: 0.30, y: 0.40), confidence: 0.9)
+        joints[.leftWrist] = JointPoint(position: CGPoint(x: 0.42, y: 0.56), confidence: 0.9)
+        XCTAssertNil(ElbowBendRule().evaluate(Skeleton(joints: joints)))
+    }
 }
