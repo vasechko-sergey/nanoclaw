@@ -24,7 +24,8 @@ public struct PosingCoachScreen: View {
                 }
                 .ignoresSafeArea()
 
-                PosingOverlay(hints: hints, tiltDegrees: tilt.tiltDegrees).ignoresSafeArea()
+                PosingOverlay(hints: hints, tiltDegrees: tilt.tiltDegrees, rollDegrees: tilt.rollDegrees)
+                    .ignoresSafeArea()
 
                 if let fp = focusPoint {
                     RoundedRectangle(cornerRadius: 4)

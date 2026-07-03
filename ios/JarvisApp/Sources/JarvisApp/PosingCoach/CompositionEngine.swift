@@ -13,7 +13,7 @@ public struct FrameInfo: Equatable {
 
 /// Pure: skeleton (screen space) + frame → composition hints. No I/O, fully testable.
 public enum CompositionEngine {
-    static let tiltThresholdDegrees = 4.0
+    static let tiltThresholdDegrees = 3.0
 
     public static func hints(skeleton: Skeleton, frame: FrameInfo) -> [Hint] {
         var out: [Hint] = []
