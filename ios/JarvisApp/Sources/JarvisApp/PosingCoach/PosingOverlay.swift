@@ -7,6 +7,21 @@ struct PosingOverlay: View {
     var tiltDegrees: Double = 0
     /// Raw portrait-relative roll ∈ (-180, 180] — orients the line along the true horizon.
     var rollDegrees: Double = 0
+    /// Ghost target pose to draw (nil = none).
+    var ghost: Skeleton? = nil
+    /// Arrows current → target (normalized points).
+    var arrows: [(CGPoint, CGPoint)] = []
+
+    private static let bones: [(BodyJoint, BodyJoint)] = [
+        (.leftShoulder, .rightShoulder), (.leftShoulder, .leftHip), (.rightShoulder, .rightHip),
+        (.leftHip, .rightHip),
+        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
+        (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
+        (.leftHip, .leftKnee), (.leftKnee, .leftAnkle),
+        (.rightHip, .rightKnee), (.rightKnee, .rightAnkle),
+        (.neck, .nose),
+    ]
+    private static let ghostBlue = Color(red: 0.48, green: 0.63, blue: 1.0)
 
     private static let levelGreen = Color(red: 0.24, green: 0.86, blue: 0.52)
     /// Tight window where the horizon counts as truly level (line turns green).
@@ -40,6 +55,29 @@ struct PosingOverlay: View {
                     .rotationEffect(.degrees(-rollDegrees))
                     .animation(.linear(duration: 0.08), value: rollDegrees)
             }
+
+            GeometryReader { geo in
+                let w = geo.size.width, h = geo.size.height
+                if let ghost {
+                    Path { p in
+                        for (a, b) in Self.bones {
+                            guard let pa = ghost.point(a)?.position, let pb = ghost.point(b)?.position else { continue }
+                            p.move(to: CGPoint(x: pa.x * w, y: pa.y * h))
+                            p.addLine(to: CGPoint(x: pb.x * w, y: pb.y * h))
+                        }
+                    }
+                    .stroke(Self.ghostBlue, style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [6, 4]))
+                    .opacity(0.9)
+                }
+                ForEach(Array(arrows.enumerated()), id: \.offset) { _, seg in
+                    Path { p in
+                        p.move(to: CGPoint(x: seg.0.x * w, y: seg.0.y * h))
+                        p.addLine(to: CGPoint(x: seg.1.x * w, y: seg.1.y * h))
+                    }
+                    .stroke(Self.ghostBlue, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                }
+            }
+
             VStack {
                 Spacer()
                 VStack(spacing: 8) {
