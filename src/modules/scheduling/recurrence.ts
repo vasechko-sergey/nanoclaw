@@ -16,6 +16,7 @@ import type Database from 'better-sqlite3';
 import { TIMEZONE } from '../../config.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
+import { resolveOwnerTz } from '../person-tz/index.js';
 import { clearRecurrence, getCompletedRecurring, insertRecurrence } from './db.js';
 
 export async function handleRecurrence(inDb: Database.Database, session: Session): Promise<void> {
@@ -28,7 +29,8 @@ export async function handleRecurrence(inDb: Database.Database, session: Session
       // (src/v1/task-scheduler.ts:20-49); without it, a task written "0 9 * * *"
       // by an agent running in a user's local TZ fires at 09:00 UTC instead of
       // 09:00 user-local.
-      const interval = CronExpressionParser.parse(msg.recurrence, { tz: TIMEZONE });
+      const ownerTz = resolveOwnerTz(session.owner_key) ?? TIMEZONE;
+      const interval = CronExpressionParser.parse(msg.recurrence, { tz: ownerTz });
       const nextRun = interval.next().toISOString();
       const prefix = msg.kind === 'task' ? 'task' : 'msg';
       const newId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

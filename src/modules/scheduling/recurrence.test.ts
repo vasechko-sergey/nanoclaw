@@ -11,6 +11,9 @@ import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
+import { initTestDb, getDb, closeDb } from '../../db/connection.js';
+import { runMigrations } from '../../db/migrations/index.js';
+import { upsertPersonTz } from '../person-tz/db.js';
 import { insertTask } from './db.js';
 import { handleRecurrence } from './recurrence.js';
 import type { Session } from '../../types.js';
@@ -94,5 +97,42 @@ describe('handleRecurrence', () => {
 
     const count = (db.prepare(`SELECT COUNT(*) AS c FROM messages_in`).get() as { c: number }).c;
     expect(count).toBe(1);
+  });
+
+  it('computes the next run on the owner’s stored timezone (09:00 there)', async () => {
+    initTestDb();
+    runMigrations(getDb());
+    upsertPersonTz(getDb(), 'owner-london', 'Europe/London', new Date('2026-07-01T00:00:00Z').toISOString());
+    try {
+      const db = freshDb();
+      insertTask(db, {
+        id: 'task-tz',
+        processAfter: '2020-01-01T00:00:00.000Z',
+        recurrence: '0 9 * * *',
+        platformId: null,
+        channelType: null,
+        threadId: null,
+        content: JSON.stringify({ prompt: 'brief' }),
+      });
+      db.prepare(`UPDATE messages_in SET status='completed' WHERE id='task-tz'`).run();
+
+      await handleRecurrence(db, { ...fakeSession(), owner_key: 'owner-london' } as Session);
+
+      const follow = db.prepare(`SELECT process_after FROM messages_in WHERE id != 'task-tz'`).get() as {
+        process_after: string;
+      };
+      // DST-proof: assert the wall-clock in Europe/London is exactly 09:00.
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/London',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(new Date(follow.process_after));
+      const hour = parts.find((p) => p.type === 'hour')!.value;
+      const minute = parts.find((p) => p.type === 'minute')!.value;
+      expect(`${hour}:${minute}`).toBe('09:00');
+    } finally {
+      closeDb();
+    }
   });
 });
