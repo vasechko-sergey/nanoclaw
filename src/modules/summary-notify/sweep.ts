@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { log } from '../../log.js';
+import { resolveOwnerTz } from '../person-tz/index.js';
 import { decideSummaryNotify, type SummaryCfg } from './detector.js';
 import { getLastNotified, setLastNotified } from './db.js';
 import { getSummaryEmitter, type SummaryEmitter } from './emit-registry.js';
@@ -51,11 +52,12 @@ export function runSummaryNotify(deps: RunSummaryNotifyDeps): void {
     const cardMtimesMs = profileMtimes(path.join(deps.userMemoryBase, personKey));
     if (cardMtimesMs.length === 0) continue;
 
+    const cfg = { ...deps.cfg, tz: resolveOwnerTz(personKey) ?? deps.cfg.tz };
     const decision = decideSummaryNotify({
       nowMs: deps.nowMs,
       cardMtimesMs,
       lastNotifiedDate: getLastNotified(deps.db, personKey),
-      cfg: deps.cfg,
+      cfg,
     });
     if (!decision.fire) continue;
 
