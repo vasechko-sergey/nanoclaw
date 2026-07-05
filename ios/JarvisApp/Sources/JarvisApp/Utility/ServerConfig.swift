@@ -33,4 +33,14 @@ enum ServerConfig {
         let base = httpBase()
         return URL(string: base.hasSuffix("/") ? base + path : base + "/" + path)
     }
+
+    /// `httpURL(path:)` with query items appended via `URLComponents`. Used by
+    /// the background pending-pull to report the device timezone. `nil` if the
+    /// base path isn't a valid URL.
+    static func httpURL(path: String, queryItems: [URLQueryItem]) -> URL? {
+        guard let base = httpURL(path: path),
+              var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
+        comps.queryItems = queryItems
+        return comps.url
+    }
 }

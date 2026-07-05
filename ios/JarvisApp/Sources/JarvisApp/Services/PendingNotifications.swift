@@ -31,7 +31,10 @@ enum PendingNotifications {
         guard let token = defaults.string(forKey: "bearerToken"), !token.isEmpty else {
             completion?(); return
         }
-        guard let url = ServerConfig.httpURL(path: "ios/pending") else {
+        guard let url = ServerConfig.httpURL(
+            path: "ios/pending",
+            queryItems: [URLQueryItem(name: "tz", value: TimeZone.current.identifier)]
+        ) else {
             completion?(); return
         }
 

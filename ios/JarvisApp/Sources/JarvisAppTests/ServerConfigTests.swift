@@ -23,4 +23,14 @@ final class ServerConfigTests: XCTestCase {
             base + "/ios/pending"
         )
     }
+
+    func test_httpURL_appendsQueryItems() {
+        let url = ServerConfig.httpURL(
+            path: "ios/pending",
+            queryItems: [URLQueryItem(name: "tz", value: "Europe/London")]
+        )
+        let comps = URLComponents(url: url!, resolvingAgainstBaseURL: false)!
+        XCTAssertEqual(comps.path, "/ios/pending")
+        XCTAssertTrue(comps.queryItems!.contains(URLQueryItem(name: "tz", value: "Europe/London")))
+    }
 }
