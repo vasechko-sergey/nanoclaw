@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 
 import { runMigrations } from '../../db/migrations/index.js';
+import { initTestDb, getDb, closeDb } from '../../db/connection.js';
 import { upsertPersonTz, getPersonTz } from './db.js';
+import { noteDeviceTz, resolveOwnerTz } from './index.js';
 
 describe('migration 024 person_tz', () => {
   let db: Database.Database;
@@ -51,5 +53,34 @@ describe('person_tz db', () => {
       updated_at: string;
     };
     expect(row.updated_at).toBe('2026-07-05T00:00:00Z'); // "here since" — unchanged
+  });
+});
+
+describe('noteDeviceTz / resolveOwnerTz (via central getDb)', () => {
+  beforeEach(() => {
+    initTestDb();
+    runMigrations(getDb());
+  });
+  afterEach(() => closeDb());
+
+  it('stores a valid IANA tz and resolves it back', () => {
+    noteDeviceTz('p1', 'Asia/Tokyo');
+    expect(resolveOwnerTz('p1')).toBe('Asia/Tokyo');
+  });
+
+  it('ignores a non-IANA tz (no row, no throw)', () => {
+    noteDeviceTz('p2', 'Mars/Phobos');
+    noteDeviceTz('p2', '');
+    expect(resolveOwnerTz('p2')).toBeNull();
+  });
+
+  it('resolveOwnerTz short-circuits to null on empty/undefined owner', () => {
+    expect(resolveOwnerTz(null)).toBeNull();
+    expect(resolveOwnerTz(undefined)).toBeNull();
+    expect(resolveOwnerTz('')).toBeNull();
+  });
+
+  it('resolveOwnerTz returns null for an owner with no stored tz', () => {
+    expect(resolveOwnerTz('never-reported')).toBeNull();
   });
 });
