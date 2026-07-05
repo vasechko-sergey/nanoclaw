@@ -24,6 +24,9 @@ import { OutboundQueue } from './outbound-queue.js';
 import { createIosHttpHandler } from './http-handler.js';
 import { openHealthDb, readHealthDays } from './health-db.js';
 import type { ChannelSetup } from '../../adapter.js';
+import { initTestDb, getDb, closeDb } from '../../../db/connection.js';
+import { runMigrations } from '../../../db/migrations/index.js';
+import { getPersonTz } from '../../../modules/person-tz/db.js';
 
 interface Harness {
   url: string;
@@ -522,5 +525,36 @@ describe('unknown routes', () => {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
     expect(r.status).toBe(404);
+  });
+});
+
+describe('device tz capture', () => {
+  let h: Harness;
+  beforeEach(async () => {
+    initTestDb();
+    runMigrations(getDb());
+    h = await bootHarness();
+  });
+  afterEach(async () => {
+    await h.close();
+    closeDb();
+  });
+
+  it('GET /ios/pending?tz=… stores the caller’s timezone', async () => {
+    const r = await fetchJson(`${h.url}/ios/pending?tz=Europe/London`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    expect(getPersonTz(getDb(), PERSON)).toBe('Europe/London');
+  });
+
+  it('ignores a junk tz (no row written)', async () => {
+    const r = await fetchJson(`${h.url}/ios/pending?tz=Mars/Phobos`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    expect(getPersonTz(getDb(), PERSON)).toBeNull();
   });
 });

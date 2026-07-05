@@ -33,6 +33,7 @@ import type { ImageCache } from './image-cache.js';
 import { HealthUploadBody } from '../../../../shared/ios-app-protocol/index.js';
 import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
 import { sickDayCheck } from '../../../modules/health-trigger/sick-day.js';
+import { noteDeviceTz } from '../../../modules/person-tz/index.js';
 import { readEnvFile } from '../../../env.js';
 import { userMemoryRoot, userGlobalRoot } from '../../../user-memory.js';
 import { appendHealthHistory } from './health-ingest.js';
@@ -304,6 +305,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
           // so the agent prompt looks identical post-cutover.
           const ts = obj.ts ?? new Date().toISOString();
           const tz = obj.tz ?? '';
+          noteDeviceTz(id.person_key, tz);
           let text = `[proactive trigger=${trigger} ts=${ts}${tz ? ` tz=${tz}` : ''}]`;
           const inlinePayload = obj.payload && typeof obj.payload === 'object' ? obj.payload : {};
           const lines = Object.entries(inlinePayload).map(
@@ -386,6 +388,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
         res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
         return;
       }
+      noteDeviceTz(id.person_key, url.searchParams.get('tz') ?? '');
       const sinceRaw = url.searchParams.get('since');
       const since = sinceRaw ? parseInt(sinceRaw, 10) : 0;
       const safeSince = Number.isFinite(since) && since > 0 ? since : 0;
