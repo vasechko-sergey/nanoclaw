@@ -49,7 +49,7 @@
     line-height:1.08;letter-spacing:-.01em;margin:0;text-wrap:balance;max-width:15ch}
   h1 em{font-style:italic;color:var(--signal)}
   .lede{margin:1.4rem 0 0;max-width:36ch;color:var(--muted);font-size:1.06rem}
-  .orbwrap{justify-self:center;width:100%;max-width:340px;aspect-ratio:1}
+  .orbwrap{justify-self:center;width:100%;max-width:380px;aspect-ratio:1}
   #orb{width:100%;height:100%;display:block}
 
   section{padding:clamp(2rem,5vw,3rem) 0;border-top:1px solid var(--line)}
@@ -130,7 +130,7 @@
   @media (max-width:720px){
     body{font-size:16px}
     .hero{grid-template-columns:1fr;padding-top:2.4rem}
-    .orbwrap{grid-row:1;max-width:190px;margin-bottom:.5rem}
+    .orbwrap{grid-row:1;max-width:210px;margin-bottom:.5rem}
     .status{display:none}
     .exp-item{grid-template-columns:1fr;gap:.5rem}
     .exp-when{padding-top:0}
@@ -309,48 +309,89 @@
 </div>
 
 <script>
+// Jarvis HUD orb — ported from the app's SwiftUI OrbView (Components/OrbView.swift).
+// Concentric cyan arcs/ticks/dots + glowing white-cyan core, each stroke drawn
+// glow-then-crisp. Mood ~ heroic/welcoming.
 (function(){
   var c=document.getElementById('orb'); if(!c) return;
-  var ctx=c.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2), S=0, cx=0, cy=0;
+  var ctx=c.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2), S=0,cx=0,cy=0,R=0,K=1;
   var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  var CY='84,219,230'; // app cyan rgb(0.33,0.86,0.90)
   function size(){
-    var r=c.getBoundingClientRect(); S=Math.max(1,r.width);
+    var b=c.getBoundingClientRect(); S=Math.max(1,b.width);
     c.width=S*dpr; c.height=S*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
-    cx=S/2; cy=S/2;
+    cx=S/2; cy=S/2; R=(S/2)*0.94; K=R/80; // K scales absolute line widths to size
   }
-  size(); window.addEventListener('resize',size);
-  var SIG='10,126,139', SOFT='84,188,197';
-  function core(){
-    var rad=S*0.20;
-    var g=ctx.createRadialGradient(cx,cy,0,cx,cy,rad);
-    g.addColorStop(0,'rgba('+SOFT+',0.95)');
-    g.addColorStop(0.55,'rgba('+SIG+',0.55)');
-    g.addColorStop(1,'rgba('+SIG+',0)');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,rad,0,7); ctx.fill();
-    ctx.fillStyle='rgba('+SOFT+',0.9)';
-    ctx.beginPath(); ctx.arc(cx,cy,S*0.045,0,7); ctx.fill();
+  size(); addEventListener('resize',size);
+  var PI=Math.PI, D=PI/180;
+  function arc(radius,startDeg,sweepDeg,rotation,lw,a){
+    var off=rotation*D*20, s=startDeg*D+off, e=s+sweepDeg*D; lw*=K;
+    ctx.lineCap='round';
+    ctx.strokeStyle='rgba('+CY+','+(a*0.3)+')'; ctx.lineWidth=lw+4*K;
+    ctx.beginPath(); ctx.arc(cx,cy,radius,s,e); ctx.stroke();
+    ctx.strokeStyle='rgba('+CY+','+a+')'; ctx.lineWidth=lw;
+    ctx.beginPath(); ctx.arc(cx,cy,radius,s,e); ctx.stroke();
   }
-  function rings(t){
-    var max=S*0.46, n=4;
-    for(var i=0;i<n;i++){
-      var p=((t/3400)+(i/n))%1, r=p*max;
-      ctx.strokeStyle='rgba('+SIG+','+(0.42*(1-p)).toFixed(3)+')';
-      ctx.lineWidth=1.1;
-      ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.stroke();
+  function ring(radius,lw,a){
+    lw*=K;
+    ctx.strokeStyle='rgba('+CY+','+(a*0.25)+')'; ctx.lineWidth=lw+3*K;
+    ctx.beginPath(); ctx.arc(cx,cy,radius,0,PI*2); ctx.stroke();
+    ctx.strokeStyle='rgba('+CY+','+a+')'; ctx.lineWidth=lw;
+    ctx.beginPath(); ctx.arc(cx,cy,radius,0,PI*2); ctx.stroke();
+  }
+  function ticks(radius,count,len,lw,rotation,a){
+    var off=rotation*D*20, step=PI*2/count; ctx.lineCap='butt';
+    ctx.lineWidth=lw*K; ctx.strokeStyle='rgba('+CY+','+a+')';
+    for(var i=0;i<count;i++){
+      var ang=i*step+off, ir=radius-len/2, or=radius+len/2, ca=Math.cos(ang), sa=Math.sin(ang);
+      ctx.beginPath(); ctx.moveTo(cx+ir*ca,cy+ir*sa); ctx.lineTo(cx+or*ca,cy+or*sa); ctx.stroke();
     }
   }
-  function dashRing(t){
-    var r=S*0.40;
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate((t/9000)%(Math.PI*2));
-    ctx.strokeStyle='rgba('+SIG+',0.28)'; ctx.lineWidth=1; ctx.setLineDash([2,7]);
-    ctx.beginPath(); ctx.arc(0,0,r,0,7); ctx.stroke(); ctx.restore();
+  function dots(radius,count,dr,rotation,a){
+    var off=rotation*D*20, step=PI*2/count;
+    for(var i=0;i<count;i++){
+      var ang=i*step+off, dx=cx+radius*Math.cos(ang), dy=cy+radius*Math.sin(ang);
+      ctx.fillStyle='rgba('+CY+','+(a*0.4)+')'; ctx.beginPath(); ctx.arc(dx,dy,dr*1.9,0,PI*2); ctx.fill();
+      ctx.fillStyle='rgba('+CY+','+a+')'; ctx.beginPath(); ctx.arc(dx,dy,dr,0,PI*2); ctx.fill();
+    }
   }
-  function frame(t){
+  function coreGlow(coreR,a){
+    var oR=coreR*3.5, g=ctx.createRadialGradient(cx,cy,0,cx,cy,oR);
+    g.addColorStop(0,'rgba('+CY+','+(a*0.25)+')');
+    g.addColorStop(0.5,'rgba('+CY+','+(a*0.08)+')');
+    g.addColorStop(1,'rgba('+CY+',0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,oR,0,PI*2); ctx.fill();
+    var g2=ctx.createRadialGradient(cx,cy,0,cx,cy,coreR);
+    g2.addColorStop(0,'rgba(255,255,255,'+(a*0.9)+')');
+    g2.addColorStop(0.4,'rgba('+CY+','+(a*0.7)+')');
+    g2.addColorStop(0.8,'rgba('+CY+','+(a*0.15)+')');
+    g2.addColorStop(1,'rgba('+CY+',0)');
+    ctx.fillStyle=g2; ctx.beginPath(); ctx.arc(cx,cy,coreR,0,PI*2); ctx.fill();
+  }
+  var speed=0.9, alpha=0.92, breathAmp=0.07;
+  function draw(t){
     ctx.clearRect(0,0,S,S);
-    dashRing(t); rings(t); core();
-    if(!reduce) requestAnimationFrame(frame);
+    var r=R, a=alpha, breath=1+breathAmp*Math.sin(t*2.5), coreR=r*0.15*breath;
+    coreGlow(coreR,a);
+    arc(r*0.27,0,250,t*speed*0.6,1.2,a*0.7);
+    ring(r*0.34,0.6,a*0.35);
+    ticks(r*0.34,20,r*0.025,0.8,t*speed*-0.3,a*0.5);
+    arc(r*0.46,10,160,t*speed*0.9,5,a*0.55);
+    arc(r*0.46,190,150,t*speed*0.9,5,a*0.5);
+    arc(r*0.58,20,300,t*speed*-0.7,1.0,a*0.65);
+    dots(r*0.58,24,r*0.008,t*speed*-0.7,a*0.5);
+    for(var i=0;i<3;i++) arc(r*0.71,i*120+5,100,t*speed*1.1,2.5,a*0.55);
+    ticks(r*0.67,36,r*0.03,0.7,t*speed*1.1,a*0.4);
+    for(var j=0;j<4;j++) arc(r*0.84,j*90+5,80,t*speed*-0.5,4,a*0.45);
+    arc(r*0.96,5,170,t*speed*0.4,2.0,a*0.5);
+    arc(r*0.96,185,165,t*speed*0.4,2.0,a*0.5);
+    ticks(r*0.94,60,r*0.02,0.5,t*speed*0.4,a*0.35);
+    ring(r*1.03,0.5,a*0.25);
   }
-  if(reduce){ frame(1200); } else { requestAnimationFrame(frame); }
+  if(reduce){ draw(2.0); return; }
+  var last=0;
+  function loop(ms){ if(ms-last>33){ last=ms; draw(ms/1000); } requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
 })();
 </script>
 </body>
