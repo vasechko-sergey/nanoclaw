@@ -1,6 +1,6 @@
 name: JarvisApp
 options:
-  bundleIdPrefix: com.vasechko
+  bundleIdPrefix: dev.vasechko
   deploymentTarget:
     iOS: "18.0"
 
@@ -61,7 +61,7 @@ targets:
         com.apple.developer.healthkit.background-delivery: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vasechko.jarvis
         PRODUCT_NAME: Jarvis
         INFOPLIST_KEY_CFBundleDisplayName: Jarvis
         CODE_SIGN_STYLE: Automatic
@@ -74,7 +74,7 @@ targets:
         # reports both to the host on connect (auth envelope) — so the running
         # build is knowable server-side, not guessed. Run `xcodegen generate` after.
         MARKETING_VERSION: "1.24.0"
-        CURRENT_PROJECT_VERSION: "92"
+        CURRENT_PROJECT_VERSION: "93"
 
   JarvisUITests:
     type: bundle.ui-testing
@@ -85,7 +85,7 @@ targets:
       - target: JarvisApp
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vasechko.jarvis.uitests
         TEST_TARGET_NAME: JarvisApp
         SWIFT_VERSION: "5.9"
         CODE_SIGN_STYLE: Automatic
@@ -101,7 +101,7 @@ targets:
       - target: JarvisApp
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis.unittests
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vasechko.jarvis.unittests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Jarvis.app/Jarvis"
         BUNDLE_LOADER: "$(TEST_HOST)"
         SWIFT_VERSION: "5.9"
@@ -120,12 +120,12 @@ targets:
       properties:
         WKApplication: true
         WKWatchKitApp: false
-        WKCompanionAppBundleIdentifier: com.vasechko.jarvis
+        WKCompanionAppBundleIdentifier: dev.vasechko.jarvis
         NSMicrophoneUsageDescription: "Микрофон для голосового ввода Jarvis"
         NSSpeechRecognitionUsageDescription: "Распознавание речи для голосового ввода Jarvis"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.vasechko.jarvis.watch
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vasechko.jarvis.watch
         PRODUCT_NAME: JarvisWatch
         INFOPLIST_KEY_CFBundleDisplayName: Jarvis
         SUPPORTS_MACCATALYST: NO

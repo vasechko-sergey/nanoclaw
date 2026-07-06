@@ -25,7 +25,7 @@
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.vasechko.jarvis</string>
+	<string>dev.vasechko.jarvis</string>
 	<key>WKWatchKitApp</key>
 	<false/>
 </dict>

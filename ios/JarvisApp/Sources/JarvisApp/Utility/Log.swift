@@ -19,7 +19,7 @@ enum Log {
         case app        = "App"
     }
 
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.vasechko.jarvis"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "dev.vasechko.jarvis"
 
     private static func logger(for category: Category) -> Logger {
         Logger(subsystem: subsystem, category: category.rawValue)
