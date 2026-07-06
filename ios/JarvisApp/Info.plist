@@ -33,7 +33,7 @@
 	<key>NSCalendarsUsageDescription</key>
 	<string>Ближайшее событие календаря передаётся агенту как контекст</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Камера нужна для съёмки, вложений и подсказок по позированию</string>
+	<string>Камера нужна для съёмки вложений</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Данные активности и сна передаются агенту как контекст</string>
 	<key>NSHealthUpdateUsageDescription</key>
@@ -43,7 +43,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Микрофон нужен для голосового ввода сообщений Jarvis</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Чтобы сохранять снятые в помощнике по позированию фото в галерею</string>
+	<string>Чтобы сохранять фото из чата в галерею</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Распознавание речи превращает ваш голос в текст сообщения</string>
 	<key>UIBackgroundModes</key>

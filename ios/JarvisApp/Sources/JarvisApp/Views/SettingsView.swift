@@ -6,7 +6,6 @@ import SwiftUI
 struct SettingsFormBody: View {
     var isInitialSetup: Bool = false
     @Environment(AppSettings.self) var settings
-    @State private var showPosingCoach = false
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -42,15 +41,6 @@ struct SettingsFormBody: View {
                             .foregroundStyle(Theme.textPrimary)
                             .multilineTextAlignment(.trailing)
                             .tint(Theme.accent)
-                    }
-                }
-
-                // Camera / posing section
-                settingsSection(title: "Съёмка") {
-                    Button {
-                        showPosingCoach = true
-                    } label: {
-                        Label("Помощник по позированию", systemImage: "camera.viewfinder")
                     }
                 }
 
@@ -219,9 +209,6 @@ struct SettingsFormBody: View {
             .padding(.horizontal, Theme.hPadding)
             .padding(.top, isInitialSetup ? 0 : Theme.scaled(16))
             .padding(.bottom, Theme.scaled(32))
-        }
-        .fullScreenCover(isPresented: $showPosingCoach) {
-            PosingCoachScreen()
         }
     }
 
