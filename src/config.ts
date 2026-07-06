@@ -35,6 +35,7 @@ export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
 // copied per-person. See container-runner.ts buildMounts + group-init.ts.
 export const AGENTS_DIR = path.resolve(PROJECT_ROOT, 'agents');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
+export const LOGS_DIR = path.resolve(PROJECT_ROOT, 'logs');
 
 // Per-checkout image tag so two installs on the same host don't share
 // `nanoclaw-agent:latest` and clobber each other on rebuild.

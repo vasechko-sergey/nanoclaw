@@ -18,6 +18,7 @@ import {
   TIMEZONE,
 } from './config.js';
 import { materializeContainerJson } from './container-config.js';
+import { splitPrefixedLines, appendCentralContainerLog } from './container-log-sink.js';
 import { getContainerConfig } from './db/container-configs.js';
 import { updateContainerConfigScalars, updateContainerConfigJson } from './db/container-configs.js';
 import {
@@ -308,15 +309,35 @@ async function spawnContainer(session: Session): Promise<void> {
   // unbounded across many wakes; one prior generation is kept as .log.1.
   const logStream = openContainerLogStream(agentGroup.id, session.id, containerName);
 
-  // Log stderr — both to the durable file and to the host log at debug level.
+  // Mirror this container's stderr into the central, logrotate-covered
+  // logs/containers.log — one aggregate of every container, each line tagged
+  // with the agent+session that produced it. The per-session file above stays
+  // as the near-term per-container view; the central log is the one place to
+  // grep across all agents with real retention (the per-session file self-caps
+  // at 2 generations). splitPrefixedLines carries a partial trailing line
+  // across chunk boundaries so a single log line isn't split.
+  const centralPrefix = `[${agentGroup.folder}:${session.id.slice(-6)}]`;
+  let centralPending = '';
+
+  // Log stderr — to the durable per-session file, the central aggregate, and
+  // the host log at debug level.
   container.stderr?.on('data', (data) => {
     const text = data.toString();
     logStream?.write(text);
+    const { out, rest } = splitPrefixedLines(centralPrefix, centralPending, text);
+    centralPending = rest;
+    appendCentralContainerLog(out);
     for (const line of text.trim().split('\n')) {
       if (line) log.debug(line, { container: agentGroup.folder });
     }
   });
   const closeLogStream = (): void => {
+    // Flush a partial trailing line (a final write with no newline) so it isn't
+    // dropped when the container exits.
+    if (centralPending) {
+      appendCentralContainerLog(`${centralPrefix} ${centralPending}\n`);
+      centralPending = '';
+    }
     try {
       logStream?.end();
     } catch {
