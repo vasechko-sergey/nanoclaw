@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import { initTestDb, getDb, closeDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
+import { OWNER_PERSON_KEY } from '../../config.js';
 import { upsertPersonTz } from '../person-tz/db.js';
 import { insertTask } from './db.js';
 import { handleRecurrence } from './recurrence.js';
@@ -122,6 +123,50 @@ describe('handleRecurrence', () => {
         process_after: string;
       };
       // DST-proof: assert the wall-clock in Europe/London is exactly 09:00.
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/London',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(new Date(follow.process_after));
+      const hour = parts.find((p) => p.type === 'hour')!.value;
+      const minute = parts.find((p) => p.type === 'minute')!.value;
+      expect(`${hour}:${minute}`).toBe('09:00');
+    } finally {
+      closeDb();
+    }
+  });
+
+  it('resolves the owner’s tz when session.owner_key is null (empty owner → OWNER_PERSON_KEY)', async () => {
+    // Real owner sessions carry owner_key = null; only named co-users (e.g. lena)
+    // get an explicit key. person_tz is keyed on the canonical OWNER_PERSON_KEY
+    // ('owner') — the same string the user-memory dir + iOS identity use. Passing
+    // the raw null to resolveOwnerTz short-circuits to the host TIMEZONE, so a
+    // travelling owner's brief fires on the home zone (early/late). Normalizing
+    // null → OWNER_PERSON_KEY (the established `owner_key || OWNER_PERSON_KEY`
+    // idiom) is what makes the feature actually reach the owner.
+    initTestDb();
+    runMigrations(getDb());
+    upsertPersonTz(getDb(), OWNER_PERSON_KEY, 'Europe/London', new Date('2026-07-01T00:00:00Z').toISOString());
+    try {
+      const db = freshDb();
+      insertTask(db, {
+        id: 'task-owner-null',
+        processAfter: '2020-01-01T00:00:00.000Z',
+        recurrence: '0 9 * * *',
+        platformId: null,
+        channelType: null,
+        threadId: null,
+        content: JSON.stringify({ prompt: 'brief' }),
+      });
+      db.prepare(`UPDATE messages_in SET status='completed' WHERE id='task-owner-null'`).run();
+
+      await handleRecurrence(db, { ...fakeSession(), owner_key: null } as Session);
+
+      const follow = db.prepare(`SELECT process_after FROM messages_in WHERE id != 'task-owner-null'`).get() as {
+        process_after: string;
+      };
+      // DST-proof: the wall-clock in Europe/London must be exactly 09:00.
       const parts = new Intl.DateTimeFormat('en-GB', {
         timeZone: 'Europe/London',
         hour: '2-digit',

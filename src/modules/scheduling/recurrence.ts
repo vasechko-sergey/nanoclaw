@@ -13,7 +13,7 @@
  */
 import type Database from 'better-sqlite3';
 
-import { TIMEZONE } from '../../config.js';
+import { OWNER_PERSON_KEY, TIMEZONE } from '../../config.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
 import { resolveOwnerTz } from '../person-tz/index.js';
@@ -29,7 +29,14 @@ export async function handleRecurrence(inDb: Database.Database, session: Session
       // (src/v1/task-scheduler.ts:20-49); without it, a task written "0 9 * * *"
       // by an agent running in a user's local TZ fires at 09:00 UTC instead of
       // 09:00 user-local.
-      const ownerTz = resolveOwnerTz(session.owner_key) ?? TIMEZONE;
+      //
+      // The owner's sessions carry owner_key = null (only named co-users get an
+      // explicit key), but person_tz is keyed on the canonical OWNER_PERSON_KEY
+      // ('owner') — same as the user-memory dir + iOS identity. Normalize via the
+      // established `owner_key || OWNER_PERSON_KEY` idiom (container-runner.ts,
+      // agent-route.ts) so a travelling owner's brief actually follows their
+      // device tz instead of silently falling back to the host TIMEZONE.
+      const ownerTz = resolveOwnerTz(session.owner_key || OWNER_PERSON_KEY) ?? TIMEZONE;
       const interval = CronExpressionParser.parse(msg.recurrence, { tz: ownerTz });
       const nextRun = interval.next().toISOString();
       const prefix = msg.kind === 'task' ? 'task' : 'msg';
