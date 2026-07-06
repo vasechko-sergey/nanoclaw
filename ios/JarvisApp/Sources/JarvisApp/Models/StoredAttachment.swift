@@ -27,9 +27,20 @@ struct StoredAttachment: Codable, Equatable {
         if (a.kind == "image" || a.kind == "file"),
            let b64 = a.bytes_base64, let data = Data(base64Encoded: b64) {
             let sha = ChatImageStore.shared.write(data)
-            return StoredAttachment(kind: a.kind, name: a.name, mime_type: a.mime_type,
-                                    byte_size: a.byte_size, sha256: sha,
-                                    bytes_base64: nil, remote_id: a.remote_id)
+            // Only drop the inline bytes once the store has VERIFIABLY persisted
+            // them. `write` swallows disk-write failures (`try?`) and returns the
+            // sha regardless — trusting it blindly loses the image forever when
+            // the persist didn't land (an atomic write interrupted by a
+            // background/suspend transition, a dir-create failure, disk pressure):
+            // the mapper then finds no bytes for the sha and degrades to an empty
+            // .file bubble. If the file isn't actually on disk, keep the inline
+            // bytes as a fallback (the legacy render path) — a later launch's
+            // AttachmentMigration retries the persist.
+            if ChatImageStore.shared.has(sha: sha) {
+                return StoredAttachment(kind: a.kind, name: a.name, mime_type: a.mime_type,
+                                        byte_size: a.byte_size, sha256: sha,
+                                        bytes_base64: nil, remote_id: a.remote_id)
+            }
         }
         return StoredAttachment(kind: a.kind, name: a.name, mime_type: a.mime_type,
                                 byte_size: a.byte_size, sha256: nil,
