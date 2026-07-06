@@ -316,7 +316,7 @@
   var c=document.getElementById('orb'); if(!c) return;
   var ctx=c.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2), S=0,cx=0,cy=0,R=0,K=1;
   var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
-  var CY='84,219,230'; // app cyan rgb(0.33,0.86,0.90)
+  var CY='10,126,139'; // matches --signal (#0A7E8B), the hero accent + "live on your own devices"
   function size(){
     var b=c.getBoundingClientRect(); S=Math.max(1,b.width);
     c.width=S*dpr; c.height=S*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
