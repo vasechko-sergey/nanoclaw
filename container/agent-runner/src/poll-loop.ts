@@ -1015,7 +1015,7 @@ async function processQuery(
                 // latency-for-correctness tradeoff, same posture as the prose judge.
                 if (hasEnoughProse(event.text)) {
                   const l3 = await runLevel3(event.text, sources, grounding);
-                  log(`Factuality L3: checked=${l3.checked} escalated=${l3.escalated} failed=${l3.failed.length}`);
+                  log(`Factuality L3: checked=${l3.checked} escalated=${l3.escalated} failed=${l3.failed.length}${l3.error ? ` error=${l3.error}` : ''}`);
                   if (l3.failed.length > 0 && l3Retries < FACTUALITY_MAX_RETRIES) {
                     l3Retries++;
                     resultReceived = false; // a correction starts a fresh turn

@@ -84,6 +84,22 @@ test('runLevel3: a tool-grounded numeric claim skips CoVe + web (extract call on
   expect(r.failed).toHaveLength(0); // grounded → supported
 });
 
+test('runLevel3: extractClaims failure surfaces error (checked=0 is NOT ambiguous)', async () => {
+  const boom = (async () => { throw new Error('HTTP 401'); }) as unknown as typeof fetch;
+  const r = await runLevel3('reply', 'sources', new Set(), boom, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
+  expect(r.checked).toBe(0);
+  expect(r.failed).toHaveLength(0);
+  expect(r.error).toContain('extract:');
+});
+
+test('runLevel3: legit empty extraction has NO error (distinguishable from a swallowed failure)', async () => {
+  const empty = (async () =>
+    new Response(JSON.stringify({ content: [{ type: 'text', text: '{"claims":[]}' }] }), { status: 200 })) as unknown as typeof fetch;
+  const r = await runLevel3('reply', 'sources', new Set(), empty, { ANTHROPIC_BASE_URL: 'http://p', ANTHROPIC_API_KEY: 'k' });
+  expect(r.checked).toBe(0);
+  expect(r.error).toBeUndefined();
+});
+
 test('isToolGrounded: numeric claim traces to sources (rounding-aware); no-number claim does not', () => {
   const g = new Set(['49323.76', '13975']);
   expect(isToolGrounded('Оборот ₾49,324', g)).toBe(true); // 49324 rounds to 49323.76

@@ -29,6 +29,12 @@ export interface Level3Result {
   failed: { claim: string; why: string }[]; // claims to bounce/hedge
   checked: number;
   escalated: number;
+  /** Set only when the claim-extraction stage THREW (proxy/HTTP/timeout). Without
+   *  this, a swallowed extractor error is indistinguishable from a legitimate
+   *  empty result — both surface as `checked=0`, making a silently-dead L3 look
+   *  identical to a healthy no-op. Callers log it so `checked=0 error=…` is a
+   *  visible failure while a bare `checked=0` means "ran, found nothing". */
+  error?: string;
 }
 
 /** Pure verdict aggregation (unit-tested in isolation). */
@@ -73,7 +79,7 @@ export async function runLevel3(
 ): Promise<Level3Result> {
   let claims: ExtractedClaim[] = [];
   try { claims = await extractClaims(replyText, sourcesText, fetchImpl, env); }
-  catch { return { failed: [], checked: 0, escalated: 0 }; }
+  catch (e) { return { failed: [], checked: 0, escalated: 0, error: 'extract: ' + (e instanceof Error ? e.message : String(e)) }; }
 
   const outcomes: ClaimOutcome[] = [];
   let webBudget = L3_MAX_WEB;
