@@ -22,10 +22,50 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertNil(WorkoutRunnerLogic.setLabel(currentSetIdx: 0, targetSets: 0))   // warmup
     }
 
-    func test_restHint_nextExerciseWhenSetsDone() {
-        XCTAssertEqual(WorkoutRunnerLogic.restHint(setsDone: 2, targetSets: 4, nextExerciseName: "Тяга"), "подход 3")
-        XCTAssertEqual(WorkoutRunnerLogic.restHint(setsDone: 4, targetSets: 4, nextExerciseName: "Тяга"), "Тяга")
-        XCTAssertEqual(WorkoutRunnerLogic.restHint(setsDone: 4, targetSets: 4, nextExerciseName: nil), "подход 5")
+    func test_restHint_showsCurrentSetWhenMoreRemain() {
+        let exs = [ExercisePlan(exerciseSlug: "a", targetSets: 3, targetReps: "8", targetRir: 2,
+                                restSec: 60, notes: nil, nameRu: "A")]
+        let logged = [LoggedExercise(exerciseSlug: "a", sets: [LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date())], comment: nil)]
+        let hint = WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 0)
+        XCTAssertEqual(hint, "подход 2 — A")
+    }
+
+    func test_restHint_scansEarlierUnfinishedWhenCurrentDone() {
+        let exs = [
+            ExercisePlan(exerciseSlug: "a", targetSets: 2, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "A"),
+            ExercisePlan(exerciseSlug: "b", targetSets: 2, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "B"),
+        ]
+        let logged = [
+            LoggedExercise(exerciseSlug: "a", sets: [], comment: nil),
+            LoggedExercise(exerciseSlug: "b", sets: [
+                LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date()),
+                LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date()),
+            ], comment: nil),
+        ]
+        let hint = WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 1)
+        XCTAssertEqual(hint, "A — подход 1")
+    }
+
+    func test_restHint_allDone_returnsFinished() {
+        let exs = [
+            ExercisePlan(exerciseSlug: "a", targetSets: 1, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "A"),
+        ]
+        let logged = [LoggedExercise(exerciseSlug: "a", sets: [LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date())], comment: nil)]
+        let hint = WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 0)
+        XCTAssertEqual(hint, "Тренировка закончена")
+    }
+
+    func test_restHint_skipsDurationExercises() {
+        let exs = [
+            ExercisePlan(exerciseSlug: "cardio", targetSets: 0, targetReps: "", targetRir: 0, restSec: 0, notes: nil, nameRu: "Кардио", durationSec: 300),
+            ExercisePlan(exerciseSlug: "a", targetSets: 1, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "A"),
+        ]
+        let logged = [
+            LoggedExercise(exerciseSlug: "cardio", sets: [], comment: nil),
+            LoggedExercise(exerciseSlug: "a", sets: [], comment: nil),
+        ]
+        let hint = WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 1)
+        XCTAssertEqual(hint, "подход 1 — A")
     }
 
     func test_weightIndex_roundsToHalfStep() {

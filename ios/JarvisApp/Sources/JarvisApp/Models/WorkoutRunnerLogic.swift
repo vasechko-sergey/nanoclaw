@@ -41,13 +41,25 @@ enum WorkoutRunnerLogic {
         return "подход \(currentSetIdx + 1) из \(targetSets)"
     }
 
-    /// Rest-overlay "next" hint. After the active exercise's sets are done and a
-    /// next exercise exists → its name; otherwise the next set of this exercise.
-    static func restHint(setsDone: Int, targetSets: Int, nextExerciseName: String?) -> String {
-        if targetSets > 0, setsDone >= targetSets, let next = nextExerciseName {
-            return next
+    /// Rest-overlay "next" hint. Scans all exercises for the first unfinished
+    /// set starting from the active exercise, so a skipped-then-returned-to
+    /// exercise earlier in the plan is still surfaced instead of being hidden
+    /// behind the active exercise's own completed sets.
+    static func restHint(logged: [LoggedExercise], exercises: [ExercisePlan], activeIdx: Int) -> String {
+        guard exercises.indices.contains(activeIdx), logged.indices.contains(activeIdx) else {
+            return "Тренировка закончена"
         }
-        return "подход \(setsDone + 1)"
+        let cur = exercises[activeIdx]
+        let curDone = logged[activeIdx].sets.count
+        if cur.targetSets > 0, curDone < cur.targetSets {
+            return "подход \(curDone + 1) — \(cur.displayName)"
+        }
+        for i in exercises.indices where exercises[i].targetSets > 0 {
+            if logged[i].sets.count < exercises[i].targetSets {
+                return "\(exercises[i].displayName) — подход \(logged[i].sets.count + 1)"
+            }
+        }
+        return "Тренировка закончена"
     }
 
     /// Worded 1–5 session rating (1 = tough … 5 = easy).

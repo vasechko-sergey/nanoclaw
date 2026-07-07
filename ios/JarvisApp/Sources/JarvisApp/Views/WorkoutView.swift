@@ -195,16 +195,14 @@ struct WorkoutView: View {
         return coordinator.logged[idx].sets.isEmpty ? "ещё не начато" : "пройдено"
     }
 
-    /// Rest-overlay hint: the next exercise once the active one's sets are done,
-    /// else the next set of this exercise.
+    /// Rest-overlay hint: the next unfinished set, scanning from the active
+    /// exercise across the whole plan (surfaces skipped-then-returned exercises).
     private var restHint: String {
-        let next = coordinator.currentExerciseIdx + 1 < coordinator.totalExercises
-            ? coordinator.plan.exercises[coordinator.currentExerciseIdx + 1].displayName
-            : nil
-        return WorkoutRunnerLogic.restHint(
-            setsDone: coordinator.loggedForCurrentExercise.count,
-            targetSets: coordinator.currentExercise.targetSets,
-            nextExerciseName: next)
+        WorkoutRunnerLogic.restHint(
+            logged: coordinator.logged,
+            exercises: coordinator.plan.exercises,
+            activeIdx: coordinator.currentExerciseIdx
+        )
     }
 
     /// "Дальше →": advance to the next exercise, or open the finish sheet if last.
