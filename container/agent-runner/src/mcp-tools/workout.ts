@@ -105,12 +105,21 @@ export const workoutCoach: McpToolDefinition = {
   tool: {
     name: 'workout.coach',
     description:
-      'Short in-workout message. Goes to the workout UI, not the chat scroll. Use sparingly: PR, missed-set pattern, fatigue cue. Default to silence.',
+      'Short in-workout message. Goes to the workout UI, not the chat scroll. Use sparingly: PR, missed-set pattern, fatigue cue. If replying to a deviating set, include set_ref so iOS anchors the reply on that set chip. Default to silence.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         workout_id: { type: 'string' },
         text: { type: 'string', description: 'One or two sentences, plain language.' },
+        set_ref: {
+          type: 'object',
+          description: 'Anchor this coach reply to a specific logged set. Include when replying to a deviation.',
+          properties: {
+            exercise_slug: { type: 'string' },
+            set_idx: { type: 'number' },
+          },
+          required: ['exercise_slug', 'set_idx'],
+        },
       },
       required: ['workout_id', 'text'],
     },
@@ -118,10 +127,11 @@ export const workoutCoach: McpToolDefinition = {
   async handler(args) {
     const g = guard();
     if (!g.ok) return g.res;
-    writeWorkoutOut({
-      type: 'coach_message',
-      payload: { workout_id: args.workout_id, text: args.text },
-    });
+    const payload: Record<string, unknown> = { workout_id: args.workout_id, text: args.text };
+    if (args.set_ref && typeof args.set_ref === 'object') {
+      payload.set_ref = args.set_ref;
+    }
+    writeWorkoutOut({ type: 'coach_message', payload });
     return ok('coach_message sent');
   },
 };
