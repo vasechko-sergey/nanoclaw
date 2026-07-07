@@ -120,6 +120,17 @@ final class WorkoutCoordinator: ObservableObject {
         persist()
     }
 
+    /// Attach a coach reply to a specific already-logged set, keyed by
+    /// exercise slug + set index (from `CoachMessage.set_ref`). A missing
+    /// exercise or out-of-range setIdx (stale/racing reply) is a no-op rather
+    /// than a crash. Persists so the hint survives a kill.
+    func attachCoachHint(exerciseSlug: String, setIdx: Int, text: String) {
+        guard let exIdx = plan.exercises.firstIndex(where: { $0.exerciseSlug == exerciseSlug }) else { return }
+        guard logged[exIdx].sets.indices.contains(setIdx) else { return }
+        logged[exIdx].sets[setIdx].coachHint = text
+        persist()
+    }
+
     /// Produce the final WorkoutSession payload for `workout_complete`.
     func complete(sessionFeeling: Int, sessionFeelingLabel: String, healthSignalAtStart: String? = nil) -> WorkoutSession {
         isFinished = true

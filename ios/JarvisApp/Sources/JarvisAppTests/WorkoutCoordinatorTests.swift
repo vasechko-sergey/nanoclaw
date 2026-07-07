@@ -181,4 +181,31 @@ final class WorkoutCoordinatorTests: XCTestCase {
         _ = coord.complete(sessionFeeling: 4, sessionFeelingLabel: "ok")
         XCTAssertNil(try store.load(agentId: "payne"))
     }
+
+    func test_attachCoachHint_writesHintOnMatchingSet() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        // Force a deviation-carrying set so the log path exercises the full write.
+        var plan = makePlan()
+        plan = WorkoutPlan(
+            workoutId: plan.workoutId, dayName: plan.dayName, week: plan.week,
+            intensityLabel: plan.intensityLabel,
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                                     targetRir: 2, restSec: 120, notes: nil, nameRu: nil,
+                                     durationSec: nil, weightKgTarget: 100)],
+            imageManifest: [])
+        let coord = WorkoutCoordinator(plan: plan, queue: queue, store: store, agentId: "payne", messageId: "m")
+        coord.logSet(reps: 10, weight: 100, repsInReserve: 0)
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "отдохни дольше")
+        XCTAssertEqual(coord.logged[0].sets[0].coachHint, "отдохни дольше")
+    }
+
+    func test_attachCoachHint_missingSet_isNoOp() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: queue)
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 42, text: "should not crash")
+        // No assertion — just ensure no crash / no throw.
+    }
 }

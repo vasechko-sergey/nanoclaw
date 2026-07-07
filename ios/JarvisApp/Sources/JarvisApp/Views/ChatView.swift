@@ -500,9 +500,16 @@ struct ChatView: View {
                 }
             case .imageReceived:
                 swapImageToken += 1
-            case .planReceived, .coachMessage, .programUpdated:
+            case .coachMessage(let text, _, let setRef):
+                // Deviation replies carry set_ref — anchor the hint on that set's
+                // chip (💬 badge, see LoggedSetChips) instead of a banner.
+                if let setRef, let coord = activeWorkout?.coord {
+                    coord.attachCoachHint(exerciseSlug: setRef.exerciseSlug, setIdx: setRef.setIdx, text: text)
+                }
+                // When setRef is nil, existing subscribers (e.g. WorkoutView) show the banner.
+            case .planReceived, .programUpdated:
                 // .planReceived is consumed by the open WorkoutPreviewView's own
-                // subscription; coach/program banners live in WorkoutView.
+                // subscription; program banners are logged only (no UI yet).
                 break
             }
         }
