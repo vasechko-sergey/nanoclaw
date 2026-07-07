@@ -163,6 +163,18 @@ enum Schema {
         m.registerMigration("v12-set-log-deviation") { db in
             try db.execute(sql: "ALTER TABLE set_log_queue ADD COLUMN deviation_json TEXT;")
         }
+        m.registerMigration("v13-active-workout") { db in
+            try db.execute(sql: """
+                CREATE TABLE active_workout (
+                  agent_id    TEXT PRIMARY KEY,
+                  workout_id  TEXT NOT NULL,
+                  plan_json   TEXT NOT NULL,
+                  cursor_json TEXT NOT NULL,
+                  message_id  TEXT NOT NULL,
+                  updated_at  REAL NOT NULL
+                );
+            """)
+        }
         try m.migrate(writer)
     }
 }
