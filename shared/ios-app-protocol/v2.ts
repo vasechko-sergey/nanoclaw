@@ -400,6 +400,10 @@ export const Envelopes = {
       text: z.string().min(1),
       workout_id: z.string().optional(),
       agent_id: z.string().min(1).optional(),
+      set_ref: z.object({
+        exercise_slug: z.string().min(1),
+        set_idx: z.number().int().nonnegative(),
+      }).optional(),
     }),
   }),
   IntroRequest: EnvelopeBase.extend({
