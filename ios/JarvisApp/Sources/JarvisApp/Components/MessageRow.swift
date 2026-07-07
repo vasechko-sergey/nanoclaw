@@ -16,6 +16,12 @@ struct MessageRow: View {
     /// Shared player so a voice-note bubble can play/stop its own audio and
     /// reflect which note is currently playing.
     var audioPlayer: AudioPlaybackService? = nil
+    /// T3.6 — messageId of the persisted active-workout record, if any. When
+    /// it matches this row's `WorkoutPlanRow`, its CTA flips to "Продолжить
+    /// тренировку" and the tap (still routed through `onWorkoutStart`) resumes
+    /// the runner instead of opening the preview — see `ChatView`'s
+    /// `onWorkoutStart` closure, which branches on this same id.
+    var resumeMessageId: String? = nil
 
     @State private var feedback: FeedbackState = .none
 
@@ -39,7 +45,8 @@ struct MessageRow: View {
             case .action(let info):
                 ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast)
             case .workoutPlan(let info):
-                WorkoutPlanRow(messageId: message.id, info: info, onStart: onWorkoutStart, onCancel: onWorkoutCancel, isLast: isLast)
+                WorkoutPlanRow(messageId: message.id, info: info, onStart: onWorkoutStart, onCancel: onWorkoutCancel, isLast: isLast,
+                               isResuming: resumeMessageId == message.id)
             case .status(let info):
                 StatusRow(info: info)
             }

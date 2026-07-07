@@ -45,6 +45,13 @@ struct ChatView: View {
     // inbound `workout_plan` envelope arrives on `coordinator.workoutBus`.
     @State private var activeWorkout: WorkoutPresentation? = nil
 
+    // T3.6 — persisted in-progress workout for `payne` (survives app kill /
+    // navigating away). Drives the card's "Продолжить тренировку" CTA and the
+    // sticky resume banner when the card has scrolled out of the 500-message
+    // window. Loaded on appear, on agent switch, and after the workout
+    // fullScreenCover is dismissed — see `loadActiveWorkoutRecord()`.
+    @State private var activeWorkoutRecord: ActiveWorkoutRecord? = nil
+
     // Swap-exercise sheet (driven from the preview / runner "Заменить").
     private struct SwapSheetPresentation: Identifiable {
         let workoutId: String
@@ -143,6 +150,31 @@ struct ChatView: View {
         activeWorkout = WorkoutPresentation(plan: plan, phase: .running, coord: wc, messageId: cur.messageId)
     }
 
+    /// Load (or clear) the persisted active-workout record for `payne`. Only
+    /// `payne` runs the workout flow, so any other active agent clears it.
+    /// Safe to call repeatedly — cheap single-row lookup.
+    private func loadActiveWorkoutRecord() {
+        guard active.active == .payne,
+              let store = coordinator.ws.stack?.activeWorkoutStore else {
+            activeWorkoutRecord = nil
+            return
+        }
+        activeWorkoutRecord = try? store.load(agentId: active.active.rawValue)
+    }
+
+    /// Resume a persisted workout straight into the running phase — the user
+    /// already saw the preview when the plan first arrived, so there's no
+    /// need to show it again.
+    private func resumeWorkout(_ record: ActiveWorkoutRecord) {
+        guard let stack = coordinator.ws.stack else { return }
+        let wc = WorkoutCoordinator(
+            restoring: record, queue: stack.setLogQueue, store: stack.activeWorkoutStore
+        )
+        activeWorkout = WorkoutPresentation(
+            plan: record.plan, phase: .running, coord: wc, messageId: record.messageId
+        )
+    }
+
     /// Open the swap sheet for an exercise. The sheet drives the existing
     /// exercise_swap_request / _options / _confirm flow over the transport.
     private func beginSwap(slug: String, workoutId: String) {
@@ -190,34 +222,53 @@ struct ChatView: View {
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
-                ZStack(alignment: .bottomTrailing) {
-                    MessageListView(
-                        messages: visibleMessages,
-                        agentId: active.active.rawValue,
-                        isBusy: activeBusy,
-                        onImageTap: { thumb, sha in
-                            fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
-                        },
-                        onFeedback: { messageId, isPositive in
-                            coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: visibleMessages.first(where: { $0.id == messageId })?.text ?? "")
-                        },
-                        onActionTap: { messageId, buttonId, buttonLabel in
-                            coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
-                            coordinator.markActionAnswered(rowId: messageId, choice: buttonId)
-                        },
-                        onWorkoutStart: { plan, messageId in startWorkout(plan, messageId: messageId) },
-                        onWorkoutCancel: { coordinator.markWorkoutCardDone(workoutId: $0) },
-                        onRetry: { id in coordinator.ws.retrySend(id: id) },
-                        onMessageRead: { id in ws.sendMessageRead(id) },
-                        audioPlayer: coordinator.audioPlayer,
-                        onScrolledUpChange: { setScrolledUp($0) },
-                        scrollToBottomToken: scrollToBottomToken
-                    )
-                    .ignoresSafeArea(.container, edges: .bottom)
+                VStack(spacing: 0) {
+                    // T3.6 — sticky resume banner: only when the active-workout
+                    // card has scrolled out of the visible (500-message) window.
+                    // When the card IS visible, its own CTA flips to "Продолжить
+                    // тренировку" instead (see MessageRow's `resumeMessageId`).
+                    if let record = activeWorkoutRecord,
+                       !visibleMessages.contains(where: { $0.id == record.messageId }) {
+                        resumeWorkoutBanner(record)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
 
-                    if isScrolledUp {
-                        scrollToBottomFAB
-                            .transition(.scale.combined(with: .opacity))
+                    ZStack(alignment: .bottomTrailing) {
+                        MessageListView(
+                            messages: visibleMessages,
+                            agentId: active.active.rawValue,
+                            isBusy: activeBusy,
+                            onImageTap: { thumb, sha in
+                                fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
+                            },
+                            onFeedback: { messageId, isPositive in
+                                coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: visibleMessages.first(where: { $0.id == messageId })?.text ?? "")
+                            },
+                            onActionTap: { messageId, buttonId, buttonLabel in
+                                coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
+                                coordinator.markActionAnswered(rowId: messageId, choice: buttonId)
+                            },
+                            onWorkoutStart: { plan, messageId in
+                                if let record = activeWorkoutRecord, record.messageId == messageId {
+                                    resumeWorkout(record)
+                                } else {
+                                    startWorkout(plan, messageId: messageId)
+                                }
+                            },
+                            onWorkoutCancel: { coordinator.markWorkoutCardDone(workoutId: $0) },
+                            onRetry: { id in coordinator.ws.retrySend(id: id) },
+                            onMessageRead: { id in ws.sendMessageRead(id) },
+                            audioPlayer: coordinator.audioPlayer,
+                            onScrolledUpChange: { setScrolledUp($0) },
+                            scrollToBottomToken: scrollToBottomToken,
+                            resumeMessageId: activeWorkoutRecord?.messageId
+                        )
+                        .ignoresSafeArea(.container, edges: .bottom)
+
+                        if isScrolledUp {
+                            scrollToBottomFAB
+                                .transition(.scale.combined(with: .opacity))
+                        }
                     }
                 }
                 .transition(.opacity)
@@ -393,6 +444,12 @@ struct ChatView: View {
                                 coordinator.markWorkoutCardDone(workoutId: workoutId)
                             }
                             activeWorkout = nil
+                            // The coordinator already cleared the DB row (on
+                            // complete/abort, above) — drop the stale @State
+                            // immediately, then re-check in case something else
+                            // (e.g. a fresh workout_plan) is now active.
+                            activeWorkoutRecord = nil
+                            loadActiveWorkoutRecord()
                         },
                         onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
                         onAppearPrefetch: { coordinator.imageCache.prefetch(manifest: presentation.plan.imageManifest) }
@@ -454,6 +511,7 @@ struct ChatView: View {
             coordinator.onMessageReceived = {
                 Theme.hapticReceive()
             }
+            loadActiveWorkoutRecord()
         }
         // Cache the filtered message list (see `visibleMessages`). Recompute on
         // initial appear and whenever the underlying message set or the active
@@ -467,6 +525,7 @@ struct ChatView: View {
             // can't leave the next agent's chat rendered keyboard-open.
             dismissKeyboard()
             recomputeVisibleMessages()
+            loadActiveWorkoutRecord()
         }
         .onChange(of: autoStartVoice) {
             // When entering chat with voice trigger from home, activate input bar
@@ -570,6 +629,40 @@ struct ChatView: View {
             .padding(.trailing, Theme.scaled(8))
             .padding(.bottom, Theme.scaled(8))
             .accessibilityLabel("Прокрутить вниз")
+    }
+
+    // MARK: – Resume-workout banner
+
+    /// Sticky banner shown above the message list when there's a persisted
+    /// in-progress workout whose card has scrolled out of the 500-message
+    /// window. Tap resumes straight into the runner (see `resumeWorkout`).
+    private func resumeWorkoutBanner(_ record: ActiveWorkoutRecord) -> some View {
+        Button {
+            Theme.hapticSend()
+            resumeWorkout(record)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.accent)
+                Text("Незавершённая тренировка")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.assistantText)
+                Spacer()
+                Text("Продолжить")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            .padding(.horizontal, Theme.rowPadH)
+            .padding(.vertical, Theme.scaled(10))
+            .background(Theme.accent.opacity(0.12))
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Theme.accent.opacity(0.25)).frame(height: Theme.lineHairline)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("resume-workout-banner")
+        .accessibilityLabel("Незавершённая тренировка. Продолжить")
     }
 
     // MARK: – Drawer gestures

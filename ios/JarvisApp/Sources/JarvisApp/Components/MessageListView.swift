@@ -26,6 +26,10 @@ struct MessageListView: UIViewRepresentable {
     var onScrolledUpChange: (Bool) -> Void
     /// Incremented by the FAB tap to request an animated jump to the bottom.
     var scrollToBottomToken: Int
+    /// T3.6 — messageId of the persisted active-workout record, if any. The
+    /// matching `WorkoutPlanRow` flips its CTA to "Продолжить тренировку" and
+    /// routes the tap through `onWorkoutStart` to resume instead of preview.
+    var resumeMessageId: String? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -125,7 +129,8 @@ struct MessageListView: UIViewRepresentable {
                         onWorkoutStart: self.parent.onWorkoutStart,
                         onWorkoutCancel: self.parent.onWorkoutCancel,
                         onRetry: self.parent.onRetry,
-                        audioPlayer: self.parent.audioPlayer
+                        audioPlayer: self.parent.audioPlayer,
+                        resumeMessageId: self.parent.resumeMessageId
                     )
                     .scaleEffect(x: 1, y: -1)
                 }
