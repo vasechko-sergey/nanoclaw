@@ -36,6 +36,7 @@ import { initGroupFilesystem } from './group-init.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
+import { resolveOwnerTz } from './modules/person-tz/index.js';
 // Provider host-side config barrel — each provider that needs host-side
 // container setup self-registers on import.
 import './providers/index.js';
@@ -286,7 +287,20 @@ async function spawnContainer(session: Session): Promise<void> {
 
   const mounts = buildMounts(agentGroup, session, containerConfig, contribution);
   const containerName = `nanoclaw-v2-${agentGroup.folder}-${Date.now()}`;
-  const args = await buildContainerArgs(mounts, containerName, agentGroup, containerConfig, provider, contribution);
+  // OWNER_TZ = the owner's current device tz (person_tz), falling back to the
+  // global TIMEZONE. Container-side scripts stamp/bucket owner-local dates with
+  // it (the container's own TZ stays global — deliberate non-goal to change).
+  // owner_key is null on pre-migration/headless sessions → resolve for OWNER.
+  const ownerTz = resolveOwnerTz(session.owner_key || OWNER_PERSON_KEY) ?? TIMEZONE;
+  const args = await buildContainerArgs(
+    mounts,
+    containerName,
+    agentGroup,
+    containerConfig,
+    provider,
+    contribution,
+    ownerTz,
+  );
 
   log.info('Spawning container', { sessionId: session.id, agentGroup: agentGroup.name, containerName });
 
@@ -711,12 +725,17 @@ async function buildContainerArgs(
   containerConfig: import('./container-config.js').ContainerConfig,
   provider: string,
   providerContribution: ProviderContainerContribution,
+  ownerTz: string,
 ): Promise<string[]> {
   const args: string[] = ['run', '--rm', '--name', containerName, '--label', CONTAINER_INSTALL_LABEL];
 
   // Environment — only vars read by code we don't own.
   // Everything NanoClaw-specific is in container.json (read by runner at startup).
   args.push('-e', `TZ=${TIMEZONE}`);
+  // Owner's current wall-clock tz — see spawnContainer. Container-side scripts
+  // (e.g. Gordon's nutrition rollup) date owner-local events with this while the
+  // container's own TZ stays global.
+  args.push('-e', `OWNER_TZ=${ownerTz}`);
 
   // Provider-contributed env vars (e.g. XDG_DATA_HOME, OPENCODE_*, NO_PROXY).
   if (providerContribution.env) {
