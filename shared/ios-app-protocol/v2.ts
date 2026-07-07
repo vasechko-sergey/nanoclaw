@@ -277,6 +277,20 @@ export const Envelopes = {
       reps_in_reserve: z.number().int().min(0).max(10),
       ts: z.string().datetime(),
       agent_id: z.string().min(1).optional(),
+      deviation: z.object({
+        kind: z.enum([
+          'weight_under', 'weight_over',
+          'reps_under', 'reps_over',
+          'failure', 'too_easy',
+        ]),
+        magnitude: z.number(),
+        target: z.object({
+          reps_min: z.number().int().nonnegative(),
+          reps_max: z.number().int().nonnegative(),
+          weight: z.number().nonnegative().optional(),
+          rir: z.number().int().min(0).max(10),
+        }),
+      }).optional(),
     }),
   }),
   ExerciseDone: EnvelopeBase.extend({
