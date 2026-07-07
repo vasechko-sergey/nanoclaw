@@ -57,4 +57,50 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertEqual(WorkoutRunnerLogic.repsOptions.first, 1)
         XCTAssertEqual(WorkoutRunnerLogic.repsOptions.last, 30)
     }
+
+    private func mkExercise(reps: String, weight: Double? = 20, rir: Int = 2) -> ExercisePlan {
+        ExercisePlan(exerciseSlug: "ex", targetSets: 4, targetReps: reps, targetRir: rir,
+                     restSec: 120, notes: nil, nameRu: nil, durationSec: nil, weightKgTarget: weight)
+    }
+
+    func test_detectDeviation_weightUnder15pct() {
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 10, actualWeight: 80, actualRir: 2, exercise: ex)
+        XCTAssertEqual(d?.kind, .weightUnder)
+        XCTAssertEqual(d?.target.weight, 100)
+        XCTAssertEqual(d?.target.repsMin, 8)
+        XCTAssertEqual(d?.target.repsMax, 10)
+    }
+
+    func test_detectDeviation_weightWithinTolerance() {
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 10, actualWeight: 90, actualRir: 2, exercise: ex)
+        XCTAssertNil(d)
+    }
+
+    func test_detectDeviation_repsUnderByThree() {
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        // Mid = 9 → actual 5 is 4 below → repsUnder
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 5, actualWeight: 100, actualRir: 2, exercise: ex)
+        XCTAssertEqual(d?.kind, .repsUnder)
+    }
+
+    func test_detectDeviation_failureOnRirZero() {
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 10, actualWeight: 100, actualRir: 0, exercise: ex)
+        XCTAssertEqual(d?.kind, .failure)
+    }
+
+    func test_detectDeviation_tooEasyOnRir4() {
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 10, actualWeight: 100, actualRir: 4, exercise: ex)
+        XCTAssertEqual(d?.kind, .tooEasy)
+    }
+
+    func test_detectDeviation_weightPrecedesReps() {
+        // Weight AND reps out of tolerance → weight wins.
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 3, actualWeight: 80, actualRir: 2, exercise: ex)
+        XCTAssertEqual(d?.kind, .weightUnder)
+    }
 }

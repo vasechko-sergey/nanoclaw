@@ -83,4 +83,64 @@ enum WorkoutRunnerLogic {
     static func exerciseCounter(activeIdx: Int, total: Int) -> String {
         "\(min(activeIdx + 1, max(total, 1)))/\(max(total, 1))"
     }
+
+    /// Tolerance beyond which a set is called out to Payne.
+    static let weightDeviationPct: Double = 0.15
+    static let repsDeviationAbs: Int = 3
+
+    enum SetDeviationKind: String, Codable, Equatable {
+        case weightUnder, weightOver
+        case repsUnder, repsOver
+        case failure       // rir == 0
+        case tooEasy       // rir >= 4
+    }
+
+    struct DeviationTargetSnapshot: Codable, Equatable {
+        let repsMin: Int
+        let repsMax: Int
+        var weight: Double?
+        let rir: Int
+    }
+
+    struct SetDeviation: Codable, Equatable {
+        let kind: SetDeviationKind
+        /// Percentage delta for weight, absolute delta for reps, 0 for rir kinds.
+        let magnitude: Double
+        let target: DeviationTargetSnapshot
+    }
+
+    /// Detect deviation of an actual set against its planned exercise.
+    /// Precedence: weight > reps > rir. Returns nil if within tolerance.
+    static func detectDeviation(actualReps: Int, actualWeight: Double, actualRir: Int, exercise: ExercisePlan) -> SetDeviation? {
+        let range = parseRepsRange(exercise.targetReps)
+        let target = DeviationTargetSnapshot(
+            repsMin: range.min ?? 0, repsMax: range.max ?? 0,
+            weight: exercise.weightKgTarget, rir: exercise.targetRir
+        )
+        if let weightTarget = exercise.weightKgTarget, weightTarget > 0 {
+            let delta = actualWeight / weightTarget - 1.0
+            if abs(delta) >= weightDeviationPct {
+                return SetDeviation(kind: delta < 0 ? .weightUnder : .weightOver, magnitude: delta, target: target)
+            }
+        }
+        if let mid = range.mid {
+            let d = actualReps - mid
+            if abs(d) >= repsDeviationAbs {
+                return SetDeviation(kind: d < 0 ? .repsUnder : .repsOver, magnitude: Double(d), target: target)
+            }
+        }
+        if actualRir == 0 { return SetDeviation(kind: .failure, magnitude: 0, target: target) }
+        if actualRir >= 4 { return SetDeviation(kind: .tooEasy, magnitude: 0, target: target) }
+        return nil
+    }
+
+    private static func parseRepsRange(_ s: String) -> (min: Int?, max: Int?, mid: Int?) {
+        let parts = s.split(separator: "-").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        if parts.count == 2 {
+            let mid = (parts[0] + parts[1]) / 2
+            return (parts[0], parts[1], mid)
+        }
+        if parts.count == 1 { return (parts[0], parts[0], parts[0]) }
+        return (nil, nil, nil)
+    }
 }
