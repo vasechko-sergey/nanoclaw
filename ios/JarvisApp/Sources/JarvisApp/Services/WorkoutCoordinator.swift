@@ -19,14 +19,35 @@ final class WorkoutCoordinator: ObservableObject {
 
     private let queue: SetLogQueue
     private let startedAt: Date
+    private let store: ActiveWorkoutStore?
+    private let agentId: String?
+    private let messageId: String?
 
-    init(plan: WorkoutPlan, queue: SetLogQueue, startedAt: Date = Date()) {
+    init(plan: WorkoutPlan, queue: SetLogQueue, startedAt: Date = Date(),
+         store: ActiveWorkoutStore? = nil, agentId: String? = nil, messageId: String? = nil) {
         self.plan = plan
         self.queue = queue
         self.startedAt = startedAt
         self.logged = plan.exercises.map {
             LoggedExercise(exerciseSlug: $0.exerciseSlug, sets: [], comment: nil)
         }
+        self.store = store
+        self.agentId = agentId
+        self.messageId = messageId
+    }
+
+    /// Restore a coordinator from a persisted `ActiveWorkoutRecord` — kill/crash
+    /// resume lands the user back at the exact set/exercise/logged state.
+    init(restoring record: ActiveWorkoutRecord, queue: SetLogQueue, store: ActiveWorkoutStore) {
+        self.plan = record.plan
+        self.queue = queue
+        self.startedAt = record.updatedAt
+        self.logged = record.cursor.logged
+        self.currentExerciseIdx = record.cursor.currentExerciseIdx
+        self.currentSetIdx = record.cursor.currentSetIdx
+        self.store = store
+        self.agentId = record.agentId
+        self.messageId = record.messageId
     }
 
     // MARK: - Derived
@@ -73,6 +94,7 @@ final class WorkoutCoordinator: ObservableObject {
         )
         lastRepsInReserve = repsInReserve
         currentSetIdx += 1
+        persist()
     }
 
     /// Mark current exercise done and advance — or signal end of workout.
@@ -86,6 +108,7 @@ final class WorkoutCoordinator: ObservableObject {
             // Stay on last exercise; UI shows "финиш" button.
             currentSetIdx = plan.exercises[currentExerciseIdx].targetSets
         }
+        persist()
     }
 
     /// Switch the active exercise (free order — e.g. machine busy). Resumes the
@@ -94,11 +117,13 @@ final class WorkoutCoordinator: ObservableObject {
         guard !isFinished, plan.exercises.indices.contains(idx) else { return }
         currentExerciseIdx = idx
         currentSetIdx = logged[idx].sets.count
+        persist()
     }
 
     /// Produce the final WorkoutSession payload for `workout_complete`.
     func complete(sessionFeeling: Int, sessionFeelingLabel: String, healthSignalAtStart: String? = nil) -> WorkoutSession {
         isFinished = true
+        if let store, let agentId { try? store.clear(agentId: agentId) }
         return WorkoutSession(
             workoutId: plan.workoutId,
             date: Self.dateFormatter.string(from: startedAt),
@@ -119,9 +144,21 @@ final class WorkoutCoordinator: ObservableObject {
     /// the server reconciles via workout_id.
     func abort() {
         isFinished = true
+        if let store, let agentId { try? store.clear(agentId: agentId) }
     }
 
     // MARK: - Helpers
+
+    private func persist() {
+        guard let store, let agentId, let messageId else { return }
+        let cursor = WorkoutCursor(
+            currentExerciseIdx: currentExerciseIdx,
+            currentSetIdx: currentSetIdx,
+            logged: logged
+        )
+        try? store.save(agentId: agentId, workoutId: plan.workoutId,
+                        plan: plan, cursor: cursor, messageId: messageId)
+    }
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()

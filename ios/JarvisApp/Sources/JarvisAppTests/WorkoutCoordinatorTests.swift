@@ -130,4 +130,55 @@ final class WorkoutCoordinatorTests: XCTestCase {
         coord.logSet(reps: 10, weight: 80, repsInReserve: 2)
         XCTAssertEqual(coord.loggedForCurrentExercise.first?.deviation?.kind, .weightUnder)
     }
+
+    func test_restoringInit_reproducesCursorAndLogged() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        let plan = makePlan(exerciseCount: 2, setsPerExercise: 3)
+        let cursor = WorkoutCursor(
+            currentExerciseIdx: 1, currentSetIdx: 2,
+            logged: [
+                LoggedExercise(exerciseSlug: "ex-0",
+                               sets: [LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date(timeIntervalSince1970: 0))],
+                               comment: nil),
+                LoggedExercise(exerciseSlug: "ex-1",
+                               sets: [LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date(timeIntervalSince1970: 0)),
+                                      LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date(timeIntervalSince1970: 0))],
+                               comment: nil),
+            ]
+        )
+        try store.save(agentId: "payne", workoutId: plan.workoutId, plan: plan, cursor: cursor, messageId: "m")
+        let record = try store.load(agentId: "payne")!
+
+        let coord = WorkoutCoordinator(restoring: record, queue: queue, store: store)
+        XCTAssertEqual(coord.currentExerciseIdx, 1)
+        XCTAssertEqual(coord.currentSetIdx, 2)
+        XCTAssertEqual(coord.loggedForCurrentExercise.count, 2)
+    }
+
+    func test_logSet_persistsToActiveWorkoutStore() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        let plan = makePlan()
+        let coord = WorkoutCoordinator(plan: plan, queue: queue, store: store, agentId: "payne", messageId: "m")
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        let rec = try store.load(agentId: "payne")
+        XCTAssertEqual(rec?.cursor.currentSetIdx, 1)
+        XCTAssertEqual(rec?.cursor.logged.first?.sets.count, 1)
+    }
+
+    func test_complete_clearsActiveWorkoutStore() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: queue, store: store, agentId: "payne", messageId: "m")
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        _ = coord.complete(sessionFeeling: 4, sessionFeelingLabel: "ok")
+        XCTAssertNil(try store.load(agentId: "payne"))
+    }
 }
