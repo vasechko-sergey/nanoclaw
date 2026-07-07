@@ -148,11 +148,21 @@ struct LoggedSet: Codable, Equatable {
     let weight: Double
     let repsInReserve: Int
     let ts: Date
+    var deviation: WorkoutRunnerLogic.SetDeviation?
+    var coachHint: String?
 
     enum CodingKeys: String, CodingKey {
         case reps, weight
         case repsInReserve = "reps_in_reserve"
         case ts
+        case deviation
+        case coachHint = "coach_hint"
+    }
+
+    init(reps: Int, weight: Double, repsInReserve: Int, ts: Date,
+         deviation: WorkoutRunnerLogic.SetDeviation? = nil, coachHint: String? = nil) {
+        self.reps = reps; self.weight = weight; self.repsInReserve = repsInReserve; self.ts = ts
+        self.deviation = deviation; self.coachHint = coachHint
     }
 }
 

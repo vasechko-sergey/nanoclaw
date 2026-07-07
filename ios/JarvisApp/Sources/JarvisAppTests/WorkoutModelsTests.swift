@@ -87,4 +87,20 @@ final class WorkoutModelsTests: XCTestCase {
         XCTAssertEqual(obj["session_feeling"] as? Int, 4)
         XCTAssertEqual(obj["session_feeling_label"] as? String, "Хорошо, с запасом")
     }
+
+    func test_loggedSet_persistsDeviationAndCoachHint() throws {
+        let dev = WorkoutRunnerLogic.SetDeviation(
+            kind: .failure, magnitude: 0,
+            target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
+        )
+        let set = LoggedSet(
+            reps: 10, weight: 20, repsInReserve: 0, ts: Date(timeIntervalSince1970: 0),
+            deviation: dev,
+            coachHint: "отдохни 3 мин"
+        )
+        let data = try JSONEncoder().encode(set)
+        let round = try JSONDecoder().decode(LoggedSet.self, from: data)
+        XCTAssertEqual(round.deviation?.kind, .failure)
+        XCTAssertEqual(round.coachHint, "отдохни 3 мин")
+    }
 }
