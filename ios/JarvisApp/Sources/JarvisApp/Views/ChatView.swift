@@ -142,11 +142,14 @@ struct ChatView: View {
     /// running phase. Same `id` (workoutId) keeps the same fullScreenCover
     /// mounted and just swaps its content from preview to runner.
     private func startRunning(with plan: WorkoutPlan) {
-        guard let cur = activeWorkout, let queue = coordinator.ws.stack?.setLogQueue else {
+        guard let cur = activeWorkout, let stack = coordinator.ws.stack else {
             Log.warn(.ws, "start running but stack not built — dropping")
             return
         }
-        let wc = WorkoutCoordinator(plan: plan, queue: queue)
+        let wc = WorkoutCoordinator(
+            plan: plan, queue: stack.setLogQueue,
+            store: stack.activeWorkoutStore, agentId: "payne", messageId: cur.messageId
+        )
         activeWorkout = WorkoutPresentation(plan: plan, phase: .running, coord: wc, messageId: cur.messageId)
     }
 
