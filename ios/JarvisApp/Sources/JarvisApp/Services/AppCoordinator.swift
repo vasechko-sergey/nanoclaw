@@ -434,7 +434,10 @@ final class AppCoordinator {
             // Persisting into the chat thread as a regular assistant message
             // is deferred — the chat surface already gets coach guidance via
             // the normal message channel from Payne.
-            workoutBus.events.send(.coachMessage(text: c.text, workoutId: c.workout_id))
+            let setRef: (exerciseSlug: String, setIdx: Int)? = c.set_ref.map {
+                (exerciseSlug: $0.exercise_slug, setIdx: $0.set_idx)
+            }
+            workoutBus.events.send(.coachMessage(text: c.text, workoutId: c.workout_id, setRef: setRef))
 
         case .exerciseSwapOptions(let s):
             let resp = SwapResponse(
