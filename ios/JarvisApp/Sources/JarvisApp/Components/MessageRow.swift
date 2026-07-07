@@ -650,6 +650,7 @@ struct WorkoutPlanRow: View {
     var onStart: ((WorkoutPlan, String) -> Void)?
     var onCancel: ((String) -> Void)?
     let isLast: Bool
+    var isResuming: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -685,7 +686,9 @@ struct WorkoutPlanRow: View {
                                         .stroke(Theme.textSecondary.opacity(0.6), style: StrokeStyle(lineWidth: Theme.lineAccent, lineCap: .round, lineJoin: .round))
                                         .frame(width: 9, height: 6)
                                 }
-                                Text("Посмотреть тренировку")
+                                Text(info.done
+                                     ? "Посмотреть тренировку"
+                                     : (isResuming ? "Продолжить тренировку" : "Посмотреть тренировку"))
                                     .font(.system(size: 13, weight: .medium))
                             }
                             .foregroundStyle(info.done ? Theme.textSecondary.opacity(0.6) : Theme.accent)
