@@ -626,23 +626,51 @@ actor TransportV2 {
         try await sendEnvelope(env)
     }
 
+    /// Build the `V2.SetLog` wire payload from a queued `SetLogEvent`,
+    /// copying over the deviation payload (if any) with the Swift
+    /// camelCase → wire snake_case kind mapping. Static + pure so the
+    /// mapping is unit-testable without standing up a transport/socket.
+    static func buildSetLogPayload(event: SetLogEvent, agentId: String?) -> V2.SetLog {
+        var payload = V2.SetLog(
+            workout_id: event.workoutId,
+            exercise_slug: event.exerciseSlug,
+            set_idx: event.setIdx,
+            reps: event.reps,
+            weight: event.weight,
+            reps_in_reserve: event.repsInReserve,
+            ts: workoutISOFormatter.string(from: event.ts),
+            agent_id: agentId
+        )
+        if let d = event.deviation {
+            payload.deviation = V2.SetLog.Deviation(
+                kind: {
+                    switch d.kind {
+                    case .weightUnder: return .weight_under
+                    case .weightOver: return .weight_over
+                    case .repsUnder: return .reps_under
+                    case .repsOver: return .reps_over
+                    case .failure: return .failure
+                    case .tooEasy: return .too_easy
+                    }
+                }(),
+                magnitude: d.magnitude,
+                target: V2.SetLog.DeviationTarget(
+                    reps_min: d.target.repsMin,
+                    reps_max: d.target.repsMax,
+                    weight: d.target.weight,
+                    rir: d.target.rir
+                )
+            )
+        }
+        return payload
+    }
+
     /// Send a set_log envelope built from a queued `SetLogEvent`.
     func sendSetLog(_ event: SetLogEvent) async throws {
         let env = workoutEnvelope(
             .setLog,
             kind: .data,
-            payload: .setLog(
-                V2.SetLog(
-                    workout_id: event.workoutId,
-                    exercise_slug: event.exerciseSlug,
-                    set_idx: event.setIdx,
-                    reps: event.reps,
-                    weight: event.weight,
-                    reps_in_reserve: event.repsInReserve,
-                    ts: Self.workoutISOFormatter.string(from: event.ts),
-                    agent_id: "payne"
-                )
-            )
+            payload: .setLog(Self.buildSetLogPayload(event: event, agentId: "payne"))
         )
         try await sendEnvelope(env)
     }
