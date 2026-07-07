@@ -143,6 +143,10 @@ describe('WorkoutBridge', () => {
     expect(writes).toHaveLength(1);
     const body = JSON.parse(writes[0].text);
     expect(body.payload.deviation.kind).toBe('failure');
+    expect(body.payload.deviation.magnitude).toBe(0);
+    expect(body.payload.deviation.target.reps_min).toBe(8);
+    expect(body.payload.deviation.target.reps_max).toBe(10);
+    expect(body.payload.deviation.target.rir).toBe(2);
   });
 
   it('passes set_ref through on coach_message outbound', () => {
@@ -157,5 +161,6 @@ describe('WorkoutBridge', () => {
     const env = sends[0].env as any;
     expect(env.type).toBe('coach_message');
     expect(env.payload.set_ref.exercise_slug).toBe('ex');
+    expect(env.payload.set_ref.set_idx).toBe(0);
   });
 });
