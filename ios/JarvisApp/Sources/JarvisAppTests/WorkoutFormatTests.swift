@@ -70,4 +70,15 @@ final class WorkoutFormatTests: XCTestCase {
         XCTAssertEqual(round.deviation?.target.reps_max, 10)
         XCTAssertEqual(round.deviation?.target.weight, 24)
     }
+
+    func test_coachMessage_encodesSetRefRoundTrip() throws {
+        let msg = V2.CoachMessage(
+            text: "go", workout_id: "w", agent_id: "payne",
+            set_ref: .init(exercise_slug: "ex", set_idx: 3)
+        )
+        let data = try JSONEncoder().encode(msg)
+        let round = try JSONDecoder().decode(V2.CoachMessage.self, from: data)
+        XCTAssertEqual(round.set_ref?.exercise_slug, "ex")
+        XCTAssertEqual(round.set_ref?.set_idx, 3)
+    }
 }

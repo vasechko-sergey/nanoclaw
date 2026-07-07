@@ -473,8 +473,16 @@ enum V2 {
         let text: String
         var workout_id: String?
         var agent_id: String?
-        init(text: String, workout_id: String? = nil, agent_id: String? = nil) {
+        var set_ref: SetRef?
+
+        struct SetRef: Codable, Equatable {
+            let exercise_slug: String
+            let set_idx: Int
+        }
+
+        init(text: String, workout_id: String? = nil, agent_id: String? = nil, set_ref: SetRef? = nil) {
             self.text = text; self.workout_id = workout_id; self.agent_id = agent_id
+            self.set_ref = set_ref
         }
     }
 
