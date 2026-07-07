@@ -330,10 +330,32 @@ enum V2 {
         let reps_in_reserve: Int
         let ts: String
         var agent_id: String?
-        init(workout_id: String, exercise_slug: String, set_idx: Int, reps: Int, weight: Double, reps_in_reserve: Int, ts: String, agent_id: String? = nil) {
+        var deviation: Deviation?
+
+        struct Deviation: Codable, Equatable {
+            let kind: Kind
+            let magnitude: Double
+            let target: DeviationTarget
+            enum Kind: String, Codable, Equatable {
+                case weight_under, weight_over
+                case reps_under, reps_over
+                case failure
+                case too_easy
+            }
+        }
+        struct DeviationTarget: Codable, Equatable {
+            let reps_min: Int
+            let reps_max: Int
+            var weight: Double?
+            let rir: Int
+        }
+
+        init(workout_id: String, exercise_slug: String, set_idx: Int, reps: Int, weight: Double,
+             reps_in_reserve: Int, ts: String, agent_id: String? = nil, deviation: Deviation? = nil) {
             self.workout_id = workout_id; self.exercise_slug = exercise_slug
             self.set_idx = set_idx; self.reps = reps; self.weight = weight
-            self.reps_in_reserve = reps_in_reserve; self.ts = ts; self.agent_id = agent_id
+            self.reps_in_reserve = reps_in_reserve; self.ts = ts
+            self.agent_id = agent_id; self.deviation = deviation
         }
     }
 

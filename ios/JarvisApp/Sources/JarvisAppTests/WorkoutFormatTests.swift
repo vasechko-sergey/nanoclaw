@@ -51,4 +51,23 @@ final class WorkoutFormatTests: XCTestCase {
         XCTAssertNil(e.durationSec)
         XCTAssertFalse(e.isDuration)
     }
+
+    func test_setLog_encodesDeviationRoundTrip() throws {
+        let deviation = V2.SetLog.Deviation(
+            kind: .failure,
+            magnitude: 0,
+            target: V2.SetLog.DeviationTarget(reps_min: 8, reps_max: 10, weight: 24, rir: 2)
+        )
+        let log = V2.SetLog(
+            workout_id: "w", exercise_slug: "ex", set_idx: 0,
+            reps: 10, weight: 20, reps_in_reserve: 0,
+            ts: "2026-01-01T00:00:00Z", agent_id: "payne",
+            deviation: deviation
+        )
+        let data = try JSONEncoder().encode(log)
+        let round = try JSONDecoder().decode(V2.SetLog.self, from: data)
+        XCTAssertEqual(round.deviation?.kind, .failure)
+        XCTAssertEqual(round.deviation?.target.reps_max, 10)
+        XCTAssertEqual(round.deviation?.target.weight, 24)
+    }
 }
