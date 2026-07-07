@@ -160,6 +160,9 @@ enum Schema {
             // NULL = not yet notified.
             try db.execute(sql: "ALTER TABLE inbound_dedup ADD COLUMN notified_at INTEGER;")
         }
+        m.registerMigration("v12-set-log-deviation") { db in
+            try db.execute(sql: "ALTER TABLE set_log_queue ADD COLUMN deviation_json TEXT;")
+        }
         try m.migrate(writer)
     }
 }

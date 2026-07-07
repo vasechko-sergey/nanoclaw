@@ -53,6 +53,10 @@ final class WorkoutCoordinator: ObservableObject {
     /// Log one set; enqueue for delivery; advance set index.
     func logSet(reps: Int, weight: Double, repsInReserve: Int, ts: Date = Date()) {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }
+        let dev = WorkoutRunnerLogic.detectDeviation(
+            actualReps: reps, actualWeight: weight, actualRir: repsInReserve,
+            exercise: currentExercise
+        )
         let event = SetLogEvent(
             workoutId: plan.workoutId,
             exerciseSlug: currentExercise.exerciseSlug,
@@ -60,11 +64,12 @@ final class WorkoutCoordinator: ObservableObject {
             reps: reps,
             weight: weight,
             repsInReserve: repsInReserve,
-            ts: ts
+            ts: ts,
+            deviation: dev
         )
         try? queue.enqueue(event)
         logged[currentExerciseIdx].sets.append(
-            LoggedSet(reps: reps, weight: weight, repsInReserve: repsInReserve, ts: ts)
+            LoggedSet(reps: reps, weight: weight, repsInReserve: repsInReserve, ts: ts, deviation: dev)
         )
         lastRepsInReserve = repsInReserve
         currentSetIdx += 1

@@ -116,4 +116,18 @@ final class WorkoutCoordinatorTests: XCTestCase {
         // Queue still has the partial event — transport drains, server reconciles.
         XCTAssertEqual(try queue.pending().count, 1)
     }
+
+    func test_logSet_taggsDeviationOnLoggedSet() throws {
+        let queue = try makeQueue()
+        // 100 kg target; log 80 → weightUnder
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "Верх A", week: 2, intensityLabel: "тяжёлая",
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                                     targetRir: 2, restSec: 120, notes: nil, nameRu: nil,
+                                     durationSec: nil, weightKgTarget: 100)],
+            imageManifest: [])
+        let coord = WorkoutCoordinator(plan: plan, queue: queue)
+        coord.logSet(reps: 10, weight: 80, repsInReserve: 2)
+        XCTAssertEqual(coord.loggedForCurrentExercise.first?.deviation?.kind, .weightUnder)
+    }
 }
