@@ -27,7 +27,8 @@ final class NotificationReplySender {
             } else {
                 let detail = err.map { "error: \($0.localizedDescription)" }
                     ?? "status: \((resp as? HTTPURLResponse)?.statusCode ?? -1)"
-                Log.warn(.outbox, "lock-screen reply POST /ios/reply failed (\(detail))")
+                Log.warn(.outbox, "lock-screen reply POST /ios/reply failed (\(detail)) — queuing for WS drain")
+                self?.queueForRetry(agentId: agentId, text: trimmed)
             }
             completion(ok)
         }.resume()
@@ -39,6 +40,18 @@ final class NotificationReplySender {
         guard let store else { return }
         try? store.insertOutboundUserMessage(
             id: UUID().uuidString, text: text, attachments: [], context: nil, agentId: agentId, status: .sent
+        )
+    }
+
+    /// On POST failure, persist the reply as a `queued` outbound row so the WS
+    /// transport's dispatcher (queuedOutbound filters status='queued') delivers it
+    /// on the next connect, instead of silently dropping the text (F3). At-least-
+    /// once: a 200 whose response was lost would double-send, which is preferable
+    /// to losing the user's reply.
+    private func queueForRetry(agentId: String, text: String) {
+        guard let store else { return }
+        try? store.insertOutboundUserMessage(
+            id: UUID().uuidString, text: text, attachments: [], context: nil, agentId: agentId, status: .queued
         )
     }
 }
