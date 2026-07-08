@@ -268,6 +268,13 @@ struct ChatView: View {
                 // тренировку" can be reopened.
                 if session != nil {
                     coordinator.markWorkoutCardDone(workoutId: workoutId)
+                    // Fix M: auto-switch to Payne so the incoming summary lands
+                    // on-screen — the user was likely mid-swipe on Jarvis when
+                    // they finished. Also mount a "Разбираем тренировку…"
+                    // placeholder so the 5-15 s dead zone before Payne's reply
+                    // isn't an empty chat.
+                    active.active = .payne
+                    coordinator.mountWorkoutSummaryPlaceholder(workoutId: workoutId)
                 }
                 activeWorkout = nil
                 // The coordinator already cleared the DB row (on

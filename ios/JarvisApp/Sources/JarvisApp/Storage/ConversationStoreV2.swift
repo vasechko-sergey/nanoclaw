@@ -314,6 +314,29 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Update a message's text WITHOUT marking it edited. Used for locally
+    /// injected placeholder rows (Fix M: workout summary) where an evolving
+    /// status label ("Разбираем…" → "Пейн задерживается…") should stay a
+    /// plain assistant message without acquiring the "(ред.)" chrome.
+    @discardableResult
+    func updatePlaceholderText(id: String, text: String) throws -> Bool {
+        try writer.write { db in
+            try db.execute(sql: "UPDATE messages SET text = ? WHERE id = ?",
+                           arguments: [text, id])
+            return db.changesCount > 0
+        }
+    }
+
+    /// Delete a message row by id. Used to sweep a local placeholder once the
+    /// real reply from the same agent lands (Fix M).
+    @discardableResult
+    func deleteMessage(id: String) throws -> Bool {
+        try writer.write { db in
+            try db.execute(sql: "DELETE FROM messages WHERE id = ?", arguments: [id])
+            return db.changesCount > 0
+        }
+    }
+
     /// Record the user's answer to an inbound action card. Persisted so the
     /// answered state survives reload (the rendered card shows the chosen option).
     func markActionAnswered(rowId: String, choice: String) throws {

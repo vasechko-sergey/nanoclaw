@@ -100,4 +100,37 @@ final class ConversationStoreV2PullTests: XCTestCase {
         let agent = try col(store, id, "agent_id")
         XCTAssertEqual(agent, "payne")
     }
+
+    // MARK: - Fix M: workout summary placeholder
+
+    @MainActor
+    func testSummaryPlaceholderRowIdIsDeterministic() {
+        let a = AppCoordinator.summaryPlaceholderRowId(workoutId: "2026-07-08")
+        let b = AppCoordinator.summaryPlaceholderRowId(workoutId: "2026-07-08")
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(a, "workout-summary-placeholder-2026-07-08")
+    }
+
+    /// Fix M end-to-end at the store layer: the placeholder is inserted,
+    /// its text can evolve without acquiring the `edited` tag, and it can
+    /// be deleted once Payne's real summary lands.
+    @MainActor
+    func testSummaryPlaceholderLifecycle() throws {
+        let store = try makeStore()
+        let id = AppCoordinator.summaryPlaceholderRowId(workoutId: "w1")
+
+        try store.insertInboundFromPull(id: id, seq: nil, text: "Разбираем тренировку…", agentId: "payne", ts: 1000)
+        XCTAssertEqual(try col(store, id, "text"), "Разбираем тренировку…")
+
+        _ = try store.updatePlaceholderText(id: id, text: "Пейн задерживается — проверь чуть позже.")
+        XCTAssertEqual(try col(store, id, "text"), "Пейн задерживается — проверь чуть позже.")
+        // `edited` stays 0 — placeholder mutations are not user-visible corrections.
+        let edited = try store.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT edited FROM messages WHERE id = ?", arguments: [id])
+        }
+        XCTAssertEqual(edited, 0)
+
+        _ = try store.deleteMessage(id: id)
+        XCTAssertNil(try col(store, id, "text"))
+    }
 }
