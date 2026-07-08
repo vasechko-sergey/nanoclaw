@@ -110,6 +110,11 @@ final class WebSocketClientV2 {
     /// stack has been built (splash → home → chat with connect in-flight).
     private(set) var stackReady: Bool = false
     @ObservationIgnored private var observationCancellable: AnyDatabaseCancellable?
+    /// False until the observation's first emit (initial DB hydration) has been
+    /// consumed. Guards the per-row assistant hooks (haptic / watch push / TTS)
+    /// from replaying the whole history on cold launch or stack rebuild (F25).
+    /// Reset on each `restartObservation`.
+    @ObservationIgnored private var didHydrate = false
     @ObservationIgnored private var sentReadIds: Set<String> = []
 
     /// Production managers — captured so we can build the stack on first connect.
@@ -448,6 +453,7 @@ final class WebSocketClientV2 {
     private func restartObservation() {
         observationCancellable?.cancel()
         observationCancellable = nil
+        didHydrate = false
 
         // Stack hasn't been built yet (production: pre-`connect`).
         guard let stack else {
@@ -473,6 +479,16 @@ final class WebSocketClientV2 {
             },
             onChange: { [weak self] mapped in
                 guard let self else { return }
+                // First emit after (re)starting the observation is the initial DB
+                // hydration — the whole history. Assign it WITHOUT firing per-row
+                // assistant hooks, else cold launch / stack rebuild replays a
+                // haptic + watch push + TTS for every historical assistant row
+                // (F25). Real arrivals come on subsequent emits.
+                guard self.didHydrate else {
+                    self.didHydrate = true
+                    self.messages = mapped
+                    return
+                }
                 // Detect new assistant arrivals for haptic + auto-speak hooks.
                 let oldIds = Set(self.messages.map { $0.id })
                 let newAssistant = mapped.filter {
@@ -713,6 +729,18 @@ final class WebSocketClientV2 {
             respond_by_voice: respondByVoice,
             voice_only: voiceOnly
         )
+    }
+
+    /// Nudge the set_log queue to drain immediately (F23). Set logs are enqueued
+    /// live during a workout; without this they only flowed on the next auth_ok,
+    /// so coach hints stayed inert on a stable connection. Safe when offline —
+    /// `drainSetLogQueue` stops on the first send failure, leaving events queued
+    /// for the next auth_ok drain.
+    func drainSetLogsNow() {
+        guard let stack else { return }
+        let transport = stack.transport
+        let queue = stack.setLogQueue
+        Task { await transport.drainSetLogQueue(queue) }
     }
 
     // MARK: - Auth_ok callback wiring

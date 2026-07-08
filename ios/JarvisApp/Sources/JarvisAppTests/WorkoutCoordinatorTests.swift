@@ -43,6 +43,18 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(try queue.pending().count, 1)
     }
 
+    func test_logSet_firesOnSetLoggedHook() throws {
+        // F23: a live-logged set must nudge the transport to drain the SetLogQueue
+        // immediately (so coach hints flow on a stable connection) rather than
+        // waiting for the next auth_ok.
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: queue)
+        var drainNudges = 0
+        coord.onSetLogged = { drainNudges += 1 }
+        coord.logSet(reps: 10, weight: 22.5, repsInReserve: 2)
+        XCTAssertEqual(drainNudges, 1)
+    }
+
     func test_finishExercise_advancesToNext() throws {
         let queue = try makeQueue()
         let coord = WorkoutCoordinator(plan: makePlan(), queue: queue)

@@ -190,6 +190,7 @@ struct ChatView: View {
             plan: plan, queue: stack.setLogQueue,
             store: stack.activeWorkoutStore, agentId: "payne", messageId: cur.messageId
         )
+        wc.onSetLogged = { [coordinator] in coordinator.ws.drainSetLogsNow() }
         activeWorkout = WorkoutPresentation(plan: plan, phase: .running, coord: wc, messageId: cur.messageId)
     }
 
@@ -226,6 +227,7 @@ struct ChatView: View {
         let wc = WorkoutCoordinator(
             restoring: record, queue: stack.setLogQueue, store: stack.activeWorkoutStore
         )
+        wc.onSetLogged = { [coordinator] in coordinator.ws.drainSetLogsNow() }
         activeWorkout = WorkoutPresentation(
             plan: record.plan, phase: .running, coord: wc, messageId: record.messageId
         )

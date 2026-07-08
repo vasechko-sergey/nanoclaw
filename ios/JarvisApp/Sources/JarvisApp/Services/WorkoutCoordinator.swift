@@ -25,6 +25,10 @@ final class WorkoutCoordinator: ObservableObject {
     private let store: ActiveWorkoutStore?
     private let agentId: String?
     private let messageId: String?
+    /// Fired after each set is enqueued (F23) so the transport can drain the
+    /// SetLogQueue live instead of waiting for the next auth_ok — otherwise
+    /// coach hints stayed inert on a stable connection.
+    var onSetLogged: (() -> Void)?
 
     init(plan: WorkoutPlan, queue: SetLogQueue, startedAt: Date = Date(),
          store: ActiveWorkoutStore? = nil, agentId: String? = nil, messageId: String? = nil) {
@@ -97,6 +101,7 @@ final class WorkoutCoordinator: ObservableObject {
             deviations: devs
         )
         try? queue.enqueue(event)
+        onSetLogged?()
         logged[currentExerciseIdx].sets.append(
             LoggedSet(reps: reps, weight: weight, repsInReserve: repsInReserve, ts: ts, deviations: devs)
         )
