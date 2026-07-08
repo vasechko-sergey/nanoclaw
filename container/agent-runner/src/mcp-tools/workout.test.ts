@@ -87,6 +87,72 @@ describe('workout MCP tools', () => {
     expect(body.payload).toEqual({ workout_id: 'w1', text: 'good set' });
   });
 
+  // Fix K: strict set_ref validation. The iOS Codable SetRef requires
+  // both fields; a partial ref would fail the WHOLE envelope decode and
+  // silently drop the coach text.
+  it('workout.coach with a complete set_ref forwards it', async () => {
+    await workoutCoach.handler({
+      workout_id: 'w1',
+      text: 'посмотри технику',
+      set_ref: { exercise_slug: 'squat', set_idx: 2 },
+    });
+    const body = JSON.parse(getUndeliveredMessages()[0].content);
+    expect(body.payload.set_ref).toEqual({ exercise_slug: 'squat', set_idx: 2 });
+  });
+
+  it('workout.coach drops set_ref when set_idx is missing (preserves text)', async () => {
+    const res = await workoutCoach.handler({
+      workout_id: 'w1',
+      text: 'нормально сделал',
+      // set_idx omitted — iOS Codable would throw and drop the whole envelope
+      set_ref: { exercise_slug: 'squat' } as unknown as { exercise_slug: string; set_idx: number },
+    });
+    expect(res.isError).toBeUndefined();
+    const body = JSON.parse(getUndeliveredMessages()[0].content);
+    expect(body.payload.text).toBe('нормально сделал');
+    expect(body.payload.set_ref).toBeUndefined();
+  });
+
+  it('workout.coach drops set_ref when exercise_slug is missing', async () => {
+    await workoutCoach.handler({
+      workout_id: 'w1',
+      text: 'ok',
+      set_ref: { set_idx: 0 } as unknown as { exercise_slug: string; set_idx: number },
+    });
+    const body = JSON.parse(getUndeliveredMessages()[0].content);
+    expect(body.payload.set_ref).toBeUndefined();
+  });
+
+  it('workout.coach drops set_ref when exercise_slug is empty string', async () => {
+    await workoutCoach.handler({
+      workout_id: 'w1',
+      text: 'ok',
+      set_ref: { exercise_slug: '', set_idx: 0 },
+    });
+    const body = JSON.parse(getUndeliveredMessages()[0].content);
+    expect(body.payload.set_ref).toBeUndefined();
+  });
+
+  it('workout.coach drops set_ref when set_idx is negative', async () => {
+    await workoutCoach.handler({
+      workout_id: 'w1',
+      text: 'ok',
+      set_ref: { exercise_slug: 'squat', set_idx: -1 },
+    });
+    const body = JSON.parse(getUndeliveredMessages()[0].content);
+    expect(body.payload.set_ref).toBeUndefined();
+  });
+
+  it('workout.coach drops set_ref when set_idx is a float', async () => {
+    await workoutCoach.handler({
+      workout_id: 'w1',
+      text: 'ok',
+      set_ref: { exercise_slug: 'squat', set_idx: 1.5 },
+    });
+    const body = JSON.parse(getUndeliveredMessages()[0].content);
+    expect(body.payload.set_ref).toBeUndefined();
+  });
+
   it('workout.swap writes an exercise_swap_options row', async () => {
     const res = await workoutSwap.handler({
       workout_id: 'w1',

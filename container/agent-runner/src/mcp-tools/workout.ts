@@ -128,8 +128,22 @@ export const workoutCoach: McpToolDefinition = {
     const g = guard();
     if (!g.ok) return g.res;
     const payload: Record<string, unknown> = { workout_id: args.workout_id, text: args.text };
-    if (args.set_ref && typeof args.set_ref === 'object') {
-      payload.set_ref = args.set_ref;
+    // Fix K: strict validation. Both `exercise_slug` (non-empty string) and
+    // `set_idx` (non-negative integer) are REQUIRED whenever set_ref is
+    // present — iOS's V2.CoachMessage.SetRef is non-optional on both fields,
+    // so a partial ref (e.g. `{exercise_slug: "x"}` from a lazy LLM output)
+    // fails Codable synthesis on the WHOLE envelope, silently dropping the
+    // coach text too. Drop the ref instead — the text still lands via the
+    // 4-sec top banner / injected chat row.
+    const rawRef = args.set_ref as Record<string, unknown> | undefined;
+    if (rawRef && typeof rawRef === 'object' && !Array.isArray(rawRef)) {
+      const slug = rawRef.exercise_slug;
+      const idx = rawRef.set_idx;
+      const slugOk = typeof slug === 'string' && slug.length > 0;
+      const idxOk = typeof idx === 'number' && Number.isInteger(idx) && idx >= 0;
+      if (slugOk && idxOk) {
+        payload.set_ref = { exercise_slug: slug, set_idx: idx };
+      }
     }
     writeWorkoutOut({ type: 'coach_message', payload });
     return ok('coach_message sent');
