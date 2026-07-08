@@ -655,6 +655,10 @@ struct ChatView: View {
     /// Sticky banner shown above the message list when there's a persisted
     /// in-progress workout whose card has scrolled out of the 500-message
     /// window. Tap resumes straight into the runner (see `resumeWorkout`).
+    ///
+    /// Copy aligned with the card CTA — both surfaces say "Продолжить
+    /// тренировку" so the user sees the same action label everywhere,
+    /// styled like a button row in Payne's accent.
     private func resumeWorkoutBanner(_ record: ActiveWorkoutRecord) -> some View {
         Button {
             Theme.hapticSend()
@@ -662,15 +666,12 @@ struct ChatView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.accent)
-                Text("Незавершённая тренировка")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.assistantText)
-                Spacer()
-                Text("Продолжить")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.accent)
+                Text("Продолжить тренировку")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                Spacer()
             }
             .padding(.horizontal, Theme.rowPadH)
             .padding(.vertical, Theme.scaled(10))
@@ -681,7 +682,7 @@ struct ChatView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("resume-workout-banner")
-        .accessibilityLabel("Незавершённая тренировка. Продолжить")
+        .accessibilityLabel("Продолжить тренировку")
     }
 
     // MARK: – Drawer gestures
