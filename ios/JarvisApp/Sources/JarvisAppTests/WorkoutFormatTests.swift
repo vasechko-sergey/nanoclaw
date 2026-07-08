@@ -52,7 +52,7 @@ final class WorkoutFormatTests: XCTestCase {
         XCTAssertFalse(e.isDuration)
     }
 
-    func test_setLog_encodesDeviationRoundTrip() throws {
+    func test_setLog_encodesDeviationsRoundTrip() throws {
         let deviation = V2.SetLog.Deviation(
             kind: .failure,
             magnitude: 0,
@@ -62,13 +62,13 @@ final class WorkoutFormatTests: XCTestCase {
             workout_id: "w", exercise_slug: "ex", set_idx: 0,
             reps: 10, weight: 20, reps_in_reserve: 0,
             ts: "2026-01-01T00:00:00Z", agent_id: "payne",
-            deviation: deviation
+            deviations: [deviation]
         )
         let data = try JSONEncoder().encode(log)
         let round = try JSONDecoder().decode(V2.SetLog.self, from: data)
-        XCTAssertEqual(round.deviation?.kind, .failure)
-        XCTAssertEqual(round.deviation?.target.reps_max, 10)
-        XCTAssertEqual(round.deviation?.target.weight, 24)
+        XCTAssertEqual(round.deviations?.map(\.kind), [.failure])
+        XCTAssertEqual(round.deviations?.first?.target.reps_max, 10)
+        XCTAssertEqual(round.deviations?.first?.target.weight, 24)
     }
 
     func test_coachMessage_encodesSetRefRoundTrip() throws {
@@ -86,18 +86,19 @@ final class WorkoutFormatTests: XCTestCase {
     /// the same vocabulary the wire `set_log` envelope uses — so both paths
     /// (workout_complete.full_session_json and set_log) ship identical
     /// key names for the same signal.
-    func test_loggedSet_encodesDeviationWithSnakeCaseKeys() throws {
+    func test_loggedSet_encodesDeviationsWithSnakeCaseKeys() throws {
         let dev = WorkoutRunnerLogic.SetDeviation(
             kind: .weightUnder, magnitude: -0.2,
             target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
         )
         let set = LoggedSet(
             reps: 10, weight: 80, repsInReserve: 2,
-            ts: Date(timeIntervalSince1970: 0), deviation: dev
+            ts: Date(timeIntervalSince1970: 0), deviations: [dev]
         )
         let data = try JSONEncoder().encode(set)
         let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        let devObj = try XCTUnwrap(obj["deviation"] as? [String: Any])
+        let devArr = try XCTUnwrap(obj["deviations"] as? [[String: Any]])
+        let devObj = try XCTUnwrap(devArr.first)
         XCTAssertEqual(devObj["kind"] as? String, "weight_under")
         let target = try XCTUnwrap(devObj["target"] as? [String: Any])
         XCTAssertNotNil(target["reps_min"])

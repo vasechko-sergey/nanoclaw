@@ -175,6 +175,13 @@ enum Schema {
                 );
             """)
         }
+        m.registerMigration("v14-set-log-deviations") { db in
+            // A set can deviate on several axes at once (weight + reps + rir), so
+            // store the full array. Keeps the old single `deviation_json` column
+            // (SQLite can't drop it cheaply); it stays NULL for new rows and is
+            // read only as a backward-compat fallback in `SetLogQueue.pending()`.
+            try db.execute(sql: "ALTER TABLE set_log_queue ADD COLUMN deviations_json TEXT;")
+        }
         try m.migrate(writer)
     }
 }

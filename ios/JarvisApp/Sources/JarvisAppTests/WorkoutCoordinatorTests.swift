@@ -128,7 +128,7 @@ final class WorkoutCoordinatorTests: XCTestCase {
             imageManifest: [])
         let coord = WorkoutCoordinator(plan: plan, queue: queue)
         coord.logSet(reps: 10, weight: 80, repsInReserve: 2)
-        XCTAssertEqual(coord.loggedForCurrentExercise.first?.deviation?.kind, .weightUnder)
+        XCTAssertEqual(coord.loggedForCurrentExercise.first?.deviations.map(\.kind), [.weightUnder])
     }
 
     func test_restoringInit_reproducesCursorAndLogged() throws {

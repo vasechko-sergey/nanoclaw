@@ -126,7 +126,7 @@ describe('WorkoutBridge', () => {
     expect(sends).toHaveLength(0);
   });
 
-  it('passes deviation through on set_log inbound', () => {
+  it('passes deviations through on set_log inbound', () => {
     bridge.handleInbound('sess', {
       type: 'set_log',
       payload: {
@@ -137,16 +137,19 @@ describe('WorkoutBridge', () => {
         weight: 20,
         reps_in_reserve: 0,
         ts: 'now',
-        deviation: { kind: 'failure', magnitude: 0, target: { reps_min: 8, reps_max: 10, rir: 2 } },
+        deviations: [
+          { kind: 'weight_under', magnitude: -0.2, target: { reps_min: 8, reps_max: 10, rir: 2 } },
+          { kind: 'failure', magnitude: 0, target: { reps_min: 8, reps_max: 10, rir: 2 } },
+        ],
       },
     } as unknown as AnyEnvelope);
     expect(writes).toHaveLength(1);
     const body = JSON.parse(writes[0].text);
-    expect(body.payload.deviation.kind).toBe('failure');
-    expect(body.payload.deviation.magnitude).toBe(0);
-    expect(body.payload.deviation.target.reps_min).toBe(8);
-    expect(body.payload.deviation.target.reps_max).toBe(10);
-    expect(body.payload.deviation.target.rir).toBe(2);
+    expect(body.payload.deviations).toHaveLength(2);
+    expect(body.payload.deviations[0].kind).toBe('weight_under');
+    expect(body.payload.deviations[1].kind).toBe('failure');
+    expect(body.payload.deviations[1].target.reps_min).toBe(8);
+    expect(body.payload.deviations[1].target.rir).toBe(2);
   });
 
   it('passes set_ref through on coach_message outbound', () => {

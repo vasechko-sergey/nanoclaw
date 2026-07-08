@@ -187,32 +187,38 @@ final class TransportV2WorkoutTests: XCTestCase {
 
     // MARK: - buildSetLogPayload (deviation mapping)
 
-    func test_transport_setLog_carriesDeviation() {
-        let dev = WorkoutRunnerLogic.SetDeviation(
-            kind: .failure, magnitude: 0,
-            target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
-        )
+    func test_transport_setLog_carriesDeviations() {
+        let devs = [
+            WorkoutRunnerLogic.SetDeviation(
+                kind: .weightUnder, magnitude: -0.2,
+                target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
+            ),
+            WorkoutRunnerLogic.SetDeviation(
+                kind: .failure, magnitude: 0,
+                target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
+            ),
+        ]
         let event = SetLogEvent(
             workoutId: "w", exerciseSlug: "ex", setIdx: 0,
             reps: 10, weight: 20, repsInReserve: 0,
             ts: Date(timeIntervalSince1970: 0),
-            deviation: dev
+            deviations: devs
         )
         let payload = TransportV2.buildSetLogPayload(event: event, agentId: "payne")
-        XCTAssertEqual(payload.deviation?.kind, .failure)
-        XCTAssertEqual(payload.deviation?.target.reps_min, 8)
-        XCTAssertEqual(payload.deviation?.target.weight, 100)
+        XCTAssertEqual(payload.deviations?.map(\.kind), [.weight_under, .failure])
+        XCTAssertEqual(payload.deviations?.first?.target.reps_min, 8)
+        XCTAssertEqual(payload.deviations?.first?.target.weight, 100)
         XCTAssertEqual(payload.agent_id, "payne")
     }
 
-    func test_transport_setLog_omitsDeviationWhenNil() {
+    func test_transport_setLog_omitsDeviationsWhenEmpty() {
         let event = SetLogEvent(
             workoutId: "w", exerciseSlug: "ex", setIdx: 0,
             reps: 10, weight: 20, repsInReserve: 2,
             ts: Date(timeIntervalSince1970: 0),
-            deviation: nil
+            deviations: []
         )
         let payload = TransportV2.buildSetLogPayload(event: event, agentId: "payne")
-        XCTAssertNil(payload.deviation)
+        XCTAssertNil(payload.deviations)
     }
 }

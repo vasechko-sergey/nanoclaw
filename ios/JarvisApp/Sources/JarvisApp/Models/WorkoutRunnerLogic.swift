@@ -139,29 +139,34 @@ enum WorkoutRunnerLogic {
         }
     }
 
-    /// Detect deviation of an actual set against its planned exercise.
-    /// Precedence: weight > reps > rir. Returns nil if within tolerance.
-    static func detectDeviation(actualReps: Int, actualWeight: Double, actualRir: Int, exercise: ExercisePlan) -> SetDeviation? {
+    /// Detect every way an actual set deviated from its planned exercise.
+    /// Returns ALL hits (weight, then reps, then rir) so a set that went wrong
+    /// on multiple axes surfaces each one to Payne — a single-precedence result
+    /// would hide "wrong weight AND missed reps AND hit failure" behind just the
+    /// weight, which reads as a lighter problem than it is. Empty ⇒ within
+    /// tolerance on every axis.
+    static func detectDeviation(actualReps: Int, actualWeight: Double, actualRir: Int, exercise: ExercisePlan) -> [SetDeviation] {
         let range = parseRepsRange(exercise.targetReps)
         let target = DeviationTargetSnapshot(
             repsMin: range.min ?? 0, repsMax: range.max ?? 0,
             weight: exercise.weightKgTarget, rir: exercise.targetRir
         )
+        var out: [SetDeviation] = []
         if let weightTarget = exercise.weightKgTarget, weightTarget > 0 {
             let delta = actualWeight / weightTarget - 1.0
             if abs(delta) >= weightDeviationPct {
-                return SetDeviation(kind: delta < 0 ? .weightUnder : .weightOver, magnitude: delta, target: target)
+                out.append(SetDeviation(kind: delta < 0 ? .weightUnder : .weightOver, magnitude: delta, target: target))
             }
         }
         if let mid = range.mid {
             let d = actualReps - mid
             if abs(d) >= repsDeviationAbs {
-                return SetDeviation(kind: d < 0 ? .repsUnder : .repsOver, magnitude: Double(d), target: target)
+                out.append(SetDeviation(kind: d < 0 ? .repsUnder : .repsOver, magnitude: Double(d), target: target))
             }
         }
-        if actualRir == 0 { return SetDeviation(kind: .failure, magnitude: 0, target: target) }
-        if actualRir >= 4 { return SetDeviation(kind: .tooEasy, magnitude: 0, target: target) }
-        return nil
+        if actualRir == 0 { out.append(SetDeviation(kind: .failure, magnitude: 0, target: target)) }
+        else if actualRir >= 4 { out.append(SetDeviation(kind: .tooEasy, magnitude: 0, target: target)) }
+        return out
     }
 
     private static func parseRepsRange(_ s: String) -> (min: Int?, max: Int?, mid: Int?) {

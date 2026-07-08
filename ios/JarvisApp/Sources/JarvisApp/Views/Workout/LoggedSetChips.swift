@@ -43,12 +43,14 @@ struct LoggedSetChips: View {
 
     @ViewBuilder
     private func chipButton(idx: Int, set: LoggedSet) -> some View {
+        // Badge marks a set that deviated from plan; the sheet (and tappability)
+        // is driven by Payne's coachHint — the two are separate signals.
         Button {
             if set.coachHint != nil { tappedIdx = idx }
         } label: {
             HStack(spacing: 3) {
                 Text("✓ \(set.reps)×\(WorkoutSetFormat.weight(set.weight))")
-                if set.coachHint != nil {
+                if !set.deviations.isEmpty {
                     Image(systemName: "bubble.left.fill")
                         .font(.system(size: 10))
                 }

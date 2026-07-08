@@ -626,12 +626,11 @@ actor TransportV2 {
         try await sendEnvelope(env)
     }
 
-    /// Build the `V2.SetLog` wire payload from a queued `SetLogEvent`,
-    /// copying over the deviation payload (if any). Swift `SetDeviationKind`
-    /// raw values now match `V2.SetLog.Deviation.Kind` raw values (both
-    /// snake_case), so kind lookup is a rawValue round-trip with a hard
-    /// force — the enums are keyed by the same wire vocabulary and a
-    /// mismatch is a compile-visible bug, not a runtime one.
+    /// Build the `V2.SetLog` wire payload from a queued `SetLogEvent`, mapping
+    /// every deviation into the `deviations` array (nil when on-plan). Swift
+    /// `SetDeviationKind` raw values match `V2.SetLog.Deviation.Kind` raw values
+    /// (both snake_case), so kind lookup is a rawValue round-trip; the `?? .failure`
+    /// is an unreachable guard (a mismatch is a compile-visible bug, not runtime).
     static func buildSetLogPayload(event: SetLogEvent, agentId: String?) -> V2.SetLog {
         var payload = V2.SetLog(
             workout_id: event.workoutId,
@@ -643,17 +642,19 @@ actor TransportV2 {
             ts: workoutISOFormatter.string(from: event.ts),
             agent_id: agentId
         )
-        if let d = event.deviation, let wireKind = V2.SetLog.Deviation.Kind(rawValue: d.kind.rawValue) {
-            payload.deviation = V2.SetLog.Deviation(
-                kind: wireKind,
-                magnitude: d.magnitude,
-                target: V2.SetLog.DeviationTarget(
-                    reps_min: d.target.repsMin,
-                    reps_max: d.target.repsMax,
-                    weight: d.target.weight,
-                    rir: d.target.rir
+        if !event.deviations.isEmpty {
+            payload.deviations = event.deviations.map { d in
+                V2.SetLog.Deviation(
+                    kind: V2.SetLog.Deviation.Kind(rawValue: d.kind.rawValue) ?? .failure,
+                    magnitude: d.magnitude,
+                    target: V2.SetLog.DeviationTarget(
+                        reps_min: d.target.repsMin,
+                        reps_max: d.target.repsMax,
+                        weight: d.target.weight,
+                        rir: d.target.rir
+                    )
                 )
-            )
+            }
         }
         return payload
     }

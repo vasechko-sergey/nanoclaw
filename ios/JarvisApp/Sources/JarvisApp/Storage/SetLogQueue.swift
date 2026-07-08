@@ -12,7 +12,8 @@ struct SetLogEvent: Equatable {
     let weight: Double
     let repsInReserve: Int
     let ts: Date
-    var deviation: WorkoutRunnerLogic.SetDeviation? = nil
+    /// All deviations for this set (weight/reps/rir). Empty ⇒ on-plan.
+    var deviations: [WorkoutRunnerLogic.SetDeviation] = []
 }
 
 struct PendingSetLog: Equatable {
@@ -35,13 +36,15 @@ final class SetLogQueue {
     }
 
     func enqueue(_ event: SetLogEvent) throws {
-        let deviationJson: String? = event.deviation.flatMap { d in
-            (try? JSONEncoder().encode(d)).flatMap { String(data: $0, encoding: .utf8) }
-        }
+        // Write only the new `deviations_json` (array) column going forward. The
+        // legacy `deviation_json` column stays in the table (SQLite can't drop it
+        // cheaply) but is left NULL for new rows.
+        let deviationsJson: String? = event.deviations.isEmpty ? nil
+            : (try? JSONEncoder().encode(event.deviations)).flatMap { String(data: $0, encoding: .utf8) }
         try writer.write { db in
             try db.execute(sql: """
                 INSERT INTO set_log_queue
-                  (workout_id, exercise_slug, set_idx, reps, weight, reps_in_reserve, ts_iso, deviation_json, delivered)
+                  (workout_id, exercise_slug, set_idx, reps, weight, reps_in_reserve, ts_iso, deviations_json, delivered)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, arguments: [
                 event.workoutId,
@@ -51,7 +54,7 @@ final class SetLogQueue {
                 event.weight,
                 event.repsInReserve,
                 Self.isoFormatter.string(from: event.ts),
-                deviationJson,
+                deviationsJson,
             ])
         }
     }
@@ -61,15 +64,25 @@ final class SetLogQueue {
         try writer.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT rowid AS local_id, workout_id, exercise_slug, set_idx,
-                       reps, weight, reps_in_reserve, ts_iso, deviation_json
+                       reps, weight, reps_in_reserve, ts_iso, deviations_json, deviation_json
                 FROM set_log_queue
                 WHERE delivered = 0
                 ORDER BY rowid ASC
             """).map { row in
-                let devJson: String? = row["deviation_json"]
-                let dev: WorkoutRunnerLogic.SetDeviation? = devJson
-                    .flatMap { $0.data(using: .utf8) }
-                    .flatMap { try? JSONDecoder().decode(WorkoutRunnerLogic.SetDeviation.self, from: $0) }
+                // Prefer the new array column; fall back to a legacy single
+                // `deviation_json` object (rows enqueued by a pre-array build).
+                let devs: [WorkoutRunnerLogic.SetDeviation]
+                if let devsJson: String = row["deviations_json"],
+                   let data = devsJson.data(using: .utf8),
+                   let arr = try? JSONDecoder().decode([WorkoutRunnerLogic.SetDeviation].self, from: data) {
+                    devs = arr
+                } else if let legacyJson: String = row["deviation_json"],
+                          let data = legacyJson.data(using: .utf8),
+                          let single = try? JSONDecoder().decode(WorkoutRunnerLogic.SetDeviation.self, from: data) {
+                    devs = [single]
+                } else {
+                    devs = []
+                }
                 return PendingSetLog(
                     localId: row["local_id"],
                     event: SetLogEvent(
@@ -80,7 +93,7 @@ final class SetLogQueue {
                         weight: row["weight"],
                         repsInReserve: row["reps_in_reserve"],
                         ts: Self.isoFormatter.date(from: row["ts_iso"]) ?? Date(),
-                        deviation: dev
+                        deviations: devs
                     )
                 )
             }

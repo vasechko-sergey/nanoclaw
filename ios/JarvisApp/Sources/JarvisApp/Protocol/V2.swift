@@ -330,7 +330,9 @@ enum V2 {
         let reps_in_reserve: Int
         let ts: String
         var agent_id: String?
-        var deviation: Deviation?
+        /// Every deviation this set tripped (weight/reps/rir). Optional +
+        /// omitted when on-plan; a non-empty array ⇒ Payne should comment.
+        var deviations: [Deviation]?
 
         struct Deviation: Codable, Equatable {
             let kind: Kind
@@ -351,11 +353,11 @@ enum V2 {
         }
 
         init(workout_id: String, exercise_slug: String, set_idx: Int, reps: Int, weight: Double,
-             reps_in_reserve: Int, ts: String, agent_id: String? = nil, deviation: Deviation? = nil) {
+             reps_in_reserve: Int, ts: String, agent_id: String? = nil, deviations: [Deviation]? = nil) {
             self.workout_id = workout_id; self.exercise_slug = exercise_slug
             self.set_idx = set_idx; self.reps = reps; self.weight = weight
             self.reps_in_reserve = reps_in_reserve; self.ts = ts
-            self.agent_id = agent_id; self.deviation = deviation
+            self.agent_id = agent_id; self.deviations = deviations
         }
     }
 
