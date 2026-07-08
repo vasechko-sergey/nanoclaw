@@ -13,12 +13,27 @@ final class ExerciseImageCache {
     private let baseURL: URL
     private let imageRequestSender: (_ slug: String) -> Void
 
+    /// LRU eviction bound. Cached exercise blobs are otherwise unbounded
+    /// (Finding F28) — every fetched schematic accretes forever. We cap at 60
+    /// entries, evicting least-recently-*written* files on write. Recency is the
+    /// file modification date, stamped forward on each `write`/`store`. We do NOT
+    /// bump on read: display resolves blobs by URL via `path`/`latestPath`, and
+    /// bumping there would skew `latestPath`'s "newest blob for slug" semantics.
+    /// A workout's working set (its ~6-10 exercises) stays well within 60, so
+    /// write-time recency is an effective LRU for this access pattern.
+    private let maxEntries: Int
+
     private let lock = NSLock()
     private var inflightSlugs = Set<String>()
+    /// Guards recency-stamping + eviction; keeps `lastStamp` monotonic.
+    private let ioLock = NSLock()
+    private var lastStamp = Date.distantPast
 
     init(baseURL: URL,
+         maxEntries: Int = 60,
          imageRequestSender: @escaping (_ slug: String) -> Void) {
         self.baseURL = baseURL
+        self.maxEntries = maxEntries
         self.imageRequestSender = imageRequestSender
         try? FileManager.default.createDirectory(
             at: baseURL,
@@ -90,9 +105,11 @@ final class ExerciseImageCache {
         }
         let url = path(forSlug: slug, sha256: sha256)
         try data.write(to: url, options: .atomic)
+        stampUsed(url)
         lock.lock()
         inflightSlugs.remove(slug)
         lock.unlock()
+        evictIfNeeded()
         return url
     }
 
@@ -103,10 +120,47 @@ final class ExerciseImageCache {
     func store(slug: String, sha256: String, data: Data) throws -> URL {
         let url = path(forSlug: slug, sha256: sha256)
         try data.write(to: url, options: .atomic)
+        stampUsed(url)
         lock.lock()
         inflightSlugs.remove(slug)
         lock.unlock()
+        evictIfNeeded()
         return url
+    }
+
+    // MARK: - LRU eviction (Finding F28)
+
+    /// Stamp a file's modification date to a strictly-increasing "now" so the
+    /// eviction scan orders blobs by recency. Monotonic within a session; across
+    /// launches the first stamp is wall-clock now (newer than any prior mtime).
+    private func stampUsed(_ url: URL) {
+        ioLock.lock()
+        let candidate = Date()
+        let stamp = candidate > lastStamp ? candidate : lastStamp.addingTimeInterval(0.001)
+        lastStamp = stamp
+        ioLock.unlock()
+        try? FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: url.path)
+    }
+
+    /// Drop least-recently-written `.jpg` blobs until within the entry cap.
+    /// Cheap no-op in steady state (returns before sorting unless over cap).
+    private func evictIfNeeded() {
+        ioLock.lock(); defer { ioLock.unlock() }
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: baseURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]
+        ) else { return }
+        var entries: [(url: URL, date: Date)] = urls.compactMap { url in
+            guard url.pathExtension == "jpg" else { return nil }
+            let v = try? url.resourceValues(forKeys: keys)
+            if v?.isRegularFile == false { return nil }
+            return (url, v?.contentModificationDate ?? .distantPast)
+        }
+        guard entries.count > maxEntries else { return }
+        entries.sort { $0.date < $1.date }      // least-recently-used first
+        for e in entries.prefix(entries.count - maxEntries) {
+            try? FileManager.default.removeItem(at: e.url)
+        }
     }
 
     /// For tests / cleanup: drop all cached files.

@@ -190,9 +190,12 @@ final class ConversationStoreV2 {
 
     func recordDedup(id: String, seq: Int) throws {
         try writer.write { db in
-            let now = Int(Date().timeIntervalSince1970 * 1000)
+            let now = Date()
             try db.execute(sql: "INSERT OR IGNORE INTO inbound_dedup (id, seq, received_at) VALUES (?, ?, ?)",
-                           arguments: [id, seq, now])
+                           arguments: [id, seq, Int(now.timeIntervalSince1970 * 1000)])
+            // Bound the table (Finding F28): sweep rows past the retention window
+            // in the same transaction, so it costs no extra write lock.
+            try Self.pruneDedup(db, retentionDays: 30, now: now)
         }
     }
 
@@ -209,15 +212,42 @@ final class ConversationStoreV2 {
     /// dedup row (only notified_at flips); the pull path may insert fresh.
     func recordNotified(id: String, seq: Int) throws {
         try writer.write { db in
-            let now = Int(Date().timeIntervalSince1970 * 1000)
+            let now = Date()
+            let nowMs = Int(now.timeIntervalSince1970 * 1000)
             try db.execute(
                 sql: """
                 INSERT INTO inbound_dedup (id, seq, received_at, notified_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET notified_at = excluded.notified_at
                 """,
-                arguments: [id, seq, now, now])
+                arguments: [id, seq, nowMs, nowMs])
+            // Bound the table (Finding F28) — same as recordDedup; also covers the
+            // pull/notify path, which may insert dedup rows without a prior WS write.
+            try Self.pruneDedup(db, retentionDays: 30, now: now)
         }
+    }
+
+    /// Retention prune for `inbound_dedup` (Finding F28). The table records one
+    /// row per inbound message id (for WS/pull double-delivery + double-notify
+    /// dedup) and otherwise grows forever. We prune by AGE — drop rows whose
+    /// `received_at` is older than `retentionDays` (default 30) — rather than by
+    /// count: dedup relevance is inherently time-bounded (a re-delivery or
+    /// background re-pull lands within minutes/hours, never weeks later), so an
+    /// age window needs no ordering and self-describes the guarantee. Called
+    /// inside every dedup write, so the backlog is swept on the first inbound
+    /// after this fix ships and stays bounded thereafter.
+    func pruneDedup(retentionDays: Int = 30, now: Date = Date()) throws {
+        try writer.write { db in
+            try Self.pruneDedup(db, retentionDays: retentionDays, now: now)
+        }
+    }
+
+    /// Prune within an existing write transaction (shared by `pruneDedup` and
+    /// the dedup writers so it costs no extra write lock).
+    static func pruneDedup(_ db: Database, retentionDays: Int, now: Date) throws {
+        let nowMs = Int(now.timeIntervalSince1970 * 1000)
+        let cutoff = nowMs - retentionDays * 24 * 60 * 60 * 1000
+        try db.execute(sql: "DELETE FROM inbound_dedup WHERE received_at < ?", arguments: [cutoff])
     }
 
     func insertInbound(envelope: V2.Envelope, message: V2.Message, agentId: String = "jarvis") throws {

@@ -15,6 +15,19 @@ final class ChatImageStore {
     static var shared = ChatImageStore(baseURL: ChatImageStore.defaultBaseURL())
 
     private let baseURL: URL
+    /// LRU eviction bounds. The on-disk blob directory is otherwise unbounded
+    /// (Finding F28) — every inbound/outbound chat image accretes forever. We
+    /// cap it at 150 MB OR 300 entries, whichever bound is hit first, evicting
+    /// least-recently-used files on write. "Recency" is the file's modification
+    /// date, stamped to a strictly-increasing value on every write AND on every
+    /// disk read (a view counts as a use), so a frequently-viewed image is not
+    /// evicted just because it was written long ago.
+    private let maxBytes: Int
+    private let maxEntries: Int
+    /// Serializes recency-stamping + eviction (the read-modify-scan of the
+    /// directory) and keeps `lastStamp` monotonic across concurrent writers.
+    private let ioLock = NSLock()
+    private var lastStamp = Date.distantPast
     /// Decoded-thumbnail cache keyed by "<sha>@<maxPixel>". Cost-bounded so
     /// photo-heavy timelines don't thrash. NSCache also evicts under pressure.
     private let thumbCache: NSCache<NSString, UIImage> = {
@@ -23,8 +36,10 @@ final class ChatImageStore {
         return c
     }()
 
-    init(baseURL: URL) {
+    init(baseURL: URL, maxBytes: Int = 150 * 1024 * 1024, maxEntries: Int = 300) {
         self.baseURL = baseURL
+        self.maxBytes = maxBytes
+        self.maxEntries = maxEntries
         try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
     }
 
@@ -53,11 +68,16 @@ final class ChatImageStore {
         if !FileManager.default.fileExists(atPath: url.path) {
             try? data.write(to: url, options: .atomic)
         }
+        stampUsed(url)      // fresh write OR dedup-hit → most-recently-used
+        evictIfNeeded()
         return sha
     }
 
     func bytes(sha: String) -> Data? {
-        try? Data(contentsOf: path(forSHA: sha))
+        let url = path(forSHA: sha)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        stampUsed(url)      // a read is a use → bump recency for true LRU
+        return data
     }
 
     /// Decode downsampled to `maxPixel` on the longest edge. No caching — used
@@ -84,6 +104,48 @@ final class ChatImageStore {
         let items = try FileManager.default.contentsOfDirectory(at: baseURL, includingPropertiesForKeys: nil)
         for url in items { try? FileManager.default.removeItem(at: url) }
         thumbCache.removeAllObjects()
+    }
+
+    // MARK: - LRU eviction (Finding F28)
+
+    /// Stamp a file's modification date to a strictly-increasing "now" so the
+    /// eviction scan can order blobs by recency. Monotonic within a session (a
+    /// burst of writes/reads in the same millisecond still orders deterministically);
+    /// across launches the first stamp is wall-clock now, far newer than any
+    /// mtime left by a prior run, so ordering survives restarts.
+    private func stampUsed(_ url: URL) {
+        ioLock.lock()
+        let candidate = Date()
+        let stamp = candidate > lastStamp ? candidate : lastStamp.addingTimeInterval(0.001)
+        lastStamp = stamp
+        ioLock.unlock()
+        try? FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: url.path)
+    }
+
+    /// Drop least-recently-used blobs until the directory is within BOTH the
+    /// entry cap and the byte cap. Cheap no-op in steady state (returns before
+    /// sorting unless a cap is actually exceeded).
+    private func evictIfNeeded() {
+        ioLock.lock(); defer { ioLock.unlock() }
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: baseURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]
+        ) else { return }
+        var entries: [(url: URL, date: Date, size: Int)] = urls.compactMap { url in
+            let v = try? url.resourceValues(forKeys: keys)
+            if v?.isRegularFile == false { return nil }
+            return (url, v?.contentModificationDate ?? .distantPast, v?.fileSize ?? 0)
+        }
+        var total = entries.reduce(0) { $0 + $1.size }
+        var count = entries.count
+        guard count > maxEntries || total > maxBytes else { return }
+        entries.sort { $0.date < $1.date }      // least-recently-used first
+        for e in entries {
+            if count <= maxEntries && total <= maxBytes { break }
+            try? FileManager.default.removeItem(at: e.url)
+            total -= e.size
+            count -= 1
+        }
     }
 
     private static func downsample(_ data: Data, maxPixel: CGFloat) -> UIImage? {
