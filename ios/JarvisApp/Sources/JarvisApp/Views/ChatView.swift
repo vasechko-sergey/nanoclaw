@@ -276,14 +276,13 @@ struct ChatView: View {
             coachMessages: coachBannerPublisher(),
             onClose: { session in
                 let workoutId = presentation.plan.workoutId
+                // F4: durable — persist to the control-event outbox + drain on
+                // auth instead of a fire-and-forget send that's lost if the socket
+                // is down. A workout finished offline must never lose its record.
                 if let session {
-                    Task { try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session) }
+                    coordinator.ws.enqueueWorkoutComplete(session)
                 } else {
-                    Task {
-                        try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
-                            workoutId: workoutId, reason: "user cancelled"
-                        )
-                    }
+                    coordinator.ws.enqueueWorkoutAbort(workoutId: workoutId, reason: "user cancelled")
                 }
                 // Grey the card ONLY when the workout was completed. Match by
                 // workout_id (NOT presentation.messageId, which a mid-workout
@@ -604,7 +603,8 @@ struct ChatView: View {
                         swapLoading = true
                         Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: text) }
                     case .confirm(let newSlug, let persist):
-                        Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist) }
+                        // F4: durable — outbox + drain on auth, not a lossy send.
+                        coordinator.ws.enqueueExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist)
                         // Fix N: fold the swap into the running Coordinator's
                         // plan + logged so future coach_message.set_ref (which
                         // Payne will emit against the NEW slug) still resolves

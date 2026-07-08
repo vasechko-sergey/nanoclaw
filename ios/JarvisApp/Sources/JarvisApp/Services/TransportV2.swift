@@ -740,23 +740,13 @@ actor TransportV2 {
     }
 
     /// Serialize the `WorkoutSession` model into a `JSONValue` and ship it.
+    /// Shares `buildWorkoutCompletePayload` with the durable outbox so the two
+    /// delivery paths can never drift on the wire.
     func sendWorkoutComplete(_ session: WorkoutSession) async throws {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(session)
-        let any = try JSONSerialization.jsonObject(with: data)
-        let json = try V2.JSONValue.from(any)
-
         let env = workoutEnvelope(
             .workoutComplete,
             kind: .data,
-            payload: .workoutComplete(
-                V2.WorkoutComplete(
-                    workout_id: session.workoutId,
-                    full_session_json: json,
-                    agent_id: "payne"
-                )
-            )
+            payload: .workoutComplete(try Self.buildWorkoutCompletePayload(session))
         )
         try await sendEnvelope(env)
     }
@@ -841,6 +831,94 @@ actor TransportV2 {
             try? queue.pruneDelivered(olderThan: Date().addingTimeInterval(-86_400))
         } catch {
             Log.warn(.ws, "set_log drain enumerate failed: \(error)")
+        }
+    }
+
+    // MARK: - Control-event outbox (F4)
+    //
+    // Durable delivery for the three workout lifecycle envelopes
+    // (`workout_complete` / `workout_abort` / `exercise_swap_confirm`). They used
+    // to be fire-and-forget `send*` calls from ChatView — silently dropped when
+    // the socket was down. Now the ChatView call sites enqueue into the
+    // persistent `ControlEventQueue` and the transport drains it on auth (same
+    // trigger + best-effort semantics as `drainSetLogQueue`). The `send*` methods
+    // above are kept as the canonical wire builders; the drain reconstructs the
+    // identical envelope from the persisted payload so the host sees no
+    // difference — only *when* it arrives changed.
+
+    /// Serialize a `WorkoutSession` into the `full_session_json` payload exactly
+    /// as `sendWorkoutComplete` does, so the enqueued form is byte-identical to
+    /// the direct send. Shared by both paths to prevent drift.
+    static func buildWorkoutCompletePayload(_ session: WorkoutSession) throws -> V2.WorkoutComplete {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(session)
+        let any = try JSONSerialization.jsonObject(with: data)
+        let json = try V2.JSONValue.from(any)
+        return V2.WorkoutComplete(
+            workout_id: session.workoutId,
+            full_session_json: json,
+            agent_id: "payne"
+        )
+    }
+
+    /// Rebuild the wire envelope for a persisted control event. Returns nil for
+    /// an undecodable payload or an unknown kind — the drain treats that as a
+    /// poison row and drops it rather than wedging the queue forever. `kind` +
+    /// envelope `kind`/`type` match the direct `send*` methods exactly
+    /// (complete = data, abort/swap = control).
+    static func buildControlEnvelope(kind: String, payloadJson: String) -> V2.Envelope? {
+        let data = Data(payloadJson.utf8)
+        let decoder = JSONDecoder()
+        let envKind: V2.Kind
+        let type: V2.TypeTag
+        let payload: V2.Payload
+        switch ControlEventKind(rawValue: kind) {
+        case .workoutComplete:
+            guard let p = try? decoder.decode(V2.WorkoutComplete.self, from: data) else { return nil }
+            envKind = .data; type = .workoutComplete; payload = .workoutComplete(p)
+        case .workoutAbort:
+            guard let p = try? decoder.decode(V2.WorkoutAbort.self, from: data) else { return nil }
+            envKind = .control; type = .workoutAbort; payload = .workoutAbort(p)
+        case .exerciseSwapConfirm:
+            guard let p = try? decoder.decode(V2.ExerciseSwapConfirm.self, from: data) else { return nil }
+            envKind = .control; type = .exerciseSwapConfirm; payload = .exerciseSwapConfirm(p)
+        case nil:
+            return nil
+        }
+        return V2.Envelope(
+            v: V2.protocolVersion, kind: envKind, type: type,
+            id: UUID().uuidString, seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: payload
+        )
+    }
+
+    /// Drain the persistent control-event outbox: re-send each pending workout
+    /// lifecycle envelope, marking it delivered after the send lands. Called on
+    /// successful auth/reconnect by `WebSocketClientV2`. Stops on the first send
+    /// failure (socket down) so the next connect cycle retries the rest; a
+    /// genuinely unbuildable row is dropped so it can't wedge the queue.
+    func drainControlEventQueue(_ queue: ControlEventQueue) async {
+        do {
+            let pending = try queue.pending()
+            for row in pending {
+                guard let env = Self.buildControlEnvelope(kind: row.kind, payloadJson: row.payloadJson) else {
+                    Log.warn(.ws, "control_event drain: dropping unbuildable row \(row.localId) kind=\(row.kind)")
+                    try? queue.markDelivered(localId: row.localId)
+                    continue
+                }
+                do {
+                    try await sendEnvelope(env)
+                    try queue.markDelivered(localId: row.localId)
+                } catch {
+                    Log.warn(.ws, "control_event drain failed at row \(row.localId): \(error)")
+                    return
+                }
+            }
+            try? queue.pruneDelivered(olderThan: Date().addingTimeInterval(-86_400))
+        } catch {
+            Log.warn(.ws, "control_event drain enumerate failed: \(error)")
         }
     }
 

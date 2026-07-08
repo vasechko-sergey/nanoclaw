@@ -191,6 +191,25 @@ enum Schema {
             // Feedback envelope.
             try db.execute(sql: "ALTER TABLE messages ADD COLUMN feedback TEXT;")
         }
+        m.registerMigration("v16-control-event-queue") { db in
+            // F4: durable outbox for workout lifecycle events
+            // (workout_complete / workout_abort / exercise_swap_confirm). These
+            // used to be fire-and-forget WS sends — a user finishing a workout
+            // while the socket was down lost the whole record. Now persisted here
+            // and drained on auth, exactly like `set_log_queue` (v5). Generic over
+            // `kind` + a JSON-encoded V2 payload so the three share one
+            // persist/drain/dedup mechanism; `delivered` marks a row sent so a
+            // second drain never double-fires. `rowid ASC` preserves user order.
+            try db.execute(sql: """
+                CREATE TABLE control_event_queue (
+                  kind         TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  ts_iso       TEXT NOT NULL,
+                  delivered    INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX idx_control_event_pending ON control_event_queue (delivered);
+            """)
+        }
         try m.migrate(writer)
     }
 }

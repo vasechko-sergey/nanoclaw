@@ -169,6 +169,7 @@ final class TransportV2WorkoutInboundTests: XCTestCase {
             coordinator: AppContextCoordinator(),
             dbq: dbq,
             setLogQueue: SetLogQueue(writer: dbq),
+            controlEventQueue: ControlEventQueue(writer: dbq),
             activeWorkoutStore: ActiveWorkoutStore(writer: dbq)
         )
         let ws = WebSocketClientV2(stack: stack)   // runs wireAuthOkCallback()
@@ -216,6 +217,7 @@ final class TransportV2WorkoutInboundTests: XCTestCase {
             coordinator: AppContextCoordinator(),
             dbq: dbq,
             setLogQueue: SetLogQueue(writer: dbq),
+            controlEventQueue: ControlEventQueue(writer: dbq),
             activeWorkoutStore: ActiveWorkoutStore(writer: dbq)
         )
         let ws = WebSocketClientV2(stack: stack)   // restartObservation + wireAuthOkCallback

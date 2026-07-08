@@ -786,6 +786,74 @@ final class WebSocketClientV2 {
         Task { await transport.drainSetLogQueue(queue) }
     }
 
+    // MARK: - Durable workout lifecycle events (F4)
+    //
+    // workout_complete / workout_abort / exercise_swap_confirm used to be
+    // fire-and-forget `transport.send*` calls from ChatView — silently dropped
+    // if the socket was down/reconnecting/backgrounded, losing a whole finished
+    // workout. These enqueue into the persistent `ControlEventQueue` (survives
+    // app kill) and nudge an immediate drain; if offline, the events stay queued
+    // and drain on the next auth_ok — same durability contract as set-logs.
+
+    /// Persist a completed workout for durable delivery, then attempt a drain.
+    func enqueueWorkoutComplete(_ session: WorkoutSession) {
+        guard let stack else {
+            Log.warn(.ws, "enqueueWorkoutComplete: stack not built yet")
+            return
+        }
+        do {
+            let payload = try TransportV2.buildWorkoutCompletePayload(session)
+            try stack.controlEventQueue.enqueueWorkoutComplete(payload)
+        } catch {
+            Log.warn(.ws, "enqueueWorkoutComplete failed: \(error)")
+            return
+        }
+        drainControlEventsNow()
+    }
+
+    /// Persist a workout abort for durable delivery, then attempt a drain.
+    func enqueueWorkoutAbort(workoutId: String, reason: String?) {
+        guard let stack else {
+            Log.warn(.ws, "enqueueWorkoutAbort: stack not built yet")
+            return
+        }
+        do {
+            try stack.controlEventQueue.enqueueWorkoutAbort(
+                V2.WorkoutAbort(workout_id: workoutId, reason: reason, agent_id: "payne"))
+        } catch {
+            Log.warn(.ws, "enqueueWorkoutAbort failed: \(error)")
+            return
+        }
+        drainControlEventsNow()
+    }
+
+    /// Persist an exercise-swap confirmation for durable delivery, then drain.
+    func enqueueExerciseSwapConfirm(workoutId: String, original: String, new: String, persist: Bool) {
+        guard let stack else {
+            Log.warn(.ws, "enqueueExerciseSwapConfirm: stack not built yet")
+            return
+        }
+        do {
+            try stack.controlEventQueue.enqueueExerciseSwapConfirm(
+                V2.ExerciseSwapConfirm(workout_id: workoutId, original_slug: original,
+                                       new_slug: new, persist: persist, agent_id: "payne"))
+        } catch {
+            Log.warn(.ws, "enqueueExerciseSwapConfirm failed: \(error)")
+            return
+        }
+        drainControlEventsNow()
+    }
+
+    /// Nudge the control-event outbox to drain immediately. Safe when offline —
+    /// `drainControlEventQueue` stops on the first send failure, leaving events
+    /// queued for the next auth_ok drain.
+    func drainControlEventsNow() {
+        guard let stack else { return }
+        let transport = stack.transport
+        let queue = stack.controlEventQueue
+        Task { await transport.drainControlEventQueue(queue) }
+    }
+
     // MARK: - Auth_ok callback wiring
 
     /// Subscribe to the transport's `auth_ok` payload stream so we can lift the
@@ -795,6 +863,7 @@ final class WebSocketClientV2 {
         guard let stack else { return }
         let transport = stack.transport
         let queue = stack.setLogQueue
+        let controlQueue = stack.controlEventQueue
         Task {
             await transport.setOnAuthOkPayload { [weak self] payload in
                 Task { @MainActor [weak self] in
@@ -803,11 +872,12 @@ final class WebSocketClientV2 {
                         BotCommand(command: $0.command, description: $0.description)
                     }
                 }
-                // Drain any persisted set_log events that accumulated while
-                // offline. Fire-and-forget — failures are logged inside the
-                // transport and retried on the next connect.
+                // Drain any persisted set_log + workout lifecycle events that
+                // accumulated while offline. Fire-and-forget — failures are logged
+                // inside the transport and retried on the next connect (F4/F23).
                 Task {
                     await transport.drainSetLogQueue(queue)
+                    await transport.drainControlEventQueue(controlQueue)
                 }
             }
             await transport.setOnWorkoutEnvelope { [weak self] env in

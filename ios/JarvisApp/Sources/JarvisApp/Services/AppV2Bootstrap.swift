@@ -14,6 +14,11 @@ struct AppV2Stack {
     /// the transport drains it. UI layers must build their `WorkoutCoordinator`
     /// from this reference so the producer and the drain share one GRDB writer.
     let setLogQueue: SetLogQueue
+    /// Durable outbox for workout lifecycle events (`workout_complete` /
+    /// `workout_abort` / `exercise_swap_confirm`). ChatView enqueues here instead
+    /// of firing them straight at the socket; the transport drains it on auth
+    /// (F4). Shares the same GRDB writer so producer + drain agree.
+    let controlEventQueue: ControlEventQueue
     let activeWorkoutStore: ActiveWorkoutStore
 }
 
@@ -80,6 +85,7 @@ enum AppV2Bootstrap {
             contextCoordinator: coordinator
         )
         let setLogQueue = SetLogQueue(writer: dbq)
+        let controlEventQueue = ControlEventQueue(writer: dbq)
         let activeWorkoutStore = ActiveWorkoutStore(writer: dbq)
 
         return AppV2Stack(
@@ -88,6 +94,7 @@ enum AppV2Bootstrap {
             coordinator: coordinator,
             dbq: dbq,
             setLogQueue: setLogQueue,
+            controlEventQueue: controlEventQueue,
             activeWorkoutStore: activeWorkoutStore
         )
     }
@@ -117,6 +124,7 @@ enum AppV2Bootstrap {
             contextCoordinator: coordinator
         )
         let setLogQueue = SetLogQueue(writer: storage.dbq)
+        let controlEventQueue = ControlEventQueue(writer: storage.dbq)
         let activeWorkoutStore = ActiveWorkoutStore(writer: storage.dbq)
         return AppV2Stack(
             store: storage.store,
@@ -124,6 +132,7 @@ enum AppV2Bootstrap {
             coordinator: coordinator,
             dbq: storage.dbq,
             setLogQueue: setLogQueue,
+            controlEventQueue: controlEventQueue,
             activeWorkoutStore: activeWorkoutStore
         )
     }
