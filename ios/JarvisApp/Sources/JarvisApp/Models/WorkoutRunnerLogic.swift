@@ -149,7 +149,17 @@ enum WorkoutRunnerLogic {
     /// would hide "wrong weight AND missed reps AND hit failure" behind just the
     /// weight, which reads as a lighter problem than it is. Empty ⇒ within
     /// tolerance on every axis.
-    static func detectDeviation(actualReps: Int, actualWeight: Double, actualRir: Int, exercise: ExercisePlan) -> [SetDeviation] {
+    ///
+    /// Comparisons are strict `>`: a set exactly at the tolerance is on-plan.
+    /// A non-strict `>=` flips at exactly 15% / the exact rep band, which the
+    /// 0.5 kg weight wheel and integer rounding can land on either side of —
+    /// strict gives a stable "must exceed the tolerance" rule.
+    ///
+    /// `intensityLabel` gates the `too_easy` (rir ≥ 4) call-out: on a light /
+    /// deload week every warmup and back-off set reads as easy, so surfacing
+    /// it there is pure alarm fatigue. `failure` (rir == 0) always fires.
+    static func detectDeviation(actualReps: Int, actualWeight: Double, actualRir: Int,
+                                exercise: ExercisePlan, intensityLabel: String? = nil) -> [SetDeviation] {
         let range = parseRepsRange(exercise.targetReps)
         let target = DeviationTargetSnapshot(
             repsMin: range.min ?? 0, repsMax: range.max ?? 0,
@@ -158,20 +168,31 @@ enum WorkoutRunnerLogic {
         var out: [SetDeviation] = []
         if let weightTarget = exercise.weightKgTarget, weightTarget > 0 {
             let delta = actualWeight / weightTarget - 1.0
-            if abs(delta) >= weightDeviationPct {
+            if abs(delta) > weightDeviationPct {
                 out.append(SetDeviation(kind: delta < 0 ? .weightUnder : .weightOver, magnitude: delta, target: target))
             }
         }
         if let mid = range.mid {
             let d = actualReps - mid
             let repsThreshold = max(2, Int((Double(mid) * repsDeviationFraction).rounded()))
-            if abs(d) >= repsThreshold {
+            if abs(d) > repsThreshold {
                 out.append(SetDeviation(kind: d < 0 ? .repsUnder : .repsOver, magnitude: Double(d), target: target))
             }
         }
-        if actualRir == 0 { out.append(SetDeviation(kind: .failure, magnitude: 0, target: target)) }
-        else if actualRir >= 4 { out.append(SetDeviation(kind: .tooEasy, magnitude: 0, target: target)) }
+        if actualRir == 0 {
+            out.append(SetDeviation(kind: .failure, magnitude: 0, target: target))
+        } else if actualRir >= 4, !isLightWeek(intensityLabel) {
+            out.append(SetDeviation(kind: .tooEasy, magnitude: 0, target: target))
+        }
         return out
+    }
+
+    /// Whether the plan's week label reads as a light / deload week — matches
+    /// "лёг…" and "легк…" (лёгкая / лёгкий / легкая). Used to suppress the
+    /// `too_easy` call-out where an easy set is expected.
+    static func isLightWeek(_ intensityLabel: String?) -> Bool {
+        let lc = intensityLabel?.lowercased() ?? ""
+        return lc.contains("лёг") || lc.contains("легк")
     }
 
     /// Parse a target-reps string into (min, max, mid). Handles ranges written

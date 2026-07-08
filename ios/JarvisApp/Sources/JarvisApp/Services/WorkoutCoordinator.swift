@@ -81,7 +81,7 @@ final class WorkoutCoordinator: ObservableObject {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }
         let devs = WorkoutRunnerLogic.detectDeviation(
             actualReps: reps, actualWeight: weight, actualRir: repsInReserve,
-            exercise: currentExercise
+            exercise: currentExercise, intensityLabel: plan.intensityLabel
         )
         let event = SetLogEvent(
             workoutId: plan.workoutId,

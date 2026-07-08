@@ -197,4 +197,55 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         let d = WorkoutRunnerLogic.detectDeviation(actualReps: 4, actualWeight: 0, actualRir: 2, exercise: ex)
         XCTAssertEqual(d.map(\.kind), [.repsUnder])
     }
+
+    // MARK: - strict tolerance boundary (Fix Q)
+
+    func test_detectDeviation_repsExactlyAtThreshold_notFlagged() {
+        // 8-10 (mid 9) → band 3. actualReps 6 is exactly 3 below: the strict
+        // `>` keeps it on-plan where a non-strict `>=` would have flagged it.
+        // weight nil isolates the reps decision.
+        let ex = mkExercise(reps: "8-10", weight: nil)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 6, actualWeight: 0, actualRir: 2, exercise: ex)
+        XCTAssertTrue(d.isEmpty)
+    }
+
+    func test_detectDeviation_weightAtFifteenPercent_withinTolerance() {
+        // A set right at the 15% line is on-plan under the strict comparison —
+        // the 0.5 kg wheel shouldn't tip a boundary set into a call-out.
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 9, actualWeight: 115, actualRir: 2, exercise: ex)
+        XCTAssertTrue(d.isEmpty)
+    }
+
+    // MARK: - too_easy intensity gating (Fix Q)
+
+    func test_detectDeviation_tooEasy_suppressedOnLightWeek() {
+        // rir ≥ 4 on a light / deload week is expected, not a signal.
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 9, actualWeight: 100, actualRir: 4,
+                                                   exercise: ex, intensityLabel: "лёгкая")
+        XCTAssertTrue(d.isEmpty)
+    }
+
+    func test_detectDeviation_tooEasy_firesOnHeavyWeek() {
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 9, actualWeight: 100, actualRir: 4,
+                                                   exercise: ex, intensityLabel: "тяжёлая")
+        XCTAssertEqual(d.map(\.kind), [.tooEasy])
+    }
+
+    func test_detectDeviation_failure_firesEvenOnLightWeek() {
+        // Failure (rir=0) always matters — even on a deload week.
+        let ex = mkExercise(reps: "8-10", weight: 100)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 9, actualWeight: 100, actualRir: 0,
+                                                   exercise: ex, intensityLabel: "лёгкая")
+        XCTAssertEqual(d.map(\.kind), [.failure])
+    }
+
+    func test_isLightWeek_matchesRussianVariants() {
+        XCTAssertTrue(WorkoutRunnerLogic.isLightWeek("Лёгкая"))
+        XCTAssertTrue(WorkoutRunnerLogic.isLightWeek("легкая неделя"))
+        XCTAssertFalse(WorkoutRunnerLogic.isLightWeek("тяжёлая"))
+        XCTAssertFalse(WorkoutRunnerLogic.isLightWeek(nil))
+    }
 }
