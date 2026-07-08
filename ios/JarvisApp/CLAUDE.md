@@ -1,7 +1,7 @@
 # JarvisApp — iOS
 
 SwiftUI-чат с агентом Jarvis (NanoClaw на VDS `148.253.211.164`).
-Транспорт: WebSocket на `wss://jarvis.vasechko.dev` (nginx+TLS на VDS → `127.0.0.1:3001`). URL захардкожен в `Utility/ServerConfig.swift` — НЕ редактируется в UI (поле убрано из Settings + онбординга); в настройках остаётся только токен. Tailscale (`100.94.184.60:3001`) — запасной путь. Push через APNs когда WS не подключён.
+Транспорт: WebSocket на `wss://jarvis.vasechko.dev` (nginx+TLS на VDS → `127.0.0.1:3001`). URL захардкожен в `Utility/ServerConfig.swift` — НЕ редактируется в UI (поле убрано из Settings + онбординга); в настройках остаётся только токен. `ServerConfig.swift` — единственный endpoint (Tailscale-фолбэка в коде НЕТ). Проактивные уведомления тянутся pull'ом (`GET /ios/pending`); APNs-кода в приложении НЕТ (ни `registerForRemoteNotifications`, ни `aps-environment` entitlement).
 
 ## Структура
 
@@ -12,20 +12,20 @@ ios/JarvisApp/
 ├── Assets.xcassets/
 ├── JarvisApp.entitlements    # HealthKit entitlement
 └── Sources/JarvisApp/        # организовано по слоям (V2-рефактор: мульти-агент + GRDB)
-    ├── JarvisApp.swift        # @main + AppDelegate (APNs token → транспорт)
+    ├── JarvisApp.swift        # @main + AppDelegate (lifecycle; НЕ регистрирует APNs — push-кода нет)
     ├── Protocol/V2.swift      # типы v2-протокола (Envelope + payload-структуры)
-    ├── Models/                # AgentIdentity (enum агентов jarvis/payne/greg/scrooge — picker/displayName/accentColor;
+    ├── Models/                # AgentIdentity (enum агентов jarvis/payne/greg/scrooge/gordon — picker/displayName/accentColor;
     │                          #   rawValue = folder-слаг хоста), ActiveAgentState, AppSettings (@AppStorage),
     │                          #   Message, DraftAttachment, Workout
     ├── Storage/               # ПЕРСИСТЕНТНОСТЬ — GRDB SQLite (см. «Хранилище»)
-    │   ├── ConversationStoreV2.swift # стор сообщений; prune(agentId,keep:500)
-    │   ├── MessageTimeline.swift     # live-observe GRDB-таймлайна (DatabaseQueue, retention 500)
+    │   ├── ConversationStoreV2.swift # стор сообщений; prune(keep:500) — глобальный, без agentId
+    │   ├── MessageTimeline.swift     # МЁРТВЫЙ КОД: не стартует, 0 consumers (UI читает ws.messages); кандидат на удаление
     │   ├── Schema.swift              # GRDB-миграции (таблицы + индексы)
     │   └── SetLogQueue.swift         # durable GRDB-очередь set_log (тренировки)
     ├── Services/              # транспорт + системные сервисы:
-    │   ├── AppV2Bootstrap.swift      # открывает Documents/jarvis-v2.sqlite (DatabaseQueue), поднимает стор/таймлайн
+    │   ├── AppV2Bootstrap.swift      # открывает Documents/jarvis-v2.sqlite (DatabaseQueue), поднимает стор
     │   ├── AppCoordinator.swift      # центральный координатор (ws/стор/speech/workout-bus)
-    │   ├── WebSocketClientV2 · TransportV2 · URLSessionWebSocket  # WS v2 + reconnect + APNs
+    │   ├── WebSocketClientV2 · TransportV2 · URLSessionWebSocket  # WS v2 + reconnect + durable outbox
     │   ├── InboundDispatcherV2       # входящие envelope → стор/шины
     │   ├── ContextBuilder · LocationManager · HealthManager (+Health*)  # iOS-контекст гео/здоровье
     │   ├── SpeechManager · SpeechSynthesizer · VoiceLoopController       # голос/TTS
@@ -73,7 +73,7 @@ xcodegen generate
 
 # Team ID: 24Z6S27D7U (Personal Team vasechkoss@gmail.com)
 # Bundle ID: dev.vasechko.jarvis
-# Min iOS: 16.0
+# Min iOS: 18.0  (project.yml:5 — deployment target)
 ```
 
 **Важно:** `JarvisApp.xcodeproj` генерируется из `project.yml`. Никогда не редактировать `.xcodeproj` вручную — изменения потеряются при следующем `xcodegen generate`.
@@ -86,10 +86,10 @@ xcodegen generate
 
 Сообщения и связанные данные — в **`Documents/jarvis-v2.sqlite`** (GRDB), открывается в `Services/AppV2Bootstrap.swift` через `DatabaseQueue`. Старого JSON-кэша (`MessageCache`, `Documents/MessageCache/` с `index.json`+`*.jpg`) **больше НЕТ** — файл удалён.
 
-- **Таблицы** (`Storage/Schema.swift`, миграции): `conversations`, `messages` (`conversation_id`, `ts`, `status`, `created_at`, `agent_id`), `attachments`, `cursors`, `inbound_dedup`, `kv`. Индексы: `idx_msg_conv_ts`, `idx_msg_status`.
-- **Стор/наблюдение:** `Storage/ConversationStoreV2.swift` (CRUD) + `Storage/MessageTimeline.swift` (live-observe таймлайна через GRDB `ValueObservation`). UI подписывается на таймлайн активного агента.
-- **Retention:** жёсткий cap **`keep: 500` сообщений НА АГЕНТА** (`ConversationStoreV2.prune(agentId:keep:)`) — не 150.
-- **Мульти-агент:** строки помечены `agent_id` (jarvis/payne/greg/scrooge); таймлайн фильтруется по активному агенту. `conversationId` ↔ `thread_id` сессии (новый чат = новый контейнер).
+- **Таблицы** (`Storage/Schema.swift`, миграции v1–v6): `messages` (`conversation_id`, `ts`, `status`, `created_at`, `agent_id`, `failure_reason`, `seq`), `cursors`, `inbound_dedup`. (`conversations`+`kv` дропнуты в v3, `attachments` — в v6.) Индексы: `idx_msg_ts`, `idx_msg_status`.
+- **Стор/наблюдение:** `Storage/ConversationStoreV2.swift` (CRUD). UI читает `WebSocketClientV2.messages` — наблюдение через GRDB `ValueObservation` внутри `WebSocketClientV2.restartObservation`, фильтр по активному агенту в ChatView. `MessageTimeline.swift` — мёртвый код (не стартует).
+- **Retention:** жёсткий cap **`keep: 500`** (`ConversationStoreV2.prune(keep:)` — ГЛОБАЛЬНЫЙ, не per-agent; сигнатура без `agentId`).
+- **Мульти-агент:** строки помечены `agent_id` (jarvis/payne/greg/scrooge/gordon); список фильтруется по активному агенту в ChatView. `conversationId` ↔ `thread_id` сессии (новый чат = новый контейнер).
 - **Очистка чата при дебаге:** удали `Documents/jarvis-v2.sqlite` (НЕ `Documents/MessageCache/` — его не существует).
 
 ## Серверная часть
