@@ -26,6 +26,10 @@ struct MessageListView: UIViewRepresentable {
     var onScrolledUpChange: (Bool) -> Void
     /// Incremented by the FAB tap to request an animated jump to the bottom.
     var scrollToBottomToken: Int
+    /// T3.6 — messageId of the persisted active-workout record, if any. The
+    /// matching `WorkoutPlanRow` flips its CTA to "Продолжить тренировку" and
+    /// routes the tap through `onWorkoutStart` to resume instead of preview.
+    var resumeMessageId: String? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -78,6 +82,12 @@ struct MessageListView: UIViewRepresentable {
         private var lastToken: Int = 0
         private var wasAtBottom = true
         private var lastPushedScrolledUp: Bool?
+        /// Last-applied value of `parent.resumeMessageId`. Changes here don't
+        /// affect the diffable identity of any row (item ids are the same), so
+        /// `apply(snap)` alone won't reconfigure the visible cell — `reconfigureItems`
+        /// is the only way to make the workout card's CTA re-render when the
+        /// active workout starts or finishes/aborts.
+        private var lastResumeMessageId: String?
 
         init(_ parent: MessageListView) { self.parent = parent }
 
@@ -125,7 +135,8 @@ struct MessageListView: UIViewRepresentable {
                         onWorkoutStart: self.parent.onWorkoutStart,
                         onWorkoutCancel: self.parent.onWorkoutCancel,
                         onRetry: self.parent.onRetry,
-                        audioPlayer: self.parent.audioPlayer
+                        audioPlayer: self.parent.audioPlayer,
+                        resumeMessageId: self.parent.resumeMessageId
                     )
                     .scaleEffect(x: 1, y: -1)
                 }
@@ -164,9 +175,31 @@ struct MessageListView: UIViewRepresentable {
             wasAtBottom = nearBottom(cv)
             let stick = wasAtBottom
 
+            // Detect resumeMessageId change (workout started, finished, or
+            // aborted). Snapshot identity for the card row doesn't change
+            // (its ChatListItem.message(id) hashes the same), so `apply`
+            // alone leaves the already-dequeued cell holding stale
+            // `isResuming`. Explicitly `reconfigureItems` on both the OLD
+            // and NEW ids so `MessageRow` re-runs and `WorkoutPlanRow` picks
+            // up the new `isResuming` flag.
+            let resumeChanged = (lastResumeMessageId != parent.resumeMessageId)
+            let oldResumeId = lastResumeMessageId
+            if resumeChanged { lastResumeMessageId = parent.resumeMessageId }
+
             var snap = NSDiffableDataSourceSnapshot<Int, ChatListItem>()
             snap.appendSections([0])
             snap.appendItems(items, toSection: 0)
+
+            if resumeChanged {
+                let itemSet = Set(items)
+                let candidates: [ChatListItem] = [oldResumeId, parent.resumeMessageId]
+                    .compactMap { $0 }
+                    .map { ChatListItem.message($0) }
+                    .filter { itemSet.contains($0) }
+                if !candidates.isEmpty {
+                    snap.reconfigureItems(candidates)
+                }
+            }
 
             if agentChanged {
                 // Switch: apply non-animated, then pin to newest (the MINIMUM

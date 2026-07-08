@@ -160,6 +160,28 @@ enum Schema {
             // NULL = not yet notified.
             try db.execute(sql: "ALTER TABLE inbound_dedup ADD COLUMN notified_at INTEGER;")
         }
+        m.registerMigration("v12-set-log-deviation") { db in
+            try db.execute(sql: "ALTER TABLE set_log_queue ADD COLUMN deviation_json TEXT;")
+        }
+        m.registerMigration("v13-active-workout") { db in
+            try db.execute(sql: """
+                CREATE TABLE active_workout (
+                  agent_id    TEXT PRIMARY KEY,
+                  workout_id  TEXT NOT NULL,
+                  plan_json   TEXT NOT NULL,
+                  cursor_json TEXT NOT NULL,
+                  message_id  TEXT NOT NULL,
+                  updated_at  REAL NOT NULL
+                );
+            """)
+        }
+        m.registerMigration("v14-set-log-deviations") { db in
+            // A set can deviate on several axes at once (weight + reps + rir), so
+            // store the full array. Keeps the old single `deviation_json` column
+            // (SQLite can't drop it cheaply); it stays NULL for new rows and is
+            // read only as a backward-compat fallback in `SetLogQueue.pending()`.
+            try db.execute(sql: "ALTER TABLE set_log_queue ADD COLUMN deviations_json TEXT;")
+        }
         try m.migrate(writer)
     }
 }

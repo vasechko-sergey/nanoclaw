@@ -148,11 +148,58 @@ struct LoggedSet: Codable, Equatable {
     let weight: Double
     let repsInReserve: Int
     let ts: Date
+    /// Every way this set deviated from plan (weight/reps/rir). Empty ⇒ on-plan.
+    /// An array (not a single value) so a set that went wrong on several axes
+    /// surfaces each one to Payne instead of hiding all but the first.
+    var deviations: [WorkoutRunnerLogic.SetDeviation]
+    var coachHint: String?
 
     enum CodingKeys: String, CodingKey {
         case reps, weight
         case repsInReserve = "reps_in_reserve"
         case ts
+        case deviations
+        /// Legacy single-object key (pre-array builds / hand-written fixtures).
+        case deviation
+        case coachHint = "coach_hint"
+    }
+
+    init(reps: Int, weight: Double, repsInReserve: Int, ts: Date,
+         deviations: [WorkoutRunnerLogic.SetDeviation] = [], coachHint: String? = nil) {
+        self.reps = reps; self.weight = weight; self.repsInReserve = repsInReserve; self.ts = ts
+        self.deviations = deviations; self.coachHint = coachHint
+    }
+
+    // Custom decode so a JSON that omits `deviations` (Payne's session records,
+    // pre-array cursors, the snake-case decode fixture) still hydrates to `[]`
+    // instead of throwing on a missing key. Also wraps a legacy single
+    // `deviation` object into a one-element array for backward compatibility.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reps = try c.decode(Int.self, forKey: .reps)
+        weight = try c.decode(Double.self, forKey: .weight)
+        repsInReserve = try c.decode(Int.self, forKey: .repsInReserve)
+        ts = try c.decode(Date.self, forKey: .ts)
+        if let arr = try c.decodeIfPresent([WorkoutRunnerLogic.SetDeviation].self, forKey: .deviations) {
+            deviations = arr
+        } else if let single = try c.decodeIfPresent(WorkoutRunnerLogic.SetDeviation.self, forKey: .deviation) {
+            deviations = [single]
+        } else {
+            deviations = []
+        }
+        coachHint = try c.decodeIfPresent(String.self, forKey: .coachHint)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(reps, forKey: .reps)
+        try c.encode(weight, forKey: .weight)
+        try c.encode(repsInReserve, forKey: .repsInReserve)
+        try c.encode(ts, forKey: .ts)
+        // Omit the key entirely when on-plan so records stay compact and the
+        // "deviations present ⇒ something to say" contract reads cleanly.
+        if !deviations.isEmpty { try c.encode(deviations, forKey: .deviations) }
+        try c.encodeIfPresent(coachHint, forKey: .coachHint)
     }
 }
 

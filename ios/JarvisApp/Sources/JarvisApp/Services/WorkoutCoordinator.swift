@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Owns the live state of an in-progress workout. UI binds to its @Published
 /// properties; the Coordinator persists every logged set via SetLogQueue and
@@ -19,14 +22,40 @@ final class WorkoutCoordinator: ObservableObject {
 
     private let queue: SetLogQueue
     private let startedAt: Date
+    private let store: ActiveWorkoutStore?
+    private let agentId: String?
+    private let messageId: String?
 
-    init(plan: WorkoutPlan, queue: SetLogQueue, startedAt: Date = Date()) {
+    init(plan: WorkoutPlan, queue: SetLogQueue, startedAt: Date = Date(),
+         store: ActiveWorkoutStore? = nil, agentId: String? = nil, messageId: String? = nil) {
         self.plan = plan
         self.queue = queue
         self.startedAt = startedAt
         self.logged = plan.exercises.map {
             LoggedExercise(exerciseSlug: $0.exerciseSlug, sets: [], comment: nil)
         }
+        self.store = store
+        self.agentId = agentId
+        self.messageId = messageId
+    }
+
+    /// Restore a coordinator from a persisted `ActiveWorkoutRecord` — kill/crash
+    /// resume lands the user back at the exact set/exercise/logged state.
+    ///
+    /// `startedAt` reads from the cursor first — `updatedAt` is the last save
+    /// wallclock, not the workout start, so a paused session that ran for a
+    /// while and got restored would otherwise report a fake `session.duration`.
+    /// Cursors saved before `startedAt` was added fall back to `updatedAt`.
+    init(restoring record: ActiveWorkoutRecord, queue: SetLogQueue, store: ActiveWorkoutStore) {
+        self.plan = record.plan
+        self.queue = queue
+        self.startedAt = record.cursor.startedAt ?? record.updatedAt
+        self.logged = record.cursor.logged
+        self.currentExerciseIdx = record.cursor.currentExerciseIdx
+        self.currentSetIdx = record.cursor.currentSetIdx
+        self.store = store
+        self.agentId = record.agentId
+        self.messageId = record.messageId
     }
 
     // MARK: - Derived
@@ -53,6 +82,10 @@ final class WorkoutCoordinator: ObservableObject {
     /// Log one set; enqueue for delivery; advance set index.
     func logSet(reps: Int, weight: Double, repsInReserve: Int, ts: Date = Date()) {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }
+        let devs = WorkoutRunnerLogic.detectDeviation(
+            actualReps: reps, actualWeight: weight, actualRir: repsInReserve,
+            exercise: currentExercise, intensityLabel: plan.intensityLabel
+        )
         let event = SetLogEvent(
             workoutId: plan.workoutId,
             exerciseSlug: currentExercise.exerciseSlug,
@@ -60,14 +93,16 @@ final class WorkoutCoordinator: ObservableObject {
             reps: reps,
             weight: weight,
             repsInReserve: repsInReserve,
-            ts: ts
+            ts: ts,
+            deviations: devs
         )
         try? queue.enqueue(event)
         logged[currentExerciseIdx].sets.append(
-            LoggedSet(reps: reps, weight: weight, repsInReserve: repsInReserve, ts: ts)
+            LoggedSet(reps: reps, weight: weight, repsInReserve: repsInReserve, ts: ts, deviations: devs)
         )
         lastRepsInReserve = repsInReserve
         currentSetIdx += 1
+        persist()
     }
 
     /// Mark current exercise done and advance — or signal end of workout.
@@ -81,6 +116,7 @@ final class WorkoutCoordinator: ObservableObject {
             // Stay on last exercise; UI shows "финиш" button.
             currentSetIdx = plan.exercises[currentExerciseIdx].targetSets
         }
+        persist()
     }
 
     /// Switch the active exercise (free order — e.g. machine busy). Resumes the
@@ -89,11 +125,92 @@ final class WorkoutCoordinator: ObservableObject {
         guard !isFinished, plan.exercises.indices.contains(idx) else { return }
         currentExerciseIdx = idx
         currentSetIdx = logged[idx].sets.count
+        persist()
+    }
+
+    /// Attach a coach reply to a specific already-logged set, keyed by
+    /// exercise slug + set index (from `CoachMessage.set_ref`). A missing
+    /// exercise or out-of-range setIdx (stale/racing reply) is a no-op rather
+    /// than a crash. Persists so the hint survives a kill.
+    ///
+    /// After `complete()`/`abort()` this is a no-op — a late coach message
+    /// on a finished workout would otherwise re-create an `active_workout`
+    /// row and resurrect a zombie "Продолжить" card on next launch.
+    ///
+    /// Fix N: belt-and-suspenders fallback for the race window where Payne's
+    /// coach reply references the NEW slug (from an accepted swap) but the
+    /// local `applySwap` hasn't run yet. Falls back to `currentExerciseIdx`
+    /// only when `setIdx` fits — the primary fix is to call `applySwap` on
+    /// user confirm so this branch stays a rare backstop.
+    func attachCoachHint(exerciseSlug: String, setIdx: Int, text: String) {
+        guard !isFinished else { return }
+        let exIdx: Int
+        if let found = plan.exercises.firstIndex(where: { $0.exerciseSlug == exerciseSlug }) {
+            exIdx = found
+        } else if plan.exercises.indices.contains(currentExerciseIdx),
+                  logged[currentExerciseIdx].sets.indices.contains(setIdx) {
+            // TODO: remove once server-side swap-apply is guaranteed to precede
+            // any coach_message that references the new slug (Fix N context).
+            exIdx = currentExerciseIdx
+        } else {
+            return
+        }
+        guard logged[exIdx].sets.indices.contains(setIdx) else { return }
+        logged[exIdx].sets[setIdx].coachHint = text
+        // Haptic lives here (the single mutation site) rather than in the view:
+        // the 💬 chip can be off-screen or the runner backgrounded when Payne's
+        // reply lands, so a success buzz is the only reliable "coach said
+        // something" cue. @MainActor guarantees the main-thread requirement.
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
+        persist()
+    }
+
+    /// Fix N: fold an accepted exercise swap into the local plan + logged so
+    /// future `coach_message.set_ref.exercise_slug` (which will reference the
+    /// NEW slug once Payne accepts) still resolves via `attachCoachHint`.
+    ///
+    /// Rebuilds the ExercisePlan / LoggedExercise at the matching index rather
+    /// than mutating fields (both `exerciseSlug` are `let`). Copies over all
+    /// other fields so weights / target reps / logged sets survive the swap.
+    /// No-op if the workout is finished or the slug isn't in the plan (e.g.
+    /// swap arrived for an already-swapped exercise).
+    func applySwap(originalSlug: String, newSlug: String) {
+        guard !isFinished else { return }
+        guard let idx = plan.exercises.firstIndex(where: { $0.exerciseSlug == originalSlug }) else { return }
+        guard originalSlug != newSlug else { return }
+        let old = plan.exercises[idx]
+        let replaced = ExercisePlan(
+            exerciseSlug: newSlug,
+            targetSets: old.targetSets,
+            targetReps: old.targetReps,
+            targetRir: old.targetRir,
+            restSec: old.restSec,
+            notes: old.notes,
+            nameRu: old.nameRu,
+            durationSec: old.durationSec,
+            weightKgTarget: old.weightKgTarget
+        )
+        var newExercises = plan.exercises
+        newExercises[idx] = replaced
+        plan = WorkoutPlan(
+            workoutId: plan.workoutId,
+            dayName: plan.dayName,
+            week: plan.week,
+            intensityLabel: plan.intensityLabel,
+            exercises: newExercises,
+            imageManifest: plan.imageManifest
+        )
+        let oldLogged = logged[idx]
+        logged[idx] = LoggedExercise(exerciseSlug: newSlug, sets: oldLogged.sets, comment: oldLogged.comment)
+        persist()
     }
 
     /// Produce the final WorkoutSession payload for `workout_complete`.
     func complete(sessionFeeling: Int, sessionFeelingLabel: String, healthSignalAtStart: String? = nil) -> WorkoutSession {
         isFinished = true
+        if let store, let agentId { try? store.clear(agentId: agentId) }
         return WorkoutSession(
             workoutId: plan.workoutId,
             date: Self.dateFormatter.string(from: startedAt),
@@ -114,9 +231,22 @@ final class WorkoutCoordinator: ObservableObject {
     /// the server reconciles via workout_id.
     func abort() {
         isFinished = true
+        if let store, let agentId { try? store.clear(agentId: agentId) }
     }
 
     // MARK: - Helpers
+
+    private func persist() {
+        guard let store, let agentId, let messageId else { return }
+        let cursor = WorkoutCursor(
+            currentExerciseIdx: currentExerciseIdx,
+            currentSetIdx: currentSetIdx,
+            logged: logged,
+            startedAt: startedAt
+        )
+        try? store.save(agentId: agentId, workoutId: plan.workoutId,
+                        plan: plan, cursor: cursor, messageId: messageId)
+    }
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()

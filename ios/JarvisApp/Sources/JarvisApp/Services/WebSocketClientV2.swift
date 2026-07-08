@@ -102,6 +102,13 @@ final class WebSocketClientV2 {
     /// because the URL/token isn't known at coordinator-init time. Tests inject
     /// a fully-built stack via the `init(stack:)` overload.
     @ObservationIgnored private(set) var stack: AppV2Stack!
+    /// Observable mirror of "is `stack` non-nil". Bumped to `true` synchronously
+    /// the moment the stack is built (init or first `connect(settings:)`), so
+    /// SwiftUI views can react to the transition — `stack` itself is
+    /// `@ObservationIgnored` and can't be observed. Used by `ChatView` to
+    /// re-run `loadActiveWorkoutRecord()` when it happens to appear before the
+    /// stack has been built (splash → home → chat with connect in-flight).
+    private(set) var stackReady: Bool = false
     @ObservationIgnored private var observationCancellable: AnyDatabaseCancellable?
     @ObservationIgnored private var sentReadIds: Set<String> = []
 
@@ -124,6 +131,7 @@ final class WebSocketClientV2 {
     /// Test init — stack already constructed.
     init(stack: AppV2Stack) {
         self.stack = stack
+        self.stackReady = true
         restartObservation()
         wireAuthOkCallback()
     }
@@ -183,6 +191,11 @@ final class WebSocketClientV2 {
                     )
                 }
                 self.stack = built
+                // Bumped BEFORE the async connect Task fires so any observer
+                // (e.g. ChatView.loadActiveWorkoutRecord) sees the stack
+                // available even before the network handshake completes —
+                // resume works offline / mid-handshake, not just once authed.
+                self.stackReady = true
                 restartObservation()
                 wireAuthOkCallback()
             } catch {

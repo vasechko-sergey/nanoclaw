@@ -277,6 +277,22 @@ export const Envelopes = {
       reps_in_reserve: z.number().int().min(0).max(10),
       ts: z.string().datetime(),
       agent_id: z.string().min(1).optional(),
+      // A set can miss on several axes at once (weight + reps + rir); each hit
+      // is its own entry so Payne sees the full picture, not just the first.
+      deviations: z.array(z.object({
+        kind: z.enum([
+          'weight_under', 'weight_over',
+          'reps_under', 'reps_over',
+          'failure', 'too_easy',
+        ]),
+        magnitude: z.number(),
+        target: z.object({
+          reps_min: z.number().int().nonnegative(),
+          reps_max: z.number().int().nonnegative(),
+          weight: z.number().nonnegative().optional(),
+          rir: z.number().int().min(0).max(10),
+        }),
+      })).optional(),
     }),
   }),
   ExerciseDone: EnvelopeBase.extend({
@@ -386,6 +402,10 @@ export const Envelopes = {
       text: z.string().min(1),
       workout_id: z.string().optional(),
       agent_id: z.string().min(1).optional(),
+      set_ref: z.object({
+        exercise_slug: z.string().min(1),
+        set_idx: z.number().int().nonnegative(),
+      }).optional(),
     }),
   }),
   IntroRequest: EnvelopeBase.extend({

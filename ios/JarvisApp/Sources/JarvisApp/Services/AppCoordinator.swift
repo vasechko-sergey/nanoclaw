@@ -42,6 +42,13 @@ final class AppCoordinator {
     @ObservationIgnored private var chatStore: ConversationStoreV2?
     @ObservationIgnored private var didStartPrep = false
 
+    /// Fix M: workout summary handoff — row id of the placeholder assistant
+    /// message we injected after `workout_complete`, plus the timeout task
+    /// that swaps its text if Payne stays silent. Both cleared when Payne's
+    /// real summary arrives.
+    @ObservationIgnored private var pendingSummaryPlaceholderId: String?
+    @ObservationIgnored private var summaryPlaceholderTimeout: Task<Void, Never>?
+
     // MARK: – Connection state
     var connectionPhase: ConnectionPhase = .idle
 
@@ -288,6 +295,111 @@ final class AppCoordinator {
         _ = try? chatStore?.markWorkoutCardDone(workoutId: workoutId)
     }
 
+    /// Inject a coach text as a synthetic inbound Payne chat message when the
+    /// runner is CLOSED — a `workout.coach` envelope carries text but no chat
+    /// row of its own, and without an open `WorkoutView` the 4-sec banner
+    /// surface doesn't exist either, so it would otherwise be silently dropped
+    /// (see Fix J).
+    ///
+    /// Row id is scoped by workoutId + arrival ts so back-to-back coach texts
+    /// don't collapse into a single row while a redelivery of the same one is
+    /// a no-op via `INSERT OR IGNORE`. Sender is the passed `agentId` (usually
+    /// `payne`) and status defaults to `new` — the row lands like any normal
+    /// inbound Payne message.
+    func injectInboundCoachMessage(text: String, workoutId: String?, agentId: String) {
+        guard let chatStore else {
+            Log.warn(.ws, "[delivery] injected-coach SKIPPED — chatStore nil")
+            return
+        }
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        let id = Self.coachRowId(workoutId: workoutId, tsMillis: now)
+        do {
+            try chatStore.insertInboundFromPull(id: id, seq: nil, text: text, agentId: agentId, ts: now)
+        } catch {
+            Log.warn(.ws, "[delivery] injected-coach FAILED: \(error)")
+        }
+    }
+
+    /// Deterministic row id for an injected coach message. Exposed for testing.
+    /// `workoutId` may be nil (rare — action-agnostic coach hint); the fallback
+    /// UUID makes back-to-back rows unique in that case.
+    static func coachRowId(workoutId: String?, tsMillis: Int) -> String {
+        return "coach:\(workoutId ?? UUID().uuidString):\(tsMillis)"
+    }
+
+    /// Deterministic row id for the workout-summary placeholder Fix M injects
+    /// after `workout_complete`. Stable on `workoutId` so a redelivery (or a
+    /// double-tap of "Финиш") upserts instead of stacking placeholders.
+    static func summaryPlaceholderRowId(workoutId: String) -> String {
+        return "workout-summary-placeholder-\(workoutId)"
+    }
+
+    /// Fix M: after the user taps "Финиш" we auto-switch to Payne and drop a
+    /// "Разбираем тренировку…" assistant bubble on Payne's thread so the user
+    /// doesn't stare at empty chat while the summary generates (5-15 s dead
+    /// zone). The row is cleared when Payne's real summary lands (see
+    /// `sweepSummaryPlaceholderIfSettled`). If Payne stays silent > 60 s the
+    /// text swaps to a gentler timeout copy.
+    ///
+    /// Placeholder text stays as an assistant chat message even if the swap
+    /// never comes — the user can still act on the workout via chat with Payne
+    /// (no orphan spinner, no crash).
+    func mountWorkoutSummaryPlaceholder(workoutId: String) {
+        guard let chatStore else {
+            Log.warn(.ws, "[delivery] summary-placeholder SKIPPED — chatStore nil")
+            return
+        }
+        let id = Self.summaryPlaceholderRowId(workoutId: workoutId)
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        do {
+            // insertInboundFromPull is INSERT OR IGNORE, so a redelivery is a
+            // no-op — we still want the row's TEXT to be the fresh copy on a
+            // retap, so refresh it via updatePlaceholderText.
+            try chatStore.insertInboundFromPull(id: id, seq: nil, text: "Разбираем тренировку…", agentId: "payne", ts: now)
+            _ = try chatStore.updatePlaceholderText(id: id, text: "Разбираем тренировку…")
+        } catch {
+            Log.warn(.ws, "[delivery] summary-placeholder FAILED: \(error)")
+            return
+        }
+        pendingSummaryPlaceholderId = id
+        summaryPlaceholderTimeout?.cancel()
+        summaryPlaceholderTimeout = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)  // 60 s
+            guard let self, !Task.isCancelled else { return }
+            // Still ours + still the same workout → swap copy to timeout hint.
+            guard self.pendingSummaryPlaceholderId == id else { return }
+            _ = try? self.chatStore?.updatePlaceholderText(id: id, text: "Пейн задерживается — проверь чуть позже.")
+        }
+    }
+
+    /// Called from the assistant-message hook: if a real Payne assistant
+    /// message arrived AFTER our placeholder, delete the placeholder and
+    /// cancel the 60-s timeout. If no placeholder is tracked or Payne is
+    /// still silent, this is a no-op. Safe to call from every assistant-arrival.
+    fileprivate func sweepSummaryPlaceholderIfSettled() {
+        guard let placeholderId = pendingSummaryPlaceholderId else { return }
+        guard let placeholder = ws.messages.first(where: { $0.id == placeholderId }) else {
+            // Row already gone (external prune, cold-restart edit) — release
+            // tracking so we don't hold the timeout hostage.
+            pendingSummaryPlaceholderId = nil
+            summaryPlaceholderTimeout?.cancel()
+            summaryPlaceholderTimeout = nil
+            return
+        }
+        let realPayneAfter = ws.messages.contains { msg in
+            msg.id != placeholderId
+                && (msg.agentId ?? "jarvis") == "payne"
+                && msg.role == .assistant
+                && msg.timestamp > placeholder.timestamp
+        }
+        if realPayneAfter {
+            _ = try? chatStore?.deleteMessage(id: placeholderId)
+            pendingSummaryPlaceholderId = nil
+            summaryPlaceholderTimeout?.cancel()
+            summaryPlaceholderTimeout = nil
+        }
+    }
+
     /// Persist an inbound workout plan as a chat card. No-op if the store isn't
     /// built yet. (Plan also pre-fetched into the image cache by the caller.)
     /// `rowId` is the envelope id — unique per send, stable across retries — so
@@ -326,6 +438,10 @@ final class AppCoordinator {
                !last.text.isEmpty {
                 self.watchBridge.pushAssistantMessage(id: last.id, text: last.text, timestamp: last.timestamp)
             }
+            // Fix M: sweep the workout-summary placeholder if Payne's real
+            // reply just landed (delete the "Разбираем…" bubble in favor of
+            // the actual summary).
+            self.sweepSummaryPlaceholderIfSettled()
         }
 
         // Agent pulls device context — gather requested fields on demand.
@@ -434,7 +550,10 @@ final class AppCoordinator {
             // Persisting into the chat thread as a regular assistant message
             // is deferred — the chat surface already gets coach guidance via
             // the normal message channel from Payne.
-            workoutBus.events.send(.coachMessage(text: c.text, workoutId: c.workout_id))
+            let setRef: (exerciseSlug: String, setIdx: Int)? = c.set_ref.map {
+                (exerciseSlug: $0.exercise_slug, setIdx: $0.set_idx)
+            }
+            workoutBus.events.send(.coachMessage(text: c.text, workoutId: c.workout_id, setRef: setRef))
 
         case .exerciseSwapOptions(let s):
             let resp = SwapResponse(

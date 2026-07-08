@@ -87,4 +87,47 @@ final class WorkoutModelsTests: XCTestCase {
         XCTAssertEqual(obj["session_feeling"] as? Int, 4)
         XCTAssertEqual(obj["session_feeling_label"] as? String, "Хорошо, с запасом")
     }
+
+    func test_loggedSet_persistsDeviationsAndCoachHint() throws {
+        let devs = [
+            WorkoutRunnerLogic.SetDeviation(
+                kind: .weightUnder, magnitude: -0.2,
+                target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
+            ),
+            WorkoutRunnerLogic.SetDeviation(
+                kind: .failure, magnitude: 0,
+                target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
+            ),
+        ]
+        let set = LoggedSet(
+            reps: 10, weight: 20, repsInReserve: 0, ts: Date(timeIntervalSince1970: 0),
+            deviations: devs,
+            coachHint: "отдохни 3 мин"
+        )
+        let data = try JSONEncoder().encode(set)
+        let round = try JSONDecoder().decode(LoggedSet.self, from: data)
+        XCTAssertEqual(round.deviations.map(\.kind), [.weightUnder, .failure])
+        XCTAssertEqual(round.coachHint, "отдохни 3 мин")
+    }
+
+    /// A set with no deviations must decode to `[]` (not throw) whether the
+    /// `deviations` key is absent entirely or present as an empty array.
+    func test_loggedSet_missingDeviations_decodesToEmpty() throws {
+        let json = #"{ "reps": 10, "weight": 22.5, "reps_in_reserve": 3, "ts": 0 }"#
+        let set = try JSONDecoder().decode(LoggedSet.self, from: Data(json.utf8))
+        XCTAssertTrue(set.deviations.isEmpty)
+        XCTAssertNil(set.coachHint)
+    }
+
+    /// A legacy single `deviation` object (pre-array cursors / records) wraps
+    /// into a one-element array on decode.
+    func test_loggedSet_legacySingleDeviation_wrapsIntoArray() throws {
+        let json = #"""
+        { "reps": 10, "weight": 80, "reps_in_reserve": 2, "ts": 0,
+          "deviation": { "kind": "weight_under", "magnitude": -0.2,
+                         "target": { "reps_min": 8, "reps_max": 10, "weight": 100, "rir": 2 } } }
+        """#
+        let set = try JSONDecoder().decode(LoggedSet.self, from: Data(json.utf8))
+        XCTAssertEqual(set.deviations.map(\.kind), [.weightUnder])
+    }
 }

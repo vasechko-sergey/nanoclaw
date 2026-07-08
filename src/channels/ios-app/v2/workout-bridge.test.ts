@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WorkoutBridge } from './workout-bridge.js';
+import type { AnyEnvelope } from '../../../../shared/ios-app-protocol/index.js';
 
 describe('WorkoutBridge', () => {
   let writes: Array<{ session_id: string; text: string; tag: string; trigger: number }>;
@@ -123,5 +124,46 @@ describe('WorkoutBridge', () => {
       content: { type: 'coach_message', payload: { text: 'go' } },
     });
     expect(sends).toHaveLength(0);
+  });
+
+  it('passes deviations through on set_log inbound', () => {
+    bridge.handleInbound('sess', {
+      type: 'set_log',
+      payload: {
+        workout_id: 'w',
+        exercise_slug: 'ex',
+        set_idx: 0,
+        reps: 10,
+        weight: 20,
+        reps_in_reserve: 0,
+        ts: 'now',
+        deviations: [
+          { kind: 'weight_under', magnitude: -0.2, target: { reps_min: 8, reps_max: 10, rir: 2 } },
+          { kind: 'failure', magnitude: 0, target: { reps_min: 8, reps_max: 10, rir: 2 } },
+        ],
+      },
+    } as unknown as AnyEnvelope);
+    expect(writes).toHaveLength(1);
+    const body = JSON.parse(writes[0].text);
+    expect(body.payload.deviations).toHaveLength(2);
+    expect(body.payload.deviations[0].kind).toBe('weight_under');
+    expect(body.payload.deviations[1].kind).toBe('failure');
+    expect(body.payload.deviations[1].target.reps_min).toBe(8);
+    expect(body.payload.deviations[1].target.rir).toBe(2);
+  });
+
+  it('passes set_ref through on coach_message outbound', () => {
+    bridge.handleAgentRequest({
+      session_id: 'sess',
+      content: {
+        type: 'coach_message',
+        payload: { workout_id: 'w', text: 'go', set_ref: { exercise_slug: 'ex', set_idx: 0 } },
+      },
+    });
+    expect(sends).toHaveLength(1);
+    const env = sends[0].env as any;
+    expect(env.type).toBe('coach_message');
+    expect(env.payload.set_ref.exercise_slug).toBe('ex');
+    expect(env.payload.set_ref.set_idx).toBe(0);
   });
 });

@@ -41,13 +41,41 @@ enum WorkoutRunnerLogic {
         return "подход \(currentSetIdx + 1) из \(targetSets)"
     }
 
-    /// Rest-overlay "next" hint. After the active exercise's sets are done and a
-    /// next exercise exists → its name; otherwise the next set of this exercise.
-    static func restHint(setsDone: Int, targetSets: Int, nextExerciseName: String?) -> String {
-        if targetSets > 0, setsDone >= targetSets, let next = nextExerciseName {
-            return next
+    /// Sentinel `restHint` returns when nothing remains. The rest overlay
+    /// watches for it to auto-dismiss instead of ticking out a full rest period
+    /// on a workout that's already over.
+    static let workoutFinishedHint = "Тренировка закончена"
+
+    /// Rest-overlay "next" hint. Scans all exercises for the first unfinished
+    /// set starting from the active exercise, so a skipped-then-returned-to
+    /// exercise earlier in the plan is still surfaced instead of being hidden
+    /// behind the active exercise's own completed sets. Once no set work
+    /// remains, a pending timed finisher (cardio/warmup) is surfaced too.
+    static func restHint(logged: [LoggedExercise], exercises: [ExercisePlan], activeIdx: Int) -> String {
+        guard exercises.indices.contains(activeIdx), logged.indices.contains(activeIdx) else {
+            return workoutFinishedHint
         }
-        return "подход \(setsDone + 1)"
+        let cur = exercises[activeIdx]
+        let curDone = logged[activeIdx].sets.count
+        if cur.targetSets > 0, curDone < cur.targetSets {
+            return "подход \(curDone + 1) — \(cur.displayName)"
+        }
+        for i in exercises.indices where exercises[i].targetSets > 0 {
+            if logged[i].sets.count < exercises[i].targetSets {
+                return "\(exercises[i].displayName) — подход \(logged[i].sets.count + 1)"
+            }
+        }
+        // No set work left — surface a pending timed finisher (cardio/warmup).
+        // Duration exercises carry no set count, so the scan above can't see
+        // them; without this the runner says "закончена" with cardio still to
+        // go. Duration completion has no reliable per-exercise flag (finish
+        // passes a nil comment), so position stands in: i >= activeIdx means
+        // "not yet reached", while a duration block the user already advanced
+        // past sits before activeIdx and stays quiet.
+        for i in exercises.indices where i >= activeIdx && exercises[i].isDuration {
+            return "кардио: \(exercises[i].displayName)"
+        }
+        return workoutFinishedHint
     }
 
     /// Worded 1–5 session rating (1 = tough … 5 = easy).
@@ -82,5 +110,134 @@ enum WorkoutRunnerLogic {
     /// "3/6" — 1-based active index over total, clamped.
     static func exerciseCounter(activeIdx: Int, total: Int) -> String {
         "\(min(activeIdx + 1, max(total, 1)))/\(max(total, 1))"
+    }
+
+    /// Tolerance beyond which a set is called out to Payne.
+    static let weightDeviationPct: Double = 0.15
+    /// Reps tolerance as a fraction of the target mid. An absolute ±3 band is
+    /// 50% of a 6-rep target but only 15% of a 20-rep one — so scale to the
+    /// range instead of a fixed count. Floored at ±2 reps (below) so tiny
+    /// targets still get a sane band.
+    static let repsDeviationFraction: Double = 0.30
+
+    /// Raw values are pinned to the wire enum in `V2.SetLog.Deviation.Kind`
+    /// (snake_case) so `set_log` envelopes and `workout_complete.full_session_json`
+    /// serialize identical strings for the same kind — otherwise Payne sees
+    /// two different vocabularies for the same signal across the two paths.
+    enum SetDeviationKind: String, Codable, Equatable {
+        case weightUnder = "weight_under"
+        case weightOver = "weight_over"
+        case repsUnder = "reps_under"
+        case repsOver = "reps_over"
+        case failure                          // rir == 0
+        case tooEasy = "too_easy"             // rir >= 4
+    }
+
+    struct DeviationTargetSnapshot: Codable, Equatable {
+        let repsMin: Int
+        let repsMax: Int
+        var weight: Double?
+        let rir: Int
+
+        /// Snake_case pinned to the wire enum in `V2.SetLog.DeviationTarget`.
+        enum CodingKeys: String, CodingKey {
+            case repsMin = "reps_min"
+            case repsMax = "reps_max"
+            case weight
+            case rir
+        }
+    }
+
+    struct SetDeviation: Codable, Equatable {
+        let kind: SetDeviationKind
+        /// Percentage delta for weight, absolute delta for reps, 0 for rir kinds.
+        let magnitude: Double
+        let target: DeviationTargetSnapshot
+
+        enum CodingKeys: String, CodingKey {
+            case kind, magnitude, target
+        }
+    }
+
+    /// Detect every way an actual set deviated from its planned exercise.
+    /// Returns ALL hits (weight, then reps, then rir) so a set that went wrong
+    /// on multiple axes surfaces each one to Payne — a single-precedence result
+    /// would hide "wrong weight AND missed reps AND hit failure" behind just the
+    /// weight, which reads as a lighter problem than it is. Empty ⇒ within
+    /// tolerance on every axis.
+    ///
+    /// Comparisons are strict `>`: a set exactly at the tolerance is on-plan.
+    /// A non-strict `>=` flips at exactly 15% / the exact rep band, which the
+    /// 0.5 kg weight wheel and integer rounding can land on either side of —
+    /// strict gives a stable "must exceed the tolerance" rule.
+    ///
+    /// `intensityLabel` gates the `too_easy` (rir ≥ 4) call-out: on a light /
+    /// deload week every warmup and back-off set reads as easy, so surfacing
+    /// it there is pure alarm fatigue. `failure` (rir == 0) always fires.
+    static func detectDeviation(actualReps: Int, actualWeight: Double, actualRir: Int,
+                                exercise: ExercisePlan, intensityLabel: String? = nil) -> [SetDeviation] {
+        let range = parseRepsRange(exercise.targetReps)
+        let target = DeviationTargetSnapshot(
+            repsMin: range.min ?? 0, repsMax: range.max ?? 0,
+            weight: exercise.weightKgTarget, rir: exercise.targetRir
+        )
+        var out: [SetDeviation] = []
+        if let weightTarget = exercise.weightKgTarget, weightTarget > 0 {
+            let delta = actualWeight / weightTarget - 1.0
+            if abs(delta) > weightDeviationPct {
+                out.append(SetDeviation(kind: delta < 0 ? .weightUnder : .weightOver, magnitude: delta, target: target))
+            }
+        }
+        if let mid = range.mid {
+            let d = actualReps - mid
+            let repsThreshold = max(2, Int((Double(mid) * repsDeviationFraction).rounded()))
+            if abs(d) > repsThreshold {
+                out.append(SetDeviation(kind: d < 0 ? .repsUnder : .repsOver, magnitude: Double(d), target: target))
+            }
+        }
+        if actualRir == 0 {
+            out.append(SetDeviation(kind: .failure, magnitude: 0, target: target))
+        } else if actualRir >= 4, !isLightWeek(intensityLabel) {
+            out.append(SetDeviation(kind: .tooEasy, magnitude: 0, target: target))
+        }
+        return out
+    }
+
+    /// Whether the plan's week label reads as a light / deload week — matches
+    /// "лёг…" and "легк…" (лёгкая / лёгкий / легкая). Used to suppress the
+    /// `too_easy` call-out where an easy set is expected.
+    static func isLightWeek(_ intensityLabel: String?) -> Bool {
+        let lc = intensityLabel?.lowercased() ?? ""
+        return lc.contains("лёг") || lc.contains("легк")
+    }
+
+    /// Parse a target-reps string into (min, max, mid). Handles ranges written
+    /// with `-`, `,`, `или`, or `or`; a bare number; an open-ended `N+`
+    /// (→ N…N+5, mid N+2); and `AMRAP` in any case (→ 0…50, mid 25 — "as many
+    /// as possible", so the band is deliberately wide). Returns all-nil only
+    /// when nothing numeric can be extracted (a real warmup with
+    /// `target_reps: ""` → reps rule skipped). Internal (not private) so the
+    /// parse table can be unit-tested directly.
+    static func parseRepsRange(_ s: String) -> (min: Int?, max: Int?, mid: Int?) {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        let lowered = trimmed.lowercased()
+        if lowered == "amrap" { return (0, 50, 25) }
+        // Open-ended "N+": floor at N, allow up to N+5, mid N+2.
+        if trimmed.hasSuffix("+"),
+           let n = Int(trimmed.dropLast().trimmingCharacters(in: .whitespaces)) {
+            return (n, n + 5, n + 2)
+        }
+        // Split on any supported range delimiter, then pull out the integers.
+        var parts = [lowered]
+        for sep in ["-", ",", "или", "or"] {
+            parts = parts.flatMap { $0.components(separatedBy: sep) }
+        }
+        let nums = parts.compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        if nums.count >= 2 {
+            let lo = nums.min()!, hi = nums.max()!
+            return (lo, hi, (lo + hi) / 2)
+        }
+        if nums.count == 1 { return (nums[0], nums[0], nums[0]) }
+        return (nil, nil, nil)
     }
 }

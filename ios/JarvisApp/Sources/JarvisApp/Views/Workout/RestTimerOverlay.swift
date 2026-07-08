@@ -55,6 +55,18 @@ struct RestTimerOverlay: View {
                 }
             }
             .transition(.opacity)
+            .onAppear(perform: dismissIfWorkoutOver)
+            .onChange(of: nextHint) { _ in dismissIfWorkoutOver() }
+        }
+    }
+
+    /// When the "next" hint says the workout is over, don't keep counting down —
+    /// auto-dismiss. onAppear covers the common case (the overlay opens already
+    /// showing the finished hint, right after the last set was logged); onChange
+    /// covers a live transition to finished while the overlay is up.
+    private func dismissIfWorkoutOver() {
+        if nextHint == WorkoutRunnerLogic.workoutFinishedHint {
+            timer.skip()
         }
     }
 

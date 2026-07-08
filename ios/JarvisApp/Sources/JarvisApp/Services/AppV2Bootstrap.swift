@@ -14,6 +14,7 @@ struct AppV2Stack {
     /// the transport drains it. UI layers must build their `WorkoutCoordinator`
     /// from this reference so the producer and the drain share one GRDB writer.
     let setLogQueue: SetLogQueue
+    let activeWorkoutStore: ActiveWorkoutStore
 }
 
 /// Builds the v2 stack: opens (and migrates) the on-disk SQLite and
@@ -80,13 +81,15 @@ enum AppV2Bootstrap {
             contextCoordinator: coordinator
         )
         let setLogQueue = SetLogQueue(writer: dbq)
+        let activeWorkoutStore = ActiveWorkoutStore(writer: dbq)
 
         return AppV2Stack(
             store: store,
             transport: transport,
             coordinator: coordinator,
             dbq: dbq,
-            setLogQueue: setLogQueue
+            setLogQueue: setLogQueue,
+            activeWorkoutStore: activeWorkoutStore
         )
     }
 
@@ -116,12 +119,14 @@ enum AppV2Bootstrap {
             contextCoordinator: coordinator
         )
         let setLogQueue = SetLogQueue(writer: storage.dbq)
+        let activeWorkoutStore = ActiveWorkoutStore(writer: storage.dbq)
         return AppV2Stack(
             store: storage.store,
             transport: transport,
             coordinator: coordinator,
             dbq: storage.dbq,
-            setLogQueue: setLogQueue
+            setLogQueue: setLogQueue,
+            activeWorkoutStore: activeWorkoutStore
         )
     }
 }

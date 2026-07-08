@@ -9,7 +9,7 @@ import Combine
 /// `AppCoordinator.workoutBus.events.send(...)` → SwiftUI `.onReceive`.
 enum WorkoutInboundEvent {
     case planReceived(WorkoutPlan)
-    case coachMessage(text: String, workoutId: String?)
+    case coachMessage(text: String, workoutId: String?, setRef: (exerciseSlug: String, setIdx: Int)?)
     case swapOptions(SwapResponse, originalSlug: String, workoutId: String)
     case imageReceived(slug: String)  // an image_blob landed → refresh thumbnails
     case programUpdated  // raw JSON not surfaced today — logged only
