@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Live workout runner. Flexible ~50/50 split: large image hero on top,
 /// controls below (logged chips + focus set card + icon toolbar). Rest timer
@@ -10,6 +11,14 @@ struct WorkoutView: View {
 
     /// Resolve a slug to a local cached image URL (shared with inbound prefetch).
     let imageResolver: (_ slug: String) -> URL?
+
+    /// Stream of coach_message texts WITHOUT `set_ref` — surfaced as the 4-sec
+    /// top banner via `surfaceCoachMessage`. ChatView filters `workoutBus.events`
+    /// to `.coachMessage(_, _, nil)` and passes the mapped publisher in.
+    ///
+    /// Coach messages WITH `set_ref` (deviation replies) are handled in ChatView
+    /// where the `WorkoutCoordinator` reference lives — they anchor on a chip.
+    let coachMessages: AnyPublisher<String, Never>
 
     /// Called when user taps ✕ (abort) or finishes successfully (complete).
     var onClose: (WorkoutSession?) -> Void
@@ -73,6 +82,12 @@ struct WorkoutView: View {
         .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { restTimer.refresh() }
+        }
+        // Coach message WITHOUT set_ref → 4-sec top banner. With the runner open,
+        // this is the ONLY surface for coach text that isn't anchored on a set
+        // (e.g. abort ack "Принял…", global tempo hint, warmup nudge).
+        .onReceive(coachMessages) { text in
+            surfaceCoachMessage(text)
         }
         .accessibilityIdentifier("workout-view")
     }

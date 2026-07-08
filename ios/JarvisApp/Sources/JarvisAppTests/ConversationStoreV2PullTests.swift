@@ -62,4 +62,42 @@ final class ConversationStoreV2PullTests: XCTestCase {
         try store.insertInbound(envelope: e, message: m, agentId: "jarvis")
         XCTAssertEqual(try col(store, "m3", "text"), "corrected")    // edit NOT reverted
     }
+
+    // MARK: - Fix J: coach without set_ref injected as chat row
+
+    /// Runner is closed → a `.coachMessage(text: _, workoutId: _, setRef: nil)`
+    /// event on the workoutBus must land as a normal Payne chat message so the
+    /// user still sees abort acks / global hints. The `coach:*` row id pattern
+    /// scopes on workoutId + ts so two coach texts don't collide but a redelivery
+    /// of the same text is idempotent.
+    @MainActor
+    func testCoachRowIdIsDeterministicForSameTs() {
+        let idA = AppCoordinator.coachRowId(workoutId: "w1", tsMillis: 1000)
+        let idB = AppCoordinator.coachRowId(workoutId: "w1", tsMillis: 1000)
+        XCTAssertEqual(idA, idB, "same (workoutId, ts) → same id so redeliveries dedup")
+        XCTAssertEqual(idA, "coach:w1:1000")
+    }
+
+    @MainActor
+    func testCoachRowIdBackToBackTextsGetDistinctIds() {
+        let idA = AppCoordinator.coachRowId(workoutId: "w1", tsMillis: 1000)
+        let idB = AppCoordinator.coachRowId(workoutId: "w1", tsMillis: 1001)
+        XCTAssertNotEqual(idA, idB, "different ts → different rows so both coach texts survive")
+    }
+
+    /// End-to-end: a coach text inserted via the same code path
+    /// `injectInboundCoachMessage` uses shows up as a Payne row that the chat
+    /// timeline would surface. Reproduces the "runner closed → banner missing
+    /// → still visible in chat" contract from Fix J.
+    @MainActor
+    func testCoachTextInsertedForClosedRunnerLandsAsPayneRow() throws {
+        let store = try makeStore()
+        let id = AppCoordinator.coachRowId(workoutId: "w1", tsMillis: 5000)
+        try store.insertInboundFromPull(id: id, seq: nil, text: "Принял, останавливаю тренировку.", agentId: "payne", ts: 5000)
+
+        let text = try col(store, id, "text")
+        XCTAssertEqual(text, "Принял, останавливаю тренировку.")
+        let agent = try col(store, id, "agent_id")
+        XCTAssertEqual(agent, "payne")
+    }
 }

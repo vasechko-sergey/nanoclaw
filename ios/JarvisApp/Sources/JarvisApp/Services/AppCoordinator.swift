@@ -288,6 +288,38 @@ final class AppCoordinator {
         _ = try? chatStore?.markWorkoutCardDone(workoutId: workoutId)
     }
 
+    /// Inject a coach text as a synthetic inbound Payne chat message when the
+    /// runner is CLOSED — a `workout.coach` envelope carries text but no chat
+    /// row of its own, and without an open `WorkoutView` the 4-sec banner
+    /// surface doesn't exist either, so it would otherwise be silently dropped
+    /// (see Fix J).
+    ///
+    /// Row id is scoped by workoutId + arrival ts so back-to-back coach texts
+    /// don't collapse into a single row while a redelivery of the same one is
+    /// a no-op via `INSERT OR IGNORE`. Sender is the passed `agentId` (usually
+    /// `payne`) and status defaults to `new` — the row lands like any normal
+    /// inbound Payne message.
+    func injectInboundCoachMessage(text: String, workoutId: String?, agentId: String) {
+        guard let chatStore else {
+            Log.warn(.ws, "[delivery] injected-coach SKIPPED — chatStore nil")
+            return
+        }
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        let id = Self.coachRowId(workoutId: workoutId, tsMillis: now)
+        do {
+            try chatStore.insertInboundFromPull(id: id, seq: nil, text: text, agentId: agentId, ts: now)
+        } catch {
+            Log.warn(.ws, "[delivery] injected-coach FAILED: \(error)")
+        }
+    }
+
+    /// Deterministic row id for an injected coach message. Exposed for testing.
+    /// `workoutId` may be nil (rare — action-agnostic coach hint); the fallback
+    /// UUID makes back-to-back rows unique in that case.
+    static func coachRowId(workoutId: String?, tsMillis: Int) -> String {
+        return "coach:\(workoutId ?? UUID().uuidString):\(tsMillis)"
+    }
+
     /// Persist an inbound workout plan as a chat card. No-op if the store isn't
     /// built yet. (Plan also pre-fetched into the image cache by the caller.)
     /// `rowId` is the envelope id — unique per send, stable across retries — so

@@ -187,6 +187,65 @@ struct ChatView: View {
         )
     }
 
+    /// Filter the shared workout bus to coach texts WITHOUT a `set_ref` so
+    /// `WorkoutView` can subscribe to a plain `String` stream and drive the
+    /// 4-sec top banner via `surfaceCoachMessage`. Extracted from the inline
+    /// caller so the SwiftUI type checker isn't asked to solve a giant tree
+    /// at the `WorkoutView(...)` call site (Fix J).
+    private func coachBannerPublisher() -> AnyPublisher<String, Never> {
+        coordinator.workoutBus.events
+            .compactMap { event -> String? in
+                if case .coachMessage(let text, _, let setRef) = event, setRef == nil {
+                    return text
+                }
+                return nil
+            }
+            .eraseToAnyPublisher()
+    }
+
+    /// Builder for the running WorkoutView. Extracted so the fullScreenCover's
+    /// switch body stays small enough for the SwiftUI type checker.
+    @ViewBuilder
+    private func workoutRunnerView(for presentation: WorkoutPresentation) -> some View {
+        WorkoutView(
+            coordinator: presentation.coord!,
+            imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
+            // Coach messages without a set anchor → top banner (Fix J). Filter
+            // at the boundary so WorkoutView doesn't know about WorkoutInboundEvent.
+            coachMessages: coachBannerPublisher(),
+            onClose: { session in
+                let workoutId = presentation.plan.workoutId
+                if let session {
+                    Task { try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session) }
+                } else {
+                    Task {
+                        try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
+                            workoutId: workoutId, reason: "user cancelled"
+                        )
+                    }
+                }
+                // Grey the card ONLY when the workout was completed. Match by
+                // workout_id (NOT presentation.messageId, which a mid-workout
+                // exercise swap can drop → card stayed active even though the
+                // workout finished) so it reliably resolves. Abort /
+                // view-without-finishing leaves it tappable so "Посмотреть
+                // тренировку" can be reopened.
+                if session != nil {
+                    coordinator.markWorkoutCardDone(workoutId: workoutId)
+                }
+                activeWorkout = nil
+                // The coordinator already cleared the DB row (on
+                // complete/abort, above) — drop the stale @State immediately,
+                // then re-check in case something else (e.g. a fresh
+                // workout_plan) is now active.
+                activeWorkoutRecord = nil
+                loadActiveWorkoutRecord()
+            },
+            onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
+            onAppearPrefetch: { coordinator.imageCache.prefetch(manifest: presentation.plan.imageManifest) }
+        )
+    }
+
     /// Open the swap sheet for an exercise. The sheet drives the existing
     /// exercise_swap_request / _options / _confirm flow over the transport.
     private func beginSwap(slug: String, workoutId: String) {
@@ -441,40 +500,7 @@ struct ChatView: View {
                         onClose: { activeWorkout = nil }
                     )
                 case .running:
-                    WorkoutView(
-                        coordinator: presentation.coord!,
-                        imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
-                        onClose: { session in
-                            let workoutId = presentation.plan.workoutId
-                            if let session {
-                                Task { try? await coordinator.ws.stack?.transport.sendWorkoutComplete(session) }
-                            } else {
-                                Task {
-                                    try? await coordinator.ws.stack?.transport.sendWorkoutAbort(
-                                        workoutId: workoutId, reason: "user cancelled"
-                                    )
-                                }
-                            }
-                            // Grey the card ONLY when the workout was completed.
-                            // Match by workout_id (NOT presentation.messageId, which a
-                            // mid-workout exercise swap can drop → card stayed active
-                            // even though the workout finished) so it reliably resolves.
-                            // Abort / view-without-finishing leaves it tappable so
-                            // "Посмотреть тренировку" can be reopened.
-                            if session != nil {
-                                coordinator.markWorkoutCardDone(workoutId: workoutId)
-                            }
-                            activeWorkout = nil
-                            // The coordinator already cleared the DB row (on
-                            // complete/abort, above) — drop the stale @State
-                            // immediately, then re-check in case something else
-                            // (e.g. a fresh workout_plan) is now active.
-                            activeWorkoutRecord = nil
-                            loadActiveWorkoutRecord()
-                        },
-                        onSwap: { slug in beginSwap(slug: slug, workoutId: presentation.plan.workoutId) },
-                        onAppearPrefetch: { coordinator.imageCache.prefetch(manifest: presentation.plan.imageManifest) }
-                    )
+                    workoutRunnerView(for: presentation)
                 }
             }
             // Attached INSIDE the cover so the swap sheet presents OVER the
@@ -521,13 +547,24 @@ struct ChatView: View {
                 }
             case .imageReceived:
                 swapImageToken += 1
-            case .coachMessage(let text, _, let setRef):
+            case .coachMessage(let text, let workoutId, let setRef):
                 // Deviation replies carry set_ref — anchor the hint on that set's
                 // chip (💬 badge, see LoggedSetChips) instead of a banner.
                 if let setRef, let coord = activeWorkout?.coord {
                     coord.attachCoachHint(exerciseSlug: setRef.exerciseSlug, setIdx: setRef.setIdx, text: text)
+                } else if setRef == nil {
+                    // Fix J: two-branch guarantee for coach text without an anchor.
+                    // Runner OPEN → WorkoutView's own `.onReceive(coachMessages)`
+                    // shows the 4-sec top banner. Runner CLOSED → the banner
+                    // surface doesn't exist, so we inject the text as a normal
+                    // Payne chat message so an abort ack ("Принял…") or a global
+                    // hint isn't silently dropped.
+                    if activeWorkout == nil {
+                        coordinator.injectInboundCoachMessage(
+                            text: text, workoutId: workoutId, agentId: "payne"
+                        )
+                    }
                 }
-                // When setRef is nil, existing subscribers (e.g. WorkoutView) show the banner.
             case .planReceived, .programUpdated:
                 // .planReceived is consumed by the open WorkoutPreviewView's own
                 // subscription; program banners are logged only (no UI yet).
