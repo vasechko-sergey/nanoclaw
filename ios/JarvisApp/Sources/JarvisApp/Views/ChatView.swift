@@ -156,13 +156,22 @@ struct ChatView: View {
     /// Load (or clear) the persisted active-workout record for `payne`. Only
     /// `payne` runs the workout flow, so any other active agent clears it.
     /// Safe to call repeatedly — cheap single-row lookup.
+    ///
+    /// A decode failure is logged rather than silently swallowed — a corrupt
+    /// row is a bug we want visible in the log, not something that quietly
+    /// hides the resume banner.
     private func loadActiveWorkoutRecord() {
         guard active.active == .payne,
               let store = coordinator.ws.stack?.activeWorkoutStore else {
             activeWorkoutRecord = nil
             return
         }
-        activeWorkoutRecord = try? store.load(agentId: active.active.rawValue)
+        do {
+            activeWorkoutRecord = try store.load(agentId: active.active.rawValue)
+        } catch {
+            Log.warn(.ws, "activeWorkout load failed: \(error)")
+            activeWorkoutRecord = nil
+        }
     }
 
     /// Resume a persisted workout straight into the running phase — the user
