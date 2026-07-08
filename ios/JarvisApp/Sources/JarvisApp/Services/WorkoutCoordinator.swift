@@ -129,7 +129,12 @@ final class WorkoutCoordinator: ObservableObject {
     /// exercise slug + set index (from `CoachMessage.set_ref`). A missing
     /// exercise or out-of-range setIdx (stale/racing reply) is a no-op rather
     /// than a crash. Persists so the hint survives a kill.
+    ///
+    /// After `complete()`/`abort()` this is a no-op — a late coach message
+    /// on a finished workout would otherwise re-create an `active_workout`
+    /// row and resurrect a zombie "Продолжить" card on next launch.
     func attachCoachHint(exerciseSlug: String, setIdx: Int, text: String) {
+        guard !isFinished else { return }
         guard let exIdx = plan.exercises.firstIndex(where: { $0.exerciseSlug == exerciseSlug }) else { return }
         guard logged[exIdx].sets.indices.contains(setIdx) else { return }
         logged[exIdx].sets[setIdx].coachHint = text

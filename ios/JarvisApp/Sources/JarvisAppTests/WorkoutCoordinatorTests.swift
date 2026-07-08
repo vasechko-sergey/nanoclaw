@@ -209,6 +209,54 @@ final class WorkoutCoordinatorTests: XCTestCase {
         // No assertion — just ensure no crash / no throw.
     }
 
+    /// A late `coach_message` arriving after the user aborted or completed
+    /// the workout must NOT resurrect the `active_workout` row — otherwise
+    /// next launch shows a zombie "Продолжить" card for a done workout.
+    func test_attachCoachHint_afterAbort_doesNotResurrectStore() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        var plan = makePlan()
+        plan = WorkoutPlan(
+            workoutId: plan.workoutId, dayName: plan.dayName, week: plan.week,
+            intensityLabel: plan.intensityLabel,
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                                     targetRir: 2, restSec: 120, notes: nil, nameRu: nil,
+                                     durationSec: nil, weightKgTarget: 100)],
+            imageManifest: [])
+        let coord = WorkoutCoordinator(plan: plan, queue: queue, store: store, agentId: "payne", messageId: "m")
+        coord.logSet(reps: 10, weight: 100, repsInReserve: 0)
+        coord.abort()  // abort clears the store row
+        XCTAssertNil(try store.load(agentId: "payne"))
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "поздравляю")
+        // The store must stay empty — otherwise next launch shows a zombie card.
+        XCTAssertNil(try store.load(agentId: "payne"))
+    }
+
+    /// Same as above but for the completion path — a coach reply that lands
+    /// after `complete()` must not re-persist the finished workout.
+    func test_attachCoachHint_afterComplete_doesNotResurrectStore() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        var plan = makePlan()
+        plan = WorkoutPlan(
+            workoutId: plan.workoutId, dayName: plan.dayName, week: plan.week,
+            intensityLabel: plan.intensityLabel,
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                                     targetRir: 2, restSec: 120, notes: nil, nameRu: nil,
+                                     durationSec: nil, weightKgTarget: 100)],
+            imageManifest: [])
+        let coord = WorkoutCoordinator(plan: plan, queue: queue, store: store, agentId: "payne", messageId: "m")
+        coord.logSet(reps: 10, weight: 100, repsInReserve: 0)
+        _ = coord.complete(sessionFeeling: 3, sessionFeelingLabel: "ok")
+        XCTAssertNil(try store.load(agentId: "payne"))
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "молодец")
+        XCTAssertNil(try store.load(agentId: "payne"))
+    }
+
     /// A workout paused for a while and then restored must report its true
     /// duration in `session.duration` — the coordinator restores `startedAt`
     /// from the persisted cursor, NOT the last-save wallclock (`updatedAt`),
