@@ -226,6 +226,13 @@ actor TransportV2 {
 
     /// Drain queued outbound messages.
     func tickDispatcher() async throws {
+        // F26: only drain/send when authed. This tick is nudged opportunistically
+        // from send / retrySend / scene-phase-active (WebSocketClientV2) as well as
+        // from handleAuthOk; when the socket isn't authed yet
+        // (idle/connecting/reconnecting) draining would push envelopes before the
+        // auth handshake completes — wasted work + a latent ordering hazard. Rows
+        // stay `queued` and the next auth_ok's tick drains them.
+        guard state == .authed else { return }
         let rows = try store.queuedOutbound(limit: 10)
         for row in rows {
             let seq = try store.allocateNextSendSeq()

@@ -338,6 +338,41 @@ final class TransportV2Tests: XCTestCase {
         XCTAssertGreaterThan(later, firstCount)
     }
 
+    func testTickDispatcherDoesNotSendBeforeAuth() async throws {
+        // F26: tickDispatcher is nudged opportunistically from send / retrySend /
+        // scene-phase-active, any of which can fire while the socket is still
+        // idle / connecting / reconnecting (the auth handshake hasn't completed).
+        // Draining then pushes envelopes before auth — wasted work + a latent
+        // ordering hazard. A tick while not authed must be a no-op: the row stays
+        // queued and nothing goes on the wire.
+        try store.insertOutboundUserMessage(
+            id: "msg-1", text: "hi", attachments: [], context: nil
+        )
+        let s = await transport.state
+        XCTAssertEqual(s, .idle, "precondition: transport starts unauthed")
+        try await transport.tickDispatcher()
+        XCTAssertTrue(socket.sent.isEmpty, "no envelope may be sent before auth")
+        XCTAssertEqual(try store.fetchById("msg-1")?.status, .queued,
+                       "row must stay queued until the connection is authed")
+    }
+
+    func testTickDispatcherDrainsWhenAuthed() async throws {
+        // Complement to the not-authed guard: once authed, a direct tick DOES
+        // drain the queued row to `sending` and put a message envelope on the
+        // wire — the guard must not over-block the legitimate authed path.
+        try store.insertOutboundUserMessage(
+            id: "msg-1", text: "hi", attachments: [], context: nil
+        )
+        await transport.forceStateAuthedPreservingCounter()  // state = .authed
+        try await transport.tickDispatcher()
+        XCTAssertEqual(try store.fetchById("msg-1")?.status, .sending,
+                       "an authed tick drains the queued row to sending")
+        XCTAssertTrue(
+            socket.sent.contains { (try? JSONDecoder().decode(V2.Envelope.self, from: $0))?.type == .message },
+            "an authed tick emits the message envelope"
+        )
+    }
+
     func testUpdateEnvelopeEditsMessageInPlace() async throws {
         let seed = V2.Envelope(
             v: V2.protocolVersion, kind: .data, type: .message,
