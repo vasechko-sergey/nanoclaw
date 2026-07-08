@@ -30,8 +30,8 @@ ios/JarvisApp/
     │   ├── SpeechManager · SpeechSynthesizer · VoiceLoopController       # голос/TTS
     │   └── Workout* · ProactiveDispatcher · ConnectivityMonitor · StatusV2 · WatchConnectivityBridge · …
     ├── Views/                 # ContentView (splash→home/chat), OrbHomeView (домашний орб+picker, приветствие внизу),
-    │                          #   ChatView (чат), AgentPickerInline, Settings/Profile/RightDrawer/OrbVoice/FullScreenImage, Workout/*
-    ├── Components/            # EmptyStateView (пустой чат), MessageRow, MarkdownText, UnifiedInputBar/InputBar/OrbInputBar,
+    │                          #   ChatView (чат), Settings/Profile/RightDrawer/OrbVoice/FullScreenImage, Workout/*
+    ├── Components/            # EmptyStateView (пустой чат), MessageRow, MarkdownText, UnifiedInputBar, CommandList,
     │                          #   OrbView/MiniOrbView, HeaderStatusDot, ConnectionBanner, AttachmentBar, CameraPicker, EmojiPicker
     └── Utility/               # Theme (цвета/scaled()), GreetingBank (per-agent приветствия), SuggestionEngine, Log
 ```
