@@ -100,11 +100,17 @@ enum WorkoutRunnerLogic {
     static let weightDeviationPct: Double = 0.15
     static let repsDeviationAbs: Int = 3
 
+    /// Raw values are pinned to the wire enum in `V2.SetLog.Deviation.Kind`
+    /// (snake_case) so `set_log` envelopes and `workout_complete.full_session_json`
+    /// serialize identical strings for the same kind — otherwise Payne sees
+    /// two different vocabularies for the same signal across the two paths.
     enum SetDeviationKind: String, Codable, Equatable {
-        case weightUnder, weightOver
-        case repsUnder, repsOver
-        case failure       // rir == 0
-        case tooEasy       // rir >= 4
+        case weightUnder = "weight_under"
+        case weightOver = "weight_over"
+        case repsUnder = "reps_under"
+        case repsOver = "reps_over"
+        case failure                          // rir == 0
+        case tooEasy = "too_easy"             // rir >= 4
     }
 
     struct DeviationTargetSnapshot: Codable, Equatable {
@@ -112,6 +118,14 @@ enum WorkoutRunnerLogic {
         let repsMax: Int
         var weight: Double?
         let rir: Int
+
+        /// Snake_case pinned to the wire enum in `V2.SetLog.DeviationTarget`.
+        enum CodingKeys: String, CodingKey {
+            case repsMin = "reps_min"
+            case repsMax = "reps_max"
+            case weight
+            case rir
+        }
     }
 
     struct SetDeviation: Codable, Equatable {
@@ -119,6 +133,10 @@ enum WorkoutRunnerLogic {
         /// Percentage delta for weight, absolute delta for reps, 0 for rir kinds.
         let magnitude: Double
         let target: DeviationTargetSnapshot
+
+        enum CodingKeys: String, CodingKey {
+            case kind, magnitude, target
+        }
     }
 
     /// Detect deviation of an actual set against its planned exercise.

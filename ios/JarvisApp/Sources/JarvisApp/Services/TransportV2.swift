@@ -627,9 +627,11 @@ actor TransportV2 {
     }
 
     /// Build the `V2.SetLog` wire payload from a queued `SetLogEvent`,
-    /// copying over the deviation payload (if any) with the Swift
-    /// camelCase → wire snake_case kind mapping. Static + pure so the
-    /// mapping is unit-testable without standing up a transport/socket.
+    /// copying over the deviation payload (if any). Swift `SetDeviationKind`
+    /// raw values now match `V2.SetLog.Deviation.Kind` raw values (both
+    /// snake_case), so kind lookup is a rawValue round-trip with a hard
+    /// force — the enums are keyed by the same wire vocabulary and a
+    /// mismatch is a compile-visible bug, not a runtime one.
     static func buildSetLogPayload(event: SetLogEvent, agentId: String?) -> V2.SetLog {
         var payload = V2.SetLog(
             workout_id: event.workoutId,
@@ -641,18 +643,9 @@ actor TransportV2 {
             ts: workoutISOFormatter.string(from: event.ts),
             agent_id: agentId
         )
-        if let d = event.deviation {
+        if let d = event.deviation, let wireKind = V2.SetLog.Deviation.Kind(rawValue: d.kind.rawValue) {
             payload.deviation = V2.SetLog.Deviation(
-                kind: {
-                    switch d.kind {
-                    case .weightUnder: return .weight_under
-                    case .weightOver: return .weight_over
-                    case .repsUnder: return .reps_under
-                    case .repsOver: return .reps_over
-                    case .failure: return .failure
-                    case .tooEasy: return .too_easy
-                    }
-                }(),
+                kind: wireKind,
                 magnitude: d.magnitude,
                 target: V2.SetLog.DeviationTarget(
                     reps_min: d.target.repsMin,

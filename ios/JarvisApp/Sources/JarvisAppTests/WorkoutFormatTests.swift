@@ -81,4 +81,52 @@ final class WorkoutFormatTests: XCTestCase {
         XCTAssertEqual(round.set_ref?.exercise_slug, "ex")
         XCTAssertEqual(round.set_ref?.set_idx, 3)
     }
+
+    /// Encoding a `LoggedSet` with a deviation must emit snake_case keys —
+    /// the same vocabulary the wire `set_log` envelope uses — so both paths
+    /// (workout_complete.full_session_json and set_log) ship identical
+    /// key names for the same signal.
+    func test_loggedSet_encodesDeviationWithSnakeCaseKeys() throws {
+        let dev = WorkoutRunnerLogic.SetDeviation(
+            kind: .weightUnder, magnitude: -0.2,
+            target: .init(repsMin: 8, repsMax: 10, weight: 100, rir: 2)
+        )
+        let set = LoggedSet(
+            reps: 10, weight: 80, repsInReserve: 2,
+            ts: Date(timeIntervalSince1970: 0), deviation: dev
+        )
+        let data = try JSONEncoder().encode(set)
+        let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let devObj = try XCTUnwrap(obj["deviation"] as? [String: Any])
+        XCTAssertEqual(devObj["kind"] as? String, "weight_under")
+        let target = try XCTUnwrap(devObj["target"] as? [String: Any])
+        XCTAssertNotNil(target["reps_min"])
+        XCTAssertNotNil(target["reps_max"])
+        XCTAssertNil(target["repsMin"])
+        XCTAssertNil(target["repsMax"])
+    }
+
+    /// The Swift `SetDeviation` (Payne-facing, embedded in workout_complete)
+    /// and the wire `V2.SetLog.Deviation` (set_log envelope) must produce
+    /// byte-identical JSON for the same values — otherwise Payne sees two
+    /// vocabularies across the two paths for the same event.
+    func test_setDeviation_wireAndSwift_produceIdenticalJson() throws {
+        let target = WorkoutRunnerLogic.DeviationTargetSnapshot(
+            repsMin: 8, repsMax: 10, weight: 100, rir: 2
+        )
+        let swiftDev = WorkoutRunnerLogic.SetDeviation(
+            kind: .repsOver, magnitude: 3, target: target
+        )
+        let wireDev = V2.SetLog.Deviation(
+            kind: .reps_over, magnitude: 3,
+            target: V2.SetLog.DeviationTarget(
+                reps_min: 8, reps_max: 10, weight: 100, rir: 2
+            )
+        )
+        let enc = JSONEncoder()
+        enc.outputFormatting = .sortedKeys
+        let swiftBytes = try enc.encode(swiftDev)
+        let wireBytes = try enc.encode(wireDev)
+        XCTAssertEqual(swiftBytes, wireBytes)
+    }
 }
