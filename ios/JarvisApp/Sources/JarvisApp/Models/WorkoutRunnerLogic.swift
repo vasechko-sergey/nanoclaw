@@ -41,13 +41,19 @@ enum WorkoutRunnerLogic {
         return "подход \(currentSetIdx + 1) из \(targetSets)"
     }
 
+    /// Sentinel `restHint` returns when nothing remains. The rest overlay
+    /// watches for it to auto-dismiss instead of ticking out a full rest period
+    /// on a workout that's already over.
+    static let workoutFinishedHint = "Тренировка закончена"
+
     /// Rest-overlay "next" hint. Scans all exercises for the first unfinished
     /// set starting from the active exercise, so a skipped-then-returned-to
     /// exercise earlier in the plan is still surfaced instead of being hidden
-    /// behind the active exercise's own completed sets.
+    /// behind the active exercise's own completed sets. Once no set work
+    /// remains, a pending timed finisher (cardio/warmup) is surfaced too.
     static func restHint(logged: [LoggedExercise], exercises: [ExercisePlan], activeIdx: Int) -> String {
         guard exercises.indices.contains(activeIdx), logged.indices.contains(activeIdx) else {
-            return "Тренировка закончена"
+            return workoutFinishedHint
         }
         let cur = exercises[activeIdx]
         let curDone = logged[activeIdx].sets.count
@@ -59,7 +65,17 @@ enum WorkoutRunnerLogic {
                 return "\(exercises[i].displayName) — подход \(logged[i].sets.count + 1)"
             }
         }
-        return "Тренировка закончена"
+        // No set work left — surface a pending timed finisher (cardio/warmup).
+        // Duration exercises carry no set count, so the scan above can't see
+        // them; without this the runner says "закончена" with cardio still to
+        // go. Duration completion has no reliable per-exercise flag (finish
+        // passes a nil comment), so position stands in: i >= activeIdx means
+        // "not yet reached", while a duration block the user already advanced
+        // past sits before activeIdx and stays quiet.
+        for i in exercises.indices where i >= activeIdx && exercises[i].isDuration {
+            return "кардио: \(exercises[i].displayName)"
+        }
+        return workoutFinishedHint
     }
 
     /// Worded 1–5 session rating (1 = tough … 5 = easy).

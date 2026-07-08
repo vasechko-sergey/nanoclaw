@@ -68,6 +68,44 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertEqual(hint, "подход 1 — A")
     }
 
+    func test_restHint_surfacesDurationFinisherWhenSetsDone() {
+        // All set work done; a cardio finisher remains after the active exercise.
+        let exs = [
+            ExercisePlan(exerciseSlug: "bench", targetSets: 1, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "Жим"),
+            ExercisePlan(exerciseSlug: "treadmill", targetSets: 0, targetReps: "", targetRir: 0, restSec: 0, notes: nil, nameRu: "Дорожка", durationSec: 600),
+        ]
+        let logged = [
+            LoggedExercise(exerciseSlug: "bench", sets: [LoggedSet(reps: 8, weight: 40, repsInReserve: 2, ts: Date())], comment: nil),
+            LoggedExercise(exerciseSlug: "treadmill", sets: [], comment: nil),
+        ]
+        let hint = WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 0)
+        XCTAssertEqual(hint, "кардио: Дорожка")
+    }
+
+    func test_restHint_doneDurationWarmupNotResurfaced() {
+        // A duration warmup the user already advanced past (before activeIdx)
+        // must not be resurfaced once the set work is done.
+        let exs = [
+            ExercisePlan(exerciseSlug: "warmup", targetSets: 0, targetReps: "", targetRir: 0, restSec: 0, notes: nil, nameRu: "Разминка", durationSec: 300),
+            ExercisePlan(exerciseSlug: "bench", targetSets: 1, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "Жим"),
+        ]
+        let logged = [
+            LoggedExercise(exerciseSlug: "warmup", sets: [], comment: nil),
+            LoggedExercise(exerciseSlug: "bench", sets: [LoggedSet(reps: 8, weight: 40, repsInReserve: 2, ts: Date())], comment: nil),
+        ]
+        let hint = WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 1)
+        XCTAssertEqual(hint, WorkoutRunnerLogic.workoutFinishedHint)
+    }
+
+    func test_restHint_allDone_matchesFinishedSentinel() {
+        // The all-done string the rest overlay watches for must equal the sentinel.
+        let exs = [ExercisePlan(exerciseSlug: "a", targetSets: 1, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "A")]
+        let logged = [LoggedExercise(exerciseSlug: "a", sets: [LoggedSet(reps: 8, weight: 20, repsInReserve: 2, ts: Date())], comment: nil)]
+        let hint = WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 0)
+        XCTAssertEqual(hint, WorkoutRunnerLogic.workoutFinishedHint)
+        XCTAssertEqual(WorkoutRunnerLogic.workoutFinishedHint, "Тренировка закончена")
+    }
+
     func test_weightIndex_roundsToHalfStep() {
         XCTAssertEqual(WorkoutRunnerLogic.weightOptions.first, 0)
         XCTAssertEqual(WorkoutRunnerLogic.weightOptions.last, 300)
