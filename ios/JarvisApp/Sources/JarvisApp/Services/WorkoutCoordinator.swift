@@ -133,11 +133,67 @@ final class WorkoutCoordinator: ObservableObject {
     /// After `complete()`/`abort()` this is a no-op — a late coach message
     /// on a finished workout would otherwise re-create an `active_workout`
     /// row and resurrect a zombie "Продолжить" card on next launch.
+    ///
+    /// Fix N: belt-and-suspenders fallback for the race window where Payne's
+    /// coach reply references the NEW slug (from an accepted swap) but the
+    /// local `applySwap` hasn't run yet. Falls back to `currentExerciseIdx`
+    /// only when `setIdx` fits — the primary fix is to call `applySwap` on
+    /// user confirm so this branch stays a rare backstop.
     func attachCoachHint(exerciseSlug: String, setIdx: Int, text: String) {
         guard !isFinished else { return }
-        guard let exIdx = plan.exercises.firstIndex(where: { $0.exerciseSlug == exerciseSlug }) else { return }
+        let exIdx: Int
+        if let found = plan.exercises.firstIndex(where: { $0.exerciseSlug == exerciseSlug }) {
+            exIdx = found
+        } else if plan.exercises.indices.contains(currentExerciseIdx),
+                  logged[currentExerciseIdx].sets.indices.contains(setIdx) {
+            // TODO: remove once server-side swap-apply is guaranteed to precede
+            // any coach_message that references the new slug (Fix N context).
+            exIdx = currentExerciseIdx
+        } else {
+            return
+        }
         guard logged[exIdx].sets.indices.contains(setIdx) else { return }
         logged[exIdx].sets[setIdx].coachHint = text
+        persist()
+    }
+
+    /// Fix N: fold an accepted exercise swap into the local plan + logged so
+    /// future `coach_message.set_ref.exercise_slug` (which will reference the
+    /// NEW slug once Payne accepts) still resolves via `attachCoachHint`.
+    ///
+    /// Rebuilds the ExercisePlan / LoggedExercise at the matching index rather
+    /// than mutating fields (both `exerciseSlug` are `let`). Copies over all
+    /// other fields so weights / target reps / logged sets survive the swap.
+    /// No-op if the workout is finished or the slug isn't in the plan (e.g.
+    /// swap arrived for an already-swapped exercise).
+    func applySwap(originalSlug: String, newSlug: String) {
+        guard !isFinished else { return }
+        guard let idx = plan.exercises.firstIndex(where: { $0.exerciseSlug == originalSlug }) else { return }
+        guard originalSlug != newSlug else { return }
+        let old = plan.exercises[idx]
+        let replaced = ExercisePlan(
+            exerciseSlug: newSlug,
+            targetSets: old.targetSets,
+            targetReps: old.targetReps,
+            targetRir: old.targetRir,
+            restSec: old.restSec,
+            notes: old.notes,
+            nameRu: old.nameRu,
+            durationSec: old.durationSec,
+            weightKgTarget: old.weightKgTarget
+        )
+        var newExercises = plan.exercises
+        newExercises[idx] = replaced
+        plan = WorkoutPlan(
+            workoutId: plan.workoutId,
+            dayName: plan.dayName,
+            week: plan.week,
+            intensityLabel: plan.intensityLabel,
+            exercises: newExercises,
+            imageManifest: plan.imageManifest
+        )
+        let oldLogged = logged[idx]
+        logged[idx] = LoggedExercise(exerciseSlug: newSlug, sets: oldLogged.sets, comment: oldLogged.comment)
         persist()
     }
 

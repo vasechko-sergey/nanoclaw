@@ -257,6 +257,89 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertNil(try store.load(agentId: "payne"))
     }
 
+    // MARK: - Fix N: applySwap + coach hint anchoring after a swap
+
+    /// After a swap the coordinator's plan.exercises[i].exerciseSlug and
+    /// logged[i].exerciseSlug must both point at the NEW slug so future
+    /// attachCoachHint calls resolve.
+    func test_applySwap_updatesPlanAndLogged() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 3), queue: queue)
+        coord.applySwap(originalSlug: "ex-1", newSlug: "ex-1-alt")
+        XCTAssertEqual(coord.plan.exercises[1].exerciseSlug, "ex-1-alt")
+        XCTAssertEqual(coord.logged[1].exerciseSlug, "ex-1-alt")
+        // Other exercises untouched.
+        XCTAssertEqual(coord.plan.exercises[0].exerciseSlug, "ex-0")
+        XCTAssertEqual(coord.plan.exercises[2].exerciseSlug, "ex-2")
+    }
+
+    /// applySwap preserves target sets / reps / rest / logged sets.
+    func test_applySwap_preservesFieldsAndLoggedSets() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2, setsPerExercise: 3), queue: queue)
+        // Log a set on ex-0, then activate ex-1 and log there.
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        coord.activate(idx: 1)
+        coord.logSet(reps: 8, weight: 30, repsInReserve: 1)
+        // Swap ex-1 → ex-1-alt.
+        coord.applySwap(originalSlug: "ex-1", newSlug: "ex-1-alt")
+        XCTAssertEqual(coord.plan.exercises[1].exerciseSlug, "ex-1-alt")
+        XCTAssertEqual(coord.plan.exercises[1].targetSets, 3)
+        XCTAssertEqual(coord.plan.exercises[1].targetReps, "8-10")
+        XCTAssertEqual(coord.logged[1].exerciseSlug, "ex-1-alt")
+        XCTAssertEqual(coord.logged[1].sets.count, 1)
+        XCTAssertEqual(coord.logged[1].sets[0].reps, 8)
+    }
+
+    /// After a swap, `attachCoachHint` with the NEW slug still lands.
+    func test_attachCoachHint_afterSwap_landsOnRightSet() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        coord.activate(idx: 1)
+        coord.logSet(reps: 10, weight: 25, repsInReserve: 1)
+        coord.applySwap(originalSlug: "ex-1", newSlug: "ex-1-alt")
+        coord.attachCoachHint(exerciseSlug: "ex-1-alt", setIdx: 0, text: "поправь наклон")
+        XCTAssertEqual(coord.logged[1].sets[0].coachHint, "поправь наклон")
+    }
+
+    /// Fallback: if a coach reply races the local swap (Payne's slug reaches
+    /// us before applySwap runs), attachCoachHint falls back to the current
+    /// exercise when the setIdx fits — belt-and-suspenders.
+    func test_attachCoachHint_unknownSlug_fallsBackToCurrentExercise() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        coord.activate(idx: 1)
+        coord.logSet(reps: 10, weight: 25, repsInReserve: 1)
+        // Slug not in plan — but setIdx 0 is valid on current exercise.
+        coord.attachCoachHint(exerciseSlug: "never-heard-of-it", setIdx: 0, text: "fallback")
+        XCTAssertEqual(coord.logged[1].sets[0].coachHint, "fallback")
+    }
+
+    /// applySwap is a no-op when the original slug isn't present.
+    func test_applySwap_unknownSlug_isNoOp() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        coord.applySwap(originalSlug: "nope", newSlug: "also-nope")
+        XCTAssertEqual(coord.plan.exercises[0].exerciseSlug, "ex-0")
+        XCTAssertEqual(coord.plan.exercises[1].exerciseSlug, "ex-1")
+    }
+
+    /// applySwap after abort/complete doesn't resurrect state.
+    func test_applySwap_afterAbort_isNoOp() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: queue, store: store, agentId: "payne", messageId: "m")
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        coord.abort()
+        XCTAssertNil(try store.load(agentId: "payne"))
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        // Plan still shows the old slug post-abort — and no store row resurrects.
+        XCTAssertEqual(coord.plan.exercises[0].exerciseSlug, "ex-0")
+        XCTAssertNil(try store.load(agentId: "payne"))
+    }
+
     /// A workout paused for a while and then restored must report its true
     /// duration in `session.duration` — the coordinator restores `startedAt`
     /// from the persisted cursor, NOT the last-save wallclock (`updatedAt`),

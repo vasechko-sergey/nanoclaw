@@ -571,6 +571,12 @@ struct ChatView: View {
                         Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: text) }
                     case .confirm(let newSlug, let persist):
                         Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist) }
+                        // Fix N: fold the swap into the running Coordinator's
+                        // plan + logged so future coach_message.set_ref (which
+                        // Payne will emit against the NEW slug) still resolves
+                        // in attachCoachHint. Without this, the deviation-reply
+                        // hint is silently dropped after any swap.
+                        activeWorkout?.coord?.applySwap(originalSlug: s.originalSlug, newSlug: newSlug)
                         swapSheet = nil
                     case .cancel:
                         swapSheet = nil
