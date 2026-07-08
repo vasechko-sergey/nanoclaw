@@ -25,6 +25,11 @@ struct ChatView: View {
     var coordinator: AppCoordinator
     var onGoHome: (() -> Void)? = nil
     @Binding var autoStartVoice: Bool
+    /// True only while the chat is the visible phase (opacity 1 in ContentView).
+    /// Gates the F30 mark-read so an agent's unread clears when the user is
+    /// actually viewing its chat — not while this always-mounted view sits
+    /// hidden behind the home/splash phases.
+    var isChatVisible: Bool = false
 
     @State private var inputText       = ""
     @State private var inputViaVoice   = false
@@ -100,6 +105,15 @@ struct ChatView: View {
 
     private func recomputeVisibleMessages() {
         visibleMessages = computeVisibleMessages()
+    }
+
+    /// F30 — mark the active agent's inbound messages read, but only while its
+    /// chat is actually on screen. Fired on entering the chat, on agent switch,
+    /// and as new replies land for the agent you're viewing, so its own unread
+    /// dot never lights up while you're looking at it.
+    private func markActiveAgentReadIfViewing() {
+        guard isChatVisible else { return }
+        ws.markAgentRead(agentId: active.active.rawValue)
     }
 
     /// Lightweight `Equatable` digest of the full message set used to detect
@@ -468,7 +482,8 @@ struct ChatView: View {
                 withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
                     leftDrawerOpen = false
                 }
-            }
+            },
+            unreadCounts: ws.unreadCounts
         )
         .frame(width: Theme.drawerWidth)
         .offset(x: {
@@ -645,7 +660,17 @@ struct ChatView: View {
         // reorder, in-place status / audio-attach) in O(1) — far cheaper than
         // digesting the whole list on each body pass.
         .onAppear { recomputeVisibleMessages() }
-        .onChange(of: ws.messagesVersion) { recomputeVisibleMessages() }
+        .onChange(of: ws.messagesVersion) {
+            recomputeVisibleMessages()
+            // A reply for the agent you're currently viewing must not raise its
+            // own unread dot — clear it as it arrives (F30).
+            markActiveAgentReadIfViewing()
+        }
+        // Entering the chat (home → chat flips this true) marks the active agent
+        // read — also covers cold launch (splash → home → chat) (F30).
+        .onChange(of: isChatVisible) { _, visible in
+            if visible { markActiveAgentReadIfViewing() }
+        }
         .onChange(of: active.active) {
             // Close the keyboard on switch so the shared input bar's focus state
             // can't leave the next agent's chat rendered keyboard-open.
@@ -659,6 +684,8 @@ struct ChatView: View {
             inputViaVoice = false
             recomputeVisibleMessages()
             loadActiveWorkoutRecord()
+            // Switching to an agent while viewing the chat marks it read (F30).
+            markActiveAgentReadIfViewing()
         }
         // Cold-start silent-resume: on splash → home → chat the ws.stack is built
         // lazily inside `WebSocketClientV2.connect(...)`, which may race against

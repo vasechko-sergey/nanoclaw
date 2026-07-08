@@ -162,7 +162,8 @@ struct OrbHomeView: View {
                     withAnimation(.spring(duration: Theme.animMedium, bounce: 0.05)) {
                         leftDrawerOpen = false
                     }
-                }
+                },
+                unreadCounts: coordinator.ws.unreadCounts
             )
             .frame(width: Theme.drawerWidth)
             .offset(x: {

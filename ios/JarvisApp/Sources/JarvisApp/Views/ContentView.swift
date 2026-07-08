@@ -17,7 +17,8 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             // Chat — always mounted, opacity-driven
-            ChatView(coordinator: coordinator, onGoHome: goHome, autoStartVoice: $autoStartVoice)
+            ChatView(coordinator: coordinator, onGoHome: goHome, autoStartVoice: $autoStartVoice,
+                     isChatVisible: appPhase == .chat)
                 .opacity(appPhase == .chat ? 1 : 0)
                 .allowsHitTesting(appPhase == .chat)
 

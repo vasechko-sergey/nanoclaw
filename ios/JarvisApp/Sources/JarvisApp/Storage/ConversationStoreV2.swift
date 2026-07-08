@@ -478,6 +478,54 @@ final class ConversationStoreV2 {
         }
     }
 
+    // MARK: - Per-agent unread (F30)
+    //
+    // "Unread" reuses the existing `status` vocabulary — no parallel marker.
+    // Every inbound row (`dir='in'`) is inserted with `status='new'` (see
+    // `insertInbound` / `insertInboundFromPull` / `insertWorkoutPlan`), and
+    // nothing flips inbound rows to `read` except `markAgentRead` below (the
+    // drawer/chat mark-read). Outbound rows start `queued` and never carry
+    // `new`, so the user's own sends never count as unread. Inbound rows never
+    // render a delivery tick (MessageRow gates `DeliveryChecks` on the user
+    // role), so flipping their status is invisible to the chat UI.
+
+    /// Count unread inbound messages for one agent — inbound rows still in
+    /// their insert-time `status='new'` state.
+    func countUnread(agentId: String) throws -> Int {
+        try writer.read { db in
+            try Int.fetchOne(db, sql:
+                "SELECT COUNT(*) FROM messages WHERE agent_id=? AND dir='in' AND status='new'",
+                arguments: [agentId]) ?? 0
+        }
+    }
+
+    /// Per-agent unread counts, keyed by `agent_id`, in one GROUP BY. Agents
+    /// with zero unread are absent from the map (drives the drawer dots).
+    func unreadCountsByAgent() throws -> [String: Int] {
+        try writer.read { db in
+            var out: [String: Int] = [:]
+            let rows = try Row.fetchAll(db, sql:
+                "SELECT agent_id AS a, COUNT(*) AS c FROM messages WHERE dir='in' AND status='new' GROUP BY agent_id")
+            for row in rows {
+                if let a: String = row["a"] { out[a] = row["c"] }
+            }
+            return out
+        }
+    }
+
+    /// Mark every unread inbound message for one agent as read — advances that
+    /// agent's unread count to 0 without touching other agents' rows or any
+    /// outbound delivery state. Returns how many rows were marked.
+    @discardableResult
+    func markAgentRead(agentId: String) throws -> Int {
+        try writer.write { db in
+            try db.execute(sql:
+                "UPDATE messages SET status='read' WHERE agent_id=? AND dir='in' AND status='new'",
+                arguments: [agentId])
+            return db.changesCount
+        }
+    }
+
     /// Fetch by primary key. `id` is globally unique across agents, so this is
     /// not agent-scoped; the returned row carries its `agentId` for the caller
     /// to verify if it cares about isolation.

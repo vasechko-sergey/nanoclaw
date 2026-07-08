@@ -11,6 +11,10 @@ struct LeftDrawerContent: View {
     /// Called with the chosen agent. The parent sets the active agent and
     /// closes the drawer (see `ChatView`).
     var onSelect: (AgentIdentity) -> Void
+    /// Per-agent unread inbound counts, keyed by `agent_id` (F30). A non-zero
+    /// entry renders an unread dot on that agent's row. Defaults to empty so
+    /// previews and non-reactive callers can omit it.
+    var unreadCounts: [String: Int] = [:]
 
     var body: some View {
         ScrollView {
@@ -55,6 +59,7 @@ struct LeftDrawerContent: View {
 
     @ViewBuilder
     private func row(for agent: AgentIdentity, isActive: Bool) -> some View {
+        let unread = unreadCounts[agent.rawValue] ?? 0
         Button {
             onSelect(agent)
         } label: {
@@ -71,14 +76,30 @@ struct LeftDrawerContent: View {
                                      ? agent.accentColor
                                      : agent.accentColor.opacity(0.55))
                 Spacer()
+                if unread > 0 { unreadDot(agent) }
             }
             .padding(.horizontal, Theme.hPadding)
             .frame(minHeight: Theme.minTapSize)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isActive ? "Активный агент: \(agent.displayName)"
-                                     : "Переключиться на \(agent.displayName)")
+        .accessibilityLabel(accessibilityLabel(agent, isActive: isActive, unread: unread))
+    }
+
+    /// Small filled unread dot in the agent's accent, with a soft glow so it
+    /// reads on the dark panel (F30).
+    private func unreadDot(_ agent: AgentIdentity) -> some View {
+        Circle()
+            .fill(agent.accentColor)
+            .frame(width: Theme.scaled(9), height: Theme.scaled(9))
+            .shadow(color: agent.accentColor.opacity(0.6), radius: 3)
+            .accessibilityHidden(true)
+    }
+
+    private func accessibilityLabel(_ agent: AgentIdentity, isActive: Bool, unread: Int) -> String {
+        let base = isActive ? "Активный агент: \(agent.displayName)"
+                            : "Переключиться на \(agent.displayName)"
+        return unread > 0 ? "\(base), \(unread) непрочитанных" : base
     }
 }
 

@@ -72,6 +72,12 @@ final class WebSocketClientV2 {
     var lastAssistantAt: [String: Date] = [:]
     var thinkingDetail: String? = nil
 
+    /// Per-agent unread inbound counts, keyed by `agent_id` (F30). Drives the
+    /// unread dot on each agent's row in the drawer. Recomputed from the store
+    /// on every DB change (the messages observation) and after `markAgentRead`.
+    /// Agents with zero unread are absent from the map.
+    var unreadCounts: [String: Int] = [:]
+
     /// Per-agent "agent is busy" — derived state. True if the user sent to THIS
     /// agent < 5min ago with no later assistant reply from it. (No typing signal
     /// in v2, so `isTyping` is permanently false here.)
@@ -467,6 +473,7 @@ final class WebSocketClientV2 {
         // Stack hasn't been built yet (production: pre-`connect`).
         guard let stack else {
             messages = []
+            unreadCounts = [:]
             return
         }
 
@@ -488,6 +495,9 @@ final class WebSocketClientV2 {
             },
             onChange: { [weak self] mapped in
                 guard let self else { return }
+                // Refresh per-agent unread dots on every DB change — new inbound
+                // rows bump a count, `markAgentRead` clears one (F30).
+                self.recomputeUnread()
                 // First emit after (re)starting the observation is the initial DB
                 // hydration — the whole history. Assign it WITHOUT firing per-row
                 // assistant hooks, else cold launch / stack rebuild replays a
@@ -528,6 +538,29 @@ final class WebSocketClientV2 {
                 }
             }
         )
+    }
+
+    // MARK: - Unread (F30)
+
+    /// Recompute the per-agent unread dot counts from the store. Cheap GROUP BY
+    /// over the (retention-bounded) messages table; safe to run on main.
+    func recomputeUnread() {
+        guard let stack else { unreadCounts = [:]; return }
+        unreadCounts = (try? stack.store.unreadCountsByAgent()) ?? unreadCounts
+    }
+
+    /// Mark an agent's inbound messages read (user is viewing / switched to it).
+    /// Clears its unread dot. The store write also nudges the messages
+    /// observation, but we recompute inline so the dot clears without waiting
+    /// for the async observation tick.
+    func markAgentRead(agentId: String) {
+        guard let stack else { return }
+        do {
+            let marked = try stack.store.markAgentRead(agentId: agentId)
+            if marked > 0 { recomputeUnread() }
+        } catch {
+            Log.warn(.ws, "WebSocketClientV2.markAgentRead failed: \(error)")
+        }
     }
 
     // MARK: - Mapping
