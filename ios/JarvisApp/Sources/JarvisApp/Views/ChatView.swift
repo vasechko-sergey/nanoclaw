@@ -239,7 +239,16 @@ struct ChatView: View {
                     // card has scrolled out of the visible (500-message) window.
                     // When the card IS visible, its own CTA flips to "Продолжить
                     // тренировку" instead (see MessageRow's `resumeMessageId`).
+                    //
+                    // `!visibleMessages.isEmpty` guards a cold-start flicker: the
+                    // GRDB timeline is hydrated asynchronously on first appear, so
+                    // for a runloop frame `visibleMessages` is [] while
+                    // `activeWorkoutRecord` may already be loaded synchronously —
+                    // `.contains` would then be false and the banner would flash
+                    // in for one frame before real messages arrive. Empty list ==
+                    // "we haven't observed anything yet" → hold the banner off.
                     if let record = activeWorkoutRecord,
+                       !visibleMessages.isEmpty,
                        !visibleMessages.contains(where: { $0.id == record.messageId }) {
                         resumeWorkoutBanner(record)
                             .transition(.move(edge: .top).combined(with: .opacity))
