@@ -546,6 +546,14 @@ struct ChatView: View {
             recomputeVisibleMessages()
             loadActiveWorkoutRecord()
         }
+        // Cold-start silent-resume: on splash → home → chat the ws.stack is built
+        // lazily inside `WebSocketClientV2.connect(...)`, which may race against
+        // this view's `.onAppear`. If the appear-load ran before the stack existed,
+        // `loadActiveWorkoutRecord()` returned nil and the resume banner / card CTA
+        // stayed cold. Re-run the load the moment the stack flips to non-nil.
+        .onChange(of: ws.stackReady) {
+            if ws.stackReady { loadActiveWorkoutRecord() }
+        }
         .onChange(of: autoStartVoice) {
             // When entering chat with voice trigger from home, activate input bar
             if autoStartVoice && visibleMessages.isEmpty {
