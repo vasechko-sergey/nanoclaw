@@ -38,10 +38,15 @@ final class WorkoutCoordinator: ObservableObject {
 
     /// Restore a coordinator from a persisted `ActiveWorkoutRecord` — kill/crash
     /// resume lands the user back at the exact set/exercise/logged state.
+    ///
+    /// `startedAt` reads from the cursor first — `updatedAt` is the last save
+    /// wallclock, not the workout start, so a paused session that ran for a
+    /// while and got restored would otherwise report a fake `session.duration`.
+    /// Cursors saved before `startedAt` was added fall back to `updatedAt`.
     init(restoring record: ActiveWorkoutRecord, queue: SetLogQueue, store: ActiveWorkoutStore) {
         self.plan = record.plan
         self.queue = queue
-        self.startedAt = record.updatedAt
+        self.startedAt = record.cursor.startedAt ?? record.updatedAt
         self.logged = record.cursor.logged
         self.currentExerciseIdx = record.cursor.currentExerciseIdx
         self.currentSetIdx = record.cursor.currentSetIdx
@@ -165,7 +170,8 @@ final class WorkoutCoordinator: ObservableObject {
         let cursor = WorkoutCursor(
             currentExerciseIdx: currentExerciseIdx,
             currentSetIdx: currentSetIdx,
-            logged: logged
+            logged: logged,
+            startedAt: startedAt
         )
         try? store.save(agentId: agentId, workoutId: plan.workoutId,
                         plan: plan, cursor: cursor, messageId: messageId)

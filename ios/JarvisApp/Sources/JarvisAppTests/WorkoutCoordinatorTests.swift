@@ -208,4 +208,32 @@ final class WorkoutCoordinatorTests: XCTestCase {
         coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 42, text: "should not crash")
         // No assertion — just ensure no crash / no throw.
     }
+
+    /// A workout paused for a while and then restored must report its true
+    /// duration in `session.duration` — the coordinator restores `startedAt`
+    /// from the persisted cursor, NOT the last-save wallclock (`updatedAt`),
+    /// otherwise a session that ran for an hour would look like it just started.
+    func test_restoringInit_preservesOriginalStartedAt() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        let originalStart = Date(timeIntervalSince1970: 1_700_000_000)
+        let plan = makePlan()
+
+        // Fresh coordinator with a specific startedAt, log a set to force persist.
+        let first = WorkoutCoordinator(
+            plan: plan, queue: queue, startedAt: originalStart,
+            store: store, agentId: "payne", messageId: "m"
+        )
+        first.logSet(reps: 10, weight: 20, repsInReserve: 2, ts: originalStart)
+
+        // Load the persisted row and restore into a new coordinator.
+        let record = try XCTUnwrap(store.load(agentId: "payne"))
+        // Sanity: the save wallclock (updatedAt) is very different from originalStart.
+        XCTAssertGreaterThan(record.updatedAt.timeIntervalSince(originalStart), 60 * 60 * 24)
+        let restored = WorkoutCoordinator(restoring: record, queue: queue, store: store)
+        let session = restored.complete(sessionFeeling: 3, sessionFeelingLabel: "ok")
+        XCTAssertEqual(session.startedAt, originalStart)
+    }
 }

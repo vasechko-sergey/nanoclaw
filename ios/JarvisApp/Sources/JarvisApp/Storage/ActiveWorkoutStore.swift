@@ -2,10 +2,20 @@ import Foundation
 import GRDB
 
 /// Cursor to resume a live workout at exactly the same set/exercise/logged state.
+///
+/// `startedAt` is the wallclock at which the workout was created (via
+/// `WorkoutCoordinator.init`), NOT the last save time. Persisting it means a
+/// restored coordinator can report the true `session.duration` on complete —
+/// otherwise a workout paused for hours would look like it just started.
+///
+/// Defaults to `nil` for records saved before the field was added; the
+/// restoring init treats absence as "fall back to `updatedAt`" so old rows
+/// still hydrate.
 struct WorkoutCursor: Codable, Equatable {
     var currentExerciseIdx: Int
     var currentSetIdx: Int
     var logged: [LoggedExercise]
+    var startedAt: Date? = nil
 }
 
 /// One row from the `active_workout` table.
