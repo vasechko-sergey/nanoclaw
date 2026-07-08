@@ -22,6 +22,11 @@ struct OrbVoiceView: View {
     @State private var showReplyText = false
     /// Pending wait for the asynchronous server voice note (see awaitServerVoice).
     @State private var voiceWaitTask: Task<Void, Never>?
+    // F20: track the auto-resume observers so onDisappear can cancel them —
+    // otherwise they call speech.start() AFTER the screen is dismissed (a live
+    // mic / orange privacy dot with no visible UI).
+    @State private var audioFinishTask: Task<Void, Never>?
+    @State private var synthFinishTask: Task<Void, Never>?
 
     private var orbMood: OrbMood {
         switch controller.phase {
@@ -196,6 +201,10 @@ struct OrbVoiceView: View {
         silenceTimer = nil
         voiceWaitTask?.cancel()
         voiceWaitTask = nil
+        audioFinishTask?.cancel()
+        audioFinishTask = nil
+        synthFinishTask?.cancel()
+        synthFinishTask = nil
         controller.stop()
     }
 
@@ -301,10 +310,13 @@ struct OrbVoiceView: View {
     }
 
     private func observeAudioFinish() {
-        Task { @MainActor in
+        audioFinishTask?.cancel()
+        audioFinishTask = Task { @MainActor in
             while coordinator.audioPlayer.isPlaying {
+                if Task.isCancelled { return }
                 try? await Task.sleep(for: .milliseconds(150))
             }
+            if Task.isCancelled { return }
             controller.handleSynthesizerDidFinish(autoResume: settings.autoResumeListening)
             if settings.autoResumeListening {
                 speech.start()
@@ -313,10 +325,13 @@ struct OrbVoiceView: View {
     }
 
     private func observeSynthesizerFinish() {
-        Task { @MainActor in
+        synthFinishTask?.cancel()
+        synthFinishTask = Task { @MainActor in
             while coordinator.speech.isSpeaking {
+                if Task.isCancelled { return }
                 try? await Task.sleep(for: .milliseconds(150))
             }
+            if Task.isCancelled { return }
             controller.handleSynthesizerDidFinish(autoResume: settings.autoResumeListening)
             if settings.autoResumeListening {
                 speech.start()
