@@ -98,7 +98,11 @@ enum WorkoutRunnerLogic {
 
     /// Tolerance beyond which a set is called out to Payne.
     static let weightDeviationPct: Double = 0.15
-    static let repsDeviationAbs: Int = 3
+    /// Reps tolerance as a fraction of the target mid. An absolute ±3 band is
+    /// 50% of a 6-rep target but only 15% of a 20-rep one — so scale to the
+    /// range instead of a fixed count. Floored at ±2 reps (below) so tiny
+    /// targets still get a sane band.
+    static let repsDeviationFraction: Double = 0.30
 
     /// Raw values are pinned to the wire enum in `V2.SetLog.Deviation.Kind`
     /// (snake_case) so `set_log` envelopes and `workout_complete.full_session_json`
@@ -160,7 +164,8 @@ enum WorkoutRunnerLogic {
         }
         if let mid = range.mid {
             let d = actualReps - mid
-            if abs(d) >= repsDeviationAbs {
+            let repsThreshold = max(2, Int((Double(mid) * repsDeviationFraction).rounded()))
+            if abs(d) >= repsThreshold {
                 out.append(SetDeviation(kind: d < 0 ? .repsUnder : .repsOver, magnitude: Double(d), target: target))
             }
         }
@@ -169,13 +174,33 @@ enum WorkoutRunnerLogic {
         return out
     }
 
-    private static func parseRepsRange(_ s: String) -> (min: Int?, max: Int?, mid: Int?) {
-        let parts = s.split(separator: "-").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-        if parts.count == 2 {
-            let mid = (parts[0] + parts[1]) / 2
-            return (parts[0], parts[1], mid)
+    /// Parse a target-reps string into (min, max, mid). Handles ranges written
+    /// with `-`, `,`, `или`, or `or`; a bare number; an open-ended `N+`
+    /// (→ N…N+5, mid N+2); and `AMRAP` in any case (→ 0…50, mid 25 — "as many
+    /// as possible", so the band is deliberately wide). Returns all-nil only
+    /// when nothing numeric can be extracted (a real warmup with
+    /// `target_reps: ""` → reps rule skipped). Internal (not private) so the
+    /// parse table can be unit-tested directly.
+    static func parseRepsRange(_ s: String) -> (min: Int?, max: Int?, mid: Int?) {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        let lowered = trimmed.lowercased()
+        if lowered == "amrap" { return (0, 50, 25) }
+        // Open-ended "N+": floor at N, allow up to N+5, mid N+2.
+        if trimmed.hasSuffix("+"),
+           let n = Int(trimmed.dropLast().trimmingCharacters(in: .whitespaces)) {
+            return (n, n + 5, n + 2)
         }
-        if parts.count == 1 { return (parts[0], parts[0], parts[0]) }
+        // Split on any supported range delimiter, then pull out the integers.
+        var parts = [lowered]
+        for sep in ["-", ",", "или", "or"] {
+            parts = parts.flatMap { $0.components(separatedBy: sep) }
+        }
+        let nums = parts.compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        if nums.count >= 2 {
+            let lo = nums.min()!, hi = nums.max()!
+            return (lo, hi, (lo + hi) / 2)
+        }
+        if nums.count == 1 { return (nums[0], nums[0], nums[0]) }
         return (nil, nil, nil)
     }
 }

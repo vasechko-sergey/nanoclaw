@@ -152,4 +152,49 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         let d = WorkoutRunnerLogic.detectDeviation(actualReps: 3, actualWeight: 80, actualRir: 0, exercise: ex)
         XCTAssertEqual(d.map(\.kind), [.weightUnder, .repsUnder, .failure])
     }
+
+    // MARK: - parseRepsRange (Fix P delimiters + open-ended + AMRAP)
+
+    private func assertRange(_ s: String, _ expected: (Int?, Int?, Int?),
+                             file: StaticString = #filePath, line: UInt = #line) {
+        let r = WorkoutRunnerLogic.parseRepsRange(s)
+        XCTAssertEqual(r.min, expected.0, "min for \(s)", file: file, line: line)
+        XCTAssertEqual(r.max, expected.1, "max for \(s)", file: file, line: line)
+        XCTAssertEqual(r.mid, expected.2, "mid for \(s)", file: file, line: line)
+    }
+
+    func test_parseRepsRange_hyphen() { assertRange("8-10", (8, 10, 9)) }
+    func test_parseRepsRange_comma() { assertRange("8,10", (8, 10, 9)) }
+    func test_parseRepsRange_ili() { assertRange("8 или 10", (8, 10, 9)) }
+    func test_parseRepsRange_or() { assertRange("8 or 10", (8, 10, 9)) }
+    func test_parseRepsRange_singleNumber() { assertRange("12", (12, 12, 12)) }
+    func test_parseRepsRange_openEnded() { assertRange("8+", (8, 13, 10)) }
+    func test_parseRepsRange_amrapAnyCase() {
+        assertRange("AMRAP", (0, 50, 25))
+        assertRange("amrap", (0, 50, 25))
+    }
+    func test_parseRepsRange_unparsable_returnsNil() {
+        assertRange("", (nil, nil, nil))
+        assertRange("до отказа", (nil, nil, nil))
+    }
+
+    // MARK: - reps threshold scales to the target range (Fix P)
+
+    func test_detectDeviation_repsMissWithinRelativeBand_onWideRange() {
+        // 15-20 (mid 17) → band = max(2, round(17*0.30)=5) = 5. A ±3 miss (14)
+        // is inside the band, so no reps deviation. weight nil ⇒ weight rule
+        // skipped, so the result is purely the reps decision.
+        let ex = mkExercise(reps: "15-20", weight: nil)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 14, actualWeight: 0, actualRir: 2, exercise: ex)
+        XCTAssertTrue(d.isEmpty)
+    }
+
+    func test_detectDeviation_repsMissBeyondRelativeBand_onNarrowRange() {
+        // 6-8 (mid 7) → band = max(2, round(7*0.30)=2) = 2. A ±3 miss (4) is
+        // outside the band → repsUnder. Same ±3 that stayed quiet above fires
+        // here because the range is tighter.
+        let ex = mkExercise(reps: "6-8", weight: nil)
+        let d = WorkoutRunnerLogic.detectDeviation(actualReps: 4, actualWeight: 0, actualRir: 2, exercise: ex)
+        XCTAssertEqual(d.map(\.kind), [.repsUnder])
+    }
 }
