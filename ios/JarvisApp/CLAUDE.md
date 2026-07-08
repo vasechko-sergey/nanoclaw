@@ -19,7 +19,6 @@ ios/JarvisApp/
     │                          #   Message, DraftAttachment, Workout
     ├── Storage/               # ПЕРСИСТЕНТНОСТЬ — GRDB SQLite (см. «Хранилище»)
     │   ├── ConversationStoreV2.swift # стор сообщений; prune(keep:500) — глобальный, без agentId
-    │   ├── MessageTimeline.swift     # МЁРТВЫЙ КОД: не стартует, 0 consumers (UI читает ws.messages); кандидат на удаление
     │   ├── Schema.swift              # GRDB-миграции (таблицы + индексы)
     │   └── SetLogQueue.swift         # durable GRDB-очередь set_log (тренировки)
     ├── Services/              # транспорт + системные сервисы:
@@ -87,7 +86,7 @@ xcodegen generate
 Сообщения и связанные данные — в **`Documents/jarvis-v2.sqlite`** (GRDB), открывается в `Services/AppV2Bootstrap.swift` через `DatabaseQueue`. Старого JSON-кэша (`MessageCache`, `Documents/MessageCache/` с `index.json`+`*.jpg`) **больше НЕТ** — файл удалён.
 
 - **Таблицы** (`Storage/Schema.swift`, миграции v1–v6): `messages` (`conversation_id`, `ts`, `status`, `created_at`, `agent_id`, `failure_reason`, `seq`), `cursors`, `inbound_dedup`. (`conversations`+`kv` дропнуты в v3, `attachments` — в v6.) Индексы: `idx_msg_ts`, `idx_msg_status`.
-- **Стор/наблюдение:** `Storage/ConversationStoreV2.swift` (CRUD). UI читает `WebSocketClientV2.messages` — наблюдение через GRDB `ValueObservation` внутри `WebSocketClientV2.restartObservation`, фильтр по активному агенту в ChatView. `MessageTimeline.swift` — мёртвый код (не стартует).
+- **Стор/наблюдение:** `Storage/ConversationStoreV2.swift` (CRUD). UI читает `WebSocketClientV2.messages` — наблюдение через GRDB `ValueObservation` внутри `WebSocketClientV2.restartObservation`, фильтр по активному агенту в ChatView.
 - **Retention:** жёсткий cap **`keep: 500`** (`ConversationStoreV2.prune(keep:)` — ГЛОБАЛЬНЫЙ, не per-agent; сигнатура без `agentId`).
 - **Мульти-агент:** строки помечены `agent_id` (jarvis/payne/greg/scrooge/gordon); список фильтруется по активному агенту в ChatView. `conversationId` ↔ `thread_id` сессии (новый чат = новый контейнер).
 - **Очистка чата при дебаге:** удали `Documents/jarvis-v2.sqlite` (НЕ `Documents/MessageCache/` — его не существует).

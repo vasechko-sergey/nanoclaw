@@ -8,13 +8,6 @@ final class AppCoordinator {
 
     // MARK: – Services (owned)
     private(set) var ws: WebSocketClientV2
-    /// `@Observable` UI wrapper over the GRDB-backed `ConversationStoreV2`.
-    /// Single source of truth for the chat timeline. Optional because the
-    /// storage half of the v2 stack is built best-effort at init time — if
-    /// the DB can't be opened (rare), the app still runs but the timeline
-    /// stays empty. All view sites that read `coordinator.timeline` handle
-    /// the nil case by rendering empty state.
-    private(set) var timeline: MessageTimeline!
     private(set) var location: LocationManager
     private(set) var health: HealthManager
     private(set) var calendar: CalendarManager
@@ -94,12 +87,11 @@ final class AppCoordinator {
         self.calendar = calendar
         self.speech = SpeechSynthesizer()
         self.audioPlayer = AudioPlaybackService()
-        // Build the storage half of the v2 stack now so the MessageTimeline
-        // can start observing before splash/home renders. Transport half is
-        // built lazily on first `connect(settings:)` (URL/token aren't known
-        // at coordinator-init time). Failure leaves `timeline` nil — views
-        // read it as empty state.
-        let storage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2, timeline: MessageTimeline)?
+        // Build the storage half of the v2 stack now (DB + store) so the chat
+        // views have their message stream before splash/home renders. Transport
+        // half is built lazily on first `connect(settings:)` (URL/token aren't
+        // known at coordinator-init time).
+        let storage: (dbq: GRDB.DatabaseQueue, store: ConversationStoreV2)?
         do {
             storage = try AppV2Bootstrap.buildStorage()
         } catch {
@@ -107,7 +99,6 @@ final class AppCoordinator {
             storage = nil
         }
         if let storage {
-            self.timeline = storage.timeline
             self.chatStore = storage.store   // prewarmed in startBackgroundPrep (post-splash)
             // Wire the dedup store into the shared notifier. Runs on every
             // launch (foreground or BGTask-driven background), so the pull path
@@ -145,11 +136,6 @@ final class AppCoordinator {
                 }
             }
         )
-        // NOTE: `timeline.start()` is intentionally NOT called. It opened a
-        // SECOND full-timeline GRDB ValueObservation (limit 500) on the same DB
-        // that no view consumes — ChatView reads `ws.messages`, which has its
-        // own observation. The duplicate fired a second 500-row re-fetch +
-        // array rebuild on the main thread on every message insert. Pure waste.
 
         let sink = WebSocketProactiveSink(ws: ws, settings: settings)
         self.proactiveDispatcher = ProactiveDispatcher(settings: settings, sink: sink)
@@ -197,8 +183,8 @@ final class AppCoordinator {
         guard settings.isConfigured else { return }
         connectionPhase = .connecting
         ws.connect(settings: settings)
-        // `timeline` observation was started at init time — no post-connect
-        // backfill needed; views already see the GRDB-backed message stream.
+        // No post-connect backfill needed — views already render the
+        // GRDB-backed message stream from `ws.messages`.
         if settings.useLocation { location.requestAndUpdate() }
         if settings.useHealth   { health.requestAndFetch()    }
         if settings.useCalendar { calendar.requestAndFetch()  }

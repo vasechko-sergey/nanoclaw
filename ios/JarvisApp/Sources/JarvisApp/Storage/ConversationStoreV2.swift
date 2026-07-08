@@ -614,7 +614,7 @@ final class ConversationStoreV2 {
     // MARK: - Single-timeline observation + retention
 
     /// Live view of the last `limit` messages for a specific agent, ordered
-    /// ascending by `ts`. Drives the chat list UI via `MessageTimeline`.
+    /// ascending by `ts`.
     func observeMessages(agentId: String = "jarvis", limit: Int = 500)
         -> ValueObservation<ValueReducers.Fetch<[StoredMessage]>>
     {

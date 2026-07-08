@@ -22,14 +22,14 @@ struct AppV2Stack {
 /// construction — no network IO happens here. Callers are responsible for
 /// calling `transport.connect()` once they're ready.
 enum AppV2Bootstrap {
-    /// Build the storage half of the stack (DB queue + migrated schema + the
-    /// UI-facing `MessageTimeline`). Separated from `build` so the
-    /// `AppCoordinator` can construct the timeline before the user has
-    /// finished configuring the WebSocket URL — otherwise the splash + chat
-    /// views would have no message stream to render until the first
-    /// successful `connect()`.
+    /// Build the storage half of the stack (DB queue + migrated schema +
+    /// `ConversationStoreV2`). Separated from `build` so the `AppCoordinator`
+    /// can open the database at init time, before the user has finished
+    /// configuring the WebSocket URL — the store must exist for the splash +
+    /// chat views to render the message stream before the first successful
+    /// `connect()`.
     @MainActor
-    static func buildStorage() throws -> (dbq: DatabaseQueue, store: ConversationStoreV2, timeline: MessageTimeline) {
+    static func buildStorage() throws -> (dbq: DatabaseQueue, store: ConversationStoreV2) {
         let docs = try FileManager.default.url(
             for: .documentDirectory,
             in: .userDomainMask,
@@ -54,8 +54,7 @@ enum AppV2Bootstrap {
         }
 
         let store = ConversationStoreV2(writer: dbq)
-        let timeline = MessageTimeline(store: store, dbq: dbq)
-        return (dbq, store, timeline)
+        return (dbq, store)
     }
 
     @MainActor
@@ -66,7 +65,7 @@ enum AppV2Bootstrap {
         health: HealthManager? = nil,
         calendar: CalendarManager? = nil
     ) throws -> AppV2Stack {
-        let (dbq, store, _) = try buildStorage()
+        let (dbq, store) = try buildStorage()
 
         let socket = URLSessionWebSocket(url: serverURL)
         let coordinator = AppContextCoordinator(
@@ -95,9 +94,8 @@ enum AppV2Bootstrap {
 
     /// Variant used when the storage half has already been built (e.g. by the
     /// `AppCoordinator` at init time). Reuses the existing `dbq`/`store`
-    /// instead of re-opening the database, so the `MessageTimeline` and the
-    /// transport see the exact same writer. The timeline itself stays with
-    /// `AppCoordinator`; this builder only needs the `(dbq, store)` pair.
+    /// instead of re-opening the database, so the store and the transport see
+    /// the exact same writer.
     static func build(
         serverURL: URL,
         token: String,
