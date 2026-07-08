@@ -23,7 +23,7 @@ final class HealthSyncTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_800_000_000),
             calendar: Calendar(identifier: .gregorian),
             defaults: defaults,
-            push: { done in pushed = true; done() }
+            push: { done in pushed = true; done(true) }
         )
         XCTAssertTrue(pushed)
         XCTAssertEqual(calls, 1)
@@ -41,7 +41,7 @@ final class HealthSyncTests: XCTestCase {
             now: now,
             calendar: cal,
             defaults: defaults,
-            push: { done in pushed = true; done() }
+            push: { done in pushed = true; done(true) }
         )
         XCTAssertTrue(pushed)
         XCTAssertEqual(calls, 1)
@@ -58,7 +58,7 @@ final class HealthSyncTests: XCTestCase {
             now: now,
             calendar: cal,
             defaults: defaults,
-            push: { done in pushed = true; done() }
+            push: { done in pushed = true; done(true) }
         )
         XCTAssertFalse(pushed)
         XCTAssertEqual(calls, 0)
@@ -76,8 +76,23 @@ final class HealthSyncTests: XCTestCase {
             now: now,
             calendar: cal,
             defaults: defaults,
-            push: { done in pushed = true; done() }
+            push: { done in pushed = true; done(true) }
         )
         XCTAssertFalse(pushed)
+    }
+
+    func test_kickIfStale_uploadFails_doesNotStamp() {
+        // F27: a failed upload must NOT stamp lastHealthUploadAt, else the daily
+        // gate suppresses retries until tomorrow and health data goes stale.
+        var pushed = false
+        let calls = HealthSync.kickIfStaleForTesting(
+            now: Date(timeIntervalSince1970: 1_800_000_000),
+            calendar: Calendar(identifier: .gregorian),
+            defaults: defaults,
+            push: { done in pushed = true; done(false) }
+        )
+        XCTAssertTrue(pushed)
+        XCTAssertEqual(calls, 1)
+        XCTAssertNil(defaults.object(forKey: "lastHealthUploadAt"))
     }
 }

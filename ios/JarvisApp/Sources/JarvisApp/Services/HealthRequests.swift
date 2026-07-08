@@ -29,7 +29,7 @@ enum HealthRequests {
             for r in env.requests {
                 group.enter()
                 HealthHistory.fetch(from: r.from, to: r.to) { days in
-                    HealthUpload.upload(requestId: r.requestId, days: days) { group.leave() }
+                    HealthUpload.upload(requestId: r.requestId, days: days) { _ in group.leave() }
                 }
             }
             group.notify(queue: .main) { completion?() }

@@ -59,7 +59,7 @@ enum HealthBackgroundTask {
         // (default session, not background-configured) is still in flight.
         PendingNotifications.drain {
             HealthRequests.drain {
-                HealthSync.pushRecent {
+                HealthSync.pushRecent { _ in
                     task.setTaskCompleted(success: true)
                 }
             }

@@ -95,7 +95,7 @@ enum HealthSync {
         pushLock.unlock()
 
         HealthRequests.drain {
-            pushRecent {
+            pushRecent { _ in
                 pushLock.lock()
                 pushInFlight = false
                 lastPushAt = Date()
@@ -106,7 +106,7 @@ enum HealthSync {
     }
 
     /// Fetch the last 3 days of daily aggregates and upload them.
-    static func pushRecent(_ done: @escaping () -> Void) {
+    static func pushRecent(_ done: @escaping (Bool) -> Void) {
         let cal = Calendar.current
         let fmt = DateFormatter()
         fmt.locale = Locale(identifier: "en_US_POSIX")
@@ -114,7 +114,7 @@ enum HealthSync {
         let to = fmt.string(from: Date())
         let from = fmt.string(from: cal.date(byAdding: .day, value: -3, to: Date()) ?? Date())
         HealthHistory.fetch(from: from, to: to) { days in
-            HealthUpload.upload(requestId: nil, days: days) { done() }
+            HealthUpload.upload(requestId: nil, days: days) { ok in done(ok) }
         }
     }
 
@@ -137,15 +137,17 @@ enum HealthSync {
         now: Date,
         calendar: Calendar,
         defaults: UserDefaults,
-        push: (@escaping () -> Void) -> Void
+        push: (@escaping (Bool) -> Void) -> Void
     ) -> Int {
         let last = defaults.object(forKey: "lastHealthUploadAt") as? Date
         let today = calendar.startOfDay(for: now)
         if let last, calendar.startOfDay(for: last) >= today {
             return 0
         }
-        push {
-            defaults.set(Date(), forKey: "lastHealthUploadAt")
+        push { success in
+            // F27: only stamp on a confirmed upload — a failed one must retry, not
+            // be suppressed by the once-a-day gate until tomorrow (stale data).
+            if success { defaults.set(Date(), forKey: "lastHealthUploadAt") }
         }
         return 1
     }
