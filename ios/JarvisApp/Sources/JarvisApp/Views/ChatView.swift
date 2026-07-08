@@ -146,6 +146,10 @@ struct ChatView: View {
 
     /// Card tap → open the PREVIEW (not the runner). The runner opens from preview.
     private func startWorkout(_ plan: WorkoutPlan, messageId: String) {
+        guard plan.isRunnable else {
+            Log.warn(.ws, "workout plan has no exercises — not presenting (F19)")
+            return
+        }
         activeWorkout = WorkoutPresentation(plan: plan, phase: .preview, coord: nil, messageId: messageId)
     }
 
@@ -215,6 +219,10 @@ struct ChatView: View {
     /// need to show it again.
     private func resumeWorkout(_ record: ActiveWorkoutRecord) {
         guard let stack = coordinator.ws.stack else { return }
+        guard record.plan.isRunnable else {
+            Log.warn(.ws, "persisted workout has no exercises — skipping resume (F19)")
+            return
+        }
         let wc = WorkoutCoordinator(
             restoring: record, queue: stack.setLogQueue, store: stack.activeWorkoutStore
         )

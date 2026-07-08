@@ -80,4 +80,22 @@ final class WorkoutPlanDecodeTests: XCTestCase {
         XCTAssertEqual(plan.exercises[1].restSec, 120)
         XCTAssertEqual(plan.imageManifest.count, 1)
     }
+
+    /// F19: a plan_json with an empty (or absent) `exercises` array decodes fine
+    /// — the tolerant decoder defaults it to `[]`. Mounting the preview/runner on
+    /// such a plan index-crashed (`WorkoutCoordinator.currentExercise`, the
+    /// preview cursor). `isRunnable` gates the entry points so it can't.
+    func test_emptyExercisesPlanIsNotRunnable() throws {
+        let empty = WorkoutPlan(
+            workoutId: "w0", dayName: "Пусто", week: 1, intensityLabel: "",
+            exercises: [], imageManifest: [])
+        XCTAssertFalse(empty.isRunnable)
+
+        let ok = WorkoutPlan(
+            workoutId: "w1", dayName: "Ноги", week: 1, intensityLabel: "лёгкая",
+            exercises: [ExercisePlan(exerciseSlug: "squat", targetSets: 3, targetReps: "5",
+                                     targetRir: 2, restSec: 120, notes: nil)],
+            imageManifest: [])
+        XCTAssertTrue(ok.isRunnable)
+    }
 }

@@ -112,6 +112,13 @@ struct WorkoutPlan: Codable, Equatable {
         self.imageManifest = imageManifest
     }
 
+    /// A plan with no exercises still decodes (the tolerant `init(from:)` defaults
+    /// a missing/empty `exercises` to `[]`), but must never mount the preview or
+    /// runner: every runner path indexes `exercises[...]`
+    /// (`WorkoutCoordinator.currentExercise`, the preview cursor) and would crash.
+    /// Entry points (`ChatView.startWorkout` / `resumeWorkout`) gate on this.
+    var isRunnable: Bool { !exercises.isEmpty }
+
     enum CodingKeys: String, CodingKey {
         case workoutId = "workout_id"
         case dayName = "day_name"
