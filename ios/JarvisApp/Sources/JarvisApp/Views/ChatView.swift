@@ -59,6 +59,17 @@ struct ChatView: View {
         var id: String { originalSlug }
     }
     @State private var swapSheet: SwapSheetPresentation? = nil
+
+    // Fix L: pending "start fresh" collision — the user tapped "Поехали" on a
+    // brand-new plan while another workout is still paused in
+    // `active_workout`. Setting this shows a confirmation dialog so we don't
+    // silently UPSERT the old cursor away.
+    private struct StartCollision: Identifiable {
+        let freshPlan: WorkoutPlan
+        let existing: ActiveWorkoutRecord
+        var id: String { freshPlan.workoutId }
+    }
+    @State private var startCollision: StartCollision? = nil
     @State private var swapResponse: SwapResponse? = nil
     @State private var swapLoading: Bool = false
     @State private var swapImageToken: Int = 0   // bumped on image_blob → refresh swap thumbnails
@@ -141,7 +152,32 @@ struct ChatView: View {
     /// "Поехали" inside the preview → create the coordinator + swap to the
     /// running phase. Same `id` (workoutId) keeps the same fullScreenCover
     /// mounted and just swaps its content from preview to runner.
+    ///
+    /// Fix L: a fresh workout must NOT silently wipe a paused one. If the
+    /// store already carries a DIFFERENT workoutId, surface a confirmation
+    /// dialog first — "Продолжить старую" resumes the old cursor;
+    /// "Начать новую" clears the store then starts fresh.
     private func startRunning(with plan: WorkoutPlan) {
+        guard let stack = coordinator.ws.stack else {
+            Log.warn(.ws, "start running but stack not built — dropping")
+            return
+        }
+        // Collision check runs BEFORE we touch the coordinator, because
+        // `WorkoutCoordinator.init` doesn't itself persist — but the first
+        // `logSet` / `activate` will, and `ActiveWorkoutStore.save` UPSERTs
+        // on agent_id, so the paused row would be gone before the user has
+        // any chance to see it.
+        if let existing = (try? stack.activeWorkoutStore.load(agentId: "payne")) ?? nil,
+           existing.workoutId != plan.workoutId {
+            startCollision = StartCollision(freshPlan: plan, existing: existing)
+            return
+        }
+        performFreshStart(with: plan)
+    }
+
+    /// Actually mount the coordinator + runner for `plan`. Assumes the caller
+    /// already reconciled any existing `active_workout` row (see Fix L).
+    private func performFreshStart(with plan: WorkoutPlan) {
         guard let cur = activeWorkout, let stack = coordinator.ws.stack else {
             Log.warn(.ws, "start running but stack not built — dropping")
             return
@@ -617,6 +653,41 @@ struct ChatView: View {
             Button("ОК", role: .cancel) {}
         } message: {
             Text("Jarvis теперь один непрерывный чат. Локальная история диалогов до обновления была удалена. Контекст агента сохранён на сервере.")
+        }
+        // Fix L: fresh workout tap while a paused one is still stored. The
+        // paused row would otherwise be UPSERTed away silently by the first
+        // `logSet` on the fresh coordinator (ActiveWorkoutStore.save uses
+        // ON CONFLICT(agent_id) DO UPDATE) — data-loss without confirmation.
+        .confirmationDialog(
+            "Есть незавершённая тренировка",
+            isPresented: Binding(
+                get: { startCollision != nil },
+                set: { if !$0 { startCollision = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: startCollision
+        ) { collision in
+            Button("Продолжить старую") {
+                startCollision = nil
+                // Close the current preview cover before mounting the resume
+                // cover so SwiftUI doesn't try to reuse the same identity.
+                activeWorkout = nil
+                resumeWorkout(collision.existing)
+            }
+            Button("Начать новую", role: .destructive) {
+                startCollision = nil
+                // Explicitly drop the paused row so the fresh coordinator's
+                // first persist doesn't silently overwrite it.
+                if let store = coordinator.ws.stack?.activeWorkoutStore {
+                    try? store.clear(agentId: "payne")
+                }
+                performFreshStart(with: collision.freshPlan)
+            }
+            Button("Отмена", role: .cancel) {
+                startCollision = nil
+            }
+        } message: { collision in
+            Text("Ты уже начал \"\(collision.existing.plan.dayName)\". Если запустить \"\(collision.freshPlan.dayName)\", прогресс старой тренировки не сохранится.")
         }
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("chat-view")
