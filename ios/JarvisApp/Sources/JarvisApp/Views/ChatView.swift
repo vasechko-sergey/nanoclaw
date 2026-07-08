@@ -390,8 +390,15 @@ struct ChatView: View {
                             onImageTap: { thumb, sha in
                                 fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
                             },
-                            onFeedback: { messageId, isPositive in
-                                coordinator.sendFeedback(messageId: messageId, value: isPositive, messageText: visibleMessages.first(where: { $0.id == messageId })?.text ?? "")
+                            onFeedback: { messageId, feedback in
+                                // Persist EVERY transition (incl. clearing to .none)
+                                // so the lit thumb survives recycle/reload/relaunch (F21).
+                                coordinator.setFeedback(messageId: messageId, feedback)
+                                // Host send is unchanged: fire the Feedback envelope
+                                // once, only on a SET (up/down) — never on a clear.
+                                if feedback != .none {
+                                    coordinator.sendFeedback(messageId: messageId, value: feedback == .up, messageText: visibleMessages.first(where: { $0.id == messageId })?.text ?? "")
+                                }
                             },
                             onActionTap: { messageId, buttonId, buttonLabel in
                                 coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)

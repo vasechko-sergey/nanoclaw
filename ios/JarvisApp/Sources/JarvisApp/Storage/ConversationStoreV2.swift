@@ -3,6 +3,10 @@ import GRDB
 
 enum MessageDir: String { case out, in_ = "in" }
 enum MessageStatus: String { case queued, sending, sent, delivered, read, failed, new }
+/// Per-message 👍/👎 selection (F21). Persisted in `messages.feedback`: a NULL
+/// column decodes to `.none`, otherwise the rawValue. `.none` is never written
+/// as text — `setFeedback` clears the column to NULL. Assistant messages only.
+enum MessageFeedback: String { case none, up, down }
 enum CursorKey: String {
     case lastSeenInbound = "last_seen_inbound_seq"
     case lastSentOutbound = "last_sent_outbound_seq"
@@ -26,6 +30,7 @@ struct StoredMessage: Equatable {
     var workoutPlanJSON: String? = nil
     var edited: Bool = false
     var voiceOnly: Bool = false
+    var feedback: MessageFeedback = .none
 }
 
 final class ConversationStoreV2 {
@@ -376,6 +381,30 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Persist the user's 👍/👎 selection for a message (F21), keyed by message
+    /// id. `.none` clears it (column → NULL). No-op if the id is unknown (the row
+    /// was pruned) — same forgiving semantics as `markActionAnswered`. This only
+    /// records the LOCAL display selection; the host send stays on the existing
+    /// Feedback envelope, fired once on set from `ChatView.onFeedback`.
+    func setFeedback(messageId: String, _ feedback: MessageFeedback) throws {
+        try writer.write { db in
+            let stored: String? = feedback == .none ? nil : feedback.rawValue
+            try db.execute(sql: "UPDATE messages SET feedback=? WHERE id=?",
+                           arguments: [stored, messageId])
+        }
+    }
+
+    /// Read the persisted 👍/👎 selection for a message (F21). Unknown id or a
+    /// NULL column both decode to `.none`.
+    func getFeedback(messageId: String) throws -> MessageFeedback {
+        try writer.read { db in
+            guard let raw = try String.fetchOne(
+                db, sql: "SELECT feedback FROM messages WHERE id=?", arguments: [messageId]
+            ) else { return .none }
+            return MessageFeedback(rawValue: raw) ?? .none
+        }
+    }
+
     /// Mark every still-open workout-plan card whose plan carries `workoutId`
     /// as completed (greys its "Посмотреть тренировку" button). Matches by the
     /// decoded `workout_id`, NOT a transient in-memory row id, so the card
@@ -683,7 +712,8 @@ final class ConversationStoreV2 {
             actionChoice: row["action_choice"],
             workoutPlanJSON: row["workout_plan_json"],
             edited: row["edited"] ?? false,
-            voiceOnly: row["voice_only"] ?? false
+            voiceOnly: row["voice_only"] ?? false,
+            feedback: MessageFeedback(rawValue: row["feedback"] ?? "") ?? .none
         )
     }
 

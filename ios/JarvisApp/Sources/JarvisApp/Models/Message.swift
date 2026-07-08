@@ -84,6 +84,10 @@ struct ChatMessage: Identifiable {
     /// True when this row is a voice-only reply: pending → placeholder, ready →
     /// voice note with a collapsed transcript. Drives MessageRow's branch.
     var voiceOnly: Bool = false
+    /// Persisted 👍/👎 selection for this (assistant) message (F21). Sourced from
+    /// `messages.feedback`, so the lit thumb is a pure function of the store and
+    /// survives cell recycle / reload / relaunch instead of dying in `@State`.
+    var feedback: MessageFeedback = .none
 
     enum Role { case user, assistant, system }
 

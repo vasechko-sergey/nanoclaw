@@ -287,6 +287,14 @@ final class AppCoordinator {
         try? chatStore?.markActionAnswered(rowId: rowId, choice: choice)
     }
 
+    /// Persist the user's 👍/👎 selection for a message (F21) so the lit thumb
+    /// survives cell recycle, reload, and relaunch. Records ONLY the local display
+    /// state — the host send stays on `sendFeedback`. No-op if the store isn't
+    /// built yet.
+    func setFeedback(messageId: String, _ feedback: MessageFeedback) {
+        try? chatStore?.setFeedback(messageId: messageId, feedback)
+    }
+
     /// Resolve the workout card for `workoutId` (grey its button) when the
     /// workout finishes — matched by workout_id, not the card's row id, so it
     /// survives a mid-workout swap dropping the runner presentation's

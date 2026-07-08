@@ -674,6 +674,7 @@ final class WebSocketClientV2 {
                 combined.agentId = row.agentId
                 combined.edited = row.edited
                 combined.voiceOnly = row.voiceOnly
+                combined.feedback = row.feedback
                 return [combined]
             }
 
@@ -718,6 +719,7 @@ final class WebSocketClientV2 {
         msg.agentId = row.agentId
         msg.edited = row.edited
         msg.voiceOnly = row.voiceOnly
+        msg.feedback = row.feedback
         return [msg]
     }
 

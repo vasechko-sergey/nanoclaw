@@ -18,7 +18,7 @@ struct MessageListView: UIViewRepresentable {
     /// so the per-body-pass snapshot rebuild only runs when data actually moved.
     var messagesVersion: Int = 0
     var onImageTap: (UIImage, String?) -> Void
-    var onFeedback: (String, Bool) -> Void
+    var onFeedback: (String, MessageFeedback) -> Void
     var onActionTap: (String, String, String) -> Void
     var onWorkoutStart: ((WorkoutPlan, String) -> Void)? = nil
     var onWorkoutCancel: ((String) -> Void)? = nil
@@ -202,7 +202,19 @@ struct MessageListView: UIViewRepresentable {
             lastVersion = parent.messagesVersion
             lastIsBusy = parent.isBusy
 
-            self.messagesById = Dictionary(parent.messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            // F21: a persisted-feedback flip keeps the row's diffable id, so the
+            // `apply` identity diff below is a no-op for it and the on-screen cell
+            // keeps its stale thumb (same problem the resume path handles). Diff
+            // feedback against the previous map BEFORE replacing it, then
+            // reconfigure the changed ids so `MessageRow` re-renders in place.
+            let newById = Dictionary(parent.messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            var feedbackChangedIds: [ChatListItem] = []
+            for (id, newMsg) in newById {
+                if let old = messagesById[id], old.feedback != newMsg.feedback {
+                    feedbackChangedIds.append(.message(id))
+                }
+            }
+            self.messagesById = newById
             // Inverted list → newest first (index 0 = visual bottom). Reversing the
             // oldest-first builder output keeps date separators correctly placed
             // (a separator ends up just above the first message of its day on screen).
@@ -226,15 +238,20 @@ struct MessageListView: UIViewRepresentable {
             snap.appendSections([0])
             snap.appendItems(items, toSection: 0)
 
+            // Reconfigure rows whose content changed in place but kept their
+            // diffable id (so `apply`'s identity diff skips them): the resume flag
+            // (workout start/finish/abort) and F21 feedback toggles. `apply` alone
+            // would leave those visible cells stale.
+            let itemSet = Set(items)
+            var reconfigure = Set(feedbackChangedIds)
             if resumeChanged {
-                let itemSet = Set(items)
-                let candidates: [ChatListItem] = [oldResumeId, parent.resumeMessageId]
-                    .compactMap { $0 }
-                    .map { ChatListItem.message($0) }
-                    .filter { itemSet.contains($0) }
-                if !candidates.isEmpty {
-                    snap.reconfigureItems(candidates)
+                for id in [oldResumeId, parent.resumeMessageId].compactMap({ $0 }) {
+                    reconfigure.insert(.message(id))
                 }
+            }
+            reconfigure = reconfigure.filter { itemSet.contains($0) }
+            if !reconfigure.isEmpty {
+                snap.reconfigureItems(Array(reconfigure))
             }
 
             if agentChanged {

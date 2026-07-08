@@ -182,6 +182,15 @@ enum Schema {
             // read only as a backward-compat fallback in `SetLogQueue.pending()`.
             try db.execute(sql: "ALTER TABLE set_log_queue ADD COLUMN deviations_json TEXT;")
         }
+        m.registerMigration("v15-message-feedback") { db in
+            // F21: persist the user's per-message 👍/👎 selection so the lit thumb
+            // survives cell recycle, message reload, and app relaunch — it used to
+            // live only in MessageRow's @State. NULL = unrated; 'up' | 'down'
+            // otherwise. Mirrors the nullable `action_choice` column. This records
+            // ONLY the local display selection; the host send stays on the existing
+            // Feedback envelope.
+            try db.execute(sql: "ALTER TABLE messages ADD COLUMN feedback TEXT;")
+        }
         try m.migrate(writer)
     }
 }

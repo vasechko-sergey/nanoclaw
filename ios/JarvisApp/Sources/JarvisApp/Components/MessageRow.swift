@@ -8,7 +8,10 @@ struct MessageRow: View {
     let message: ChatMessage
     let isLast: Bool
     var onImageTap: ((_ thumbnail: UIImage, _ sha: String?) -> Void)? = nil
-    var onFeedback: ((String, Bool) -> Void)? = nil
+    /// Fires on every 👍/👎 tap with the RESULTING selection (incl. `.none` when
+    /// the lit thumb is toggled off). The parent persists all transitions and
+    /// sends the host Feedback envelope only on a set — see ChatView.
+    var onFeedback: ((String, MessageFeedback) -> Void)? = nil
     var onActionTap: ((String, String, String) -> Void)? = nil
     var onWorkoutStart: ((WorkoutPlan, String) -> Void)? = nil
     var onWorkoutCancel: ((String) -> Void)? = nil
@@ -23,9 +26,6 @@ struct MessageRow: View {
     /// `onWorkoutStart` closure, which branches on this same id.
     var resumeMessageId: String? = nil
 
-    @State private var feedback: FeedbackState = .none
-
-    private enum FeedbackState { case none, positive, negative }
     private var isUser: Bool { message.role == .user }
 
     var body: some View {
@@ -200,13 +200,14 @@ struct MessageRow: View {
                     onRetry?(message.id)
                 })
             }
-            if !isUser && feedback != .none {
-                Image(systemName: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
+            if !isUser && message.feedback != .none {
+                Image(systemName: message.feedback == .up ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
                     .font(.system(size: 9))
-                    .foregroundStyle(feedback == .positive ? Theme.accentMedium : Theme.offline.opacity(0.5))
+                    .foregroundStyle(message.feedback == .up ? Theme.accentMedium : Theme.offline.opacity(0.5))
             }
         }
         .textCase(.uppercase)
+        .animation(.easeOut(duration: 0.15), value: message.feedback)
     }
 
     @ViewBuilder
@@ -221,22 +222,19 @@ struct MessageRow: View {
         if !isUser {
             Divider()
             Button {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    feedback = feedback == .positive ? .none : .positive
-                }
-                if feedback == .positive { onFeedback?(message.id, true) }
+                // Toggle: tapping the lit thumb clears it, else set it. Emits the
+                // resulting state so the parent persists every transition; the
+                // host send fires only on a set (ChatView gates on `!= .none`).
+                onFeedback?(message.id, message.feedback == .up ? .none : .up)
             } label: {
-                Label(feedback == .positive ? "Убрать оценку" : "Полезно",
-                      systemImage: feedback == .positive ? "hand.thumbsup.fill" : "hand.thumbsup")
+                Label(message.feedback == .up ? "Убрать оценку" : "Полезно",
+                      systemImage: message.feedback == .up ? "hand.thumbsup.fill" : "hand.thumbsup")
             }
             Button {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    feedback = feedback == .negative ? .none : .negative
-                }
-                if feedback == .negative { onFeedback?(message.id, false) }
+                onFeedback?(message.id, message.feedback == .down ? .none : .down)
             } label: {
-                Label(feedback == .negative ? "Убрать оценку" : "Не полезно",
-                      systemImage: feedback == .negative ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                Label(message.feedback == .down ? "Убрать оценку" : "Не полезно",
+                      systemImage: message.feedback == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown")
             }
         }
     }
