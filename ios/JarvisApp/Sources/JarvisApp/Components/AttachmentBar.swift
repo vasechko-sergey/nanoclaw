@@ -78,36 +78,6 @@ extension View {
 
 var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
 
-// MARK: – Plus menu (classic input bar)
-
-/// The "+" affordance with a Camera / Photo / Document menu. Used in classic InputBar.
-struct AttachmentMenuButton: View {
-    @Binding var drafts: [DraftAttachment]
-    var isDisabled: Bool = false
-
-    @State private var showPhotos = false
-    @State private var showCamera = false
-    @State private var showDoc = false
-
-    var body: some View {
-        Menu {
-            if cameraAvailable {
-                Button { showCamera = true } label: { Label("Камера", systemImage: "camera") }
-            }
-            Button { showPhotos = true } label: { Label("Фото", systemImage: "photo") }
-            Button { showDoc = true } label: { Label("Документ", systemImage: "doc") }
-        } label: {
-            Image(systemName: "plus.circle")
-                .font(.system(size: Theme.scaled(28)))
-                .foregroundStyle(Theme.accentMedium)
-                .frame(width: Theme.minTapSize, height: Theme.minTapSize)
-        }
-        .disabled(isDisabled)
-        .accessibilityLabel("Прикрепить")
-        .attachmentPickers(drafts: $drafts, showPhotos: $showPhotos, showCamera: $showCamera, showDoc: $showDoc)
-    }
-}
-
 // MARK: – Preview chips
 
 /// Horizontal row of pending-attachment chips with a remove button each.
