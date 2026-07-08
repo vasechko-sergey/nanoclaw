@@ -43,24 +43,34 @@ struct LoggedSetChips: View {
 
     @ViewBuilder
     private func chipButton(idx: Int, set: LoggedSet) -> some View {
-        // Badge marks a set that deviated from plan; the sheet (and tappability)
-        // is driven by Payne's coachHint — the two are separate signals.
+        // Badge marks a set that deviated from plan; the accent outline + tap
+        // sheet are driven by Payne's coachHint — separate signals.
+        let hasHint = set.coachHint != nil
         Button {
-            if set.coachHint != nil { tappedIdx = idx }
+            if hasHint { tappedIdx = idx }
         } label: {
-            HStack(spacing: 3) {
+            HStack(spacing: 4) {
                 Text("✓ \(set.reps)×\(WorkoutSetFormat.weight(set.weight))")
                 if !set.deviations.isEmpty {
+                    // Prominent enough to catch the eye mid-set: 14pt bubble in a
+                    // filled 20pt accent circle, not a 10pt tint that blends in.
                     Image(systemName: "bubble.left.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Theme.accent))
                 }
             }
             .font(.caption)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 7).fill(Theme.accent.opacity(0.15)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Theme.accent, lineWidth: hasHint ? 1.5 : 0)
+            )
         }
         .buttonStyle(.plain)
-        .disabled(set.coachHint == nil)
+        .disabled(!hasHint)
     }
 }

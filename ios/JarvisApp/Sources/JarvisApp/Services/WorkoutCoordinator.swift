@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Owns the live state of an in-progress workout. UI binds to its @Published
 /// properties; the Coordinator persists every logged set via SetLogQueue and
@@ -154,6 +157,13 @@ final class WorkoutCoordinator: ObservableObject {
         }
         guard logged[exIdx].sets.indices.contains(setIdx) else { return }
         logged[exIdx].sets[setIdx].coachHint = text
+        // Haptic lives here (the single mutation site) rather than in the view:
+        // the 💬 chip can be off-screen or the runner backgrounded when Payne's
+        // reply lands, so a success buzz is the only reliable "coach said
+        // something" cue. @MainActor guarantees the main-thread requirement.
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
         persist()
     }
 
