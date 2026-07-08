@@ -3,7 +3,7 @@ import Combine
 
 /// Live workout runner. Flexible ~50/50 split: large image hero on top,
 /// controls below (logged chips + focus set card + icon toolbar). Rest timer
-/// ring + coach banner as overlays.
+/// ring as an overlay; Payne's coach line sits inside the ПЕЙН panel.
 struct WorkoutView: View {
     @StateObject var coordinator: WorkoutCoordinator
     @StateObject var restTimer = RestTimer()
@@ -12,9 +12,10 @@ struct WorkoutView: View {
     /// Resolve a slug to a local cached image URL (shared with inbound prefetch).
     let imageResolver: (_ slug: String) -> URL?
 
-    /// Stream of coach_message texts WITHOUT `set_ref` — surfaced as the 4-sec
-    /// top banner via `surfaceCoachMessage`. ChatView filters `workoutBus.events`
-    /// to `.coachMessage(_, _, nil)` and passes the mapped publisher in.
+    /// Stream of coach_message texts WITHOUT `set_ref` — surfaced as the coach
+    /// line inside the ПЕЙН panel via `surfaceCoachMessage`. ChatView filters
+    /// `workoutBus.events` to `.coachMessage(_, _, nil)` and passes the mapped
+    /// publisher in. The line persists until the next message replaces it.
     ///
     /// Coach messages WITH `set_ref` (deviation replies) are handled in ChatView
     /// where the `WorkoutCoordinator` reference lives — they anchor on a chip.
@@ -31,7 +32,9 @@ struct WorkoutView: View {
 
     @State private var showAbortConfirm = false
     @State private var showFinish = false
-    @State private var coachBanner: String? = nil
+    /// Payne's latest coach line (no `set_ref`). Persists until the next message
+    /// replaces it; rendered as a second row inside the ПЕЙН panel.
+    @State private var coachHint: String? = nil
     /// Exercise currently being looked at (swipe/chevrons). May differ from the
     /// active exercise (`coordinator.currentExerciseIdx`) while browsing.
     @State private var previewIdx: Int = 0
@@ -44,12 +47,6 @@ struct WorkoutView: View {
         ZStack(alignment: .top) {
             Theme.background.ignoresSafeArea()
             content
-            if let banner = coachBanner {
-                CoachBannerView(text: banner)
-                    .padding(.top, 80)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(2)
-            }
             RestTimerOverlay(timer: restTimer, nextHint: restHint)
                 .zIndex(3)
         }
@@ -110,7 +107,7 @@ struct WorkoutView: View {
                 .frame(maxWidth: .infinity, minHeight: 120, maxHeight: geo.size.width * 9.0 / 16.0)
                 .clipped()
 
-                RecommendationPanel(exercise: preview)
+                RecommendationPanel(exercise: preview, coachHint: coachHint)
 
                 if previewIdx == coordinator.currentExerciseIdx {
                     if coordinator.currentExercise.isDuration {
@@ -268,11 +265,10 @@ struct WorkoutView: View {
 }
 
 extension WorkoutView {
-    /// Surface a coach_message banner; auto-dismiss after 4 sec.
+    /// Surface a coach_message as the persistent coach line in the ПЕЙН panel.
+    /// It stays put until the next coach_message replaces it (no auto-dismiss) —
+    /// so a hint that arrived mid-set is still readable when the user looks up.
     func surfaceCoachMessage(_ text: String) {
-        withAnimation(.easeOut(duration: 0.2)) { coachBanner = text }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-            withAnimation(.easeIn(duration: 0.2)) { coachBanner = nil }
-        }
+        withAnimation(.easeOut(duration: 0.25)) { coachHint = text }
     }
 }

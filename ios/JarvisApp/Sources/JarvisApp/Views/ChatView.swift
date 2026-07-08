@@ -225,7 +225,7 @@ struct ChatView: View {
 
     /// Filter the shared workout bus to coach texts WITHOUT a `set_ref` so
     /// `WorkoutView` can subscribe to a plain `String` stream and drive the
-    /// 4-sec top banner via `surfaceCoachMessage`. Extracted from the inline
+    /// coach line in the ПЕЙН panel via `surfaceCoachMessage`. Extracted from the inline
     /// caller so the SwiftUI type checker isn't asked to solve a giant tree
     /// at the `WorkoutView(...)` call site (Fix J).
     private func coachBannerPublisher() -> AnyPublisher<String, Never> {
@@ -246,8 +246,9 @@ struct ChatView: View {
         WorkoutView(
             coordinator: presentation.coord!,
             imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
-            // Coach messages without a set anchor → top banner (Fix J). Filter
-            // at the boundary so WorkoutView doesn't know about WorkoutInboundEvent.
+            // Coach messages without a set anchor → coach line in the ПЕЙН panel
+            // (Fix J). Filter at the boundary so WorkoutView doesn't know about
+            // WorkoutInboundEvent.
             coachMessages: coachBannerPublisher(),
             onClose: { session in
                 let workoutId = presentation.plan.workoutId
@@ -604,10 +605,10 @@ struct ChatView: View {
                 } else if setRef == nil {
                     // Fix J: two-branch guarantee for coach text without an anchor.
                     // Runner OPEN → WorkoutView's own `.onReceive(coachMessages)`
-                    // shows the 4-sec top banner. Runner CLOSED → the banner
-                    // surface doesn't exist, so we inject the text as a normal
-                    // Payne chat message so an abort ack ("Принял…") or a global
-                    // hint isn't silently dropped.
+                    // shows the persistent coach line in the ПЕЙН panel. Runner
+                    // CLOSED → that surface doesn't exist, so we inject the text as
+                    // a normal Payne chat message so an abort ack ("Принял…") or a
+                    // global hint isn't silently dropped.
                     if activeWorkout == nil {
                         coordinator.injectInboundCoachMessage(
                             text: text, workoutId: workoutId, agentId: "payne"
