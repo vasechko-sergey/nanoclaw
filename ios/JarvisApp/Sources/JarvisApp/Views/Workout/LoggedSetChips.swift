@@ -36,7 +36,15 @@ struct LoggedSetChips: View {
                     Button("Закрыть") { tappedIdx = nil }
                 }
                 .padding(20)
-                .presentationDetents([.medium, .large])
+                // 180pt is plenty for one or two coach sentences and leaves the
+                // running set visible behind it; .medium is there if the text is
+                // long. A half/full-screen default buried the runner.
+                .presentationDetents([.height(180), .medium])
+                .presentationDragIndicator(.visible)
+            } else {
+                // Race: the hint was cleared (swap / new plan) between the tap
+                // and this render. Dismiss instead of showing a blank sheet.
+                Color.clear.onAppear { tappedIdx = nil }
             }
         }
     }
