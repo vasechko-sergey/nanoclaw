@@ -30,10 +30,18 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
         self.calendarManager = calendar
     }
 
+    // F16: the live context-pull path bypassed the privacy toggles entirely, so
+    // health / location / calendar shipped to the agent even with the switch off.
+    // Gate each sensitive field on its @AppStorage toggle — read straight from
+    // UserDefaults (the same store @AppStorage writes to; default false = off).
+    private var useHealth: Bool { UserDefaults.standard.bool(forKey: "useHealth") }
+    private var useLocation: Bool { UserDefaults.standard.bool(forKey: "useLocation") }
+    private var useCalendar: Bool { UserDefaults.standard.bool(forKey: "useCalendar") }
+
     // MARK: - ContextCoordinatorV2
 
     func health() async throws -> V2.JSONValue {
-        guard let h = healthManager else { return .object([:]) }
+        guard useHealth, let h = healthManager else { return .object([:]) }
         // Kick a fresh fetch (cheap; cached HKHealthStore reads). The fields read
         // below come from whatever's currently cached on the manager.
         await MainActor.run { h.requestAndFetch() }
@@ -59,7 +67,7 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
     }
 
     func calendar() async throws -> V2.JSONValue {
-        guard let c = calendarManager else { return .array([]) }
+        guard useCalendar, let c = calendarManager else { return .array([]) }
         // `nextEvent` is the only structured cache the legacy manager exposes.
         // A full event-window query would require touching EKEventStore directly;
         // defer that until the agent actually asks for it (TODO below).
@@ -95,7 +103,7 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
     }
 
     func nextEvent() async throws -> V2.JSONValue? {
-        guard let c = calendarManager else { return nil }
+        guard useCalendar, let c = calendarManager else { return nil }
         let next: (title: String, start: Date)? = await MainActor.run { c.nextEvent }
         guard let next else { return nil }
         return .object([
@@ -105,7 +113,7 @@ final class AppContextCoordinator: ContextCoordinatorV2 {
     }
 
     func recentLocations(hours: Int) async throws -> V2.JSONValue {
-        guard let l = locationManager else { return .array([]) }
+        guard useLocation, let l = locationManager else { return .array([]) }
         // The legacy LocationManager doesn't keep a history — only `lastLocation`.
         // Return that one point (if recent enough) so the agent has something to
         // work with. A real history buffer is tracked as a follow-up.
