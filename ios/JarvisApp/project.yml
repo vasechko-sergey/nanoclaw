@@ -43,8 +43,6 @@ targets:
         BGTaskSchedulerPermittedIdentifiers:
           - com.vasechko.jarvis.morning-health
           - com.vasechko.jarvis.pending-pull
-        NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
         NSLocationWhenInUseUsageDescription: "Геолокация передаётся агенту как контекст"
         NSHealthShareUsageDescription: "Данные активности и сна передаются агенту как контекст"
         NSHealthUpdateUsageDescription: "Данные активности передаются агенту как контекст"
@@ -73,8 +71,8 @@ targets:
         # per feature, CURRENT_PROJECT_VERSION on every build you install. The app
         # reports both to the host on connect (auth envelope) — so the running
         # build is knowable server-side, not guessed. Run `xcodegen generate` after.
-        MARKETING_VERSION: "1.26.0"
-        CURRENT_PROJECT_VERSION: "95"
+        MARKETING_VERSION: "1.27.0"
+        CURRENT_PROJECT_VERSION: "96"
 
   JarvisUITests:
     type: bundle.ui-testing

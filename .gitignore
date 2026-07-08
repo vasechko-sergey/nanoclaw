@@ -50,6 +50,7 @@ agents-sdk-docs
 
 ios/JarvisApp/.build/
 *.xcuserstate
+**/xcuserdata/
 
 # Local worktrees for in-progress work
 .worktrees/

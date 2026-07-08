@@ -22,10 +22,11 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    /// Accept folder-name aliases the host stamps on the outbound `agent_id`
-    /// field. Greg's group folder on the server is `health-analyzer`, but
-    /// iOS treats `.greg.rawValue == "greg"` as canonical, so without this
-    /// alias every Greg reply would be filtered out of ChatView.
+    /// Map the host's `agent_id` folder slug to a case. All five agents use their
+    /// canonical slug as the folder name (jarvis/payne/greg/scrooge/gordon), so no
+    /// aliasing is needed; an unknown slug returns nil and the row is filtered out
+    /// of ChatView. (An earlier comment here claimed a `health-analyzer`→.greg
+    /// alias that never existed in code — Greg's folder is `greg` (F8g).)
     init?(rawValue: String) {
         switch rawValue {
         case "jarvis": self = .jarvis
