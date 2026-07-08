@@ -80,6 +80,27 @@ final class TransportV2Tests: XCTestCase {
         XCTAssertEqual(try store.fetchById("msg-1")?.status, .sent)
     }
 
+    func testAckRetryCapMarksFailed() async throws {
+        // F2: a message the server never acks must not resend forever. After
+        // maxAckRetries resend checks with no ack it is marked .failed (surfacing
+        // the already-built failed row + retry button) instead of spinning an
+        // uncapped 5s resend loop behind an eternal "sending" spinner.
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ConversationStoreV2(writer: dbq)
+        let socket = MockWebSocket()
+        let transport = TransportV2(store: store, socket: socket, token: "tok",
+                                    ackTimeoutSeconds: 0.05, maxAckRetries: 3,
+                                    dispatcherIntervalMs: 50)
+        try store.insertOutboundUserMessage(id: "msg-1", text: "hi", attachments: [], context: nil)
+        try await transport.handleAuthOk(lastSeenOutboundSeq: 0)   // -> sending, schedules retry
+        XCTAssertEqual(try store.fetchById("msg-1")?.status, .sending)
+
+        // No ack ever arrives; wait past maxAckRetries * ackTimeout.
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(try store.fetchById("msg-1")?.status, .failed)
+    }
+
     func testReconnectResetsSendingToQueued() async throws {
         try store.insertOutboundUserMessage(
             id: "msg-1", text: "hi", attachments: [], context: nil

@@ -37,6 +37,11 @@ actor TransportV2 {
     private var watchdogTask: Task<Void, Never>?
 
     private let ackTimeoutSeconds: Double
+    /// Max resend checks for one un-acked message before it is marked .failed
+    /// (F2). Without a cap, a message the server never acks resends every
+    /// ackTimeoutSeconds forever behind an eternal "sending" spinner.
+    private let maxAckRetries: Int
+    private var ackAttempts: [String: Int] = [:]
     private let dispatcherIntervalMs: Int
     private let baseReconnectDelaySeconds: Double
     private let maxReconnectDelaySeconds: Double
@@ -91,6 +96,7 @@ actor TransportV2 {
         token: String,
         contextCoordinator: ContextCoordinatorV2? = nil,
         ackTimeoutSeconds: Double = 5.0,
+        maxAckRetries: Int = 5,
         dispatcherIntervalMs: Int = 200,
         baseReconnectDelaySeconds: Double = 1.0,
         maxReconnectDelaySeconds: Double = 60.0,
@@ -101,6 +107,7 @@ actor TransportV2 {
         self.token = token
         self.contextCoordinator = contextCoordinator
         self.ackTimeoutSeconds = ackTimeoutSeconds
+        self.maxAckRetries = maxAckRetries
         self.dispatcherIntervalMs = dispatcherIntervalMs
         self.baseReconnectDelaySeconds = baseReconnectDelaySeconds
         self.maxReconnectDelaySeconds = maxReconnectDelaySeconds
@@ -502,6 +509,7 @@ actor TransportV2 {
     private func cancelAckRetry(id: String) {
         ackTasks[id]?.cancel()
         ackTasks[id] = nil
+        ackAttempts[id] = nil
     }
 
     private func retryEnvelopeIfPending(id: String) async {
@@ -513,6 +521,15 @@ actor TransportV2 {
         }
         guard let row = try? store.fetchById(id), row.status == .sending else { return }
         guard let seq = row.seq else { return }
+        ackAttempts[id, default: 0] += 1
+        if ackAttempts[id]! >= maxAckRetries {
+            // Give up: mark .failed so the already-built failed row + retry button
+            // surface (ChatView.retrySend -> resetFailedToQueued re-queues on tap),
+            // instead of an uncapped resend loop behind an eternal spinner.
+            try? store.markFailed(id: id, reason: "no ack after \(maxAckRetries) retries")
+            cancelAckRetry(id: id)
+            return
+        }
         let env = makeMessageEnvelope(row: row, seq: seq)
         try? await sendEnvelope(env)
         scheduleAckRetry(for: id)
@@ -531,6 +548,7 @@ actor TransportV2 {
         watchdogTask = nil
         for (_, t) in ackTasks { t.cancel() }
         ackTasks.removeAll()
+        ackAttempts.removeAll()
         socket.close()
     }
 
@@ -548,6 +566,7 @@ actor TransportV2 {
         // self-reschedule and would keep re-sending on the dead socket.
         for (_, t) in ackTasks { t.cancel() }
         ackTasks.removeAll()
+        ackAttempts.removeAll()
         scheduleReconnect()
     }
 
