@@ -24,9 +24,14 @@ actor TransportV2 {
 
     private let store: ConversationStoreV2
     private let socket: WebSocketLike
-    private let token: String
+    private var token: String
     private let contextCoordinator: ContextCoordinatorV2?
     private(set) var state: State = .idle
+    /// Terminal auth rejection (F1). Set when the server answers auth/reconnect
+    /// with `auth_fail`; gates `connect()` and the reconnect loop so a bad or
+    /// rotated token can't drive an infinite reconnect hammer. Cleared by
+    /// `clearAuthRejection()` (paired with `updateToken` on a Settings edit).
+    private(set) var authRejected = false
     /// Scheduled retry tasks per envelope id; cancellation on ack.
     private var ackTasks: [String: Task<Void, Never>] = [:]
     /// In-flight auto-reconnect task; nil while connected or idle.
@@ -71,6 +76,11 @@ actor TransportV2 {
     /// UI tracks the whole session, not just the foreground moment.
     private(set) var onStateChange: (@Sendable (Bool) -> Void)?
     func setOnStateChange(_ cb: (@Sendable (Bool) -> Void)?) { onStateChange = cb }
+    /// Surfaced when the server rejects the token with `auth_fail` (F1). The
+    /// WebSocketClientV2 facade lifts this to an observable so the UI can show
+    /// "токен отвергнут" instead of a generic connection error.
+    private(set) var onAuthRejected: (@Sendable (String) -> Void)?
+    func setOnAuthRejected(_ cb: (@Sendable (String) -> Void)?) { onAuthRejected = cb }
 
     /// Whether the socket is currently authenticated. Read by the facade right
     /// after a foreground reconnect (best-effort; `onStateChange` is authoritative).
@@ -120,6 +130,9 @@ actor TransportV2 {
         // socket open + auth handshake on the same instance, multiplying the
         // reconnect churn. Already connecting/authed → no-op.
         if state == .connecting || state == .authed { return }
+        // F1: don't auto-retry a token the server already rejected — that's the
+        // infinite auth hammer. Recovery goes via updateToken + clearAuthRejection.
+        if authRejected { return }
         state = .connecting
         connectGeneration += 1
         let gen = connectGeneration
@@ -169,6 +182,12 @@ actor TransportV2 {
             throw error
         }
     }
+
+    /// Recovery hooks for a rejected token (F1). `updateToken` swaps the token
+    /// used by the next `connect()` (Settings edit); `clearAuthRejection` lifts
+    /// the terminal gate so the reconnect path is live again.
+    func updateToken(_ newToken: String) { token = newToken }
+    func clearAuthRejection() { authRejected = false }
 
     private func armConnectWatchdog(_ gen: Int) {
         watchdogTask?.cancel()
@@ -295,6 +314,21 @@ actor TransportV2 {
             // ack just means the host redelivers on the next reconnect, and the
             // insert is idempotent on `id`, so the card never doubles.
             try await sendStatus(.delivered, ids: [env.id])
+        case .authFail(let fail):
+            // F1: the server rejected our token. Stop the reconnect hammer (a bad
+            // or rotated token would otherwise loop forever) and surface it so the
+            // UI can say "токен отвергнут" instead of a generic connection error.
+            Log.warn(.ws, "auth_fail: \(fail.reason)")
+            authRejected = true
+            reconnectTask?.cancel(); reconnectTask = nil
+            watchdogTask?.cancel(); watchdogTask = nil
+            for (_, t) in ackTasks { t.cancel() }
+            ackTasks.removeAll()
+            ackAttempts.removeAll()
+            state = .idle
+            onStateChange?(false)
+            socket.close()
+            onAuthRejected?(fail.reason)
         default:
             break
         }

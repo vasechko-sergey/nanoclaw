@@ -60,6 +60,10 @@ final class WebSocketClientV2 {
     /// instead of digesting the whole list on each body pass.
     private(set) var messagesVersion: Int = 0
     var isConnected = false { didSet { if isConnected != oldValue { onConnectionChanged?(isConnected) } } }
+    /// Non-nil when the server rejected the token (`auth_fail`, F1). Surfaces the
+    /// reason so the UI can show "токен отвергнут" rather than implying a
+    /// transient network blip. Cleared on a successful (re)auth.
+    var authRejectReason: String? = nil
     var isTyping = false
     var commands: [BotCommand] = []
     /// Per-agent busy timestamps, keyed by `agent_id`. Busy is PER AGENT —
@@ -210,6 +214,11 @@ final class WebSocketClientV2 {
         }
         Task { @MainActor [weak self] in
             guard let self else { return }
+            // F1: sync the (possibly edited) token + lift any prior rejection so
+            // this explicit connect re-auths with the current token. The
+            // auto-reconnect loop itself stays gated by the transport's flag.
+            await self.stack.transport.updateToken(settings.bearerToken)
+            await self.stack.transport.clearAuthRejection()
             do {
                 try await self.stack.transport.connect()
                 self.isConnected = true
@@ -775,7 +784,15 @@ final class WebSocketClientV2 {
             // Track auth state so `isConnected` reflects the whole session
             // (reconnects, drops), not just the foreground moment.
             await transport.setOnStateChange { [weak self] authed in
-                Task { @MainActor [weak self] in self?.isConnected = authed }
+                Task { @MainActor [weak self] in
+                    self?.isConnected = authed
+                    if authed { self?.authRejectReason = nil }  // recovered
+                }
+            }
+            // F1: surface a token rejection so the UI can distinguish it from a
+            // transient drop (the transport has already stopped the reconnect loop).
+            await transport.setOnAuthRejected { [weak self] reason in
+                Task { @MainActor [weak self] in self?.authRejectReason = reason }
             }
         }
     }

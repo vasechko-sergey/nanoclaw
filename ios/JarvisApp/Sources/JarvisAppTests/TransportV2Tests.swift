@@ -49,6 +49,16 @@ final class TransportV2Tests: XCTestCase {
         return try! JSONEncoder().encode(env)
     }
 
+    func encodeAuthFail(reason: String) -> Data {
+        let env = V2.Envelope(
+            v: V2.protocolVersion, kind: .control, type: .authFail,
+            id: UUID().uuidString, seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .authFail(V2.AuthFail(reason: reason))
+        )
+        return try! JSONEncoder().encode(env)
+    }
+
     func encodeInbound(id: String, seq: Int, threadID: String, text: String, agentID: String? = nil) -> Data {
         let env = V2.Envelope(
             v: V2.protocolVersion, kind: .data, type: .message,
@@ -99,6 +109,24 @@ final class TransportV2Tests: XCTestCase {
         // No ack ever arrives; wait past maxAckRetries * ackTimeout.
         try await Task.sleep(nanoseconds: 400_000_000)
         XCTAssertEqual(try store.fetchById("msg-1")?.status, .failed)
+    }
+
+    func testAuthFailStopsReconnectLoop() async throws {
+        // F1: a rejected token must stop the reconnect hammer (not loop forever)
+        // and be recoverable once the token is fixed.
+        try await transport.handleIncoming(encodeAuthFail(reason: "bad token"))
+        let rejected = await transport.authRejected
+        XCTAssertTrue(rejected)
+        // connect() must no-op while rejected — no auth hammer.
+        try await transport.connect()
+        let s = await transport.state
+        XCTAssertEqual(s, .idle, "must not reconnect with a rejected token")
+        // Recovery: a fresh token + cleared rejection re-enables connect.
+        await transport.updateToken("newtok")
+        await transport.clearAuthRejection()
+        try await transport.connect()
+        let s2 = await transport.state
+        XCTAssertEqual(s2, .connecting)
     }
 
     func testReconnectResetsSendingToQueued() async throws {
