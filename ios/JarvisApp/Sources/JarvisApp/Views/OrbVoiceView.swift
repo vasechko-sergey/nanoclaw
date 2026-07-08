@@ -251,7 +251,12 @@ struct OrbVoiceView: View {
 
     private func handleNewAssistantMessage() {
         guard let msg = coordinator.ws.messages.last,
-              msg.role == .assistant else { return }
+              msg.role == .assistant,
+              // Only voice the ACTIVE agent's reply. `ws.messages` is the all-agent
+              // stream; without this filter a proactive message from another agent
+              // (e.g. Greg) landing while the voice screen is open would be spoken
+              // as the answer to what the user just asked the active agent.
+              msg.agentId == active.active.rawValue else { return }
 
         // Cache the reply text so «показать текст» can reveal it.
         if !msg.text.isEmpty { lastReplyText = msg.text }

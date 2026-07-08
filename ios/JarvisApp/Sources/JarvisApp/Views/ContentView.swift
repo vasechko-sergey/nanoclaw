@@ -83,11 +83,18 @@ struct ContentView: View {
         .onChange(of: coordinator.pendingOpenAgentChat) { _, _ in applyPendingNav() }
         .onChange(of: coordinator.pendingOpenSummaryBoard) { _, _ in applyPendingNav() }
         .onChange(of: coordinator.connectionPhase) { _, _ in applyPendingNav() }
+        // Cold-launch offline tap: the flag is set during splash, the socket never
+        // reaches .connected, and splash times out to .home — so re-apply when the
+        // app phase itself advances past splash (F29).
+        .onChange(of: appPhase) { _, _ in applyPendingNav() }
     }
 
     private func applyPendingNav() {
-        // Wait past splash on cold launch — only navigate once connected.
-        guard coordinator.connectionPhase == .connected else { return }
+        // Wait past splash on cold launch, then navigate regardless of connection.
+        // Chat history and the Сводка board are local GRDB reads that need no live
+        // socket, so an OFFLINE notification tap must still land on the right screen
+        // instead of being dropped and stranded on home (F29).
+        guard appPhase != .splash else { return }
         if let agent = coordinator.pendingOpenAgentChat {
             active.active = agent
             coordinator.pendingOpenAgentChat = nil
