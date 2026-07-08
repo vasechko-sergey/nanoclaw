@@ -39,15 +39,20 @@ final class SetLogQueueTests: XCTestCase {
         XCTAssertEqual(try q.pending().count, 0)
     }
 
-    func test_multipleWorkouts_orderedDeterministically() throws {
+    /// Two overlapping workouts (e.g. paused A + fresh B on the same day)
+    /// must drain in the user's chronological order — insertion order — not
+    /// a lexical sort by workout_id. Otherwise Payne sees the same sets
+    /// arriving out of the order the user actually logged them, which
+    /// breaks per-set deviation coaching that depends on set_ref indices.
+    func test_multipleWorkouts_orderedByInsertion() throws {
         let q = try makeQueue()
         try q.enqueue(sample(workout: "w2", setIdx: 0))
         try q.enqueue(sample(workout: "w1", setIdx: 1))
         try q.enqueue(sample(workout: "w1", setIdx: 0))
         let pending = try q.pending()
-        // Ordered by workout_id ASC, set_idx ASC.
+        // Insertion order (rowid ASC) — chronological across workouts.
         XCTAssertEqual(pending.map { "\($0.event.workoutId):\($0.event.setIdx)" },
-                       ["w1:0", "w1:1", "w2:0"])
+                       ["w2:0", "w1:1", "w1:0"])
     }
 
     func test_pruneDelivered_removesOldDelivered_keepsPending() throws {

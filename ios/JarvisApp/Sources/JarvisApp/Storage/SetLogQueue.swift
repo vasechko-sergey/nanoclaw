@@ -22,8 +22,11 @@ struct PendingSetLog: Equatable {
 
 /// Durable, ordered queue of set_log events backed by GRDB. The transport
 /// layer drains `pending()` and calls `markDelivered(_:)` after the server
-/// ack lands. Ordering by `(workout_id ASC, set_idx ASC, rowid ASC)` so
-/// reconnect re-sends preserve in-workout order.
+/// ack lands. Ordered by `rowid ASC` alone — insertion order = chronological
+/// order in a single-writer setup, so two overlapping workouts (paused A +
+/// start B) drain in the order the user actually logged them. Sorting by
+/// `workout_id` first would lexically interleave the two — Payne would see
+/// them out of order.
 final class SetLogQueue {
     private let writer: any DatabaseWriter
 
@@ -61,7 +64,7 @@ final class SetLogQueue {
                        reps, weight, reps_in_reserve, ts_iso, deviation_json
                 FROM set_log_queue
                 WHERE delivered = 0
-                ORDER BY workout_id ASC, set_idx ASC, rowid ASC
+                ORDER BY rowid ASC
             """).map { row in
                 let devJson: String? = row["deviation_json"]
                 let dev: WorkoutRunnerLogic.SetDeviation? = devJson
