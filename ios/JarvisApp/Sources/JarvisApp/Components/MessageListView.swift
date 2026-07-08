@@ -13,6 +13,10 @@ struct MessageListView: UIViewRepresentable {
     let messages: [ChatMessage]
     let agentId: String
     let isBusy: Bool
+    /// O(1) change token from `WebSocketClientV2.messagesVersion`. `update()`
+    /// fast-path early-returns when this (plus agent/busy/resume) is unchanged,
+    /// so the per-body-pass snapshot rebuild only runs when data actually moved.
+    var messagesVersion: Int = 0
     var onImageTap: (UIImage, String?) -> Void
     var onFeedback: (String, Bool) -> Void
     var onActionTap: (String, String, String) -> Void
@@ -88,6 +92,10 @@ struct MessageListView: UIViewRepresentable {
         /// is the only way to make the workout card's CTA re-render when the
         /// active workout starts or finishes/aborts.
         private var lastResumeMessageId: String?
+        /// Fast-path guard state for `update()` — last-applied version/busy.
+        /// `lastVersion = -1` forces the first pass to run (version starts at 0).
+        private var lastVersion: Int = -1
+        private var lastIsBusy = false
 
         init(_ parent: MessageListView) { self.parent = parent }
 
@@ -101,25 +109,26 @@ struct MessageListView: UIViewRepresentable {
             // configuration … which is expensive" console warning). Splitting by kind
             // means each cell only ever hosts one content-view type → in-place update.
             //
-            // The collection view is y-flipped (inverted list); each hosted view is
-            // un-flipped with a scaleEffect — done inside the hosted view so it
-            // survives UICollectionView re-applying layout attributes mid-scroll.
+            // The collection view is y-flipped (inverted list); each cell's
+            // contentView is counter-flipped in `prepareCell` (UIKit layer, not a
+            // SwiftUI scaleEffect) so hosted content renders upright without baking a
+            // −1 transform into the context-menu preview snapshot. See `prepareCell`.
             let dateReg = UICollectionView.CellRegistration<UICollectionViewListCell, Date> { cell, _, day in
-                Self.clearBackground(cell)
+                Self.prepareCell(cell)
                 cell.contentConfiguration = UIHostingConfiguration {
-                    DateSeparator(date: day).scaleEffect(x: 1, y: -1)
+                    DateSeparator(date: day)
                 }
                 .margins(.all, 0)
             }
             let thinkingReg = UICollectionView.CellRegistration<UICollectionViewListCell, Int> { cell, _, _ in
-                Self.clearBackground(cell)
+                Self.prepareCell(cell)
                 cell.contentConfiguration = UIHostingConfiguration {
-                    ThinkingRow(detail: nil).scaleEffect(x: 1, y: -1)
+                    ThinkingRow(detail: nil)
                 }
                 .margins(.all, 0)
             }
             let messageReg = UICollectionView.CellRegistration<UICollectionViewListCell, String> { [weak self] cell, _, id in
-                Self.clearBackground(cell)
+                Self.prepareCell(cell)
                 guard let self, let msg = self.messagesById[id] else {
                     cell.contentConfiguration = nil
                     return
@@ -138,7 +147,6 @@ struct MessageListView: UIViewRepresentable {
                         audioPlayer: self.parent.audioPlayer,
                         resumeMessageId: self.parent.resumeMessageId
                     )
-                    .scaleEffect(x: 1, y: -1)
                 }
                 .margins(.all, 0)
             }
@@ -154,23 +162,52 @@ struct MessageListView: UIViewRepresentable {
             }
         }
 
-        /// Transparent cell background (the chat surface paints its own).
-        private static func clearBackground(_ cell: UICollectionViewListCell) {
+        /// Transparent cell background (the chat surface paints its own) + the
+        /// inverted-list counter-flip. The flip lives HERE at the UIKit cell layer,
+        /// NOT as a SwiftUI `.scaleEffect` inside the hosted content: a scaleEffect
+        /// is an ancestor of each row's `.contextMenu`, so the menu's lift/preview
+        /// snapshot reproduced the −1 flip with no outer transform to cancel it →
+        /// the context-menu preview rendered upside down on long-press.
+        /// `contentView.transform` is outside the SwiftUI snapshot, so the preview
+        /// stays upright; |scaleY|=1 leaves self-sizing unaffected.
+        private static func prepareCell(_ cell: UICollectionViewListCell) {
             var bg = UIBackgroundConfiguration.listCell()
             bg.backgroundColor = .clear
             cell.backgroundConfiguration = bg
+            cell.contentView.transform = CGAffineTransform(scaleX: 1, y: -1)
         }
 
         func update(parent: MessageListView, collectionView cv: UICollectionView) {
             self.parent = parent
+
+            let agentChanged = (lastAgentId != parent.agentId)
+            let tokenChanged = (parent.scrollToBottomToken != lastToken)
+            let resumeChanged = (lastResumeMessageId != parent.resumeMessageId)
+            let versionChanged = (lastVersion != parent.messagesVersion)
+            let busyChanged = (lastIsBusy != parent.isBusy)
+
+            // SwiftUI re-runs `updateUIView` on EVERY ChatView body pass (this
+            // struct holds closures → not Equatable → can't be diffed away), but the
+            // data only moves when version/agent/busy/resume changes. Skip the O(n)
+            // dictionary + snapshot rebuild + diff when nothing material changed. An
+            // explicit FAB scroll (token) shares no version bump → honor it here.
+            if !versionChanged && !agentChanged && !resumeChanged && !busyChanged {
+                if tokenChanged {
+                    lastToken = parent.scrollToBottomToken
+                    wasAtBottom = nearBottom(cv)
+                    pinToNewest(cv, animated: true)
+                }
+                return
+            }
+            lastVersion = parent.messagesVersion
+            lastIsBusy = parent.isBusy
+
             self.messagesById = Dictionary(parent.messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             // Inverted list → newest first (index 0 = visual bottom). Reversing the
             // oldest-first builder output keeps date separators correctly placed
             // (a separator ends up just above the first message of its day on screen).
             let items = Array(buildChatItems(parent.messages, isBusy: parent.isBusy).reversed())
-            let agentChanged = (lastAgentId != parent.agentId)
             if agentChanged { lastAgentId = parent.agentId }
-            let tokenChanged = (parent.scrollToBottomToken != lastToken)
             if tokenChanged { lastToken = parent.scrollToBottomToken }
             wasAtBottom = nearBottom(cv)
             let stick = wasAtBottom
@@ -182,7 +219,6 @@ struct MessageListView: UIViewRepresentable {
             // `isResuming`. Explicitly `reconfigureItems` on both the OLD
             // and NEW ids so `MessageRow` re-runs and `WorkoutPlanRow` picks
             // up the new `isResuming` flag.
-            let resumeChanged = (lastResumeMessageId != parent.resumeMessageId)
             let oldResumeId = lastResumeMessageId
             if resumeChanged { lastResumeMessageId = parent.resumeMessageId }
 

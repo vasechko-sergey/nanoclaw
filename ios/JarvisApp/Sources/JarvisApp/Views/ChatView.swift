@@ -362,6 +362,7 @@ struct ChatView: View {
                             messages: visibleMessages,
                             agentId: active.active.rawValue,
                             isBusy: activeBusy,
+                            messagesVersion: ws.messagesVersion,
                             onImageTap: { thumb, sha in
                                 fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
                             },
@@ -426,7 +427,7 @@ struct ChatView: View {
 
             // MARK: – Input (always visible — empty state shows orb+satellites above)
             UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
-                            commands: ws.commands, isDisabled: !ws.isConnected,
+                            commands: ws.commands, isDisabled: !ws.stackReady,
                             enterToSend: settings.enterToSend,
                             placeholder: "Спросить \(active.active.displayName)...",
                             autoStartVoice: $autoStartVoice,
@@ -639,6 +640,13 @@ struct ChatView: View {
             // Close the keyboard on switch so the shared input bar's focus state
             // can't leave the next agent's chat rendered keyboard-open.
             dismissKeyboard()
+            // Clear the composer on switch — `inputText`/`drafts`/`inputViaVoice`
+            // are one shared state across agents, so a half-typed draft or staged
+            // attachment for the previous agent would otherwise surface in the next
+            // agent's input and could be sent to the wrong agent.
+            inputText = ""
+            drafts = []
+            inputViaVoice = false
             recomputeVisibleMessages()
             loadActiveWorkoutRecord()
         }
