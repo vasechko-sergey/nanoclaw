@@ -81,30 +81,20 @@ struct ChatView: View {
 
     private var ws: WebSocketClientV2 { coordinator.ws }
 
-    /// Only messages that should render in the chat (excludes invisible technical messages).
-    /// T10: also filtered by the currently-active agent chip. Rows missing
-    /// `agentId` (pre-T7 storage) are treated as legacy `jarvis` traffic.
-    /// Comparison goes through `AgentIdentity(rawValue:)` so folder-name
-    /// aliases (e.g. `health-analyzer` → `.greg`) match correctly.
-    ///
-    /// Cached in `@State` and recomputed only when `ws.messages` or the active
-    /// agent changes (see `recomputeVisibleMessages()`), rather than on every
-    /// `body` evaluation — the filter ran `AgentIdentity(rawValue:)` over the
-    /// whole message array and was referenced many times per render.
-    @State private var visibleMessages: [ChatMessage] = []
+    /// Cache of the active agent's visible messages (excludes technical rows;
+    /// filtered by the active chip). Recomputed only on a message-set or agent
+    /// change rather than every `body` pass — the filter is O(n) and the result
+    /// is read ~7× per render. `visibleCache.version` (NOT `ws.messagesVersion`)
+    /// is the change-token handed to `MessageListView`; see `VisibleMessageCache`
+    /// for why that distinction fixes agent switching.
+    @State private var visibleCache = VisibleMessageCache()
 
-    /// Recompute the cached visible-message list. Filtering semantics are
-    /// identical to the previous computed property.
-    private func computeVisibleMessages() -> [ChatMessage] {
-        return ws.messages.filter { msg in
-            guard msg.isVisible else { return false }
-            let slug = msg.agentId ?? "jarvis"
-            return AgentIdentity(rawValue: slug) == active.active
-        }
-    }
+    /// The active agent's visible messages. Thin bridge over `visibleCache` so the
+    /// many read sites stay unchanged.
+    private var visibleMessages: [ChatMessage] { visibleCache.messages }
 
     private func recomputeVisibleMessages() {
-        visibleMessages = computeVisibleMessages()
+        visibleCache.recompute(from: ws.messages, agent: active.active)
     }
 
     /// F30 — mark the active agent's inbound messages read, but only while its
@@ -115,11 +105,6 @@ struct ChatView: View {
         guard isChatVisible else { return }
         ws.markAgentRead(agentId: active.active.rawValue)
     }
-
-    /// Lightweight `Equatable` digest of the full message set used to detect
-    /// when `visibleMessages` must be rebuilt. Changes on append, reorder, and
-    /// in-place mutation (delivery status / text). Avoids requiring
-    /// `ChatMessage: Equatable` (its `Content` holds `UIImage`/closures).
 
     /// Busy state of the CURRENTLY-ACTIVE agent. Busy is per-agent, so sending
     /// to one agent no longer shows "thinking" in every other agent's chat.
@@ -385,7 +370,7 @@ struct ChatView: View {
                             messages: visibleMessages,
                             agentId: active.active.rawValue,
                             isBusy: activeBusy,
-                            messagesVersion: ws.messagesVersion,
+                            messagesVersion: visibleCache.version,
                             onImageTap: { thumb, sha in
                                 fullScreenImage = FullScreenImagePresentation(sha: sha, fallback: thumb)
                             },

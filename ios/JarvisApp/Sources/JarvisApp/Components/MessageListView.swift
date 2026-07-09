@@ -110,24 +110,25 @@ struct MessageListView: UIViewRepresentable {
             // means each cell only ever hosts one content-view type → in-place update.
             //
             // The collection view is y-flipped (inverted list); each cell's
-            // contentView is counter-flipped in `prepareCell` (UIKit layer, not a
-            // SwiftUI scaleEffect) so hosted content renders upright without baking a
-            // −1 transform into the context-menu preview snapshot. See `prepareCell`.
-            let dateReg = UICollectionView.CellRegistration<UICollectionViewListCell, Date> { cell, _, day in
+            // contentView is counter-flipped in `InvertedListCell.layoutSubviews`
+            // (UIKit layer, not a SwiftUI scaleEffect) so hosted content renders
+            // upright without baking a −1 transform into the context-menu preview
+            // snapshot. See `InvertedListCell`.
+            let dateReg = UICollectionView.CellRegistration<InvertedListCell, Date> { cell, _, day in
                 Self.prepareCell(cell)
                 cell.contentConfiguration = UIHostingConfiguration {
                     DateSeparator(date: day)
                 }
                 .margins(.all, 0)
             }
-            let thinkingReg = UICollectionView.CellRegistration<UICollectionViewListCell, Int> { cell, _, _ in
+            let thinkingReg = UICollectionView.CellRegistration<InvertedListCell, Int> { cell, _, _ in
                 Self.prepareCell(cell)
                 cell.contentConfiguration = UIHostingConfiguration {
                     ThinkingRow(detail: nil)
                 }
                 .margins(.all, 0)
             }
-            let messageReg = UICollectionView.CellRegistration<UICollectionViewListCell, String> { [weak self] cell, _, id in
+            let messageReg = UICollectionView.CellRegistration<InvertedListCell, String> { [weak self] cell, _, id in
                 Self.prepareCell(cell)
                 guard let self, let msg = self.messagesById[id] else {
                     cell.contentConfiguration = nil
@@ -162,19 +163,18 @@ struct MessageListView: UIViewRepresentable {
             }
         }
 
-        /// Transparent cell background (the chat surface paints its own) + the
-        /// inverted-list counter-flip. The flip lives HERE at the UIKit cell layer,
-        /// NOT as a SwiftUI `.scaleEffect` inside the hosted content: a scaleEffect
-        /// is an ancestor of each row's `.contextMenu`, so the menu's lift/preview
-        /// snapshot reproduced the −1 flip with no outer transform to cancel it →
-        /// the context-menu preview rendered upside down on long-press.
-        /// `contentView.transform` is outside the SwiftUI snapshot, so the preview
-        /// stays upright; |scaleY|=1 leaves self-sizing unaffected.
+        /// Transparent cell background (the chat surface paints its own). The
+        /// inverted-list counter-flip is NOT set here: a `contentView.transform`
+        /// assigned at registration time is reset to identity when
+        /// `UIHostingConfiguration` installs its hosting view on first layout — so
+        /// content rendered upside-down until a scroll recycled the cell. The flip
+        /// now lives in `InvertedListCell.layoutSubviews`, which re-asserts it after
+        /// every layout (and still keeps it off the SwiftUI layer so the
+        /// context-menu preview stays upright — F40). See `InvertedListCell`.
         private static func prepareCell(_ cell: UICollectionViewListCell) {
             var bg = UIBackgroundConfiguration.listCell()
             bg.backgroundColor = .clear
             cell.backgroundConfiguration = bg
-            cell.contentView.transform = CGAffineTransform(scaleX: 1, y: -1)
         }
 
         func update(parent: MessageListView, collectionView cv: UICollectionView) {
