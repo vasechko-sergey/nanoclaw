@@ -611,42 +611,7 @@ final class ConversationStoreV2 {
         }
     }
 
-    // MARK: - Single-timeline observation + retention
-
-    /// Live view of the last `limit` messages for a specific agent, ordered
-    /// ascending by `ts`.
-    func observeMessages(agentId: String = "jarvis", limit: Int = 500)
-        -> ValueObservation<ValueReducers.Fetch<[StoredMessage]>>
-    {
-        ValueObservation.tracking { db -> [StoredMessage] in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT * FROM messages
-                WHERE agent_id=?
-                ORDER BY COALESCE(server_ts, ts) DESC, rowid DESC
-                LIMIT ?
-            """, arguments: [agentId, limit])
-            return rows.reversed().map { row in
-                StoredMessage(
-                    id: row["id"],
-                    dir: MessageDir(rawValue: row["dir"]) ?? .out,
-                    seq: row["seq"],
-                    text: row["text"],
-                    attachmentsJSON: row["attachments_json"],
-                    contextJSON: row["context_json"],
-                    status: MessageStatus(rawValue: row["status"]) ?? .queued,
-                    failureReason: row["failure_reason"],
-                    ts: row["ts"],
-                    serverTS: row["server_ts"],
-                    createdAt: row["created_at"],
-                    agentId: row["agent_id"] ?? "jarvis",
-                    actionsJSON: row["actions_json"],
-                    actionChoice: row["action_choice"],
-                    workoutPlanJSON: row["workout_plan_json"],
-                    edited: row["edited"] ?? false
-                )
-            }
-        }
-    }
+    // MARK: - Message observation + retention
 
     /// Observe each agent's own newest `perAgent` messages, unioned across all
     /// agents into one stream (the chat view filters by the active chip). The
