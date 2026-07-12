@@ -59,6 +59,31 @@ describe('WorkoutBridge', () => {
     expect(writes[0].trigger).toBe(0);
   });
 
+  it('wakes on a set_log that tripped a deviation (trigger 1 — enables mid-set coaching)', () => {
+    bridge.handleInbound('sess-payne', {
+      type: 'set_log',
+      payload: {
+        workout_id: 'w1',
+        exercise_slug: 'bench-press',
+        set_idx: 2,
+        reps: 8,
+        weight: 100,
+        reps_in_reserve: 2,
+        ts: 'now',
+        deviations: [{ kind: 'weight_over', magnitude: 0.25, target: { reps_min: 8, reps_max: 8, rir: 2 } }],
+      },
+    } as any);
+    expect(writes[0].trigger).toBe(1);
+  });
+
+  it('set_log with an empty deviations array still accumulates (trigger 0)', () => {
+    bridge.handleInbound('sess-payne', {
+      type: 'set_log',
+      payload: { workout_id: 'w1', set_idx: 0, deviations: [] },
+    } as any);
+    expect(writes[0].trigger).toBe(0);
+  });
+
   it('stamps exercise_done as accumulate context (trigger 0)', () => {
     bridge.handleInbound('sess-payne', {
       type: 'exercise_done',

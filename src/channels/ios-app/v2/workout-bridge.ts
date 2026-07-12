@@ -28,12 +28,16 @@ const IOS_TO_AGENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Per-set telemetry the user generates rapidly during a workout. These
+ * Per-set telemetry the user generates rapidly during a workout. On-plan sets
  * accumulate as silent context (trigger=0, don't wake the agent per-set) and
  * ride along to the agent on the next waking event — in practice the
  * `workout_complete`, whose `full_session_json` is the authoritative record.
  * This keeps Payne from spinning up one agent turn per logged set. Every other
  * inbound type (workout_complete/abort, image_request, swap, intro, …) wakes.
+ *
+ * Exception (see `wakeTrigger`): a `set_log` carrying a deviation DOES wake —
+ * that's the only way Payne can coach a miss mid-workout (`coach_message` +
+ * `set_ref`) instead of only summarising it at the end.
  */
 const ACCUMULATE_EVENTS: ReadonlySet<string> = new Set(['set_log', 'exercise_done']);
 
@@ -76,8 +80,29 @@ export class WorkoutBridge {
       session_id,
       text: body,
       tag: 'workout',
-      trigger: ACCUMULATE_EVENTS.has(env.type) ? 0 : 1,
+      trigger: this.wakeTrigger(env),
     });
+  }
+
+  /**
+   * 1 = wake Payne now, 0 = accumulate silently for the next waking turn.
+   *
+   * Non-accumulate types always wake. Of the accumulate types, a `set_log`
+   * that tripped a deviation is the exception: Payne must get a turn while the
+   * miss is still actionable (the user is mid-workout, about to do the next
+   * set), otherwise per-set coaching — a `coach_message` with `set_ref` that
+   * the iOS runner anchors on the set — is impossible and deviations only ever
+   * surface in the end-of-session summary. On-plan sets (no deviations) still
+   * accumulate, so we don't spin up an agent turn per logged set. Payne's own
+   * "default to silence" then decides whether the deviation is worth a word.
+   */
+  private wakeTrigger(env: AnyEnvelope): 0 | 1 {
+    if (!ACCUMULATE_EVENTS.has(env.type)) return 1;
+    if (env.type === 'set_log') {
+      const devs = (env as { payload?: { deviations?: unknown } }).payload?.deviations;
+      if (Array.isArray(devs) && devs.length > 0) return 1;
+    }
+    return 0;
   }
 
   /**
