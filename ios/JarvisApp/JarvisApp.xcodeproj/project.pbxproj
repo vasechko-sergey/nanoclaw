@@ -46,6 +46,7 @@
 		3594338BB7434135C1D4DB23 /* CommandList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D143C002B57588022A97B39C /* CommandList.swift */; };
 		365191E0FC23319F9CA2C898 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 31E0AB4EF75BC659349C8E0A /* GRDB */; };
 		366B78DC7934E3F5CBD47EE6 /* InvertedListCellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 163C1609A4876F381D6F3AD4 /* InvertedListCellTests.swift */; };
+		38FB32ED3A233FBA7B07BB63 /* DeviationHintCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E21BB7F732A8BE1F39F77E /* DeviationHintCard.swift */; };
 		3AB22C6DCC7F0626D8FA50DE /* VisibleMessageCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0019FAF9AAB5DF5AB58588E /* VisibleMessageCacheTests.swift */; };
 		3AB8641347ABF4C946F55CD5 /* WorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F236228C8C83CFFE21712C2B /* WorkoutPreviewView.swift */; };
 		3B780D772FC0C9C43796F3F8 /* JarvisUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3F9C23834F32A5E7F85B01 /* JarvisUITests.swift */; };
@@ -69,6 +70,7 @@
 		4C81E915D4CA0441EEA698DF /* HealthHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC04EA76CC0F89FF14E7849 /* HealthHistory.swift */; };
 		4E3C2BC7DEE98EE4B972F929 /* StatusV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08ADF5C053B4AD89D3CD44E /* StatusV2.swift */; };
 		4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114A888276D0E083FC387EB /* ContextBuilderTests.swift */; };
+		501D267AF3286A98E4EDE610 /* CoachHintE2ERenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82DA77B4FEC76B11CA4C7 /* CoachHintE2ERenderTests.swift */; };
 		50C5C4BB9518C430E4CC3188 /* AgentIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38E1835A732AD75F82D9CEF /* AgentIdentity.swift */; };
 		50D9DC14FB7F78E63A7940EB /* TransportSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB850E36A425CAB44537C68A /* TransportSummaryTests.swift */; };
 		524734853743667AD66E9392 /* NotificationGatingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95313AA88BC90EB29D9840E9 /* NotificationGatingTests.swift */; };
@@ -159,6 +161,7 @@
 		C209817F4DB4B298ACFD7237 /* RestTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B288DE4478FD534ADB9C861 /* RestTimer.swift */; };
 		C26C3D044EC984039953DA2B /* WatchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 554BF5C37C33D1542F61065C /* WatchTheme.swift */; };
 		C30B04EF089F683141E1AFA9 /* AttachmentMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903F8E4E445A8A4777CE3812 /* AttachmentMigration.swift */; };
+		C426E6082C7F9DFC67BC02EB /* CoachHintRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC124EED9508E57C8C25B398 /* CoachHintRenderTests.swift */; };
 		C8704F78ADC9324A854BD1C6 /* AppForegroundState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CDC923153512922F4DA91F /* AppForegroundState.swift */; };
 		C89312E75CDC997C143CD8CF /* SummaryEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A05B976C9CA7CCBCC693097 /* SummaryEntryView.swift */; };
 		C932C233002FF9A896AB67EB /* AppSettingsSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 072D8335D3E088E1E73C206C /* AppSettingsSummaryTests.swift */; };
@@ -230,6 +233,7 @@
 		075F6858BA226D105AA47442 /* RecommendationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationPanel.swift; sourceTree = "<group>"; };
 		0878BB56B60BF7ED18D7A4E3 /* OrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbView.swift; sourceTree = "<group>"; };
 		0A05B976C9CA7CCBCC693097 /* SummaryEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEntryView.swift; sourceTree = "<group>"; };
+		0DD82DA77B4FEC76B11CA4C7 /* CoachHintE2ERenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachHintE2ERenderTests.swift; sourceTree = "<group>"; };
 		106E885F001643496792F9ED /* ControlEventOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlEventOutboxTests.swift; sourceTree = "<group>"; };
 		146E88348A92657125F1592E /* ChatImageMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImageMappingTests.swift; sourceTree = "<group>"; };
 		163C1609A4876F381D6F3AD4 /* InvertedListCellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvertedListCellTests.swift; sourceTree = "<group>"; };
@@ -350,6 +354,7 @@
 		A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateModelTests.swift; sourceTree = "<group>"; };
 		AA42D336E93B35827195BBBB /* WorkoutModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutModelsTests.swift; sourceTree = "<group>"; };
 		ABDA888C65A72DD99A311CC2 /* SuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionEngine.swift; sourceTree = "<group>"; };
+		AC124EED9508E57C8C25B398 /* CoachHintRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachHintRenderTests.swift; sourceTree = "<group>"; };
 		AD071F87D29FB56097E001A0 /* OrbVoiceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbVoiceView.swift; sourceTree = "<group>"; };
 		ADEAA45ED94FF8B7242FDE29 /* HeaderStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderStatusDot.swift; sourceTree = "<group>"; };
 		B08ADF5C053B4AD89D3CD44E /* StatusV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusV2.swift; sourceTree = "<group>"; };
@@ -379,6 +384,7 @@
 		D143C002B57588022A97B39C /* CommandList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandList.swift; sourceTree = "<group>"; };
 		D159BB33D62E136CB6B980D0 /* NotificationCategories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCategories.swift; sourceTree = "<group>"; };
 		D4C75412A22FD477079ABB55 /* JarvisWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JarvisWatchApp.swift; sourceTree = "<group>"; };
+		D4E21BB7F732A8BE1F39F77E /* DeviationHintCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviationHintCard.swift; sourceTree = "<group>"; };
 		D4F5269F585666FD6D8F3D6F /* ChatViewAgentFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewAgentFilterTests.swift; sourceTree = "<group>"; };
 		D6B42F42A5AB27AFC0DD5943 /* UnifiedInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedInputBar.swift; sourceTree = "<group>"; };
 		D79D4272E5619C20A18D50D9 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
@@ -571,6 +577,7 @@
 				FC430323408B66D7F47AA5B8 /* ChatImageStoreTests.swift */,
 				6FD66A2437F0B2BEBD7D10FA /* ChatListItemTests.swift */,
 				D4F5269F585666FD6D8F3D6F /* ChatViewAgentFilterTests.swift */,
+				AC124EED9508E57C8C25B398 /* CoachHintRenderTests.swift */,
 				5114A888276D0E083FC387EB /* ContextBuilderTests.swift */,
 				106E885F001643496792F9ED /* ControlEventOutboxTests.swift */,
 				8C9EB1688DB74A7280A71824 /* ConversationStoreV2AgentTests.swift */,
@@ -644,6 +651,7 @@
 			isa = PBXGroup;
 			children = (
 				B0B7039EF3417BAB2AFCDA29 /* AnimatedExerciseImage.swift */,
+				D4E21BB7F732A8BE1F39F77E /* DeviationHintCard.swift */,
 				1DDE0559A1153247D9E152ED /* DurationCard.swift */,
 				5A07127DD756653FDA997A10 /* ExerciseBannerView.swift */,
 				F07A48DFDFE814C899E5E434 /* ExerciseCardView.swift */,
@@ -674,6 +682,7 @@
 		A91EE1529D439338A641F961 /* E2E */ = {
 			isa = PBXGroup;
 			children = (
+				0DD82DA77B4FEC76B11CA4C7 /* CoachHintE2ERenderTests.swift */,
 				C3E5E42CC2C921F15C37BEC3 /* E2EHarness.swift */,
 				2AD0E7B1A84B042B9178B51D /* HappyPathE2ETests.swift */,
 				2679503D77A538E81CAFED55 /* PendingScenariosE2ETests.swift */,
@@ -946,6 +955,7 @@
 				73EDCA10076C2AB143995340 /* ControlEventQueue.swift in Sources */,
 				3F93C312099CA744A20CADA7 /* ConversationStoreV2.swift in Sources */,
 				BBB120F4935F0F45BA0CB826 /* DeliveryChecks.swift in Sources */,
+				38FB32ED3A233FBA7B07BB63 /* DeviationHintCard.swift in Sources */,
 				111316843C98101D95B9912B /* DraftAttachment.swift in Sources */,
 				F17554DFDD970DD40991CF4B /* DurationCard.swift in Sources */,
 				87AD40BFC10B1D04342B5E9D /* EmojiPickerView.swift in Sources */,
@@ -1043,6 +1053,8 @@
 				617682909F57CF4FA5FBFC89 /* ChatImageStoreTests.swift in Sources */,
 				B24B74F2D86B5F7D20354B2F /* ChatListItemTests.swift in Sources */,
 				F60AEA2782AA92F7604C222F /* ChatViewAgentFilterTests.swift in Sources */,
+				501D267AF3286A98E4EDE610 /* CoachHintE2ERenderTests.swift in Sources */,
+				C426E6082C7F9DFC67BC02EB /* CoachHintRenderTests.swift in Sources */,
 				4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */,
 				4BAD97B64CF0342743440CB2 /* ControlEventOutboxTests.swift in Sources */,
 				DEFAB6DF33649249BC9C24E7 /* ConversationStoreV2AgentTests.swift in Sources */,
@@ -1155,7 +1167,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 98;
+				CURRENT_PROJECT_VERSION = 99;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1164,7 +1176,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.28.1;
+				MARKETING_VERSION = 1.29.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;
@@ -1401,7 +1413,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 98;
+				CURRENT_PROJECT_VERSION = 99;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1410,7 +1422,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.28.1;
+				MARKETING_VERSION = 1.29.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;

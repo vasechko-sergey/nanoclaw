@@ -379,4 +379,39 @@ final class WorkoutCoordinatorTests: XCTestCase {
         let session = restored.complete(sessionFeeling: 3, sessionFeelingLabel: "ok")
         XCTAssertEqual(session.startedAt, originalStart)
     }
+
+    // MARK: - activeDeviationHint (prominent on-screen deviation hint)
+
+    func test_attachCoachHint_publishesActiveDeviationHint() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: try makeQueue())
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2)   // set 0 logged, now on set 1
+        XCTAssertNil(coord.activeDeviationHint)
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "держи паузу внизу")
+        XCTAssertEqual(coord.activeDeviationHint, "держи паузу внизу")
+    }
+
+    func test_logSet_clearsActiveDeviationHint() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: try makeQueue())
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2)
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "держи паузу")
+        XCTAssertNotNil(coord.activeDeviationHint)
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2)   // logging the next set clears it
+        XCTAssertNil(coord.activeDeviationHint)
+    }
+
+    func test_dismissDeviationHint_clears() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: try makeQueue())
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2)
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "x")
+        coord.dismissDeviationHint()
+        XCTAssertNil(coord.activeDeviationHint)
+    }
+
+    func test_finishExercise_clearsActiveDeviationHint() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: try makeQueue())
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2)
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "x")
+        coord.finishExercise(comment: nil)
+        XCTAssertNil(coord.activeDeviationHint)
+    }
 }

@@ -14,7 +14,7 @@ const port = Number(process.env.E2E_PORT ?? 8801);
 const scenario = (process.env.E2E_SCENARIO ?? 'happy') as Scenario;
 const validToken = process.env.E2E_TOKEN ?? 'test-token';
 
-type Scenario = 'happy' | 'offline_queue' | 'context' | 'reconnect' | 'restart';
+type Scenario = 'happy' | 'offline_queue' | 'context' | 'reconnect' | 'restart' | 'workout';
 
 const wss = new WebSocketServer({ port });
 
@@ -148,7 +148,27 @@ async function runScenario(state: ConnState) {
         pushInbound(state, 'thr-1', `restart-msg-${i}`);
       }
       return;
+    case 'workout':
+      // Push two Payne coach_message envelopes so the iOS render harness can
+      // paint both surfaces live off a real inbound frame (not hand-seeded):
+      //   1. no set_ref  → persistent coach line inside the ПЕЙН panel (Path A)
+      //   2. with set_ref → deviation reply anchored on a logged set chip (Path B)
+      await sleep(150);
+      pushCoach(state, 'Держи локти под 45°, не разводи в стороны — плечо целее будет. Темп 2-0-1, без отбива от груди.');
+      await sleep(100);
+      pushCoach(state, 'Не добил до восьми — вес норм, добавь паузу внизу.',
+                { exercise_slug: 'bench-press', set_idx: 0 });
+      return;
   }
+}
+
+function pushCoach(state: ConnState, text: string, setRef?: { exercise_slug: string; set_idx: number }) {
+  sendEnvelope(state, {
+    v: 2, kind: 'control', type: 'coach_message',
+    id: randomUUID(), seq: nextOutboundSeq(state),
+    ts: new Date().toISOString(),
+    payload: { text, workout_id: 'w1', ...(setRef ? { set_ref: setRef } : {}) },
+  });
 }
 
 function sendEnvelope(state: ConnState, env: unknown) {

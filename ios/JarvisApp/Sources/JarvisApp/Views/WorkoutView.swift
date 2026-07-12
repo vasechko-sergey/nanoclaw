@@ -1,5 +1,8 @@
 import SwiftUI
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Live workout runner. Flexible ~50/50 split: large image hero on top,
 /// controls below (logged chips + focus set card + icon toolbar). Rest timer
@@ -78,7 +81,17 @@ struct WorkoutView: View {
         .onAppear { previewIdx = coordinator.currentExerciseIdx; onAppearPrefetch() }
         .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { restTimer.refresh() }
+            if phase == .active {
+                restTimer.refresh()
+                // Blend 1+3: the phone was likely lying down during rest, so the
+                // card alone can go unseen. Re-announce an unread deviation hint
+                // with a haptic the moment the user picks the phone back up.
+                if coordinator.activeDeviationHint != nil {
+                    #if canImport(UIKit)
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    #endif
+                }
+            }
         }
         // Coach message WITHOUT set_ref → 4-sec top banner. With the runner open,
         // this is the ONLY surface for coach text that isn't anchored on a set
@@ -119,9 +132,16 @@ struct WorkoutView: View {
                                 logged: coordinator.loggedForCurrentExercise,
                                 currentSetIdx: coordinator.currentSetIdx,
                                 targetSets: coordinator.currentExercise.targetSets)
+                            // Deviation hint (coach_message WITH set_ref) lands here,
+                            // right above the input, so it's read before the next set.
+                            if let hint = coordinator.activeDeviationHint {
+                                DeviationHintCard(text: hint) { coordinator.dismissDeviationHint() }
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
                             FocusSetCard(coordinator: coordinator, restTimer: restTimer)
                         }
                         .padding(.horizontal, 16).padding(.top, 10)
+                        .animation(.easeOut(duration: 0.25), value: coordinator.activeDeviationHint)
                     }
                 } else {
                     startExerciseButton

@@ -19,6 +19,14 @@ final class WorkoutCoordinator: ObservableObject {
     @Published private(set) var logged: [LoggedExercise]
     @Published private(set) var lastRepsInReserve: Int = -1
     @Published private(set) var isFinished: Bool = false
+    /// Payne's latest *deviation* reply (a `coach_message` WITH `set_ref`),
+    /// surfaced as a prominent card above the set input — not just the set chip.
+    /// Payne only sends these on a strong deviation, so they warrant screen real
+    /// estate: you need to read it BEFORE doing the next set, not discover a
+    /// badge on a scrolled-away chip. Cleared when the next set is logged, the
+    /// exercise is finished, or the user dismisses it. The chip hint (history)
+    /// persists independently on the logged set.
+    @Published private(set) var activeDeviationHint: String? = nil
 
     private let queue: SetLogQueue
     private let startedAt: Date
@@ -86,6 +94,9 @@ final class WorkoutCoordinator: ObservableObject {
     /// Log one set; enqueue for delivery; advance set index.
     func logSet(reps: Int, weight: Double, repsInReserve: Int, ts: Date = Date()) {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }
+        // Logging the next set means the prior deviation hint has served its
+        // purpose (it was meant to inform exactly this set).
+        activeDeviationHint = nil
         let devs = WorkoutRunnerLogic.detectDeviation(
             actualReps: reps, actualWeight: weight, actualRir: repsInReserve,
             exercise: currentExercise, intensityLabel: plan.intensityLabel
@@ -113,6 +124,7 @@ final class WorkoutCoordinator: ObservableObject {
     /// Mark current exercise done and advance — or signal end of workout.
     func finishExercise(comment: String?) {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }
+        activeDeviationHint = nil
         logged[currentExerciseIdx].comment = comment
         if currentExerciseIdx + 1 < plan.exercises.count {
             currentExerciseIdx += 1
@@ -128,9 +140,16 @@ final class WorkoutCoordinator: ObservableObject {
     /// target exercise's set count so logging continues where it left off.
     func activate(idx: Int) {
         guard !isFinished, plan.exercises.indices.contains(idx) else { return }
+        activeDeviationHint = nil
         currentExerciseIdx = idx
         currentSetIdx = logged[idx].sets.count
         persist()
+    }
+
+    /// User tapped ✕ on the prominent deviation-hint card. The chip on the set
+    /// keeps the hint as history; only the top card goes away.
+    func dismissDeviationHint() {
+        activeDeviationHint = nil
     }
 
     /// Attach a coach reply to a specific already-logged set, keyed by
@@ -162,6 +181,9 @@ final class WorkoutCoordinator: ObservableObject {
         }
         guard logged[exIdx].sets.indices.contains(setIdx) else { return }
         logged[exIdx].sets[setIdx].coachHint = text
+        // Also surface it prominently above the set input (blend 1+3): the chip
+        // alone is easy to miss when the phone is lying down between sets.
+        activeDeviationHint = text
         // Haptic lives here (the single mutation site) rather than in the view:
         // the 💬 chip can be off-screen or the runner backgrounded when Payne's
         // reply lands, so a success buzz is the only reliable "coach said
