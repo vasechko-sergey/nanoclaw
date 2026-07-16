@@ -16,6 +16,7 @@ import {
   serveImageRequests,
   dispatchResultText,
   dispatchCompleteBlocks,
+  buildRejectNudge,
 } from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
@@ -803,13 +804,13 @@ describe('a2a kind envelope (<message to="…" kind="…">)', () => {
   });
 
   it('streaming path lifts kind= and returns the unconsumed tail', () => {
-    const tail = dispatchCompleteBlocks(
+    const { remainder } = dispatchCompleteBlocks(
       '<message to="payne" kind="set_log">{"reps":8}</message>trailing',
       routing,
       new Set(),
     );
     expect(lastOut().content).toBe(JSON.stringify({ text: '{"reps":8}', kind: 'set_log' }));
-    expect(tail).toBe('trailing');
+    expect(remainder).toBe('trailing');
   });
 
   it('streaming and result paths share dedupe keys — no double send', () => {
@@ -821,5 +822,191 @@ describe('a2a kind envelope (<message to="…" kind="…">)', () => {
     const r = dispatchResultText(block, routing, dispatched);
     expect(r.newlySent).toBe(0);
     expect(outCount()).toBe(1);
+  });
+});
+
+/**
+ * Layer 1 of the a2a kind gate: an illegal block is never written to
+ * messages_out, and the reject comes back so the caller can nudge the agent
+ * in the same turn.
+ *
+ * The `a2a_kinds` column is what arms it. Every destination the host writes
+ * today has it NULL (no agent.json exists yet), so these tests seed it by hand
+ * to reach the armed branch at all — see the disarm test for the inert case.
+ */
+describe('a2a kind gate (layer 1 — container)', () => {
+  /** Seed an agent destination, arming the gate when `kinds` is non-null. */
+  function seedAgentDest(name: string, agentGroupId: string, kinds: string[] | null): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id, a2a_kinds)
+         VALUES (?, ?, 'agent', NULL, NULL, ?, ?)`,
+      )
+      .run(name, name, agentGroupId, kinds === null ? null : JSON.stringify(kinds));
+  }
+
+  const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: null };
+  const outCount = (): number =>
+    (getOutboundDb().prepare('SELECT COUNT(*) AS n FROM messages_out').get() as { n: number }).n;
+
+  describe('armed target (descriptor declares set_log)', () => {
+    beforeEach(() => {
+      seedAgentDest('payne', 'ag-payne', ['set_log']);
+    });
+
+    it('does not emit a block whose kind is undeclared', () => {
+      const r = dispatchResultText('<message to="payne" kind="bogus">x</message>', routing, new Set());
+      expect(outCount()).toBe(0);
+      expect(r.newlySent).toBe(0);
+    });
+
+    it('reports an undeclared kind as a reject for the caller to nudge', () => {
+      const r = dispatchResultText('<message to="payne" kind="bogus">x</message>', routing, new Set());
+      expect(r.rejects).toEqual([{ to: 'payne', kind: 'bogus', code: 'unknown_kind', legal: ['set_log'] }]);
+    });
+
+    it('still emits a declared kind', () => {
+      // Guards the inverse mutation: a gate that rejects everything once armed
+      // would pass the test above and silence the agent entirely.
+      const r = dispatchResultText('<message to="payne" kind="set_log">{"reps":8}</message>', routing, new Set());
+      expect(outCount()).toBe(1);
+      expect(r.rejects).toEqual([]);
+    });
+
+    it('does not emit a JSON-object body sent with no kind=', () => {
+      // The forgotten-attribute case: a structured payload must not sail
+      // through as prose.
+      const r = dispatchResultText('<message to="payne">{"reps":8}</message>', routing, new Set());
+      expect(outCount()).toBe(0);
+      expect(r.rejects).toEqual([{ to: 'payne', kind: null, code: 'unmarked_json', legal: ['set_log'] }]);
+    });
+
+    it('still emits prose sent with no kind=', () => {
+      // `text` is legal without being declared. Without this, the test above
+      // would also pass a gate that bounced every kind-less block.
+      const r = dispatchResultText('<message to="payne">норм</message>', routing, new Set());
+      expect(outCount()).toBe(1);
+      expect(r.rejects).toEqual([]);
+    });
+
+    it('gates the streaming path too, and still returns the unconsumed tail', () => {
+      const { remainder, rejects } = dispatchCompleteBlocks(
+        '<message to="payne" kind="bogus">x</message>trailing',
+        routing,
+        new Set(),
+      );
+      expect(outCount()).toBe(0);
+      expect(rejects).toEqual([{ to: 'payne', kind: 'bogus', code: 'unknown_kind', legal: ['set_log'] }]);
+      expect(remainder).toBe('trailing');
+    });
+
+    it('reports every rejected block in one turn, not just the first', () => {
+      const r = dispatchResultText(
+        '<message to="payne" kind="bogus">x</message><message to="payne" kind="worse">y</message>',
+        routing,
+        new Set(),
+      );
+      expect(outCount()).toBe(0);
+      expect(r.rejects.map((x) => x.kind)).toEqual(['bogus', 'worse']);
+    });
+  });
+
+  it('emits normally when the target has no descriptor (gate disarmed)', () => {
+    // SHIP-INERT. This is the state of every agent in the wild right now:
+    // a2a_kinds NULL → legalKinds null → nothing is gated.
+    //
+    // Honest note on killability: deleting the gate entirely would NOT fail
+    // this test. It exists to kill a different, specific mutation —
+    // `dest.a2aKinds ?? []` in place of `?? null`, which would arm every
+    // un-migrated agent and bounce all live structured traffic. Verified by
+    // running that mutation against this test.
+    seedAgentDest('payne', 'ag-payne', null);
+    const r = dispatchResultText('<message to="payne" kind="anything">{"reps":8}</message>', routing, new Set());
+    expect(outCount()).toBe(1);
+    expect(r.rejects).toEqual([]);
+  });
+
+  it('emits normally when the target declares no kinds but the body is prose', () => {
+    // `[]` is NOT null: descriptor present, declares nothing → text-only, ARMED.
+    seedAgentDest('greg', 'ag-greg', []);
+    const r = dispatchResultText('<message to="greg">как дела</message>', routing, new Set());
+    expect(outCount()).toBe(1);
+    expect(r.rejects).toEqual([]);
+  });
+
+  it('bounces a declared-nothing target when the body is structured', () => {
+    // The `[]`-arms-text-only contract, from the other side.
+    seedAgentDest('greg', 'ag-greg', []);
+    const r = dispatchResultText('<message to="greg" kind="set_log">{}</message>', routing, new Set());
+    expect(outCount()).toBe(0);
+    expect(r.rejects).toEqual([{ to: 'greg', kind: 'set_log', code: 'unknown_kind', legal: [] }]);
+  });
+
+  it('never gates a channel destination, even one carrying kinds', () => {
+    // The host writes a2a_kinds NULL for every channel row, so the
+    // `type === 'agent'` guard is currently belt-and-braces. This seeds the
+    // unreal state on purpose: it is the only way to prove the guard is what
+    // keeps channels out of the gate, and it pins the invariant against a
+    // future projection change that starts writing kinds onto channel rows —
+    // which without the guard would bounce every JSON-bodied channel message.
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id, a2a_kinds)
+         VALUES ('family', 'family', 'channel', 'telegram', 'tg-1', NULL, '["set_log"]')`,
+      )
+      .run();
+    const r = dispatchResultText('<message to="family">{"raw":"json"}</message>', routing, new Set());
+    expect(outCount()).toBe(1);
+    expect(r.rejects).toEqual([]);
+  });
+
+  it('reports an unknown destination as a reject instead of dropping it silently', () => {
+    const r = dispatchResultText('<message to="nobody" kind="ack">x</message>', routing, new Set());
+    expect(outCount()).toBe(0);
+    expect(r.rejects).toEqual([{ to: 'nobody', kind: 'ack', code: 'unknown_destination' }]);
+  });
+
+  it('reports an unknown destination from the streaming path too', () => {
+    const { rejects } = dispatchCompleteBlocks('<message to="nobody">x</message>', routing, new Set());
+    expect(rejects).toEqual([{ to: 'nobody', kind: null, code: 'unknown_destination' }]);
+  });
+});
+
+describe('buildRejectNudge', () => {
+  it('names the destination, the offending kind, and the legal list', () => {
+    const nudge = buildRejectNudge([{ to: 'payne', kind: 'bogus', code: 'unknown_kind', legal: ['set_log', 'ack'] }]);
+    expect(nudge).toContain('to="payne"');
+    expect(nudge).toContain('kind="bogus"');
+    // `text` is always legal and never declared, so it is appended, not stored.
+    expect(nudge).toContain('set_log, ack, text');
+  });
+
+  it('tells the agent a structured body needs a kind', () => {
+    const nudge = buildRejectNudge([{ to: 'payne', kind: null, code: 'unmarked_json', legal: ['set_log'] }]);
+    expect(nudge).toContain('to="payne"');
+    expect(nudge).toContain('kind=');
+    expect(nudge).not.toContain('Легальные:'); // an unmarked body has no kind to list against
+  });
+
+  it('says the destination does not exist for an unknown-destination reject', () => {
+    const nudge = buildRejectNudge([{ to: 'nobody', kind: null, code: 'unknown_destination' }]);
+    expect(nudge).toContain('to="nobody"');
+    expect(nudge).toContain('нет');
+  });
+
+  it('describes every reject in a single nudge', () => {
+    const nudge = buildRejectNudge([
+      { to: 'payne', kind: 'bogus', code: 'unknown_kind', legal: ['set_log'] },
+      { to: 'nobody', kind: null, code: 'unknown_destination' },
+    ]);
+    expect(nudge).toContain('to="payne"');
+    expect(nudge).toContain('to="nobody"');
+    // One <system> wrapper for the whole turn, not one per reject.
+    expect(nudge.match(/<system>/g)).toHaveLength(1);
+  });
+
+  it('degrades to text-only when a kind reject carries no legal list', () => {
+    const nudge = buildRejectNudge([{ to: 'payne', kind: 'bogus', code: 'unknown_kind' }]);
+    expect(nudge).toContain('Легальные: text.');
   });
 });

@@ -1,3 +1,5 @@
+import { validateA2aKind } from '@shared/a2a/kinds.js';
+
 import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
@@ -603,6 +605,13 @@ async function processQuery(
   let queryContinuation: string | undefined;
   let done = false;
   let unwrappedNudged = false;
+  // Same lifecycle as `unwrappedNudged`, and deliberately so: at most one
+  // reject nudge per user-driven turn, re-armed only when a genuine follow-up
+  // arrives. Without that bound, an agent that answers the nudge with a second
+  // illegal kind would be nudged again, and again — a self-feeding loop. The
+  // second offence is dropped and logged instead; the host bounce (Layer 2) is
+  // the backstop for the traffic itself.
+  let rejectNudged = false;
   // Set when the turn's `result` is a transient upstream API error (529/5xx/
   // rate-limit) and nothing user-facing was delivered — the batch is left
   // un-acked for the host to retry rather than completed.
@@ -688,6 +697,7 @@ async function processQuery(
         const prompt = formatMessages(keep);
         log(`Pushing ${keep.length} follow-up message(s) into active query`);
         unwrappedNudged = false;
+        rejectNudged = false;
         // Fresh turn — clear the post-result idle bypass so the watchdog
         // can still surface a real stall in this new turn, and zero the
         // user-facing dispatch counter so a stall in this follow-up turn is
@@ -724,6 +734,11 @@ async function processQuery(
   // status pings, "done" confirmations, or a follow-up that happens to
   // produce identical text. Cross-turn dedupe would silently drop those.
   let dispatchedKeys = new Set<string>();
+  // Blocks the gate refused this turn, from BOTH the streaming path and the
+  // result path. Streamed rejects must survive to result time — that is the
+  // only point where we can push a nudge back into the query — so they
+  // accumulate here and are cleared alongside `dispatchedKeys`.
+  let turnRejects: BlockReject[] = [];
   // Buffer for partial <message> blocks that span multiple assistant_text
   // events. Closed blocks are dispatched immediately; the trailing remainder
   // (text after the last </message>, including unclosed <message...) is kept
@@ -818,7 +833,9 @@ async function processQuery(
         log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms — aborting turn`);
         watchdogFired = true;
         if (streamBuffer.length > 0) {
-          const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+          // Rejects are dropped here on purpose: the turn is being aborted, so
+          // there is no query left to push a nudge into. They were logged.
+          const { remainder } = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
           streamBuffer = remainder;
         }
         markCompleted(initialBatchIds);
@@ -907,8 +924,9 @@ async function processQuery(
         // the complete grounding set at `result`, so we cannot stream them out
         // early. When the gate is off, dispatch streams as before.
         if (!gateOn) {
-          const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+          const { remainder, rejects } = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
           streamBuffer = remainder;
+          turnRejects.push(...rejects);
         }
       } else if (event.type === 'result') {
         // Transient upstream failure (529 overloaded / 5xx / rate-limit): the
@@ -1038,8 +1056,10 @@ async function processQuery(
                     : l3Hedge.length > 0
                       ? `${event.text}\n\n⚠️ Эти утверждения я не смог подтвердить — перепроверь: ${l3Hedge.map((c) => `"${c}"`).join(', ')}.`
                       : event.text;
-                const { hasUnwrapped } = dispatchResultText(finalText, routing, dispatchedKeys);
+                const { hasUnwrapped, rejects } = dispatchResultText(finalText, routing, dispatchedKeys);
+                const rejectsThisTurn = turnRejects.concat(rejects);
                 dispatchedKeys = new Set<string>();
+                turnRejects = [];
                 if (hasUnwrapped && !unwrappedNudged) {
                   unwrappedNudged = true;
                   const destinations = getAllDestinations();
@@ -1052,14 +1072,23 @@ async function processQuery(
                       `Please re-send your response with the correct wrapping.</system>`,
                   );
                 }
+                if (rejectsThisTurn.length > 0 && !rejectNudged) {
+                  rejectNudged = true;
+                  resultReceived = false;
+                  query.push(buildRejectNudge(rejectsThisTurn));
+                }
               }
             }
           } else {
-            const { hasUnwrapped } = dispatchResultText(event.text, routing, dispatchedKeys);
+            const { hasUnwrapped, rejects } = dispatchResultText(event.text, routing, dispatchedKeys);
+            // Fold in anything the streaming path already refused this turn —
+            // one nudge covers the whole turn.
+            const rejectsThisTurn = turnRejects.concat(rejects);
             // Per-turn dedupe — drop the set now that the turn is fully
             // closed so any follow-up push() can re-send identical content
             // without being silently suppressed.
             dispatchedKeys = new Set<string>();
+            turnRejects = [];
             if (hasUnwrapped && !unwrappedNudged) {
               unwrappedNudged = true;
               const destinations = getAllDestinations();
@@ -1073,6 +1102,11 @@ async function processQuery(
                   `Your destinations: ${names}. ` +
                   `Please re-send your response with the correct wrapping.</system>`,
               );
+            }
+            if (rejectsThisTurn.length > 0 && !rejectNudged) {
+              rejectNudged = true;
+              resultReceived = false;
+              query.push(buildRejectNudge(rejectsThisTurn));
             }
           }
         }
@@ -1180,6 +1214,57 @@ function blockKey(toName: string, kind: string | null, body: string): string {
 }
 
 /**
+ * A block that was NOT delivered, and why. Collected by both dispatch paths
+ * and turned into one nudge per turn by `buildRejectNudge`.
+ */
+export interface BlockReject {
+  to: string;
+  kind: string | null;
+  code: 'unknown_kind' | 'unmarked_json' | 'unknown_destination';
+  legal?: string[];
+}
+
+/**
+ * Layer 1 of the a2a kind gate: is this block allowed out?
+ *
+ * Runs BEFORE the write to messages_out, so an illegal block is never emitted
+ * rather than emitted-and-retracted. Returns the reject, or null when the
+ * block is fine.
+ *
+ * Channels are never gated: `kind` is an a2a concept, and the host writes
+ * a2a_kinds NULL for every channel row anyway. The type check is what keeps a
+ * future projection change from bouncing human-facing traffic.
+ */
+function gateBlock(dest: DestinationEntry, toName: string, kind: string | null, body: string): BlockReject | null {
+  if (dest.type !== 'agent') return null;
+  const verdict = validateA2aKind(kind, body, dest.a2aKinds ?? null);
+  if (verdict.ok) return null;
+  log(`Rejected <message to="${toName}" kind="${kind ?? ''}">: ${verdict.code}`);
+  return { to: toName, kind, code: verdict.code, legal: dest.a2aKinds ?? undefined };
+}
+
+/**
+ * One nudge per turn describing every rejected block, in the same shape as the
+ * established no-wrap nudge. The agent fixes it in the same turn with full
+ * context — the strongest correction available, and why Layer 1 exists at all
+ * despite the host being authoritative.
+ */
+export function buildRejectNudge(rejects: BlockReject[]): string {
+  const lines = rejects.map((r) => {
+    if (r.code === 'unknown_destination') return `• to="${r.to}" — такого адресата нет.`;
+    if (r.code === 'unmarked_json') {
+      return `• to="${r.to}" — тело похоже на структурное сообщение, но kind= не указан. Поставь kind, либо пришли прозой.`;
+    }
+    return `• to="${r.to}" kind="${r.kind}" — такой kind не принимается. Легальные: ${(r.legal ?? []).concat('text').join(', ')}.`;
+  });
+  return (
+    `<system>Часть сообщений НЕ доставлена:\n${lines.join('\n')}\n` +
+    `Формат: <message to="имя" kind="вид">тело</message>; kind можно опустить для обычного текста. ` +
+    `Перешли исправленное.</system>`
+  );
+}
+
+/**
  * Streaming dispatch: scan the running buffer for COMPLETE <message>
  * blocks (`<message to="…">…</message>`), send each new one to its
  * destination, and return the unconsumed tail. Trailing text (after the
@@ -1195,11 +1280,20 @@ function blockKey(toName: string, kind: string | null, body: string): string {
  * the buffer may contain a partial block we shouldn't log as scratchpad
  * yet. Scratchpad logging + the no-wrap nudge are decided once at
  * `result` time off the aggregated `result.text`.
+ *
+ * Rejects are returned rather than nudged here: a turn can stream many text
+ * events, and the agent should get ONE nudge covering all of them at result
+ * time. The caller accumulates them across the turn.
  */
-export function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatched: Set<string>): string {
+export function dispatchCompleteBlocks(
+  text: string,
+  routing: RoutingContext,
+  dispatched: Set<string>,
+): { remainder: string; rejects: BlockReject[] } {
   MESSAGE_BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   let lastIndex = 0;
+  const rejects: BlockReject[] = [];
   while ((match = MESSAGE_BLOCK_RE.exec(text)) !== null) {
     const { toName, kind } = parseBlockAttrs(match[1]);
     const body = match[2].trim();
@@ -1209,13 +1303,20 @@ export function dispatchCompleteBlocks(text: string, routing: RoutingContext, di
     const dest = findByName(toName);
     if (!dest) {
       log(`Unknown destination in <message to="${toName}">, dropping block`);
+      rejects.push({ to: toName, kind, code: 'unknown_destination' });
+      dispatched.add(key);
+      continue;
+    }
+    const reject = gateBlock(dest, toName, kind, body);
+    if (reject) {
+      rejects.push(reject);
       dispatched.add(key);
       continue;
     }
     sendToDestination(dest, body, routing, kind);
     dispatched.add(key);
   }
-  return text.slice(lastIndex);
+  return { remainder: text.slice(lastIndex), rejects };
 }
 
 /**
@@ -1237,13 +1338,14 @@ export function dispatchResultText(
   text: string,
   routing: RoutingContext,
   dispatched: Set<string>,
-): { newlySent: number; hasUnwrapped: boolean } {
+): { newlySent: number; hasUnwrapped: boolean; rejects: BlockReject[] } {
   MESSAGE_BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   let newlySent = 0;
   let blockCount = 0;
   let lastIndex = 0;
   const scratchpadParts: string[] = [];
+  const rejects: BlockReject[] = [];
 
   while ((match = MESSAGE_BLOCK_RE.exec(text)) !== null) {
     blockCount++;
@@ -1261,6 +1363,13 @@ export function dispatchResultText(
     if (!dest) {
       log(`Unknown destination in <message to="${toName}">, dropping block`);
       scratchpadParts.push(`[dropped: unknown destination "${toName}"] ${body}`);
+      rejects.push({ to: toName, kind, code: 'unknown_destination' });
+      dispatched.add(key);
+      continue;
+    }
+    const reject = gateBlock(dest, toName, kind, body);
+    if (reject) {
+      rejects.push(reject);
       dispatched.add(key);
       continue;
     }
@@ -1282,7 +1391,7 @@ export function dispatchResultText(
   if (hasUnwrapped) {
     log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
   }
-  return { newlySent, hasUnwrapped };
+  return { newlySent, hasUnwrapped, rejects };
 }
 
 function sendToDestination(
