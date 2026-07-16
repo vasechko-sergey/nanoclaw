@@ -6,7 +6,7 @@
 ## Goal
 
 Give every agent a shared, structured registry of who the other agents are —
-canonical `id → display_name + role + a2a contract` — distributed into every
+canonical `id → name + role + a2a contract` — distributed into every
 container. Use it to (a) structurally ground agent names so relays stop
 confabulating them, and (b) become the single source of truth for a2a
 contracts, replacing the hand-copied prose in each agent's CLAUDE.md.
@@ -30,15 +30,26 @@ never has to invent them.
 
 | Concern | Where it lives today | Gap |
 |---|---|---|
-| Canonical display names («Майор Пейн») | `agent_groups.display_name` (central DB) | not distributed to peers |
+| Canonical display names («Майор Пейн») | `agent_groups.name` (central DB) | not distributed to peers |
 | Outbound send targets | `destinations` (per-session, has `display_name`) | outbound only; never names an inbound sender |
 | Who-can-talk-to-whom ACL | `agent_destinations` (central) | not surfaced to the agent as a registry |
 | Freeform peer overview | `groups/<folder>/memories/public.md` → `groups/global/profiles/<folder>.md`, mounted RO at `/workspace/global/profiles/` | prose, not structured id→name |
 | a2a contracts (accepted actions) | `memories/team.md`, hand-copied into each CLAUDE.md | duplicated, drifts |
 
 **Key insight:** the display name is *already canonical* in
-`agent_groups.display_name`. This is a **distribution** problem, not a
+`agent_groups.name`. This is a **distribution** problem, not a
 data-entry one.
+
+**Field note (verified against the live DB):** `agent_groups` has columns
+`id, name, folder, agent_provider, created_at` — there is **no `display_name`
+column**; `name` *is* the human-facing name (`payne` → «Майор Пейн», `gordon` →
+«Гордон Рамзи»), and the `AgentGroup` TS type already declares it. `name` is
+therefore the single source for both the registry and the a2a sender stamp — no
+second name field anywhere (that duplication is the drift problem being fixed).
+Aside: `greg`/`scrooge`/`jarvis` currently carry English names ("Greg",
+"Scrooge", "Jarvis") while chat uses Russian. If those should read «Грег»/
+«Скрудж» in chat, the fix is a one-line data edit to `agent_groups.name` — out
+of scope for this design, which faithfully distributes whatever `name` holds.
 
 **Second key insight:** the container formatter already renders a `sender`
 attribute from `content.sender` (`container/agent-runner/src/formatter.ts:222`,
@@ -72,7 +83,7 @@ container, and an agent reads the aggregated registry, not its own descriptor.
 - `role` — one-line what-this-agent-is.
 - `a2a_in` — map of `action → human description` the agent accepts over a2a.
 - `aka` (optional) — accepted aliases, informational.
-- **Name is NOT here** — it is pulled from `agent_groups.display_name` at
+- **Name is NOT here** — it is pulled from `agent_groups.name` at
   aggregation time (no duplication, no drift).
 
 Maintained like `CLAUDE.md` — a static descriptor authored in the
@@ -87,7 +98,7 @@ A new module modeled on `src/public-profiles.ts`, invoked from
 startup). It:
 
 1. Reads every `agents/<folder>/agent.json` (skips folders without one).
-2. Joins each with `agent_groups.display_name` (by folder→agent_group).
+2. Joins each with `agent_groups.name` (by folder→agent_group).
 3. Renders two artifacts (identical for everyone — the registry is
    person-independent):
    - `agents.json` — canonical structured registry (for future tooling / the
@@ -123,7 +134,7 @@ not a write, per sweep. Regenerated every sweep and at startup.
 In `src/modules/agent-to-agent/agent-route.ts` (`routeAgentMessage`), when
 building `forwardedContent` for the target's inbound row, stamp:
 
-- `sender` = source agent's `agent_groups.display_name` («Майор Пейн»)
+- `sender` = source agent's `agent_groups.name` («Майор Пейн»)
 - `senderId` = source agent folder (`payne`)
 
 The source agent is already known here (the row's `source_session_id` →
