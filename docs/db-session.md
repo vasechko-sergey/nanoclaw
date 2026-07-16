@@ -79,16 +79,23 @@ Projection of the central `agent_destinations` table (see [db-central.md §1.10]
 
 ```sql
 CREATE TABLE destinations (
-  name           TEXT PRIMARY KEY,
-  display_name   TEXT,
-  type           TEXT NOT NULL,   -- 'channel' | 'agent'
-  channel_type   TEXT,            -- for type='channel'
-  platform_id    TEXT,            -- for type='channel'
-  agent_group_id TEXT             -- for type='agent'
+  name            TEXT PRIMARY KEY,
+  display_name    TEXT,
+  type            TEXT NOT NULL,   -- 'channel' | 'agent'
+  channel_type    TEXT,            -- for type='channel'
+  platform_id     TEXT,            -- for type='channel'
+  agent_group_id  TEXT,            -- for type='agent'
+  a2a_kinds       TEXT             -- for type='agent': JSON array of the kinds the
+                                   -- TARGET accepts, or NULL when it published no
+                                   -- a2a_in declaration (gate disarmed). '[]' is
+                                   -- NOT null: declared-and-empty = text-only,
+                                   -- gate armed. Host-written.
 );
 ```
 
 Rewritten wholesale (DELETE + INSERT in a transaction) by `writeDestinations()` on every container wake and on demand when wiring changes mid-session. The comment on the table in `src/db/schema.ts` is the canonical statement of the refresh semantics.
+
+`a2a_kinds` is what the **target** accepts, read from the target's own `agents/<folder>/agent.json` (`a2a_in`) and re-read on every wake — see [agent-to-agent kinds](superpowers/specs/2026-07-16-a2a-protocol-normalization-design.md). `NULL` means that target published no `a2a_in` declaration, which disarms the kind gate for it; a JSON `[]` means it declared one that is empty, i.e. text-only with the gate armed. Older session DBs get the column via the idempotent `PRAGMA table_info` + `ALTER TABLE` path in `src/db/session-db.ts`, not from this `CREATE TABLE`.
 
 ### 2.4 `session_routing`
 

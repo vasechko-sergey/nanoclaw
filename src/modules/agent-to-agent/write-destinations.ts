@@ -11,9 +11,10 @@
  * accepts, read from the target's own `agents/<folder>/agent.json`. One file is
  * both the declaration the registry publishes to peers and the list the
  * transport gate enforces; splitting them is what let the protocol rot in the
- * first place. NULL means the target has no usable descriptor, which disarms
- * the gate for it. Re-read on every wake, so authoring a descriptor takes
- * effect without a restart.
+ * first place. NULL means the target published no `a2a_in` declaration (absent
+ * or malformed descriptor, or one that omits the field), which disarms the gate
+ * for it. Re-read on every wake, so authoring a declaration takes effect without
+ * a restart.
  */
 import fs from 'fs';
 

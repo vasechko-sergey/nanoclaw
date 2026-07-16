@@ -754,6 +754,42 @@ Expected: `agents.json` + `agents.md` exist for each person; the markdown table 
 
 ### Task 6: Author the five agent descriptors
 
+> ## ⚠️ SUPERSEDED — do not execute this task as written
+>
+> This task predates the a2a protocol normalization. It was written when `a2a_in`
+> was **decorative** (registry prose). It is now **enforcement**: `a2a_in` is the
+> list the transport gate checks, and an undeclared kind is bounced back to the
+> sender.
+>
+> Three things below are now wrong:
+>
+> 1. **The source.** Steps 1–2 say to transcribe `a2a_in` from each agent's
+>    `team.md` / CLAUDE.md §Команда. The 274-message inventory measured that prose
+>    as *wrong* — it is the drift this project exists to remove. `a2a_in` must come
+>    from the **measured** inventory
+>    (`docs/superpowers/specs/2026-07-16-a2a-message-inventory.md`) and the
+>    vocabulary table in
+>    `docs/superpowers/specs/2026-07-16-a2a-protocol-normalization-design.md` §4,
+>    which maps today's traffic to the kind each route becomes.
+> 2. **The worked payne example** omits `set_log` (23 live rows, jarvis→payne) and
+>    `ack` (18 rows once the six ack spellings merge). Committing it verbatim
+>    bounces payne's two highest-volume structured routes.
+> 3. **`"a2a_in": {}` is not a name-only entry.** An explicit empty declaration
+>    ARMS the gate text-only — every structured message to that agent bounces. A
+>    registry-only entry is one that **omits `a2a_in` entirely** (role and/or `aka`
+>    only), which leaves the gate disarmed. See `getLegalKinds` in
+>    `src/agent-registry.ts`.
+>
+> **The authoritative procedure is §5 (“Migration — big-bang code, per-agent
+> arming”) of the protocol-normalization design.** It also orders the work: arming
+> a descriptor and stripping that agent's hand-written CLAUDE.md contract table are
+> one step, followed by a rebirth of all five.
+>
+> Steps 3–5 below (JSON validation, scp deploy, registry verification) still hold —
+> only the descriptor *contents* changed.
+>
+> Left in place rather than deleted: the mechanics are still the reference.
+
 **Do not invent contracts.** Each agent's real a2a contract is documented — read it first and transcribe.
 
 **Files:**
