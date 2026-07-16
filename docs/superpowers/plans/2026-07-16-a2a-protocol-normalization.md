@@ -8,22 +8,34 @@
 
 **Spec:** [`docs/superpowers/specs/2026-07-16-a2a-protocol-normalization-design.md`](../specs/2026-07-16-a2a-protocol-normalization-design.md) — read it before starting. It carries the *why*, which the tasks below assume.
 
-**Tech Stack:** TypeScript. **Two separate package trees that share NO modules:**
+**Tech Stack:** TypeScript. Two package trees with different runtimes:
 - Host `src/` — Node + pnpm, tests with **vitest** (`pnpm exec vitest run <path>`)
 - Container `container/agent-runner/src/` — Bun, tests with **bun:test** (`cd container/agent-runner && bun test <path>`)
 
-This split is why Tasks 1 and 2 deliberately duplicate the same logic. Do not try to share a module between them — it will not build. See [`docs/build-and-runtime.md`](../../build-and-runtime.md).
+**CORRECTION (2026-07-16, after review of Task 1).** An earlier revision of this plan claimed the two trees "share NO modules — it will not build", and had Task 2 duplicate the verdict function into the container tree. **That claim was false**, inherited from a stale line in `docs/build-and-runtime.md` (and `CLAUDE.md`) — both now fixed. `shared/ios-app-protocol/` already crosses this exact boundary for this exact problem class: the host imports it by relative path as a value (`src/channels/ios-app/v2/http-handler.ts:33`), and the container resolves it through the `@shared/*` alias, which **Bun honors at runtime** (`container/agent-runner/tsconfig.json`; `container/Dockerfile:88` copies the whole `shared/` tree in). Verified by running the real Bun binary against a replica of the container layout.
+
+So the verdict function lives once, in `shared/a2a/kinds.ts`, and **Task 2 is void**. A hand-synced duplicate of the contract's own decision function would reproduce, one layer down, the very drift this project exists to remove.
+
+**Gotcha for anyone editing `shared/`:** vitest loads the *emitted* `.js` beside the source, not the `.ts` (`outDir: "."`). Run `pnpm run build` before `vitest` after editing a shared file, or you validate stale output. Tracked separately as its own defect.
 
 ---
 
 ## File Structure
 
+**Shared (`shared/a2a/`) — one copy, both runtimes:**
+
+| File | Action | Responsibility |
+|---|---|---|
+| `shared/a2a/kinds.ts` | Create | Pure verdict function: is this (kind, body) legal for this target? **The single artifact both gate layers call.** |
+| `shared/a2a/kinds.test.ts` | Create | Tests (vitest — `vitest.config.ts` already includes `shared/**/*.test.ts`). |
+| `shared/a2a/tsconfig.json` | Create | Composite project, modeled on `shared/ios-app-protocol/tsconfig.json`. |
+| `tsconfig.json`, `container/agent-runner/tsconfig.json`, `package.json` | Modify | Wire the composite project: `references` in **both** tsconfigs (the container one is required — without it a container value-import fails `TS6059`), and `tsc -p shared/a2a` in the `build`/`pretypecheck` scripts. |
+| `docs/build-and-runtime.md`, `CLAUDE.md` | Modify | Correct the stale "no shared modules" claim that caused the duplication. |
+
 **Host (`src/`) — Node, vitest:**
 
 | File | Action | Responsibility |
 |---|---|---|
-| `src/modules/agent-to-agent/a2a-kinds.ts` | Create | Pure verdict function: is this (kind, body) legal for this target? Host copy. |
-| `src/modules/agent-to-agent/a2a-kinds.test.ts` | Create | Tests for the above. |
 | `src/agent-registry.ts` | Modify | Add `getLegalKinds()`. Reword `action` → `kind` (semantics only, type unchanged). |
 | `src/db/schema.ts` | Modify | `a2a_kinds TEXT` on the `destinations` CREATE TABLE (fresh session DBs). |
 | `src/db/session-db.ts` | Modify | Idempotent `ALTER TABLE` for existing session DBs; `DestinationRow.a2a_kinds`; insert it. |
@@ -34,24 +46,30 @@ This split is why Tasks 1 and 2 deliberately duplicate the same logic. Do not tr
 
 | File | Action | Responsibility |
 |---|---|---|
-| `container/agent-runner/src/a2a-kinds.ts` | Create | Mirror of the host verdict function. |
-| `container/agent-runner/src/a2a-kinds.test.ts` | Create | Tests for the above. |
 | `container/agent-runner/src/destinations.ts` | Modify | `DestinationEntry.a2aKinds`; read the new column; **generate the legal-kind list into the system-prompt addendum** (Task 12 — the contract the agent reads comes from the enforced artifact, not from prose). |
 | `container/agent-runner/src/poll-loop.ts` | Modify | Regex + attr parse, `blockKey` fix, kind lift, Layer 1 gate + nudge. |
 | `container/agent-runner/src/formatter.ts` | Modify | Render `kind=` on inbound. |
 | `container/agent-runner/src/mcp-tools/core.ts` | Modify | `add_reaction` rejects agent destinations. |
 
-**Boundaries:** `a2a-kinds.ts` (both copies) is pure — no DB, no fs, no logging. It takes `(kind, body, legalKinds)` and returns a verdict. Everything else is wiring. Keeping it pure is what makes both gate layers testable without a container.
+**Boundaries:** `shared/a2a/kinds.ts` is pure — no DB, no fs, no logging. It takes `(kind, body, legalKinds)` and returns a verdict. Everything else is wiring. Purity is what lets one file serve both runtimes and makes both gate layers testable without a container.
 
 ---
 
-## Task 1: Host verdict function
+## Task 1: The verdict function — ✅ DONE (`7c4efa5b` + `151bb837`)
 
-**Files:**
-- Create: `src/modules/agent-to-agent/a2a-kinds.ts`
-- Test: `src/modules/agent-to-agent/a2a-kinds.test.ts`
+**Landed as `shared/a2a/kinds.ts`, not under `src/`** — see the CORRECTION in the header. Review of the first commit established that the two trees *can* share a module, so the second commit moved it to `shared/a2a/` (composite project, wired into both tsconfigs and the build scripts) and corrected the stale docs that had claimed otherwise.
 
-- [ ] **Step 1: Write the failing tests**
+Three review findings were applied in the move:
+- **Dead code removed.** `isJsonObject`'s `parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)` was unreachable: a JSON text starting with `{` can only parse to a plain object. Mutation-tested — the suite passed with *either* that line or the `startsWith` guard deleted, i.e. two mechanisms where one was needed and the tests could not say which was real. Kept `startsWith` (it is also the fast path).
+- **`[]` vs `null` pinned.** `[]` ARMS the gate text-only; `null` DISARMS it. Both inhabit `string[] | null`, and the idiom that collapses them already exists (`src/agent-registry.ts:103`: `?? {}`). A caller writing `getLegalKinds(...) ?? []` would arm every un-migrated agent — the exact inverse of ship-inert. Now documented on the param and covered by a test.
+- **Header comment corrected** — it had asserted the false "cannot share a module" premise and described callers that did not exist yet.
+
+8 tests. Original task text below, kept for the record.
+
+**Files (as landed):**
+- `shared/a2a/kinds.ts`, `shared/a2a/kinds.test.ts`, `shared/a2a/tsconfig.json`
+
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // src/modules/agent-to-agent/a2a-kinds.test.ts
@@ -207,44 +225,9 @@ git commit -m "feat(a2a): kind verdict function (host)"
 
 **Context:** A deliberate duplicate of Task 1. The host and container share no modules (Node/pnpm vs Bun, separate trees, separate lockfiles). Keep the two files byte-identical apart from the import in the test (`bun:test` vs `vitest`) and the header comment's direction.
 
-- [ ] **Step 1: Write the failing tests**
+**Do not do this task.** It rested on a false premise — see the CORRECTION in the header. The two trees *can* share a module: `shared/ios-app-protocol/` already does, and Bun was verified to resolve `@shared/*` value-imports at runtime in a replica of the container layout. The verdict function therefore lives once at `shared/a2a/kinds.ts` (Task 1) and the container simply imports it.
 
-Same test bodies as Task 1, with the import line changed:
-
-```ts
-// container/agent-runner/src/a2a-kinds.test.ts
-import { describe, expect, it } from 'bun:test';
-
-import { validateA2aKind } from './a2a-kinds.js';
-```
-
-Copy every `it(...)` block from Task 1's test file verbatim below that import. Do not thin them out — the disarm test in particular is the property the rollout depends on.
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `cd container/agent-runner && bun test src/a2a-kinds.test.ts`
-Expected: FAIL — cannot resolve `./a2a-kinds.js`
-
-- [ ] **Step 3: Write the implementation**
-
-Copy `src/modules/agent-to-agent/a2a-kinds.ts` from Task 1 verbatim, changing only the mirror note in the header comment to point back at the host copy:
-
-```
- * `src/modules/agent-to-agent/a2a-kinds.ts` is a deliberate mirror of this
- * file; change both together.
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `cd container/agent-runner && bun test src/a2a-kinds.test.ts`
-Expected: PASS (7 tests)
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add container/agent-runner/src/a2a-kinds.ts container/agent-runner/src/a2a-kinds.test.ts
-git commit -m "feat(a2a): kind verdict function (container mirror)"
-```
+Recreating the mirror would put the contract's own decision function into two hand-synced copies, in a project whose entire thesis is that hand-synced contracts drift. Task numbering is preserved so it matches the commits and task IDs already in flight.
 
 ---
 
@@ -920,7 +903,7 @@ Expected: FAIL — `rejects` is not returned
 Add the reject type and nudge builder to `poll-loop.ts`:
 
 ```ts
-import { validateA2aKind } from './a2a-kinds.js';
+import { validateA2aKind } from '@shared/a2a/kinds.js';
 
 export interface BlockReject {
   to: string;
@@ -1067,7 +1050,7 @@ Expected: FAIL — the message routes despite an illegal kind
 
 - [ ] **Step 3: Write the implementation**
 
-In `agent-route.ts`, add imports (`getLegalKinds` from `../../agent-registry.js`, `AGENTS_DIR` from `../../config.js`, `validateA2aKind` from `./a2a-kinds.js`) and gate inside `routeAgentMessage`, **after** the destination/permission checks and **before** `resolveTargetSession`:
+In `agent-route.ts`, add imports (`getLegalKinds` from `../../agent-registry.js`, `AGENTS_DIR` from `../../config.js`, `validateA2aKind` from `../../../shared/a2a/kinds.js` — the host imports shared modules by relative path, as `src/channels/ios-app/v2/http-handler.ts:33` does) and gate inside `routeAgentMessage`, **after** the destination/permission checks and **before** `resolveTargetSession`:
 
 ```ts
   const targetGroup = getAgentGroup(targetAgentGroupId);
