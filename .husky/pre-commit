@@ -1,5 +1,9 @@
-staged=$(git diff --cached --name-only --diff-filter=ACM -- 'src/**/*.ts')
-pnpm run format:fix
-if [ -n "$staged" ]; then
-  echo "$staged" | xargs git add
+# ':(glob)' is load-bearing: git's default pathspec treats '**' as plain '*',
+# which still requires a literal '/', so 'src/**/*.ts' silently matches no
+# top-level src/*.ts file at all.
+staged=$(git diff --cached --name-only --diff-filter=ACM -- ':(glob)src/**/*.ts')
+if [ -z "$staged" ]; then
+  exit 0
 fi
+echo "$staged" | tr '\n' '\0' | xargs -0 pnpm exec prettier --write --
+echo "$staged" | tr '\n' '\0' | xargs -0 git add --
