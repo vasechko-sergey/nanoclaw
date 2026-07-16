@@ -592,7 +592,13 @@ interface QueryResult {
   transientError?: boolean;
 }
 
-async function processQuery(
+/**
+ * Exported for tests only — `runPollLoop` is the sole production caller. The
+ * turn-scoped accumulators below (`dispatchedKeys`, `turnRejects`) live for the
+ * length of one query and are only observable from in here, so they cannot be
+ * covered through the exported dispatch helpers.
+ */
+export async function processQuery(
   query: AgentQuery,
   routing: RoutingContext,
   initialBatchIds: string[],
@@ -1109,6 +1115,29 @@ async function processQuery(
               query.push(buildRejectNudge(rejectsThisTurn));
             }
           }
+        } else if (turnRejects.length > 0) {
+          // A result with NO text still ends the turn. providers/claude.ts
+          // yields `text: null` for error_max_turns / error_during_execution,
+          // and a turn can simply produce no final text — but both flushes
+          // above live inside `if (event.text)`. Without this, the turn's
+          // rejects outlive it and get folded into the NEXT turn's nudge
+          // (`rejectNudged` is still false, since no nudge fired here), telling
+          // the agent to re-send a block it never wrote to a destination it
+          // never named. Reachable with no descriptor at all, via
+          // unknown_destination.
+          //
+          // Dropped rather than nudged, deliberately: this turn produced no
+          // text, so it either errored out or said nothing. Pushing a nudge
+          // would re-arm the watchdog (`resultReceived = false`) against a
+          // query that may already be dead, buying a full STREAM_IDLE_TIMEOUT_MS
+          // stall and a spurious "[stream stalled]" for a turn that is over —
+          // and the provider event carries no success/error discriminator to
+          // tell those apart. Same call the watchdog's abort path makes above:
+          // no query left to nudge into, and they were logged at reject time.
+          // Layer 2 (host) remains the backstop for anything that actually
+          // reached messages_out.
+          log(`Result with no text — dropping ${turnRejects.length} unreported reject(s) from this turn`);
+          turnRejects = [];
         }
       }
     }

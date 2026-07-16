@@ -17,8 +17,10 @@ import {
   dispatchResultText,
   dispatchCompleteBlocks,
   buildRejectNudge,
+  processQuery,
 } from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
+import type { AgentQuery, ProviderEvent } from './providers/types.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
 
 beforeEach(() => {
@@ -1008,5 +1010,81 @@ describe('buildRejectNudge', () => {
   it('degrades to text-only when a kind reject carries no legal list', () => {
     const nudge = buildRejectNudge([{ to: 'payne', kind: 'bogus', code: 'unknown_kind' }]);
     expect(nudge).toContain('Легальные: text.');
+  });
+});
+
+/**
+ * `turnRejects` is turn-scoped: the streaming path accumulates rejects across a
+ * turn's many assistant_text events so that ONE nudge at `result` covers them
+ * all. That makes clearing it at every turn boundary load-bearing — a reject
+ * that outlives its turn gets reported against someone else's output.
+ *
+ * Driven through `processQuery` with a hand-rolled AgentQuery: the accumulator
+ * is a local, so the exported dispatch helpers cannot reach it.
+ */
+describe('processQuery turn-scoped rejects', () => {
+  const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: null };
+
+  function seedAgentDest(name: string, agentGroupId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'agent', NULL, NULL, ?)`,
+      )
+      .run(name, name, agentGroupId);
+  }
+
+  /** Replays a canned event script and records everything pushed back in. */
+  function fakeQuery(events: ProviderEvent[]): { query: AgentQuery; pushes: string[] } {
+    const pushes: string[] = [];
+    return {
+      pushes,
+      query: {
+        push: (message: string) => {
+          pushes.push(message);
+        },
+        end: () => {},
+        abort: () => {},
+        events: {
+          async *[Symbol.asyncIterator]() {
+            for (const e of events) yield e;
+          },
+        },
+      },
+    };
+  }
+
+  it('does not report a previous turn reject in this turn nudge (result with no text)', async () => {
+    // REGRESSION. providers/claude.ts yields `text: null` for error_max_turns
+    // and error_during_execution, and the flush lived inside `if (event.text)`.
+    // So turn 1's reject was never cleared, and turn 2 — whose own output was
+    // fine — got nudged to re-send a block IT never wrote, to a destination it
+    // never named. Reachable without any descriptor: unknown_destination.
+    seedAgentDest('payne', 'ag-payne');
+    const { query, pushes } = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: '<message to="nobody">x</message>' },
+      { type: 'result', text: null },
+      { type: 'assistant_text', text: '<message to="payne">ок</message>' },
+      { type: 'result', text: '<message to="payne">ок</message>' },
+    ]);
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(pushes.join('\n')).not.toContain('nobody');
+  });
+
+  it('still nudges for a block rejected in the same turn', async () => {
+    // Inverse-mutation guard: clearing turnRejects before the flush instead of
+    // after would pass the test above while silently killing the nudge.
+    const { query, pushes } = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: '<message to="nobody">x</message>' },
+      { type: 'result', text: '<message to="nobody">x</message>' },
+    ]);
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(pushes.join('\n')).toContain('nobody');
   });
 });
