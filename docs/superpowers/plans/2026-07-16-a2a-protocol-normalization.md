@@ -217,13 +217,9 @@ git commit -m "feat(a2a): kind verdict function (host)"
 
 ---
 
-## Task 2: Container verdict function (mirror)
+## Task 2: Container verdict function (mirror) — ❌ VOID, DO NOT IMPLEMENT
 
-**Files:**
-- Create: `container/agent-runner/src/a2a-kinds.ts`
-- Test: `container/agent-runner/src/a2a-kinds.test.ts`
-
-**Context:** A deliberate duplicate of Task 1. The host and container share no modules (Node/pnpm vs Bun, separate trees, separate lockfiles). Keep the two files byte-identical apart from the import in the test (`bun:test` vs `vitest`) and the header comment's direction.
+**Files:** none. Create nothing.
 
 **Do not do this task.** It rested on a false premise — see the CORRECTION in the header. The two trees *can* share a module: `shared/ios-app-protocol/` already does, and Bun was verified to resolve `@shared/*` value-imports at runtime in a replica of the container layout. The verdict function therefore lives once at `shared/a2a/kinds.ts` (Task 1) and the container simply imports it.
 
