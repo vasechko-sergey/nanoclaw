@@ -48,11 +48,32 @@ describe('readAgentDescriptor', () => {
     writeDescriptor('weird', '["array"]');
     expect(readAgentDescriptor(tmp, 'weird')).toBeNull();
   });
+
+  it('returns null when aka is not a string array', () => {
+    writeDescriptor('typo', JSON.stringify({ role: 'x', aka: 'Пейн' }));
+    expect(readAgentDescriptor(tmp, 'typo')).toBeNull();
+  });
+
+  it('returns null when a2a_in is not an object', () => {
+    writeDescriptor('typo2', JSON.stringify({ a2a_in: 'workout_done' }));
+    expect(readAgentDescriptor(tmp, 'typo2')).toBeNull();
+  });
+
+  it('returns null when a2a_in has non-string values', () => {
+    writeDescriptor('typo3', JSON.stringify({ a2a_in: { workout_done: { desc: 'nested' } } }));
+    expect(readAgentDescriptor(tmp, 'typo3')).toBeNull();
+  });
 });
 
 describe('buildRegistry', () => {
   it('joins each agent group with its descriptor, name from agent_groups', () => {
-    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+    createAgentGroup({
+      id: 'ag-1778-xyz',
+      name: 'Майор Пейн',
+      folder: 'payne',
+      agent_provider: null,
+      created_at: now(),
+    });
     writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: 'лог тренировки' } }));
 
     expect(buildRegistry(tmp)).toEqual([
@@ -88,5 +109,22 @@ describe('renderRegistryMarkdown', () => {
   it('renders a dash for an agent with no role or actions', () => {
     const md = renderRegistryMarkdown([{ id: 'greg', name: 'Greg', role: '', a2a_in: {}, aka: [] }]);
     expect(md).toContain('| `greg` | Greg | — | — |');
+  });
+
+  it('renders a detail section for an agent with aliases but no a2a actions', () => {
+    const md = renderRegistryMarkdown([
+      { id: 'greg', name: 'Greg', role: 'аналитик здоровья', a2a_in: {}, aka: ['Грег'] },
+    ]);
+    expect(md).toContain('## Greg (`greg`)');
+    expect(md).toContain('Также зовут: Грег');
+  });
+
+  it('escapes pipes and newlines so a crafted name cannot corrupt the table', () => {
+    const md = renderRegistryMarkdown([{ id: 'evil', name: 'Evil | ghost', role: 'a\nb', a2a_in: {}, aka: [] }]);
+    const row = md.split('\n').find((l) => l.startsWith('| `evil`'))!;
+    expect(row).toContain('Evil \\| ghost');
+    expect(row).toContain('a b');
+    // 4 columns → exactly 5 unescaped pipes; the escaped one must not add a column
+    expect(row.match(/(?<!\\)\|/g)!.length).toBe(5);
   });
 });

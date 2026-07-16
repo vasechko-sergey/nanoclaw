@@ -55,7 +55,32 @@ export function readAgentDescriptor(agentsDir: string, folder: string): AgentDes
     log.warn('agent-registry: agent.json is not an object, ignored', { folder });
     return null;
   }
-  return parsed as AgentDescriptor;
+  const d = parsed as Record<string, unknown>;
+  // Validate field TYPES, not just the top-level shape. A hand-authored typo
+  // (`"aka": "Пейн"` instead of `["Пейн"]`) would otherwise sail through and
+  // throw inside the renderer, taking the whole registry down for every agent —
+  // exactly what the degrade-gracefully contract above promises cannot happen.
+  // An unusable field fails the same way malformed JSON does: name-only entry.
+  if (d.role !== undefined && typeof d.role !== 'string') {
+    log.warn('agent-registry: agent.json `role` is not a string, ignored', { folder });
+    return null;
+  }
+  if (d.aka !== undefined && (!Array.isArray(d.aka) || d.aka.some((x) => typeof x !== 'string'))) {
+    log.warn('agent-registry: agent.json `aka` is not a string array, ignored', { folder });
+    return null;
+  }
+  if (d.a2a_in !== undefined) {
+    const a = d.a2a_in;
+    if (a === null || typeof a !== 'object' || Array.isArray(a)) {
+      log.warn('agent-registry: agent.json `a2a_in` is not an object, ignored', { folder });
+      return null;
+    }
+    if (Object.values(a as Record<string, unknown>).some((v) => typeof v !== 'string')) {
+      log.warn('agent-registry: agent.json `a2a_in` has non-string values, ignored', { folder });
+      return null;
+    }
+  }
+  return d as AgentDescriptor;
 }
 
 /**
@@ -76,6 +101,22 @@ export function buildRegistry(agentsDir: string): RegistryEntry[] {
   });
 }
 
+/**
+ * Make a value safe inside a markdown table cell: escape pipes (they would open
+ * a bogus column) and collapse newlines (they would split the row). `name` is
+ * agent-supplied (create_agent normalizes only `folder`) and agent.json is
+ * agent-authorable, so both are semi-untrusted input to the one document agents
+ * read as peer ground truth.
+ */
+function cell(s: string): string {
+  return s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+}
+
+/** Collapse newlines for headings/prose outside the table. */
+function oneLine(s: string): string {
+  return s.replace(/\r?\n/g, ' ').trim();
+}
+
 /** Render the registry as the markdown agents actually read. */
 export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
   const lines = [
@@ -89,18 +130,20 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
   ];
   for (const e of entries) {
     const actions = Object.keys(e.a2a_in);
-    const actionCell = actions.length > 0 ? actions.map((a) => `\`${a}\``).join(', ') : '—';
-    lines.push(`| \`${e.id}\` | ${e.name} | ${e.role || '—'} | ${actionCell} |`);
+    const actionCell = actions.length > 0 ? actions.map((a) => `\`${cell(a)}\``).join(', ') : '—';
+    lines.push(`| \`${cell(e.id)}\` | ${cell(e.name)} | ${cell(e.role) || '—'} | ${actionCell} |`);
   }
   for (const e of entries) {
     const actions = Object.entries(e.a2a_in);
-    if (actions.length === 0) continue;
-    lines.push('', `## ${e.name} (\`${e.id}\`)`);
-    if (e.role) lines.push(`Роль: ${e.role}`);
-    if (e.aka.length > 0) lines.push(`Также зовут: ${e.aka.join(', ')}`);
+    // Gate on anything worth showing — NOT on actions alone. `aka` is rendered
+    // only here, so a receive-only agent's aliases would otherwise never appear.
+    if (actions.length === 0 && !e.role && e.aka.length === 0) continue;
+    lines.push('', `## ${oneLine(e.name)} (\`${oneLine(e.id)}\`)`);
+    if (e.role) lines.push(`Роль: ${oneLine(e.role)}`);
+    if (e.aka.length > 0) lines.push(`Также зовут: ${e.aka.map(oneLine).join(', ')}`);
     lines.push('');
     for (const [action, desc] of actions) {
-      lines.push(`- \`${action}\` — ${desc}`);
+      lines.push(`- \`${oneLine(action)}\` — ${oneLine(desc)}`);
     }
   }
   lines.push('');
