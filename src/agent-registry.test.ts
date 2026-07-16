@@ -89,12 +89,23 @@ describe('getLegalKinds', () => {
     expect(getLegalKinds(tmp, 'broken')).toBeNull();
   });
 
-  it('returns an empty array for a descriptor that declares no kinds', () => {
-    // Distinct from null: this agent HAS a descriptor and accepts text only, so
-    // its gate is ARMED. Collapsing [] to null (or null to []) inverts the whole
-    // rollout — see the doc comment on getLegalKinds.
+  it('returns null for a descriptor with no a2a_in — a registry-only entry stays disarmed', () => {
+    // agent.json predates the gate and its documented contract is "every field
+    // optional — a partial descriptor degrades to a name-only entry". Adding a
+    // `role` (the shipped registry's entire purpose) must NOT arm anything: an
+    // agent whose owner never made a claim about the a2a wire has not made the
+    // claim "I accept nothing but text". Presence of the FILE is not the
+    // declaration; presence of `a2a_in` is.
     writeDescriptor('mute', JSON.stringify({ role: 'наблюдатель' }));
-    expect(getLegalKinds(tmp, 'mute')).toEqual([]);
+    expect(getLegalKinds(tmp, 'mute')).toBeNull();
+  });
+
+  it('returns an empty array for an explicit empty a2a_in — deliberately armed, text-only', () => {
+    // Distinct from null: this descriptor DOES make a claim about the wire, and
+    // the claim is "nothing structured". Gate ARMED. Collapsing [] to null (or
+    // null to []) inverts the rollout — see the doc comment on getLegalKinds.
+    writeDescriptor('strict', JSON.stringify({ role: 'наблюдатель', a2a_in: {} }));
+    expect(getLegalKinds(tmp, 'strict')).toEqual([]);
   });
 });
 

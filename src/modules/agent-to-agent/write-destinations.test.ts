@@ -109,11 +109,11 @@ describe('writeDestinations — a2a_kinds projection', () => {
     expect(readProjected()).toEqual([{ name: 'payne', type: 'agent', a2a_kinds: '["set_log","workout_done"]' }]);
   });
 
-  it('projects [] — not null — for a target whose descriptor declares no kinds', () => {
-    // Text-only agent: HAS a descriptor, accepts no structured kinds. The gate
-    // must stay ARMED for it, so this may never collapse to null.
+  it('projects [] — not null — for a target whose a2a_in is explicitly empty', () => {
+    // Text-only agent: declares `a2a_in` and declares nothing structured in it.
+    // The gate must stay ARMED for it, so this may never collapse to null.
     seedAgent('ag-greg', 'greg', 'Greg');
-    writeDescriptor('greg', { role: 'Аналитик' });
+    writeDescriptor('greg', { role: 'Аналитик', a2a_in: {} });
     createDestination({
       agent_group_id: SOURCE_AG,
       local_name: 'greg',
@@ -125,6 +125,24 @@ describe('writeDestinations — a2a_kinds projection', () => {
     writeDestinations(SOURCE_AG, SESSION_ID);
 
     expect(readProjected()).toEqual([{ name: 'greg', type: 'agent', a2a_kinds: '[]' }]);
+  });
+
+  it('projects null for a target whose descriptor has no a2a_in (registry-only, disarmed)', () => {
+    // A `role` is the shipped registry's whole purpose and says nothing about
+    // the wire. Adding one must not arm the gate for that agent.
+    seedAgent('ag-greg2', 'greg2', 'Greg');
+    writeDescriptor('greg2', { role: 'Аналитик' });
+    createDestination({
+      agent_group_id: SOURCE_AG,
+      local_name: 'greg2',
+      target_type: 'agent',
+      target_id: 'ag-greg2',
+      created_at: now(),
+    });
+
+    writeDestinations(SOURCE_AG, SESSION_ID);
+
+    expect(readProjected()).toEqual([{ name: 'greg2', type: 'agent', a2a_kinds: null }]);
   });
 
   it('projects null for an agent target with no descriptor (gate disarmed)', () => {

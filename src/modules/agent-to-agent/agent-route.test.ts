@@ -880,9 +880,19 @@ describe('routeAgentMessage a2a kind gate (layer 2)', () => {
     expect(readInbound(B, SB.id)).toHaveLength(1);
   });
 
-  it('bounces a target that declares no kinds when the body is structured', async () => {
-    // `[]` is NOT null: descriptor present, declares nothing → text-only, ARMED.
+  it('routes normally for a descriptor with no a2a_in — registry-only, still disarmed', async () => {
+    // SHIP-INERT. `role` alone is the shipped registry's whole purpose and says
+    // nothing about the wire, so it must not arm anything.
     writeDescriptor('b', { role: 'аналитик' });
+    await send({ text: '{}', a2a_kind: 'set_log' });
+    expect(readInbound(B, SB.id)).toHaveLength(1);
+    expect(readInbound(A, SA.id)).toHaveLength(0);
+  });
+
+  it('bounces a target whose a2a_in is explicitly empty when the body is structured', async () => {
+    // `[]` is NOT null: the descriptor DOES declare, and declares nothing
+    // structured → text-only, ARMED.
+    writeDescriptor('b', { role: 'аналитик', a2a_in: {} });
     await send({ text: '{}', a2a_kind: 'set_log' });
     expect(readInbound(B, SB.id)).toHaveLength(0);
     expect(readInbound(A, SA.id)).toHaveLength(1);

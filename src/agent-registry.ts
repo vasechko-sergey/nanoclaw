@@ -89,23 +89,35 @@ export function readAgentDescriptor(agentsDir: string, folder: string): AgentDes
 }
 
 /**
- * The kinds this agent accepts over a2a, or `null` when it has no usable
- * descriptor — which DISARMS the gate for it (see `shared/a2a/kinds.ts`).
+ * The kinds this agent accepts over a2a, or `null` when it has made no usable
+ * declaration — which DISARMS the gate for it (see `shared/a2a/kinds.ts`).
  *
- * `null` deliberately conflates "not authored" with "malformed": both must fail
- * open. A typo in agent.json bouncing every message the agent receives would be
- * far worse than the drift the gate prevents. It is also what lets the whole
- * feature ship inert — no descriptors exist yet, so every gate is off until one
- * is authored.
+ * What arms the gate is an explicit `a2a_in`, NOT the presence of the file.
+ * Three cases:
  *
- * An empty array is NOT null: it means "has a descriptor, declares no kinds",
- * i.e. text-only, gate ARMED. Never normalize a missing descriptor to `[]` —
- * that would arm every un-migrated agent and bounce all structured traffic.
+ * - **No descriptor, or a malformed one → `null`, disarmed.** These two are
+ *   deliberately conflated: both must fail open. A typo in agent.json bouncing
+ *   every message an agent receives would be far worse than the drift the gate
+ *   prevents. It is also what lets the feature ship inert — no descriptors
+ *   exist yet, so every gate is off until one is authored.
+ * - **Descriptor with no `a2a_in` → `null`, disarmed.** agent.json predates
+ *   this gate and promises that every field is optional (see AgentDescriptor),
+ *   so a registry-only entry — a `role`, which is the shipped registry's entire
+ *   purpose — must stay inert. Its owner has said nothing about the a2a wire,
+ *   and silence is not the claim "I accept nothing but text".
+ * - **Explicit `"a2a_in": {}` → `[]`, ARMED, text-only.** This descriptor DOES
+ *   make a claim about the wire; the claim is "nothing structured", so every
+ *   kind but `text` bounces.
+ *
+ * `[]` and `null` are therefore NOT interchangeable, in either direction.
+ * Normalizing a missing `a2a_in` to `[]` arms every un-migrated agent and
+ * bounces all its structured traffic; normalizing `[]` to `null` silently
+ * ignores a deliberate declaration.
  */
 export function getLegalKinds(agentsDir: string, folder: string): string[] | null {
   const d = readAgentDescriptor(agentsDir, folder);
   if (!d) return null;
-  return Object.keys(d.a2a_in ?? {});
+  return d.a2a_in === undefined ? null : Object.keys(d.a2a_in);
 }
 
 /**
