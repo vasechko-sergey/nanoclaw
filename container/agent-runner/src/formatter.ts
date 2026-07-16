@@ -239,7 +239,17 @@ function formatSingleChat(msg: MessageInRow): string {
   const agentAttr =
     msg.channel_type === 'agent' && content.senderId ? ` agent="${escapeXml(String(content.senderId))}"` : '';
 
-  return `<message${idAttr}${fromAttr}${agentAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${attachmentsSuffix}</message>`;
+  // Symmetry with the outbound form: the agent sees `kind=` on every structured
+  // inbound, so it never has to recall the convention from CLAUDE.md — which is
+  // precisely how the old prose contract drifted. `text` is the implicit default
+  // and is not printed: the freeform majority stays noise-free. Gated on
+  // channel_type for the same reason as `agent=` — kind is an a2a concept.
+  const kindAttr =
+    msg.channel_type === 'agent' && content.kind && content.kind !== 'text'
+      ? ` kind="${escapeXml(String(content.kind))}"`
+      : '';
+
+  return `<message${idAttr}${fromAttr}${agentAttr}${kindAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${attachmentsSuffix}</message>`;
 }
 
 /**
