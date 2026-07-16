@@ -15,11 +15,7 @@ import { LOGS_DIR } from './config.js';
  * I/O — so the line-assembly logic is unit-tested without a stream or a
  * spawned container.
  */
-export function splitPrefixedLines(
-  prefix: string,
-  pending: string,
-  chunk: string,
-): { out: string; rest: string } {
+export function splitPrefixedLines(prefix: string, pending: string, chunk: string): { out: string; rest: string } {
   const parts = (pending + chunk).split('\n');
   const rest = parts.pop() ?? '';
   const out = parts
