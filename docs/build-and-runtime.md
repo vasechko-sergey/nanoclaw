@@ -1,6 +1,6 @@
 # Build & Runtime
 
-NanoClaw runs a split stack: the host is Node + pnpm, the agent container is Bun. They communicate exclusively through two SQLite files per session — there are no shared modules between them, which is what lets them use different runtimes cleanly.
+NanoClaw runs a split stack: the host is Node + pnpm, the agent container is Bun. At runtime they communicate exclusively through two SQLite files per session — no IPC, no shared process state — which is what lets them use different runtimes cleanly. They do share source, narrowly: the `shared/` tree carries the canonical wire contracts both sides must agree on (`ios-app-protocol`, `a2a`). The host imports those by relative path; the container resolves them through the `@shared/*` alias in `container/agent-runner/tsconfig.json`, which both tsc and Bun honor. Each is a composite tsc project, built before the host and copied whole into the image (`COPY shared /app/shared`).
 
 ## Why the split
 

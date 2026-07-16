@@ -10,6 +10,11 @@ shared/ios-app-protocol/*.d.ts
 shared/ios-app-protocol/*.d.ts.map
 shared/ios-app-protocol/*.js.map
 shared/ios-app-protocol/*.tsbuildinfo
+shared/a2a/*.js
+shared/a2a/*.d.ts
+shared/a2a/*.d.ts.map
+shared/a2a/*.js.map
+shared/a2a/*.tsbuildinfo
 
 # Local data & auth
 store/

@@ -295,7 +295,7 @@ The container buildkit caches the build context aggressively. `--no-cache` alone
 
 ## Container Runtime (Bun)
 
-The agent container runs on **Bun**; the host runs on **Node** (pnpm). They communicate only via session DBs — no shared modules. Details and rationale: [docs/build-and-runtime.md](docs/build-and-runtime.md).
+The agent container runs on **Bun**; the host runs on **Node** (pnpm). At runtime they communicate only via session DBs — no IPC, no shared process state. They do share source, narrowly: the `shared/` tree holds the canonical wire contracts both sides must agree on, imported by relative path on the host and via the `@shared/*` alias in the container. Details and rationale: [docs/build-and-runtime.md](docs/build-and-runtime.md).
 
 **Gotchas — trigger + action:**
 

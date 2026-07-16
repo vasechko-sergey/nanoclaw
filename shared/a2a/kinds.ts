@@ -1,11 +1,19 @@
 /**
  * The a2a envelope verdict — is this (kind, body) pair legal for this target?
  *
- * Pure by design: no DB, no fs, no logging. Both gate layers (container
- * poll-loop and host agent-route) call it, and neither can share a module with
- * the other — the host is Node/pnpm and the container is Bun, separate package
- * trees. `container/agent-runner/src/a2a-kinds.ts` is a deliberate mirror of
- * this file; change both together.
+ * Lives in `shared/` because BOTH the host (`src/`, Node) and the agent
+ * container (`container/agent-runner/`, Bun) must agree on it, and it is the
+ * one artifact that decides what the a2a wire accepts. The host imports it by
+ * relative path; the container resolves it through the `@shared/*` alias
+ * (`container/agent-runner/tsconfig.json`), which Bun honors at runtime — the
+ * same mechanism `shared/ios-app-protocol` already uses.
+ *
+ * It is deliberately NOT duplicated per tree. This project exists because a2a
+ * contracts lived as prose that nothing checked, so they drifted from reality;
+ * a hand-synced copy of the contract's own decision function would reproduce
+ * that failure one layer down.
+ *
+ * Pure: no DB, no fs, no logging.
  *
  * See docs/superpowers/specs/2026-07-16-a2a-protocol-normalization-design.md.
  */
@@ -23,6 +31,10 @@ export type A2aKindVerdict =
  *                    code ship inert and lets each agent.json arm its own agent.
  *                    A malformed descriptor must also land here (fail open), so
  *                    that a typo cannot bounce all of an agent's traffic.
+ *                    `[]` is NOT `null`: a descriptor that declares no kinds
+ *                    ARMS the gate text-only — every other kind bounces. Only
+ *                    `null` disarms. Never normalize a missing descriptor to
+ *                    `[]`.
  */
 export function validateA2aKind(
   kind: string | null | undefined,
@@ -49,12 +61,15 @@ export function validateA2aKind(
 
 function isJsonObject(body: string): boolean {
   const trimmed = body.trim();
+  // A JSON text starting with `{` can only parse to a plain object — never an
+  // array, scalar, or null. So a successful parse here IS an object; no further
+  // shape check is reachable. The cheap prefix test also keeps JSON.parse off
+  // the hot path: ordinary prose never reaches it.
   if (!trimmed.startsWith('{')) return false;
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(trimmed);
+    JSON.parse(trimmed);
   } catch {
     return false;
   }
-  return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
+  return true;
 }

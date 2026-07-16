@@ -25,5 +25,5 @@
   "exclude": ["node_modules", "dist", "src/**/*.test.ts"],
   // Reference the composite shared project so its emitted .d.ts is used for
   // type-checking instead of pulling the .ts sources into this rootDir.
-  "references": [{ "path": "../../shared/ios-app-protocol" }]
+  "references": [{ "path": "../../shared/ios-app-protocol" }, { "path": "../../shared/a2a" }]
 }

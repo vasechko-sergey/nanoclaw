@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateA2aKind } from './a2a-kinds.js';
+import { validateA2aKind } from './kinds.js';
 
 describe('validateA2aKind', () => {
   it('passes a declared kind', () => {
@@ -43,6 +43,12 @@ describe('validateA2aKind', () => {
     expect(validateA2aKind(null, '42', ['set_log'])).toEqual({ ok: true, kind: 'text' });
     expect(validateA2aKind(null, 'null', ['set_log'])).toEqual({ ok: true, kind: 'text' });
     expect(validateA2aKind(null, '{не json}', ['set_log'])).toEqual({ ok: true, kind: 'text' });
+  });
+
+  it('ARMS the gate for an empty array — [] is not null', () => {
+    // [] = descriptor present, declares no kinds = text-only, gate ARMED.
+    // null = no descriptor = disarmed. Callers must never collapse one to the other.
+    expect(validateA2aKind('set_log', '{}', [])).toEqual({ ok: false, code: 'unknown_kind', kind: 'set_log' });
   });
 
   it('DISARMS entirely when the target has no descriptor (legalKinds null)', () => {

@@ -17,5 +17,5 @@
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "shared"],
-  "references": [{ "path": "./shared/ios-app-protocol" }]
+  "references": [{ "path": "./shared/ios-app-protocol" }, { "path": "./shared/a2a" }]
 }
