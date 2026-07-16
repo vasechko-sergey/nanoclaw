@@ -57,6 +57,25 @@ The agent sees `kind=` on every structured inbound, every turn. It does not have
 *remember* a convention from CLAUDE.md — the wire demonstrates the format
 continuously. Memory of prose is exactly what failed before.
 
+### The system prompt teaches it too — from the same artifact
+
+`buildDestinationsSection()` (`container/agent-runner/src/destinations.ts`) already
+generates the "## Sending messages" addendum from the live `destinations` table.
+Since that table now carries `a2a_kinds`, the addendum lists **each agent
+destination's legal kinds automatically, on every wake, from the same descriptor
+the gate checks**:
+
+```
+- `payne` (Майор Пейн) — kind: set_log, health_signal, ack
+- `family` (Семья)
+```
+
+This matters more than it looks. It means the contract an agent reads is *generated
+from the enforced artifact* rather than hand-copied into prose — so the CLAUDE.md
+rewrite in §5 is mostly deletion, not translation. Prose contracts are what rotted;
+replacing them with generated ones is the point, and a hand-maintained duplicate in
+CLAUDE.md would reintroduce exactly the drift being removed.
+
 ### Parsing contract
 
 - `to="…"` remains **required** for a block to be dispatchable — unchanged.
@@ -268,8 +287,12 @@ where structured traffic bounces en masse.
 
 1. Ship the code (envelope, both gate layers, `a2a_kinds` column, formatter). Zero
    descriptors exist → every gate is off → **behavior is unchanged**.
-2. Author 5 `agent.json` descriptors + rewrite the a2a contract sections of 5
-   CLAUDE.md files to the `kind=` form.
+2. Author 5 `agent.json` descriptors. Then **delete** the hand-written a2a contract
+   tables from the 5 CLAUDE.md files — the generated destinations addendum and
+   `/workspace/global/agents.md` now carry that content from the descriptor. Keep
+   in CLAUDE.md only what a descriptor cannot express (when to send what, and why).
+   Re-stating the kind list there would recreate the hand-maintained duplicate this
+   project exists to remove.
 3. Rebirth all five together: kill containers + `DELETE FROM session_state WHERE key
    LIKE 'continuation:%'` — CLAUDE.md changes need both (see the
    instruction-reload rule).
