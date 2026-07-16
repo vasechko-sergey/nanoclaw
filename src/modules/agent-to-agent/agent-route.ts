@@ -21,11 +21,13 @@
 import fs from 'fs';
 import path from 'path';
 
+import { validateA2aKind } from '../../../shared/a2a/kinds.js';
+import { getLegalKinds } from '../../agent-registry.js';
 import { isSafeAttachmentName } from '../../attachment-safety.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getInboundA2aHops, getInboundSourceSessionId, getMostRecentPeerSourceSessionId } from '../../db/session-db.js';
 import { getSession, getSessionsByAgentGroup } from '../../db/sessions.js';
-import { OWNER_PERSON_KEY } from '../../config.js';
+import { AGENTS_DIR, OWNER_PERSON_KEY } from '../../config.js';
 import { wakeContainer } from '../../container-runner.js';
 import { log } from '../../log.js';
 import { openInboundDb, resolveSession, sessionDir, writeSessionMessage } from '../../session-manager.js';
@@ -232,6 +234,71 @@ export function stampSenderIdentity(content: string, sourceAgentGroupId: string)
   return JSON.stringify(obj);
 }
 
+/**
+ * Returns a human-readable reason when this message must not be routed, or null
+ * when it is fine. Parse failures return null — a non-JSON content string has no
+ * envelope to judge, and Layer 1 already saw it.
+ */
+function checkA2aKind(msg: RoutableAgentMessage, targetGroup: { folder: string; name: string }): string | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(msg.content);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  // System notes are injected by the host itself (approvals, restarts,
+  // bounces). They are not agent-authored protocol and must always land —
+  // this is also what stops a bounce from bouncing.
+  if (parsed.sender === 'system') return null;
+
+  const legal = getLegalKinds(AGENTS_DIR, targetGroup.folder);
+  const verdict = validateA2aKind(
+    typeof parsed.kind === 'string' ? parsed.kind : null,
+    typeof parsed.text === 'string' ? parsed.text : '',
+    legal,
+  );
+  if (verdict.ok) return null;
+
+  const legalList = (legal ?? []).concat('text').join(', ');
+  return verdict.code === 'unmarked_json'
+    ? `Сообщение для «${targetGroup.name}» не доставлено: тело выглядит структурным, но kind= не указан. Легальные kind: ${legalList}.`
+    : `Сообщение для «${targetGroup.name}» не доставлено: kind="${verdict.kind}" не принимается. Легальные kind: ${legalList}.`;
+}
+
+/**
+ * Write the rejection into the SENDER's own inbound as a system self-note — the
+ * established shape (container-restart.ts, approvals/primitive.ts). Without this
+ * the message would die silently in the retry path, which is the "cuts live
+ * traffic" failure the owner explicitly ruled out.
+ *
+ * No wakeContainer: the sender's container is by definition alive (it just
+ * emitted this) and will see the note on its next poll. Waking it would race its
+ * own turn.
+ */
+function bounceToSender(reason: string, msg: RoutableAgentMessage, session: Session): void {
+  log.warn('Agent message rejected: illegal a2a kind', {
+    from: session.agent_group_id,
+    fromSession: session.id,
+    sourceMsgId: msg.id,
+    reason,
+  });
+  writeSessionMessage(session.agent_group_id, session.id, {
+    id: `a2a-reject-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind: 'chat',
+    timestamp: new Date().toISOString(),
+    platformId: session.agent_group_id,
+    channelType: 'agent',
+    threadId: null,
+    content: JSON.stringify({
+      text: `<system>${reason} Исправь kind и перешли.</system>`,
+      sender: 'system',
+      senderId: 'system',
+    }),
+    sourceSessionId: session.id,
+  });
+}
+
 export async function routeAgentMessage(msg: RoutableAgentMessage, session: Session): Promise<void> {
   const targetAgentGroupId = msg.platform_id;
   if (!targetAgentGroupId) {
@@ -245,9 +312,22 @@ export async function routeAgentMessage(msg: RoutableAgentMessage, session: Sess
       `unauthorized agent-to-agent: ${session.agent_group_id} has no destination for ${targetAgentGroupId}`,
     );
   }
-  if (!getAgentGroup(targetAgentGroupId)) {
+  const targetGroup = getAgentGroup(targetAgentGroupId);
+  if (!targetGroup) {
     throw new Error(`target agent group ${targetAgentGroupId} not found for message ${msg.id}`);
   }
+
+  // Layer 2 — the authoritative gate. Layer 1 (container poll-loop) catches
+  // essentially everything in-turn with better context; this exists so the
+  // declaration is BINDING: an emit path that skips poll-loop (MCP send_message,
+  // an older agent-runner, anything future) is still checked. A gate with a
+  // bypass is a document again, which is what we are replacing.
+  const reject = checkA2aKind(msg, targetGroup);
+  if (reject) {
+    bounceToSender(reject, msg, session);
+    return;
+  }
+
   const targetSession = resolveTargetSession(msg, session, targetAgentGroupId);
   const a2aMsgId = `a2a-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
