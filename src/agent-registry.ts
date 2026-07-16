@@ -10,11 +10,16 @@
  * come from each agent's own `agents/<folder>/agent.json`. The merged result is
  * rendered to `agents.json` (structured) and `agents.md` (what agents read).
  */
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
 import { getAllAgentGroups } from './db/agent-groups.js';
 import { log } from './log.js';
+
+function sha(s: string): string {
+  return crypto.createHash('sha256').update(s).digest('hex');
+}
 
 /** Shape of `agents/<folder>/agent.json`. Every field optional — a partial descriptor degrades to a name-only entry. */
 export interface AgentDescriptor {
@@ -164,4 +169,66 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
   }
   lines.push('');
   return lines.join('\n');
+}
+
+/**
+ * Write the registry pair into one person's `global/`. Hash-gated, and
+ * write-then-rename so a container reading the read-only mount never sees a
+ * half-written file (same idiom as public-profiles.ts). Returns files written.
+ */
+export function writeRegistryForPerson(personRoot: string, json: string, md: string): number {
+  const globalDir = path.join(personRoot, 'global');
+  const files: Array<[string, string]> = [
+    ['agents.json', json],
+    ['agents.md', md],
+  ];
+  let written = 0;
+  for (const [name, body] of files) {
+    const dest = path.join(globalDir, name);
+    let existing: string | null = null;
+    try {
+      existing = fs.readFileSync(dest, 'utf8');
+    } catch {
+      // missing → fall through and write
+    }
+    if (existing !== null && sha(existing) === sha(body)) continue;
+    try {
+      fs.mkdirSync(globalDir, { recursive: true });
+      const tmpPath = `${dest}.tmp`;
+      fs.writeFileSync(tmpPath, body);
+      fs.renameSync(tmpPath, dest);
+      written++;
+    } catch (err) {
+      log.warn('agent-registry: failed to write registry file', { dest, err });
+    }
+  }
+  return written;
+}
+
+/**
+ * Build the registry once and fan it into every person's global dir. Content is
+ * person-independent — only the destination varies, so each container resolves
+ * the same `/workspace/global/agents.md`. Returns total files written.
+ */
+export function writeAgentRegistry(userMemoryBase: string, agentsDir: string): number {
+  const entries = buildRegistry(agentsDir);
+  // Never publish an empty registry: a transient DB read returning nothing must
+  // not blank out a good file that agents are relying on.
+  if (entries.length === 0) return 0;
+
+  const json = JSON.stringify(entries, null, 2) + '\n';
+  const md = renderRegistryMarkdown(entries);
+
+  let persons: fs.Dirent[];
+  try {
+    persons = fs.readdirSync(userMemoryBase, { withFileTypes: true });
+  } catch {
+    return 0; // user-memory doesn't exist yet (pre-migration) — no-op
+  }
+  let written = 0;
+  for (const p of persons) {
+    if (!p.isDirectory()) continue;
+    written += writeRegistryForPerson(path.join(userMemoryBase, p.name), json, md);
+  }
+  return written;
 }

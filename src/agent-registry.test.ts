@@ -3,7 +3,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { readAgentDescriptor, buildRegistry, renderRegistryMarkdown } from './agent-registry.js';
+import {
+  readAgentDescriptor,
+  buildRegistry,
+  renderRegistryMarkdown,
+  writeAgentRegistry,
+} from './agent-registry.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup } from './db/index.js';
 
 let tmp: string;
@@ -161,5 +166,68 @@ describe('renderRegistryMarkdown', () => {
     const md = renderRegistryMarkdown([{ id: 'x`y', name: 'N', role: 'r', a2a_in: { 'ev`il': 'd' }, aka: [] }]);
     const row = md.split('\n').find((l) => l.startsWith('| `xy`'))!;
     expect(cells(row)).toEqual(['`xy`', 'N', 'r', '`evil`']);
+  });
+});
+
+describe('writeAgentRegistry', () => {
+  it('writes agents.json + agents.md into every person global dir', () => {
+    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: 'лог' } }));
+
+    const userMemoryBase = path.join(tmp, 'user-memory');
+    fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
+    fs.mkdirSync(path.join(userMemoryBase, 'p2'), { recursive: true });
+
+    // 2 files × 2 persons
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(4);
+
+    for (const person of ['owner', 'p2']) {
+      const md = fs.readFileSync(path.join(userMemoryBase, person, 'global', 'agents.md'), 'utf8');
+      expect(md).toContain('Майор Пейн');
+      const json = JSON.parse(fs.readFileSync(path.join(userMemoryBase, person, 'global', 'agents.json'), 'utf8'));
+      expect(json).toEqual([
+        { id: 'payne', name: 'Майор Пейн', role: 'фитнес-тренер', a2a_in: { workout_done: 'лог' }, aka: [] },
+      ]);
+    }
+  });
+
+  it('does not rewrite unchanged content (hash-gated)', () => {
+    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+    const userMemoryBase = path.join(tmp, 'user-memory');
+    fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
+
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(2);
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(0);
+  });
+
+  it('rewrites when a name changes', () => {
+    createAgentGroup({ id: 'greg', name: 'Greg', folder: 'greg', agent_provider: null, created_at: now() });
+    const userMemoryBase = path.join(tmp, 'user-memory');
+    fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
+    writeAgentRegistry(userMemoryBase, tmp);
+
+    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(2);
+    expect(fs.readFileSync(path.join(userMemoryBase, 'owner', 'global', 'agents.md'), 'utf8')).toContain('Майор Пейн');
+  });
+
+  it('returns 0 when the user-memory base does not exist', () => {
+    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+    expect(writeAgentRegistry(path.join(tmp, 'nonexistent'), tmp)).toBe(0);
+  });
+
+  it('returns 0 when there are no agent groups (never publishes an empty registry)', () => {
+    const userMemoryBase = path.join(tmp, 'user-memory');
+    fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(0);
+    expect(fs.existsSync(path.join(userMemoryBase, 'owner', 'global', 'agents.md'))).toBe(false);
+  });
+
+  it('ignores non-directory entries in the user-memory base', () => {
+    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+    const userMemoryBase = path.join(tmp, 'user-memory');
+    fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
+    fs.writeFileSync(path.join(userMemoryBase, 'stray.txt'), 'not a person');
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(2);
   });
 });
