@@ -19,6 +19,13 @@ export interface DestinationEntry {
   channelType?: string;
   platformId?: string;
   agentGroupId?: string;
+  /**
+   * Kinds this destination's target accepts over a2a, or null when it has no
+   * descriptor (gate disarmed). Host-written on every wake from the target's
+   * agent.json. Unparseable JSON is treated as null — fail open, never bounce
+   * everything over a corrupt row.
+   */
+  a2aKinds?: string[] | null;
 }
 
 interface DestRow {
@@ -28,6 +35,25 @@ interface DestRow {
   channel_type: string | null;
   platform_id: string | null;
   agent_group_id: string | null;
+  a2a_kinds: string | null;
+}
+
+/**
+ * Raw `a2a_kinds` column → the kind list, or null when there's nothing usable.
+ *
+ * Every failure mode collapses to null (= gate disarmed) on purpose: a corrupt
+ * or unexpected value must not bounce an agent's entire inbox. An empty array
+ * is NOT null — it means "has a descriptor, declares no kinds", gate armed.
+ */
+function parseKinds(raw: string | null): string[] | null {
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === 'string') : null;
 }
 
 function rowToEntry(row: DestRow): DestinationEntry {
@@ -38,6 +64,7 @@ function rowToEntry(row: DestRow): DestinationEntry {
     channelType: row.channel_type ?? undefined,
     platformId: row.platform_id ?? undefined,
     agentGroupId: row.agent_group_id ?? undefined,
+    a2aKinds: parseKinds(row.a2a_kinds),
   };
 }
 
