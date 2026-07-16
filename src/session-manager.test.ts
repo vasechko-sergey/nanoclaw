@@ -180,6 +180,36 @@ describe('initSessionFolder', () => {
   });
 });
 
+describe('openInboundDb migrates an existing session DB', () => {
+  it('adds destinations.a2a_kinds to a session DB created before the column existed', () => {
+    initSessionFolder(TEST_AG, SESSION_ID);
+
+    // Rewind this session DB to the pre-a2a_kinds shape. `initSessionFolder`
+    // ships the column via `CREATE TABLE IF NOT EXISTS`, which is exactly what
+    // does NOT reach a table that already exists — so a real install upgraded
+    // from an older build looks like this, not like a fresh schema.
+    const raw = new Database(inboundDbPath(TEST_AG, SESSION_ID));
+    raw.exec(`
+      DROP TABLE destinations;
+      CREATE TABLE destinations (
+        name            TEXT PRIMARY KEY,
+        display_name    TEXT,
+        type            TEXT NOT NULL,
+        channel_type    TEXT,
+        platform_id     TEXT,
+        agent_group_id  TEXT
+      );
+    `);
+    raw.close();
+
+    const db = openInboundDb(TEST_AG, SESSION_ID);
+    const cols = (db.prepare("PRAGMA table_info('destinations')").all() as Array<{ name: string }>).map((c) => c.name);
+    db.close();
+
+    expect(cols).toContain('a2a_kinds');
+  });
+});
+
 describe('openOutboundDb read-only vs openOutboundDbRw', () => {
   beforeEach(() => initSessionFolder(TEST_AG, SESSION_ID));
 

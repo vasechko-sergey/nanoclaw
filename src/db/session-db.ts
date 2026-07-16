@@ -61,18 +61,36 @@ export interface DestinationRow {
   channel_type: string | null;
   platform_id: string | null;
   agent_group_id: string | null;
+  /** JSON array of kinds the target accepts; null = no descriptor = gate off. */
+  a2a_kinds: string | null;
 }
 
 export function replaceDestinations(db: Database.Database, entries: DestinationRow[]): void {
   const tx = db.transaction((rows: DestinationRow[]) => {
     db.prepare('DELETE FROM destinations').run();
     const stmt = db.prepare(
-      `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
-       VALUES (@name, @display_name, @type, @channel_type, @platform_id, @agent_group_id)`,
+      `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id, a2a_kinds)
+       VALUES (@name, @display_name, @type, @channel_type, @platform_id, @agent_group_id, @a2a_kinds)`,
     );
     for (const row of rows) stmt.run(row);
   });
   tx(entries);
+}
+
+// Adds columns added to destinations after the initial v2 schema to
+// pre-existing session DBs. The baseline table ships via `CREATE TABLE IF NOT
+// EXISTS`, which never touches an existing table — so this ALTER is the only
+// thing that reaches a session DB created before the column existed.
+export function migrateDestinationsTable(db: Database.Database): void {
+  const cols = new Set(
+    (db.prepare("PRAGMA table_info('destinations')").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (!cols.has('a2a_kinds')) {
+    // JSON array of the a2a kinds the TARGET accepts, or NULL when it has no
+    // descriptor. Existing rows migrate to NULL, which disarms the gate — the
+    // host refills them from each target's agent.json on the next wake.
+    db.prepare('ALTER TABLE destinations ADD COLUMN a2a_kinds TEXT').run();
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -208,7 +208,10 @@ CREATE TABLE IF NOT EXISTS destinations (
   type            TEXT NOT NULL,   -- 'channel' | 'agent'
   channel_type    TEXT,            -- for type='channel'
   platform_id     TEXT,            -- for type='channel'
-  agent_group_id  TEXT             -- for type='agent'
+  agent_group_id  TEXT,            -- for type='agent'
+  a2a_kinds       TEXT             -- for type='agent': JSON array of the kinds the
+                                   -- TARGET accepts, or NULL when it has no
+                                   -- descriptor (gate disarmed). Host-written.
 );
 
 -- Default reply routing for this session. Single-row table (id=1).
