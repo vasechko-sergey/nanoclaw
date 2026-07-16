@@ -9,12 +9,16 @@ describe('group folder validation', () => {
     expect(isValidGroupFolder('main')).toBe(true);
     expect(isValidGroupFolder('family-chat')).toBe(true);
     expect(isValidGroupFolder('Team_42')).toBe(true);
+    expect(isValidGroupFolder('system-monitor')).toBe(true);
   });
 
   it('rejects traversal and reserved names', () => {
     expect(isValidGroupFolder('../../etc')).toBe(false);
     expect(isValidGroupFolder('/tmp')).toBe(false);
     expect(isValidGroupFolder('global')).toBe(false);
+    expect(isValidGroupFolder('system')).toBe(false);
+    expect(isValidGroupFolder('System')).toBe(false);
+    expect(isValidGroupFolder('SYSTEM')).toBe(false);
     expect(isValidGroupFolder('')).toBe(false);
   });
 
