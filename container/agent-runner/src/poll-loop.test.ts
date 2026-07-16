@@ -7,13 +7,15 @@ import { createHash } from 'node:crypto';
 import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from './db/connection.js';
 import { getPendingMessages, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
-import { formatMessages, extractRouting } from './formatter.js';
+import { formatMessages, extractRouting, type RoutingContext } from './formatter.js';
 import {
   dispatchSystemReplies,
   partitionMessagesBySource,
   isAuthError,
   isWorkoutEventRow,
   serveImageRequests,
+  dispatchResultText,
+  dispatchCompleteBlocks,
 } from './poll-loop.js';
 import { MockProvider } from './providers/mock.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
@@ -698,5 +700,126 @@ describe('serveImageRequests', () => {
     const survivors = serveImageRequests(getPendingMessages(), dir);
     expect(survivors.length).toBe(1);
     expect(getUndeliveredMessages().length).toBe(0);
+  });
+});
+
+describe('a2a kind envelope (<message to="…" kind="…">)', () => {
+  function seedAgentDest(name: string, agentGroupId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'agent', NULL, NULL, ?)`,
+      )
+      .run(name, name, agentGroupId);
+  }
+
+  function seedChannelDest(name: string, channelType: string, platformId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'channel', ?, ?, NULL)`,
+      )
+      .run(name, name, channelType, platformId);
+  }
+
+  const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: null };
+
+  // Order by seq, NOT the timestamp `getUndeliveredMessages` sorts on:
+  // `datetime('now')` has second granularity, so two sends inside one test tie
+  // and "last" would be arbitrary. seq is unique and monotonic.
+  function outRows(): Array<{ seq: number; content: string; channel_type: string | null; platform_id: string | null }> {
+    return getOutboundDb()
+      .prepare('SELECT seq, content, channel_type, platform_id FROM messages_out ORDER BY seq')
+      .all() as Array<{ seq: number; content: string; channel_type: string | null; platform_id: string | null }>;
+  }
+  const outCount = (): number => outRows().length;
+  const lastOut = () => outRows()[outRows().length - 1];
+
+  beforeEach(() => {
+    seedAgentDest('payne', 'ag-payne');
+    seedChannelDest('family', 'telegram', 'tg-1');
+  });
+
+  it('lifts kind= into the outbound envelope for agent destinations', () => {
+    dispatchResultText('<message to="payne" kind="set_log">{"reps":8}</message>', routing, new Set());
+    expect(lastOut().content).toBe(JSON.stringify({ text: '{"reps":8}', kind: 'set_log' }));
+  });
+
+  it('defaults an omitted kind to text for agent destinations', () => {
+    dispatchResultText('<message to="payne">норм</message>', routing, new Set());
+    expect(lastOut().content).toBe(JSON.stringify({ text: 'норм', kind: 'text' }));
+  });
+
+  it('never writes kind for channel destinations', () => {
+    dispatchResultText('<message to="family">Ужин в 8</message>', routing, new Set());
+    expect(lastOut().content).toBe(JSON.stringify({ text: 'Ужин в 8' }));
+  });
+
+  it('never writes kind for channel destinations even when the agent supplies one', () => {
+    // kind is an a2a concept. A channel adapter would render the JSON blob
+    // verbatim, so a stray kind= must be dropped, not carried through.
+    dispatchResultText('<message to="family" kind="set_log">Ужин в 8</message>', routing, new Set());
+    expect(lastOut().content).toBe(JSON.stringify({ text: 'Ужин в 8' }));
+  });
+
+  it('accepts kind= before to=', () => {
+    dispatchResultText('<message kind="ack" to="payne">ок</message>', routing, new Set());
+    expect(lastOut().content).toBe(JSON.stringify({ text: 'ок', kind: 'ack' }));
+  });
+
+  it('routes an agent block to the target agent group, not a channel', () => {
+    dispatchResultText('<message to="payne" kind="ack">ок</message>', routing, new Set());
+    expect(lastOut().channel_type).toBe('agent');
+    expect(lastOut().platform_id).toBe('ag-payne');
+  });
+
+  it('still ignores a <message> with no to= so the no-wrap nudge survives', () => {
+    const r = dispatchResultText('<message kind="set_log">{"a":1}</message>', routing, new Set());
+    expect(r.newlySent).toBe(0);
+    expect(r.hasUnwrapped).toBe(true);
+    expect(outCount()).toBe(0);
+  });
+
+  it('treats same body with different kind as different messages', () => {
+    const dispatched = new Set<string>();
+    dispatchResultText('<message to="payne" kind="set_log">{}</message>', routing, dispatched);
+    dispatchResultText('<message to="payne" kind="ack">{}</message>', routing, dispatched);
+    expect(outCount()).toBe(2);
+  });
+
+  it('still dedupes an identical (to, kind, body) triple', () => {
+    const dispatched = new Set<string>();
+    dispatchResultText('<message to="payne" kind="set_log">{}</message>', routing, dispatched);
+    dispatchResultText('<message to="payne" kind="set_log">{}</message>', routing, dispatched);
+    expect(outCount()).toBe(1);
+  });
+
+  it('drops a block addressed to an unknown destination', () => {
+    const r = dispatchResultText('<message to="nobody" kind="ack">x</message>', routing, new Set());
+    expect(r.newlySent).toBe(0);
+    expect(outCount()).toBe(0);
+    // A block WAS present, so this is not the unwrapped case.
+    expect(r.hasUnwrapped).toBe(false);
+  });
+
+  it('streaming path lifts kind= and returns the unconsumed tail', () => {
+    const tail = dispatchCompleteBlocks(
+      '<message to="payne" kind="set_log">{"reps":8}</message>trailing',
+      routing,
+      new Set(),
+    );
+    expect(lastOut().content).toBe(JSON.stringify({ text: '{"reps":8}', kind: 'set_log' }));
+    expect(tail).toBe('trailing');
+  });
+
+  it('streaming and result paths share dedupe keys — no double send', () => {
+    // The poll loop hands the same Set to both. If the two paths built keys
+    // differently, the result pass would re-send what streaming already sent.
+    const dispatched = new Set<string>();
+    const block = '<message to="payne" kind="set_log">{"reps":8}</message>';
+    dispatchCompleteBlocks(block, routing, dispatched);
+    const r = dispatchResultText(block, routing, dispatched);
+    expect(r.newlySent).toBe(0);
+    expect(outCount()).toBe(1);
   });
 });

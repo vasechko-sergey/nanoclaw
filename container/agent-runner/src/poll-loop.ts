@@ -1128,17 +1128,55 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
   }
 }
 
-const MESSAGE_BLOCK_RE = /<message\s+to="([^"]+)"\s*>([\s\S]*?)<\/message>/g;
+/**
+ * A dispatchable <message> block.
+ *
+ * The lookahead requires `to="` WITHOUT consuming it, so a <message> lacking
+ * `to=` still does not match — exactly as before. That is load-bearing: if
+ * such blocks matched they would be consumed, `blockCount` would rise, and
+ * `hasUnwrapped` would go false, silently killing the no-wrap nudge in
+ * `dispatchResultText`.
+ *
+ * Group 1 is the attribute blob (`to=` and an optional `kind=`, either order),
+ * group 2 the body. `[^>]` confines both the blob and the lookahead to the
+ * opening tag, so a body containing `>` can never be read as an attribute.
+ */
+const MESSAGE_BLOCK_RE = /<message\s+(?=[^>]*\bto=")([^>]*?)\s*>([\s\S]*?)<\/message>/g;
 
 /**
- * Build a dedupe key for a (toName, body) pair. NUL byte separator so a
- * name containing the body (or vice versa) can't collide. Body is trimmed
- * to match the final-result path — the same block sent mid-stream and
- * later returned by the aggregated `result.text` should produce the same
- * key regardless of incidental whitespace differences.
+ * Read a double-quoted attribute out of an opening tag's attribute blob.
+ * `\b` so `to=` is not matched inside e.g. `auto=`. Returns null when absent.
  */
-function blockKey(toName: string, body: string): string {
-  return `${toName} ${body.trim()}`;
+function attrOf(blob: string, name: string): string | null {
+  const m = new RegExp(`\\b${name}="([^"]*)"`).exec(blob);
+  return m ? m[1] : null;
+}
+
+/**
+ * Pull (toName, kind) out of a matched attribute blob. The lookahead in
+ * MESSAGE_BLOCK_RE guarantees `to="` is present, but a value containing a raw
+ * `>` would truncate the blob mid-attribute, leaving no closing quote to
+ * match; that degrades to '' and falls through to the unknown-destination
+ * path, which is where the old regex sent such names too.
+ */
+function parseBlockAttrs(blob: string): { toName: string; kind: string | null } {
+  return { toName: attrOf(blob, 'to') ?? '', kind: attrOf(blob, 'kind') };
+}
+
+/**
+ * Build a dedupe key for a (toName, kind, body) triple. NUL byte separators so
+ * one field containing another (or a separator) can't collide. `kind` is part
+ * of the key: the same body under a different kind is a different message.
+ * Body is trimmed to match the final-result path — the same block sent
+ * mid-stream and later returned by the aggregated `result.text` should produce
+ * the same key regardless of incidental whitespace differences.
+ *
+ * The separator is written as the `\0` escape, not a raw 0x00 byte: an earlier
+ * revision embedded the literal control character, which made the whole file
+ * read as binary to grep/git while rendering as an invisible blank in editors.
+ */
+function blockKey(toName: string, kind: string | null, body: string): string {
+  return `${toName}\0${kind ?? ''}\0${body.trim()}`;
 }
 
 /**
@@ -1158,15 +1196,15 @@ function blockKey(toName: string, body: string): string {
  * yet. Scratchpad logging + the no-wrap nudge are decided once at
  * `result` time off the aggregated `result.text`.
  */
-function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatched: Set<string>): string {
+export function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatched: Set<string>): string {
   MESSAGE_BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   let lastIndex = 0;
   while ((match = MESSAGE_BLOCK_RE.exec(text)) !== null) {
-    const toName = match[1];
+    const { toName, kind } = parseBlockAttrs(match[1]);
     const body = match[2].trim();
     lastIndex = MESSAGE_BLOCK_RE.lastIndex;
-    const key = blockKey(toName, body);
+    const key = blockKey(toName, kind, body);
     if (dispatched.has(key)) continue;
     const dest = findByName(toName);
     if (!dest) {
@@ -1174,7 +1212,7 @@ function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatche
       dispatched.add(key);
       continue;
     }
-    sendToDestination(dest, body, routing);
+    sendToDestination(dest, body, routing, kind);
     dispatched.add(key);
   }
   return text.slice(lastIndex);
@@ -1195,7 +1233,7 @@ function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatche
  * The agent must always wrap output in <message to="name">…</message>
  * blocks, even with a single destination. Bare text is scratchpad only.
  */
-function dispatchResultText(
+export function dispatchResultText(
   text: string,
   routing: RoutingContext,
   dispatched: Set<string>,
@@ -1212,11 +1250,11 @@ function dispatchResultText(
     if (match.index > lastIndex) {
       scratchpadParts.push(text.slice(lastIndex, match.index));
     }
-    const toName = match[1];
+    const { toName, kind } = parseBlockAttrs(match[1]);
     const body = match[2].trim();
     lastIndex = MESSAGE_BLOCK_RE.lastIndex;
 
-    const key = blockKey(toName, body);
+    const key = blockKey(toName, kind, body);
     if (dispatched.has(key)) continue;
 
     const dest = findByName(toName);
@@ -1226,7 +1264,7 @@ function dispatchResultText(
       dispatched.add(key);
       continue;
     }
-    sendToDestination(dest, body, routing);
+    sendToDestination(dest, body, routing, kind);
     dispatched.add(key);
     newlySent++;
   }
@@ -1247,7 +1285,12 @@ function dispatchResultText(
   return { newlySent, hasUnwrapped };
 }
 
-function sendToDestination(dest: DestinationEntry, body: string, routing: RoutingContext): void {
+function sendToDestination(
+  dest: DestinationEntry,
+  body: string,
+  routing: RoutingContext,
+  kind?: string | null,
+): void {
   const platformId = dest.type === 'channel' ? dest.platformId! : dest.agentGroupId!;
   const channelType = dest.type === 'channel' ? dest.channelType! : 'agent';
   // Resolve thread_id per-destination from the most recent inbound message
@@ -1255,6 +1298,11 @@ function sendToDestination(dest: DestinationEntry, body: string, routing: Routin
   // different destinations have different thread contexts — using a single
   // routing.threadId would stamp one channel's thread onto another.
   const destRouting = resolveDestinationThread(channelType, platformId);
+  // `kind` is an a2a concept only — channels never carry one, and a stray
+  // kind= on a channel block is dropped rather than rendered to a human.
+  // Agent messages always carry it explicitly (defaulting to 'text') so the
+  // host reads one field rather than inferring intent from its absence.
+  const content = dest.type === 'agent' ? { text: body, kind: kind || 'text' } : { text: body };
   writeMessageOut({
     id: generateId(),
     in_reply_to: destRouting?.inReplyTo ?? routing.inReplyTo,
@@ -1262,7 +1310,7 @@ function sendToDestination(dest: DestinationEntry, body: string, routing: Routin
     platform_id: platformId,
     channel_type: channelType,
     thread_id: destRouting?.threadId ?? null,
-    content: JSON.stringify({ text: body }),
+    content: JSON.stringify(content),
   });
 }
 
