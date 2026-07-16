@@ -92,24 +92,42 @@ enum WorkoutRunnerLogic {
 
     /// One cell of the top progress bar — one per exercise, equal width.
     struct ProgressSegment: Equatable {
-        enum Kind: Equatable { case done, active, upcoming }
+        enum Kind: Equatable { case done, active, skipped, upcoming }
         let kind: Kind
         let isPreview: Bool
     }
 
-    /// Equal segment per exercise: before `activeIdx` = done, at = active, after =
-    /// upcoming. The previewed exercise (when ≠ active) is marked for an outline.
+    /// Equal segment per exercise, driven by TRUTH (not position): an exercise is
+    /// `.done` when it has logged work, `.active` when it's current. An exercise
+    /// left behind the active cursor with no work is `.skipped` (free-order lets
+    /// you jump ahead — the passed one is deferred, not done); a passed timed
+    /// exercise (treadmill/warmup, zero sets by design) counts as `.done`.
+    /// Everything ahead of the cursor with no work is `.upcoming`. `worked[i]`
+    /// wins over position so an exercise finished then jumped-back-past stays
+    /// `.done`. The previewed exercise (when ≠ active) is marked for an outline.
     /// Set-level progress lives in the image scrim, not here.
-    static func progressSegments(total: Int, activeIdx: Int, previewIdx: Int) -> [ProgressSegment] {
-        (0..<max(total, 1)).map { i in
-            let kind: ProgressSegment.Kind = i < activeIdx ? .done : (i == activeIdx ? .active : .upcoming)
+    static func progressSegments(worked: [Bool], isDuration: [Bool], activeIdx: Int, previewIdx: Int) -> [ProgressSegment] {
+        (0..<max(worked.count, 1)).map { i in
+            let hasWork = i < worked.count && worked[i]
+            let timed = i < isDuration.count && isDuration[i]
+            let kind: ProgressSegment.Kind
+            if i == activeIdx {
+                kind = .active
+            } else if hasWork {
+                kind = .done
+            } else if i < activeIdx {
+                kind = timed ? .done : .skipped
+            } else {
+                kind = .upcoming
+            }
             return ProgressSegment(kind: kind, isPreview: i == previewIdx && previewIdx != activeIdx)
         }
     }
 
-    /// "3/6" — 1-based active index over total, clamped.
-    static func exerciseCounter(activeIdx: Int, total: Int) -> String {
-        "\(min(activeIdx + 1, max(total, 1)))/\(max(total, 1))"
+    /// "2/5" — exercises actually done over total, clamped. Counts real work, not
+    /// cursor position: skip an exercise and the numerator does not advance.
+    static func exerciseCounter(done: Int, total: Int) -> String {
+        "\(done)/\(max(total, 1))"
     }
 
     /// Tolerance beyond which a set is called out to Payne.

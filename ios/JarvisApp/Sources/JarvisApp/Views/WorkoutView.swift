@@ -163,7 +163,7 @@ struct WorkoutView: View {
                     segmentView(seg)
                 }
             }
-            Text(WorkoutRunnerLogic.exerciseCounter(activeIdx: coordinator.currentExerciseIdx, total: coordinator.totalExercises))
+            Text(WorkoutRunnerLogic.exerciseCounter(done: progressSegments.filter { $0.kind == .done }.count, total: coordinator.totalExercises))
                 .font(.caption).monospacedDigit().foregroundStyle(.white)
             Button(action: advance) {
                 Text(isLastExercise ? "Финиш" : "Дальше →").font(.subheadline).foregroundStyle(Theme.accent)
@@ -175,7 +175,8 @@ struct WorkoutView: View {
 
     private var progressSegments: [WorkoutRunnerLogic.ProgressSegment] {
         WorkoutRunnerLogic.progressSegments(
-            total: coordinator.totalExercises,
+            worked: coordinator.logged.map { !$0.sets.isEmpty },
+            isDuration: coordinator.plan.exercises.map { $0.isDuration },
             activeIdx: coordinator.currentExerciseIdx,
             previewIdx: previewIdx)
     }
@@ -186,11 +187,12 @@ struct WorkoutView: View {
             switch seg.kind {
             case .done: return Theme.accent
             case .active: return Color(red: 0.5, green: 0.89, blue: 0.92)
+            case .skipped: return .clear   // hollow — copper ring below carries the "passed, not done" cue
             case .upcoming: return Color.white.opacity(0.2)
             }
         }()
         Capsule().fill(fill).frame(height: 5)
-            .overlay(previewRing(seg.kind == .active || seg.isPreview))
+            .overlay(previewRing(seg.kind == .active || seg.isPreview || seg.kind == .skipped))
     }
 
     private func previewRing(_ on: Bool) -> some View {
