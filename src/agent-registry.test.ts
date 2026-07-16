@@ -98,6 +98,25 @@ describe('buildRegistry', () => {
 });
 
 describe('renderRegistryMarkdown', () => {
+  /** Split a markdown table row into cells on UNESCAPED pipes (odd backslash run = escaped). */
+  function cells(row: string): string[] {
+    const out: string[] = [];
+    let cur = '';
+    let slashes = 0;
+    for (const ch of row) {
+      if (ch === '|' && slashes % 2 === 0) {
+        out.push(cur);
+        cur = '';
+        slashes = 0;
+        continue;
+      }
+      slashes = ch === '\\' ? slashes + 1 : 0;
+      cur += ch;
+    }
+    out.push(cur);
+    return out.slice(1, -1).map((c) => c.trim());
+  }
+
   it('renders a table row per agent with name, role and actions', () => {
     const md = renderRegistryMarkdown([
       { id: 'payne', name: 'Майор Пейн', role: 'фитнес-тренер', a2a_in: { workout_done: 'лог тренировки' }, aka: [] },
@@ -122,9 +141,25 @@ describe('renderRegistryMarkdown', () => {
   it('escapes pipes and newlines so a crafted name cannot corrupt the table', () => {
     const md = renderRegistryMarkdown([{ id: 'evil', name: 'Evil | ghost', role: 'a\nb', a2a_in: {}, aka: [] }]);
     const row = md.split('\n').find((l) => l.startsWith('| `evil`'))!;
-    expect(row).toContain('Evil \\| ghost');
-    expect(row).toContain('a b');
-    // 4 columns → exactly 5 unescaped pipes; the escaped one must not add a column
-    expect(row.match(/(?<!\\)\|/g)!.length).toBe(5);
+    expect(cells(row)).toEqual(['`evil`', 'Evil \\| ghost', 'a b', '—']);
+  });
+
+  it('escapes a pre-existing backslash so it cannot defeat the pipe escape', () => {
+    const md = renderRegistryMarkdown([{ id: 'bs', name: 'a\\|b', role: 'r', a2a_in: {}, aka: [] }]);
+    const row = md.split('\n').find((l) => l.startsWith('| `bs`'))!;
+    // 4 cells, not 5: the pipe must stay escaped even though a backslash preceded it
+    expect(cells(row)).toHaveLength(4);
+  });
+
+  it('collapses a bare carriage return, which alone splits a row', () => {
+    const md = renderRegistryMarkdown([{ id: 'cr', name: 'a\rb', role: 'r', a2a_in: {}, aka: [] }]);
+    const row = md.split('\n').find((l) => l.startsWith('| `cr`'))!;
+    expect(cells(row)).toEqual(['`cr`', 'a b', 'r', '—']);
+  });
+
+  it('strips backticks from ids and action names so code spans cannot break', () => {
+    const md = renderRegistryMarkdown([{ id: 'x`y', name: 'N', role: 'r', a2a_in: { 'ev`il': 'd' }, aka: [] }]);
+    const row = md.split('\n').find((l) => l.startsWith('| `xy`'))!;
+    expect(cells(row)).toEqual(['`xy`', 'N', 'r', '`evil`']);
   });
 });

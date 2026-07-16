@@ -102,19 +102,35 @@ export function buildRegistry(agentsDir: string): RegistryEntry[] {
 }
 
 /**
- * Make a value safe inside a markdown table cell: escape pipes (they would open
- * a bogus column) and collapse newlines (they would split the row). `name` is
- * agent-supplied (create_agent normalizes only `folder`) and agent.json is
- * agent-authorable, so both are semi-untrusted input to the one document agents
- * read as peer ground truth.
+ * Prose destined for a markdown table cell (`name`, `role`). Escape backslashes
+ * FIRST — otherwise a value already containing `\|` yields `\\|`, which GFM reads
+ * as an escaped backslash followed by a LIVE delimiter, opening a bogus column.
+ * `\r` alone is a valid line ending and splits the row, so collapse any CR/LF run.
+ * `name` is agent-supplied (create_agent normalizes only `folder`, not `name`) and
+ * agent.json is agent-authorable — both are semi-untrusted input to the one
+ * document agents read as peer ground truth.
  */
 function cell(s: string): string {
-  return s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
 }
 
-/** Collapse newlines for headings/prose outside the table. */
+/**
+ * Identifier destined for a `code span` (ids, action names). Backslash escapes do
+ * not apply inside code spans, so escaping can't save us — strip the characters
+ * that would break the span or the row instead. Real folders and action names are
+ * `[A-Za-z0-9_-]`, so this is a no-op on every legitimate value.
+ */
+function ident(s: string): string {
+  return s.replace(/[`|\\\r\n]/g, '').trim();
+}
+
+/** Prose outside the table (headings, descriptions): only line endings matter. */
 function oneLine(s: string): string {
-  return s.replace(/\r?\n/g, ' ').trim();
+  return s.replace(/[\r\n]+/g, ' ').trim();
 }
 
 /** Render the registry as the markdown agents actually read. */
@@ -130,20 +146,20 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
   ];
   for (const e of entries) {
     const actions = Object.keys(e.a2a_in);
-    const actionCell = actions.length > 0 ? actions.map((a) => `\`${cell(a)}\``).join(', ') : '—';
-    lines.push(`| \`${cell(e.id)}\` | ${cell(e.name)} | ${cell(e.role) || '—'} | ${actionCell} |`);
+    const actionCell = actions.length > 0 ? actions.map((a) => `\`${ident(a)}\``).join(', ') : '—';
+    lines.push(`| \`${ident(e.id)}\` | ${cell(e.name)} | ${cell(e.role) || '—'} | ${actionCell} |`);
   }
   for (const e of entries) {
     const actions = Object.entries(e.a2a_in);
     // Gate on anything worth showing — NOT on actions alone. `aka` is rendered
     // only here, so a receive-only agent's aliases would otherwise never appear.
     if (actions.length === 0 && !e.role && e.aka.length === 0) continue;
-    lines.push('', `## ${oneLine(e.name)} (\`${oneLine(e.id)}\`)`);
+    lines.push('', `## ${oneLine(e.name)} (\`${ident(e.id)}\`)`);
     if (e.role) lines.push(`Роль: ${oneLine(e.role)}`);
     if (e.aka.length > 0) lines.push(`Также зовут: ${e.aka.map(oneLine).join(', ')}`);
     lines.push('');
     for (const [action, desc] of actions) {
-      lines.push(`- \`${oneLine(action)}\` — ${oneLine(desc)}`);
+      lines.push(`- \`${ident(action)}\` — ${oneLine(desc)}`);
     }
   }
   lines.push('');
