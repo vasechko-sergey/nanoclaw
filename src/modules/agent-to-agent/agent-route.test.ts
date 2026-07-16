@@ -766,12 +766,12 @@ describe('routeAgentMessage a2a kind gate (layer 2)', () => {
     });
 
     it('does not route an undeclared kind', async () => {
-      await send({ text: '{}', kind: 'bogus' });
+      await send({ text: '{}', a2a_kind: 'bogus' });
       expect(readInbound(B, SB.id)).toHaveLength(0);
     });
 
     it('bounces the rejection into the SENDER own inbound as a system self-note', async () => {
-      await send({ text: '{}', kind: 'bogus' });
+      await send({ text: '{}', a2a_kind: 'bogus' });
 
       const back = readInbound(A, SA.id);
       expect(back).toHaveLength(1);
@@ -791,7 +791,28 @@ describe('routeAgentMessage a2a kind gate (layer 2)', () => {
     it('routes a declared kind', async () => {
       // Guards the inverse mutation: a gate that bounced everything once armed
       // would pass the tests above while cutting all live traffic.
-      await send({ text: '{"reps":8}', kind: 'set_log' });
+      await send({ text: '{"reps":8}', a2a_kind: 'set_log' });
+      expect(readInbound(B, SB.id)).toHaveLength(1);
+      expect(readInbound(A, SA.id)).toHaveLength(0);
+    });
+
+    it('delivers a container status row — its `kind` is a status category, not an envelope kind', async () => {
+      // REGRESSION. The envelope field is `a2a_kind` because `kind` was already
+      // taken. poll-loop.ts writes status rows as
+      // `{type:'status', text, level, kind}` (kind: 'system' from
+      // providers/claude.ts's compact_boundary; the send_status MCP tool writes
+      // the same shape), stamped with the BATCH's channel_type — which is
+      // 'agent' for every turn woken by an a2a inbound, i.e. the normal case for
+      // greg/payne/gordon/scrooge. Reading the envelope kind off `kind` made
+      // this gate bounce the sender a compaction notice it never authored, and
+      // the `sender === 'system'` exemption does not cover it: a status row has
+      // no sender at gate time (stampSenderIdentity runs later).
+      await send({
+        type: 'status',
+        text: 'Context compacted (12,345 tokens compacted)',
+        level: 'info',
+        kind: 'system',
+      });
       expect(readInbound(B, SB.id)).toHaveLength(1);
       expect(readInbound(A, SA.id)).toHaveLength(0);
     });
@@ -828,7 +849,7 @@ describe('routeAgentMessage a2a kind gate (layer 2)', () => {
         {
           id: 'm1',
           platform_id: B,
-          content: JSON.stringify({ text: '{}', kind: 'bogus', sender: 'system' }),
+          content: JSON.stringify({ text: '{}', a2a_kind: 'bogus', sender: 'system' }),
           in_reply_to: null,
         },
         SA,
@@ -846,7 +867,7 @@ describe('routeAgentMessage a2a kind gate (layer 2)', () => {
     // It kills a different mutation — normalizing a missing descriptor to `[]`
     // instead of null, which would bounce every structured a2a message in
     // production. Verified by running that mutation.
-    await send({ text: '{"reps":8}', kind: 'anything_at_all' });
+    await send({ text: '{"reps":8}', a2a_kind: 'anything_at_all' });
     expect(readInbound(B, SB.id)).toHaveLength(1);
     expect(readInbound(A, SA.id)).toHaveLength(0);
   });
@@ -855,14 +876,14 @@ describe('routeAgentMessage a2a kind gate (layer 2)', () => {
     // A typo in agent.json must not bounce an agent's entire inbox.
     fs.mkdirSync(path.join(TEST_AGENTS_DIR, 'b'), { recursive: true });
     fs.writeFileSync(path.join(TEST_AGENTS_DIR, 'b', 'agent.json'), '{ this is not json');
-    await send({ text: '{}', kind: 'bogus' });
+    await send({ text: '{}', a2a_kind: 'bogus' });
     expect(readInbound(B, SB.id)).toHaveLength(1);
   });
 
   it('bounces a target that declares no kinds when the body is structured', async () => {
     // `[]` is NOT null: descriptor present, declares nothing → text-only, ARMED.
     writeDescriptor('b', { role: 'аналитик' });
-    await send({ text: '{}', kind: 'set_log' });
+    await send({ text: '{}', a2a_kind: 'set_log' });
     expect(readInbound(B, SB.id)).toHaveLength(0);
     expect(readInbound(A, SA.id)).toHaveLength(1);
   });

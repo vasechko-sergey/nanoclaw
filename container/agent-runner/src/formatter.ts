@@ -244,9 +244,17 @@ function formatSingleChat(msg: MessageInRow): string {
   // precisely how the old prose contract drifted. `text` is the implicit default
   // and is not printed: the freeform majority stays noise-free. Gated on
   // channel_type for the same reason as `agent=` — kind is an a2a concept.
+  //
+  // Read from `a2a_kind`, rendered as `kind=`: the wire attribute the agent
+  // reads and writes is `kind=`, but the content field cannot be called that —
+  // `content.kind` already means a status category on status rows, which carry
+  // channel_type 'agent' whenever the turn was woken by an a2a inbound and
+  // would otherwise render a bogus kind="system" here. See the lift site in
+  // poll-loop.ts (`sendToDestination`). Same asymmetry as `sender`/`senderId`:
+  // a content field name need not match a wire attribute.
   const kindAttr =
-    msg.channel_type === 'agent' && content.kind && content.kind !== 'text'
-      ? ` kind="${escapeXml(String(content.kind))}"`
+    msg.channel_type === 'agent' && content.a2a_kind && content.a2a_kind !== 'text'
+      ? ` kind="${escapeXml(String(content.a2a_kind))}"`
       : '';
 
   return `<message${idAttr}${fromAttr}${agentAttr}${kindAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${attachmentsSuffix}</message>`;

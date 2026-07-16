@@ -238,6 +238,10 @@ export function stampSenderIdentity(content: string, sourceAgentGroupId: string)
  * Returns a human-readable reason when this message must not be routed, or null
  * when it is fine. Parse failures return null — a non-JSON content string has no
  * envelope to judge, and Layer 1 already saw it.
+ *
+ * Reads `a2a_kind`, NOT `kind` — see the lift site in
+ * `container/agent-runner/src/poll-loop.ts` (`sendToDestination`) for why the
+ * envelope field cannot be called `kind`.
  */
 function checkA2aKind(msg: RoutableAgentMessage, targetGroup: { folder: string; name: string }): string | null {
   let parsed: Record<string, unknown>;
@@ -254,7 +258,7 @@ function checkA2aKind(msg: RoutableAgentMessage, targetGroup: { folder: string; 
 
   const legal = getLegalKinds(AGENTS_DIR, targetGroup.folder);
   const verdict = validateA2aKind(
-    typeof parsed.kind === 'string' ? parsed.kind : null,
+    typeof parsed.a2a_kind === 'string' ? parsed.a2a_kind : null,
     typeof parsed.text === 'string' ? parsed.text : '',
     legal,
   );

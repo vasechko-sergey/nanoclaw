@@ -1411,7 +1411,22 @@ function sendToDestination(
   // kind= on a channel block is dropped rather than rendered to a human.
   // Agent messages always carry it explicitly (defaulting to 'text') so the
   // host reads one field rather than inferring intent from its absence.
-  const content = dest.type === 'agent' ? { text: body, kind: kind || 'text' } : { text: body };
+  //
+  // The field is `a2a_kind`, NOT `kind`. DO NOT "simplify" it back — `kind`
+  // was already taken, twice over:
+  //   - `messages_out.kind` is the ROW kind ('chat' | 'system' | …);
+  //   - status rows put a status CATEGORY on content.kind — see the
+  //     `status_msg` branch ~line 906 here, which writes
+  //     `{type:'status', text, level, kind}` (kind: 'system', from
+  //     providers/claude.ts's compact_boundary) stamped with the BATCH's
+  //     channel_type. That is 'agent' on every turn woken by an a2a inbound,
+  //     so those rows reach the host's a2a gate. The send_status MCP tool
+  //     (mcp-tools/status.ts) writes the same shape.
+  // A third meaning on `content.kind` made the host gate read a status
+  // category as an envelope kind and bounce the agent a compaction notice it
+  // never authored. The wire attribute stays `kind="…"` — only this internal
+  // field is renamed, and formatter.ts renders it back out as `kind=`.
+  const content = dest.type === 'agent' ? { text: body, a2a_kind: kind || 'text' } : { text: body };
   writeMessageOut({
     id: generateId(),
     in_reply_to: destRouting?.inReplyTo ?? routing.inReplyTo,

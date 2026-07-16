@@ -743,12 +743,12 @@ describe('a2a kind envelope (<message to="…" kind="…">)', () => {
 
   it('lifts kind= into the outbound envelope for agent destinations', () => {
     dispatchResultText('<message to="payne" kind="set_log">{"reps":8}</message>', routing, new Set());
-    expect(lastOut().content).toBe(JSON.stringify({ text: '{"reps":8}', kind: 'set_log' }));
+    expect(lastOut().content).toBe(JSON.stringify({ text: '{"reps":8}', a2a_kind: 'set_log' }));
   });
 
   it('defaults an omitted kind to text for agent destinations', () => {
     dispatchResultText('<message to="payne">норм</message>', routing, new Set());
-    expect(lastOut().content).toBe(JSON.stringify({ text: 'норм', kind: 'text' }));
+    expect(lastOut().content).toBe(JSON.stringify({ text: 'норм', a2a_kind: 'text' }));
   });
 
   it('never writes kind for channel destinations', () => {
@@ -765,7 +765,7 @@ describe('a2a kind envelope (<message to="…" kind="…">)', () => {
 
   it('accepts kind= before to=', () => {
     dispatchResultText('<message kind="ack" to="payne">ок</message>', routing, new Set());
-    expect(lastOut().content).toBe(JSON.stringify({ text: 'ок', kind: 'ack' }));
+    expect(lastOut().content).toBe(JSON.stringify({ text: 'ок', a2a_kind: 'ack' }));
   });
 
   it('routes an agent block to the target agent group, not a channel', () => {
@@ -809,7 +809,7 @@ describe('a2a kind envelope (<message to="…" kind="…">)', () => {
       routing,
       new Set(),
     );
-    expect(lastOut().content).toBe(JSON.stringify({ text: '{"reps":8}', kind: 'set_log' }));
+    expect(lastOut().content).toBe(JSON.stringify({ text: '{"reps":8}', a2a_kind: 'set_log' }));
     expect(remainder).toBe('trailing');
   });
 

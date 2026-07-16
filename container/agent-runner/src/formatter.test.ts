@@ -335,14 +335,14 @@ describe('a2a kind attribute', () => {
   }
 
   it('renders kind= for a structured a2a message', () => {
-    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', kind: 'set_log', text: '{"reps":8}' });
+    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', a2a_kind: 'set_log', text: '{"reps":8}' });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('kind="set_log"');
   });
 
   it('omits kind= for the implicit text default', () => {
     // `text` is the 55% freeform majority — printing it would be pure noise.
-    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', kind: 'text', text: 'норм' });
+    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', a2a_kind: 'text', text: 'норм' });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('норм');
     expect(result).not.toContain('kind=');
@@ -356,23 +356,45 @@ describe('a2a kind attribute', () => {
   });
 
   it('never renders kind= on a non-agent message even when content carries one', () => {
-    // kind is an a2a concept. A human message whose content happens to have a
-    // `kind` key must not sprout the attribute — same gate as agent=.
-    insertMessage('m1', 'chat', { sender: 'Alice', kind: 'set_log', text: 'hi' });
+    // kind is an a2a concept. A human message whose content happens to have an
+    // `a2a_kind` key must not sprout the attribute — same gate as agent=.
+    // (Keyed on a2a_kind, not kind, so deleting the channel_type gate still
+    // fails this test rather than passing vacuously.)
+    insertMessage('m1', 'chat', { sender: 'Alice', a2a_kind: 'set_log', text: 'hi' });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('sender="Alice"');
     expect(result).not.toContain('kind=');
   });
 
+  it('never renders kind= off a status row `kind` — that is a status category', () => {
+    // REGRESSION / ship-inert. poll-loop.ts writes status rows as
+    // `{type:'status', text, level, kind}` stamped with the batch's
+    // channel_type — 'agent' whenever the turn was woken by an a2a inbound. Its
+    // `kind` ('system') predates the envelope and is not an a2a kind. Reading
+    // the attribute off `content.kind` made a forwarded status render
+    // kind="system": a wire change on a branch that must ship inert.
+    insertA2a('a1', {
+      sender: 'Джарвис',
+      senderId: 'jarvis',
+      type: 'status',
+      level: 'info',
+      kind: 'system',
+      text: 'Context compacted',
+    });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('Context compacted');
+    expect(result).not.toContain('kind=');
+  });
+
   it('escapes a kind containing markup', () => {
-    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', kind: '<script>', text: 'x' });
+    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', a2a_kind: '<script>', text: 'x' });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('kind="&lt;script&gt;"');
     expect(result).not.toContain('kind="<script>"');
   });
 
   it('renders kind= alongside the agent id, not instead of it', () => {
-    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', kind: 'ack', text: 'ок' });
+    insertA2a('a1', { sender: 'Майор Пейн', senderId: 'payne', a2a_kind: 'ack', text: 'ок' });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('agent="payne"');
     expect(result).toContain('kind="ack"');
