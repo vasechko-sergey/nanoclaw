@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
-import { isSafeAttachmentName, resolveTargetSession, routeAgentMessage } from './agent-route.js';
+import { isSafeAttachmentName, resolveTargetSession, routeAgentMessage, stampSenderIdentity } from './agent-route.js';
 import { createDestination } from './db/agent-destinations.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup } from '../../db/index.js';
 import { createSession, updateSession } from '../../db/sessions.js';
@@ -613,5 +613,50 @@ describe('resolveTargetSession owner-scoping', () => {
     expect(picked.owner_key).toBe('p2');
     expect(picked.id).not.toBe('s-owner-only');
     // All session dirs are under TEST_DIR (DATA_DIR mock), cleaned by afterEach.
+  });
+});
+
+describe('stampSenderIdentity', () => {
+  beforeEach(() => {
+    const db = initTestDb();
+    runMigrations(db);
+    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it('stamps the source agent canonical name + folder onto JSON content', () => {
+    const out = stampSenderIdentity('{"action":"workout_done","type":"Ноги"}', 'payne');
+    expect(JSON.parse(out)).toEqual({
+      action: 'workout_done',
+      type: 'Ноги',
+      sender: 'Майор Пейн',
+      senderId: 'payne',
+    });
+  });
+
+  it('never clobbers an existing sender (system notes set their own)', () => {
+    const out = stampSenderIdentity('{"text":"hi","sender":"system","senderId":"system"}', 'payne');
+    expect(JSON.parse(out).sender).toBe('system');
+    expect(JSON.parse(out).senderId).toBe('system');
+  });
+
+  it('returns non-JSON content unchanged', () => {
+    expect(stampSenderIdentity('plain text', 'payne')).toBe('plain text');
+  });
+
+  it('returns non-object JSON content unchanged', () => {
+    expect(stampSenderIdentity('"just a string"', 'payne')).toBe('"just a string"');
+  });
+
+  it('returns content unchanged when the source group is unknown', () => {
+    expect(stampSenderIdentity('{"text":"hi"}', 'ghost')).toBe('{"text":"hi"}');
+  });
+
+  it('falls back to the folder id when the group name is empty', () => {
+    createAgentGroup({ id: 'noname', name: '', folder: 'noname', agent_provider: null, created_at: now() });
+    expect(JSON.parse(stampSenderIdentity('{"text":"hi"}', 'noname')).sender).toBe('noname');
   });
 });

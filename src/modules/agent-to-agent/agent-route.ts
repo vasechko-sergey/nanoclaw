@@ -192,6 +192,42 @@ export function resolveTargetSession(
   return resolveSession(targetAgentGroupId, null, null, 'per-thread', ownerKey).session;
 }
 
+/**
+ * Stamp the source agent's identity onto forwarded a2a content.
+ *
+ * a2a payloads are agent-authored JSON (`{"action":"workout_done",…}`) and carry
+ * no sender, so a relaying target would have to *recall* who sent it — which is
+ * exactly how a peer's name ends up invented. Adding `sender` (the source's
+ * canonical `agent_groups.name`) makes the container formatter render
+ * `sender="Майор Пейн"` through its existing `content.sender` path.
+ *
+ * `agent_groups.name` is the ONLY name source — deliberately not duplicated
+ * into any descriptor, since that duplication is the drift this fixes.
+ *
+ * Never clobbers an existing `sender`/`senderId`: system notes injected back
+ * into a session set their own (`sender: 'system'`). Non-JSON and non-object
+ * content is returned unchanged — there is no object to stamp.
+ */
+export function stampSenderIdentity(content: string, sourceAgentGroupId: string): string {
+  const group = getAgentGroup(sourceAgentGroupId);
+  if (!group) return content;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return content;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return content;
+
+  const obj = parsed as Record<string, unknown>;
+  // Fall back to the folder id if a group somehow has no name — naming the
+  // sender by id still beats leaving the target to guess.
+  if (obj.sender === undefined) obj.sender = group.name || group.folder;
+  if (obj.senderId === undefined) obj.senderId = group.folder;
+  return JSON.stringify(obj);
+}
+
 export async function routeAgentMessage(msg: RoutableAgentMessage, session: Session): Promise<void> {
   const targetAgentGroupId = msg.platform_id;
   if (!targetAgentGroupId) {
@@ -244,7 +280,12 @@ export async function routeAgentMessage(msg: RoutableAgentMessage, session: Sess
   // agent can actually see and re-send them. Without this, agent-to-agent
   // file attachments look like they arrive but the target has no way to
   // read the bytes — they live in a session dir it doesn't mount.
-  const forwardedContent = forwardFileAttachments(msg, a2aMsgId, session, targetAgentGroupId, targetSession.id);
+  // Stamp the source agent's identity *after* file forwarding so the sender
+  // fields survive that step's re-serialization.
+  const forwardedContent = stampSenderIdentity(
+    forwardFileAttachments(msg, a2aMsgId, session, targetAgentGroupId, targetSession.id),
+    session.agent_group_id,
+  );
 
   writeSessionMessage(targetAgentGroupId, targetSession.id, {
     id: a2aMsgId,
