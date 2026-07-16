@@ -657,7 +657,10 @@ describe('stampSenderIdentity', () => {
     expect(stampSenderIdentity('"just a string"', 'payne')).toBe('"just a string"');
   });
 
-  it('returns top-level JSON array content unchanged', () => {
+  // Contract test, NOT branch coverage for the `Array.isArray` guard: JSON.stringify
+  // drops non-index properties assigned to an array, so this passes with or without
+  // that guard. It still catches a rewrite that mangles arrays into objects.
+  it('passes a top-level JSON array through unchanged', () => {
     expect(stampSenderIdentity('[1,2,3]', 'payne')).toBe('[1,2,3]');
   });
 
