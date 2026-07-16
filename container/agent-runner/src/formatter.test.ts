@@ -294,3 +294,32 @@ describe('workout_event system rows', () => {
     expect(result).not.toContain('<workout_event');
   });
 });
+
+describe('a2a sender identity', () => {
+  function insertA2a(id: string, content: object) {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO messages_in (id, kind, timestamp, status, channel_type, platform_id, content)
+         VALUES (?, 'chat', ?, 'pending', 'agent', 'payne', ?)`,
+      )
+      .run(id, new Date().toISOString(), JSON.stringify(content));
+  }
+
+  it('renders the stamped agent name and id on an a2a row', () => {
+    insertA2a('a1', {
+      sender: 'Майор Пейн',
+      senderId: 'payne',
+      text: '{"action":"workout_done","type":"Ноги"}',
+    });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('sender="Майор Пейн"');
+    expect(result).toContain('agent="payne"');
+  });
+
+  it('does not emit agent= for non-agent (human) messages', () => {
+    insertMessage('m1', 'chat', { sender: 'Alice', senderId: 'telegram:1', text: 'hi' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('sender="Alice"');
+    expect(result).not.toContain('agent=');
+  });
+});
