@@ -2,7 +2,7 @@
  * Build and publish the shared agent registry.
  *
  * Every agent needs to know who its peers are — canonical name, role, and which
- * a2a actions they accept. Without that, a relaying agent recalls a peer's name
+ * a2a kinds they accept. Without that, a relaying agent recalls a peer's name
  * from memory, which is how «Майор Пейн» once became «Паулино».
  *
  * Name comes from `agent_groups.name` — the single source, never duplicated into
@@ -24,7 +24,7 @@ function sha(s: string): string {
 /** Shape of `agents/<folder>/agent.json`. Every field optional — a partial descriptor degrades to a name-only entry. */
 export interface AgentDescriptor {
   role?: string;
-  /** action name → human description of what the agent does with it. */
+  /** kind name → human description of what the agent does with it. */
   a2a_in?: Record<string, string>;
   aka?: string[];
 }
@@ -89,6 +89,26 @@ export function readAgentDescriptor(agentsDir: string, folder: string): AgentDes
 }
 
 /**
+ * The kinds this agent accepts over a2a, or `null` when it has no usable
+ * descriptor — which DISARMS the gate for it (see `shared/a2a/kinds.ts`).
+ *
+ * `null` deliberately conflates "not authored" with "malformed": both must fail
+ * open. A typo in agent.json bouncing every message the agent receives would be
+ * far worse than the drift the gate prevents. It is also what lets the whole
+ * feature ship inert — no descriptors exist yet, so every gate is off until one
+ * is authored.
+ *
+ * An empty array is NOT null: it means "has a descriptor, declares no kinds",
+ * i.e. text-only, gate ARMED. Never normalize a missing descriptor to `[]` —
+ * that would arm every un-migrated agent and bounce all structured traffic.
+ */
+export function getLegalKinds(agentsDir: string, folder: string): string[] | null {
+  const d = readAgentDescriptor(agentsDir, folder);
+  if (!d) return null;
+  return Object.keys(d.a2a_in ?? {});
+}
+
+/**
  * Every agent group joined with its descriptor. The DB is the canonical agent
  * list, so an agent with no descriptor still appears (name only) — the registry
  * is a complete who's-who even before descriptors are authored.
@@ -124,9 +144,9 @@ function cell(s: string): string {
 }
 
 /**
- * Identifier destined for a `code span` (ids, action names). Backslash escapes do
+ * Identifier destined for a `code span` (ids, kind names). Backslash escapes do
  * not apply inside code spans, so escaping can't save us — strip the characters
- * that would break the span or the row instead. Real folders and action names are
+ * that would break the span or the row instead. Real folders and kind names are
  * `[A-Za-z0-9_-]`, so this is a no-op on every legitimate value.
  */
 function ident(s: string): string {
@@ -144,27 +164,27 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
     '# Реестр агентов',
     '',
     'Кто есть кто в команде. **Генерируется хостом — не редактировать вручную.**',
-    'Имя — канон из `agent_groups.name`. `a2a_in` — какие action агент принимает.',
+    'Имя — канон из `agent_groups.name`. `a2a_in` — какие kind агент принимает.',
     '',
     '| id | Имя | Роль | Принимает a2a |',
     '|---|---|---|---|',
   ];
   for (const e of entries) {
-    const actions = Object.keys(e.a2a_in);
-    const actionCell = actions.length > 0 ? actions.map((a) => `\`${ident(a)}\``).join(', ') : '—';
-    lines.push(`| \`${ident(e.id)}\` | ${cell(e.name)} | ${cell(e.role) || '—'} | ${actionCell} |`);
+    const kinds = Object.keys(e.a2a_in);
+    const kindCell = kinds.length > 0 ? kinds.map((k) => `\`${ident(k)}\``).join(', ') : '—';
+    lines.push(`| \`${ident(e.id)}\` | ${cell(e.name)} | ${cell(e.role) || '—'} | ${kindCell} |`);
   }
   for (const e of entries) {
-    const actions = Object.entries(e.a2a_in);
-    // Gate on anything worth showing — NOT on actions alone. `aka` is rendered
+    const kinds = Object.entries(e.a2a_in);
+    // Gate on anything worth showing — NOT on kinds alone. `aka` is rendered
     // only here, so a receive-only agent's aliases would otherwise never appear.
-    if (actions.length === 0 && !e.role && e.aka.length === 0) continue;
+    if (kinds.length === 0 && !e.role && e.aka.length === 0) continue;
     lines.push('', `## ${oneLine(e.name)} (\`${ident(e.id)}\`)`);
     if (e.role) lines.push(`Роль: ${oneLine(e.role)}`);
     if (e.aka.length > 0) lines.push(`Также зовут: ${e.aka.map(oneLine).join(', ')}`);
     lines.push('');
-    for (const [action, desc] of actions) {
-      lines.push(`- \`${ident(action)}\` — ${oneLine(desc)}`);
+    for (const [kind, desc] of kinds) {
+      lines.push(`- \`${ident(kind)}\` — ${oneLine(desc)}`);
     }
   }
   lines.push('');

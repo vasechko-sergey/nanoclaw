@@ -3,7 +3,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { readAgentDescriptor, buildRegistry, renderRegistryMarkdown, writeAgentRegistry } from './agent-registry.js';
+import {
+  readAgentDescriptor,
+  getLegalKinds,
+  buildRegistry,
+  renderRegistryMarkdown,
+  writeAgentRegistry,
+} from './agent-registry.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup, updateAgentGroup } from './db/index.js';
 
 let tmp: string;
@@ -62,6 +68,33 @@ describe('readAgentDescriptor', () => {
   it('returns null when a2a_in has non-string values', () => {
     writeDescriptor('typo3', JSON.stringify({ a2a_in: { workout_done: { desc: 'nested' } } }));
     expect(readAgentDescriptor(tmp, 'typo3')).toBeNull();
+  });
+});
+
+describe('getLegalKinds', () => {
+  it('returns the declared kinds for an authored descriptor', () => {
+    writeDescriptor(
+      'payne',
+      JSON.stringify({ role: 'фитнес-тренер', a2a_in: { set_log: 'лог подхода', ack: 'квитанция' } }),
+    );
+    expect(getLegalKinds(tmp, 'payne')).toEqual(['set_log', 'ack']);
+  });
+
+  it('returns null when no descriptor is authored — gate disarmed', () => {
+    expect(getLegalKinds(tmp, 'nobody')).toBeNull();
+  });
+
+  it('returns null for a malformed descriptor — fails OPEN, never bounces everything', () => {
+    writeDescriptor('broken', JSON.stringify({ a2a_in: 'not-an-object' }));
+    expect(getLegalKinds(tmp, 'broken')).toBeNull();
+  });
+
+  it('returns an empty array for a descriptor that declares no kinds', () => {
+    // Distinct from null: this agent HAS a descriptor and accepts text only, so
+    // its gate is ARMED. Collapsing [] to null (or null to []) inverts the whole
+    // rollout — see the doc comment on getLegalKinds.
+    writeDescriptor('mute', JSON.stringify({ role: 'наблюдатель' }));
+    expect(getLegalKinds(tmp, 'mute')).toEqual([]);
   });
 });
 
