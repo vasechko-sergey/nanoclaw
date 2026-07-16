@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from '../db/connection.js';
 import { getCurrentOutboundTextBySeq, getUndeliveredMessages, writeMessageOut } from '../db/messages-out.js';
 import { setCurrentInReplyTo, clearCurrentInReplyTo } from '../current-batch.js';
-import { sendMessage, editMessage } from './core.js';
+import { sendMessage, editMessage, addReaction } from './core.js';
 
 beforeEach(() => {
   initTestSessionDb();
@@ -46,6 +46,55 @@ describe('send_message MCP tool — in_reply_to plumbing', () => {
     const out = getUndeliveredMessages();
     expect(out).toHaveLength(1);
     expect(out[0].in_reply_to).toBeNull();
+  });
+});
+
+/**
+ * Reactions are a platform affordance — the host renders them on Telegram,
+ * Slack, iOS. Between agents there is nothing to render: the host has no a2a
+ * reaction handling at all (zero references in delivery.ts or the
+ * agent-to-agent module), so the payload just lands as raw JSON noise in the
+ * peer's context. 13 such rows exist in the live data.
+ *
+ * Refusing agent destinations also retires `operation` — the fourth rival
+ * discriminator competing with `kind`.
+ */
+describe('add_reaction destination typing', () => {
+  /**
+   * Seed an inbound message with routing, so getRoutingBySeq resolves for its
+   * seq. `seq` is assigned explicitly — the column is not AUTOINCREMENT because
+   * of the even/odd parity split (host writes even, container odd), so a row
+   * inserted without one gets seq NULL and is unaddressable.
+   */
+  function insertInbound(seq: number, id: string, channelType: string, platformId: string): number {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO messages_in (id, seq, kind, timestamp, status, platform_id, channel_type, content)
+         VALUES (?, ?, 'chat', datetime('now'), 'pending', ?, ?, ?)`,
+      )
+      .run(id, seq, platformId, channelType, JSON.stringify({ sender: 'X', text: 'hi' }));
+    return seq;
+  }
+
+  const reactionRows = () => getUndeliveredMessages().filter((m) => JSON.parse(m.content).operation === 'reaction');
+
+  it('refuses an agent destination and emits nothing', async () => {
+    const seq = insertInbound(2, 'from-peer', 'agent', 'ag-peer');
+    const res = await addReaction.handler({ messageId: seq, emoji: 'thumbs_up' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not supported for agent destinations');
+    // The refusal must be a non-emit, not an error stapled onto a sent message.
+    expect(reactionRows()).toHaveLength(0);
+  });
+
+  it('still sends for a channel destination', async () => {
+    const seq = insertInbound(2, 'from-human', 'telegram', 'tg-1');
+    const res = await addReaction.handler({ messageId: seq, emoji: 'thumbs_up' });
+    expect(res.isError).toBeUndefined();
+    const rows = reactionRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].channel_type).toBe('telegram');
+    expect(JSON.parse(rows[0].content).emoji).toBe('thumbs_up');
   });
 });
 

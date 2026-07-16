@@ -1,3 +1,5 @@
+import { validateA2aKind } from '@shared/a2a/kinds.js';
+
 import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
@@ -590,7 +592,13 @@ interface QueryResult {
   transientError?: boolean;
 }
 
-async function processQuery(
+/**
+ * Exported for tests only — `runPollLoop` is the sole production caller. The
+ * turn-scoped accumulators below (`dispatchedKeys`, `turnRejects`) live for the
+ * length of one query and are only observable from in here, so they cannot be
+ * covered through the exported dispatch helpers.
+ */
+export async function processQuery(
   query: AgentQuery,
   routing: RoutingContext,
   initialBatchIds: string[],
@@ -603,6 +611,13 @@ async function processQuery(
   let queryContinuation: string | undefined;
   let done = false;
   let unwrappedNudged = false;
+  // Same lifecycle as `unwrappedNudged`, and deliberately so: at most one
+  // reject nudge per user-driven turn, re-armed only when a genuine follow-up
+  // arrives. Without that bound, an agent that answers the nudge with a second
+  // illegal kind would be nudged again, and again — a self-feeding loop. The
+  // second offence is dropped and logged instead; the host bounce (Layer 2) is
+  // the backstop for the traffic itself.
+  let rejectNudged = false;
   // Set when the turn's `result` is a transient upstream API error (529/5xx/
   // rate-limit) and nothing user-facing was delivered — the batch is left
   // un-acked for the host to retry rather than completed.
@@ -688,6 +703,7 @@ async function processQuery(
         const prompt = formatMessages(keep);
         log(`Pushing ${keep.length} follow-up message(s) into active query`);
         unwrappedNudged = false;
+        rejectNudged = false;
         // Fresh turn — clear the post-result idle bypass so the watchdog
         // can still surface a real stall in this new turn, and zero the
         // user-facing dispatch counter so a stall in this follow-up turn is
@@ -724,6 +740,11 @@ async function processQuery(
   // status pings, "done" confirmations, or a follow-up that happens to
   // produce identical text. Cross-turn dedupe would silently drop those.
   let dispatchedKeys = new Set<string>();
+  // Blocks the gate refused this turn, from BOTH the streaming path and the
+  // result path. Streamed rejects must survive to result time — that is the
+  // only point where we can push a nudge back into the query — so they
+  // accumulate here and are cleared alongside `dispatchedKeys`.
+  let turnRejects: BlockReject[] = [];
   // Buffer for partial <message> blocks that span multiple assistant_text
   // events. Closed blocks are dispatched immediately; the trailing remainder
   // (text after the last </message>, including unclosed <message...) is kept
@@ -818,7 +839,9 @@ async function processQuery(
         log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms — aborting turn`);
         watchdogFired = true;
         if (streamBuffer.length > 0) {
-          const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+          // Rejects are dropped here on purpose: the turn is being aborted, so
+          // there is no query left to push a nudge into. They were logged.
+          const { remainder } = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
           streamBuffer = remainder;
         }
         markCompleted(initialBatchIds);
@@ -907,8 +930,9 @@ async function processQuery(
         // the complete grounding set at `result`, so we cannot stream them out
         // early. When the gate is off, dispatch streams as before.
         if (!gateOn) {
-          const remainder = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+          const { remainder, rejects } = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
           streamBuffer = remainder;
+          turnRejects.push(...rejects);
         }
       } else if (event.type === 'result') {
         // Transient upstream failure (529 overloaded / 5xx / rate-limit): the
@@ -1038,8 +1062,10 @@ async function processQuery(
                     : l3Hedge.length > 0
                       ? `${event.text}\n\n⚠️ Эти утверждения я не смог подтвердить — перепроверь: ${l3Hedge.map((c) => `"${c}"`).join(', ')}.`
                       : event.text;
-                const { hasUnwrapped } = dispatchResultText(finalText, routing, dispatchedKeys);
+                const { hasUnwrapped, rejects } = dispatchResultText(finalText, routing, dispatchedKeys);
+                const rejectsThisTurn = turnRejects.concat(rejects);
                 dispatchedKeys = new Set<string>();
+                turnRejects = [];
                 if (hasUnwrapped && !unwrappedNudged) {
                   unwrappedNudged = true;
                   const destinations = getAllDestinations();
@@ -1052,14 +1078,23 @@ async function processQuery(
                       `Please re-send your response with the correct wrapping.</system>`,
                   );
                 }
+                if (rejectsThisTurn.length > 0 && !rejectNudged) {
+                  rejectNudged = true;
+                  resultReceived = false;
+                  query.push(buildRejectNudge(rejectsThisTurn));
+                }
               }
             }
           } else {
-            const { hasUnwrapped } = dispatchResultText(event.text, routing, dispatchedKeys);
+            const { hasUnwrapped, rejects } = dispatchResultText(event.text, routing, dispatchedKeys);
+            // Fold in anything the streaming path already refused this turn —
+            // one nudge covers the whole turn.
+            const rejectsThisTurn = turnRejects.concat(rejects);
             // Per-turn dedupe — drop the set now that the turn is fully
             // closed so any follow-up push() can re-send identical content
             // without being silently suppressed.
             dispatchedKeys = new Set<string>();
+            turnRejects = [];
             if (hasUnwrapped && !unwrappedNudged) {
               unwrappedNudged = true;
               const destinations = getAllDestinations();
@@ -1074,7 +1109,35 @@ async function processQuery(
                   `Please re-send your response with the correct wrapping.</system>`,
               );
             }
+            if (rejectsThisTurn.length > 0 && !rejectNudged) {
+              rejectNudged = true;
+              resultReceived = false;
+              query.push(buildRejectNudge(rejectsThisTurn));
+            }
           }
+        } else if (turnRejects.length > 0) {
+          // A result with NO text still ends the turn. providers/claude.ts
+          // yields `text: null` for error_max_turns / error_during_execution,
+          // and a turn can simply produce no final text — but both flushes
+          // above live inside `if (event.text)`. Without this, the turn's
+          // rejects outlive it and get folded into the NEXT turn's nudge
+          // (`rejectNudged` is still false, since no nudge fired here), telling
+          // the agent to re-send a block it never wrote to a destination it
+          // never named. Reachable with no descriptor at all, via
+          // unknown_destination.
+          //
+          // Dropped rather than nudged, deliberately: this turn produced no
+          // text, so it either errored out or said nothing. Pushing a nudge
+          // would re-arm the watchdog (`resultReceived = false`) against a
+          // query that may already be dead, buying a full STREAM_IDLE_TIMEOUT_MS
+          // stall and a spurious "[stream stalled]" for a turn that is over —
+          // and the provider event carries no success/error discriminator to
+          // tell those apart. Same call the watchdog's abort path makes above:
+          // no query left to nudge into, and they were logged at reject time.
+          // Layer 2 (host) remains the backstop for anything that actually
+          // reached messages_out.
+          log(`Result with no text — dropping ${turnRejects.length} unreported reject(s) from this turn`);
+          turnRejects = [];
         }
       }
     }
@@ -1128,17 +1191,106 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
   }
 }
 
-const MESSAGE_BLOCK_RE = /<message\s+to="([^"]+)"\s*>([\s\S]*?)<\/message>/g;
+/**
+ * A dispatchable <message> block.
+ *
+ * The lookahead requires `to="` WITHOUT consuming it, so a <message> lacking
+ * `to=` still does not match — exactly as before. That is load-bearing: if
+ * such blocks matched they would be consumed, `blockCount` would rise, and
+ * `hasUnwrapped` would go false, silently killing the no-wrap nudge in
+ * `dispatchResultText`.
+ *
+ * Group 1 is the attribute blob (`to=` and an optional `kind=`, either order),
+ * group 2 the body. `[^>]` confines both the blob and the lookahead to the
+ * opening tag, so a body containing `>` can never be read as an attribute.
+ */
+const MESSAGE_BLOCK_RE = /<message\s+(?=[^>]*\bto=")([^>]*?)\s*>([\s\S]*?)<\/message>/g;
 
 /**
- * Build a dedupe key for a (toName, body) pair. NUL byte separator so a
- * name containing the body (or vice versa) can't collide. Body is trimmed
- * to match the final-result path — the same block sent mid-stream and
- * later returned by the aggregated `result.text` should produce the same
- * key regardless of incidental whitespace differences.
+ * Read a double-quoted attribute out of an opening tag's attribute blob.
+ * `\b` so `to=` is not matched inside e.g. `auto=`. Returns null when absent.
  */
-function blockKey(toName: string, body: string): string {
-  return `${toName} ${body.trim()}`;
+function attrOf(blob: string, name: string): string | null {
+  const m = new RegExp(`\\b${name}="([^"]*)"`).exec(blob);
+  return m ? m[1] : null;
+}
+
+/**
+ * Pull (toName, kind) out of a matched attribute blob. The lookahead in
+ * MESSAGE_BLOCK_RE guarantees `to="` is present, but a value containing a raw
+ * `>` would truncate the blob mid-attribute, leaving no closing quote to
+ * match; that degrades to '' and falls through to the unknown-destination
+ * path, which is where the old regex sent such names too.
+ */
+function parseBlockAttrs(blob: string): { toName: string; kind: string | null } {
+  return { toName: attrOf(blob, 'to') ?? '', kind: attrOf(blob, 'kind') };
+}
+
+/**
+ * Build a dedupe key for a (toName, kind, body) triple. NUL byte separators so
+ * one field containing another (or a separator) can't collide. `kind` is part
+ * of the key: the same body under a different kind is a different message.
+ * Body is trimmed to match the final-result path — the same block sent
+ * mid-stream and later returned by the aggregated `result.text` should produce
+ * the same key regardless of incidental whitespace differences.
+ *
+ * The separator is written as the `\0` escape, not a raw 0x00 byte: an earlier
+ * revision embedded the literal control character, which made the whole file
+ * read as binary to grep/git while rendering as an invisible blank in editors.
+ */
+function blockKey(toName: string, kind: string | null, body: string): string {
+  return `${toName}\0${kind ?? ''}\0${body.trim()}`;
+}
+
+/**
+ * A block that was NOT delivered, and why. Collected by both dispatch paths
+ * and turned into one nudge per turn by `buildRejectNudge`.
+ */
+export interface BlockReject {
+  to: string;
+  kind: string | null;
+  code: 'unknown_kind' | 'unmarked_json' | 'unknown_destination';
+  legal?: string[];
+}
+
+/**
+ * Layer 1 of the a2a kind gate: is this block allowed out?
+ *
+ * Runs BEFORE the write to messages_out, so an illegal block is never emitted
+ * rather than emitted-and-retracted. Returns the reject, or null when the
+ * block is fine.
+ *
+ * Channels are never gated: `kind` is an a2a concept, and the host writes
+ * a2a_kinds NULL for every channel row anyway. The type check is what keeps a
+ * future projection change from bouncing human-facing traffic.
+ */
+function gateBlock(dest: DestinationEntry, toName: string, kind: string | null, body: string): BlockReject | null {
+  if (dest.type !== 'agent') return null;
+  const verdict = validateA2aKind(kind, body, dest.a2aKinds ?? null);
+  if (verdict.ok) return null;
+  log(`Rejected <message to="${toName}" kind="${kind ?? ''}">: ${verdict.code}`);
+  return { to: toName, kind, code: verdict.code, legal: dest.a2aKinds ?? undefined };
+}
+
+/**
+ * One nudge per turn describing every rejected block, in the same shape as the
+ * established no-wrap nudge. The agent fixes it in the same turn with full
+ * context — the strongest correction available, and why Layer 1 exists at all
+ * despite the host being authoritative.
+ */
+export function buildRejectNudge(rejects: BlockReject[]): string {
+  const lines = rejects.map((r) => {
+    if (r.code === 'unknown_destination') return `• to="${r.to}" — такого адресата нет.`;
+    if (r.code === 'unmarked_json') {
+      return `• to="${r.to}" — тело похоже на структурное сообщение, но kind= не указан. Поставь kind, либо пришли прозой.`;
+    }
+    return `• to="${r.to}" kind="${r.kind}" — такой kind не принимается. Легальные: ${(r.legal ?? []).concat('text').join(', ')}.`;
+  });
+  return (
+    `<system>Часть сообщений НЕ доставлена:\n${lines.join('\n')}\n` +
+    `Формат: <message to="имя" kind="вид">тело</message>; kind можно опустить для обычного текста. ` +
+    `Перешли исправленное.</system>`
+  );
 }
 
 /**
@@ -1157,27 +1309,43 @@ function blockKey(toName: string, body: string): string {
  * the buffer may contain a partial block we shouldn't log as scratchpad
  * yet. Scratchpad logging + the no-wrap nudge are decided once at
  * `result` time off the aggregated `result.text`.
+ *
+ * Rejects are returned rather than nudged here: a turn can stream many text
+ * events, and the agent should get ONE nudge covering all of them at result
+ * time. The caller accumulates them across the turn.
  */
-function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatched: Set<string>): string {
+export function dispatchCompleteBlocks(
+  text: string,
+  routing: RoutingContext,
+  dispatched: Set<string>,
+): { remainder: string; rejects: BlockReject[] } {
   MESSAGE_BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   let lastIndex = 0;
+  const rejects: BlockReject[] = [];
   while ((match = MESSAGE_BLOCK_RE.exec(text)) !== null) {
-    const toName = match[1];
+    const { toName, kind } = parseBlockAttrs(match[1]);
     const body = match[2].trim();
     lastIndex = MESSAGE_BLOCK_RE.lastIndex;
-    const key = blockKey(toName, body);
+    const key = blockKey(toName, kind, body);
     if (dispatched.has(key)) continue;
     const dest = findByName(toName);
     if (!dest) {
       log(`Unknown destination in <message to="${toName}">, dropping block`);
+      rejects.push({ to: toName, kind, code: 'unknown_destination' });
       dispatched.add(key);
       continue;
     }
-    sendToDestination(dest, body, routing);
+    const reject = gateBlock(dest, toName, kind, body);
+    if (reject) {
+      rejects.push(reject);
+      dispatched.add(key);
+      continue;
+    }
+    sendToDestination(dest, body, routing, kind);
     dispatched.add(key);
   }
-  return text.slice(lastIndex);
+  return { remainder: text.slice(lastIndex), rejects };
 }
 
 /**
@@ -1195,38 +1363,46 @@ function dispatchCompleteBlocks(text: string, routing: RoutingContext, dispatche
  * The agent must always wrap output in <message to="name">…</message>
  * blocks, even with a single destination. Bare text is scratchpad only.
  */
-function dispatchResultText(
+export function dispatchResultText(
   text: string,
   routing: RoutingContext,
   dispatched: Set<string>,
-): { newlySent: number; hasUnwrapped: boolean } {
+): { newlySent: number; hasUnwrapped: boolean; rejects: BlockReject[] } {
   MESSAGE_BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   let newlySent = 0;
   let blockCount = 0;
   let lastIndex = 0;
   const scratchpadParts: string[] = [];
+  const rejects: BlockReject[] = [];
 
   while ((match = MESSAGE_BLOCK_RE.exec(text)) !== null) {
     blockCount++;
     if (match.index > lastIndex) {
       scratchpadParts.push(text.slice(lastIndex, match.index));
     }
-    const toName = match[1];
+    const { toName, kind } = parseBlockAttrs(match[1]);
     const body = match[2].trim();
     lastIndex = MESSAGE_BLOCK_RE.lastIndex;
 
-    const key = blockKey(toName, body);
+    const key = blockKey(toName, kind, body);
     if (dispatched.has(key)) continue;
 
     const dest = findByName(toName);
     if (!dest) {
       log(`Unknown destination in <message to="${toName}">, dropping block`);
       scratchpadParts.push(`[dropped: unknown destination "${toName}"] ${body}`);
+      rejects.push({ to: toName, kind, code: 'unknown_destination' });
       dispatched.add(key);
       continue;
     }
-    sendToDestination(dest, body, routing);
+    const reject = gateBlock(dest, toName, kind, body);
+    if (reject) {
+      rejects.push(reject);
+      dispatched.add(key);
+      continue;
+    }
+    sendToDestination(dest, body, routing, kind);
     dispatched.add(key);
     newlySent++;
   }
@@ -1244,10 +1420,15 @@ function dispatchResultText(
   if (hasUnwrapped) {
     log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
   }
-  return { newlySent, hasUnwrapped };
+  return { newlySent, hasUnwrapped, rejects };
 }
 
-function sendToDestination(dest: DestinationEntry, body: string, routing: RoutingContext): void {
+function sendToDestination(
+  dest: DestinationEntry,
+  body: string,
+  routing: RoutingContext,
+  kind?: string | null,
+): void {
   const platformId = dest.type === 'channel' ? dest.platformId! : dest.agentGroupId!;
   const channelType = dest.type === 'channel' ? dest.channelType! : 'agent';
   // Resolve thread_id per-destination from the most recent inbound message
@@ -1255,6 +1436,26 @@ function sendToDestination(dest: DestinationEntry, body: string, routing: Routin
   // different destinations have different thread contexts — using a single
   // routing.threadId would stamp one channel's thread onto another.
   const destRouting = resolveDestinationThread(channelType, platformId);
+  // `kind` is an a2a concept only — channels never carry one, and a stray
+  // kind= on a channel block is dropped rather than rendered to a human.
+  // Agent messages always carry it explicitly (defaulting to 'text') so the
+  // host reads one field rather than inferring intent from its absence.
+  //
+  // The field is `a2a_kind`, NOT `kind`. DO NOT "simplify" it back — `kind`
+  // was already taken, twice over:
+  //   - `messages_out.kind` is the ROW kind ('chat' | 'system' | …);
+  //   - status rows put a status CATEGORY on content.kind — see the
+  //     `status_msg` branch ~line 906 here, which writes
+  //     `{type:'status', text, level, kind}` (kind: 'system', from
+  //     providers/claude.ts's compact_boundary) stamped with the BATCH's
+  //     channel_type. That is 'agent' on every turn woken by an a2a inbound,
+  //     so those rows reach the host's a2a gate. The send_status MCP tool
+  //     (mcp-tools/status.ts) writes the same shape.
+  // A third meaning on `content.kind` made the host gate read a status
+  // category as an envelope kind and bounce the agent a compaction notice it
+  // never authored. The wire attribute stays `kind="…"` — only this internal
+  // field is renamed, and formatter.ts renders it back out as `kind=`.
+  const content = dest.type === 'agent' ? { text: body, a2a_kind: kind || 'text' } : { text: body };
   writeMessageOut({
     id: generateId(),
     in_reply_to: destRouting?.inReplyTo ?? routing.inReplyTo,
@@ -1262,7 +1463,7 @@ function sendToDestination(dest: DestinationEntry, body: string, routing: Routin
     platform_id: platformId,
     channel_type: channelType,
     thread_id: destRouting?.threadId ?? null,
-    content: JSON.stringify({ text: body }),
+    content: JSON.stringify(content),
   });
 }
 

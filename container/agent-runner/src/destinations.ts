@@ -19,6 +19,13 @@ export interface DestinationEntry {
   channelType?: string;
   platformId?: string;
   agentGroupId?: string;
+  /**
+   * Kinds this destination's target accepts over a2a, or null when it has no
+   * descriptor (gate disarmed). Host-written on every wake from the target's
+   * agent.json. Unparseable JSON is treated as null — fail open, never bounce
+   * everything over a corrupt row.
+   */
+  a2aKinds?: string[] | null;
 }
 
 interface DestRow {
@@ -28,6 +35,25 @@ interface DestRow {
   channel_type: string | null;
   platform_id: string | null;
   agent_group_id: string | null;
+  a2a_kinds: string | null;
+}
+
+/**
+ * Raw `a2a_kinds` column → the kind list, or null when there's nothing usable.
+ *
+ * Every failure mode collapses to null (= gate disarmed) on purpose: a corrupt
+ * or unexpected value must not bounce an agent's entire inbox. An empty array
+ * is NOT null — it means "has a descriptor, declares no kinds", gate armed.
+ */
+function parseKinds(raw: string | null): string[] | null {
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === 'string') : null;
 }
 
 function rowToEntry(row: DestRow): DestinationEntry {
@@ -38,6 +64,7 @@ function rowToEntry(row: DestRow): DestinationEntry {
     channelType: row.channel_type ?? undefined,
     platformId: row.platform_id ?? undefined,
     agentGroupId: row.agent_group_id ?? undefined,
+    a2aKinds: parseKinds(row.a2a_kinds),
   };
 }
 
@@ -91,6 +118,29 @@ export function buildSystemPromptAddendum(assistantName?: string): string {
   return sections.join('\n\n');
 }
 
+/**
+ * The ` — kind: a, b` tail on a destination's line, or '' when there is nothing
+ * to teach.
+ *
+ * This is the point of the whole normalization: the kind list the agent READS is
+ * rendered from `a2aKinds` — the same descriptor projection the gate ENFORCES —
+ * so the contract cannot drift from what the wire accepts. The moment this list
+ * is instead hand-written into CLAUDE.md prose, it is a copy, and copies rot.
+ *
+ * Silent in three cases, each for its own reason:
+ * - channels: `kind` is an a2a concept and never applies (the host writes NULL
+ *   here anyway; the type check is what keeps a future projection change from
+ *   teaching kinds to a human-facing channel).
+ * - `null`: no descriptor → gate disarmed → nothing is enforced, so there is
+ *   nothing to teach. This is what makes the feature ship inert.
+ * - `[]`: a descriptor that declares no kinds (gate armed, text-only). There is
+ *   no list to print, and an empty ` — kind: ` would be worse than silence.
+ */
+function kindSuffix(d: DestinationEntry): string {
+  if (d.type !== 'agent' || !d.a2aKinds || d.a2aKinds.length === 0) return '';
+  return ` — kind: ${d.a2aKinds.join(', ')}`;
+}
+
 function buildDestinationsSection(): string {
   const all = getAllDestinations();
 
@@ -106,18 +156,34 @@ function buildDestinationsSection(): string {
   if (all.length === 1) {
     const d = all[0];
     const label = d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
-    lines.push(`Your destination is \`${d.name}\`${label}.`);
+    lines.push(`Your destination is \`${d.name}\`${label}${kindSuffix(d)}.`);
   } else {
     lines.push('You can send messages to the following destinations:', '');
     for (const d of all) {
       const label = d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
-      lines.push(`- \`${d.name}\`${label}`);
+      lines.push(`- \`${d.name}\`${label}${kindSuffix(d)}`);
     }
   }
   lines.push('');
   lines.push(
     'Wrap each delivered message in a `<message to="name">…</message>` block; include several blocks in one response to address several destinations. `<internal>…</internal>` marks thinking you don\'t want sent.',
   );
+
+  // Guarded: with zero descriptors every gate is disarmed, and a format rule for
+  // a gate that cannot fire is prose that teaches a contract nothing checks —
+  // precisely what this project removes. Silent until something is armed, so the
+  // pre-rollout prompt stays byte-identical to the one agents read today.
+  const anyKinds = all.some((d) => d.type === 'agent' && d.a2aKinds && d.a2aKinds.length > 0);
+  if (anyKinds) {
+    lines.push('');
+    lines.push(
+      'Для агентов-адресатов, у которых указаны `kind`, структурные сообщения помечай атрибутом: ' +
+        '`<message to="имя" kind="вид">{…}</message>`. Обычный текст шлётся без `kind`. ' +
+        'Непомеченное сообщение с JSON-телом и незнакомый `kind` не доставляются — ты получишь ' +
+        '`<system>` с причиной и списком допустимых `kind`.',
+    );
+  }
+
   lines.push('');
   lines.push(
     'When replying to an incoming message, default to addressing the destination it came `from` (every inbound `<message>` tag carries a `from="name"` attribute). Pick a different destination when the request asks for it (e.g., "tell Laura that…").',

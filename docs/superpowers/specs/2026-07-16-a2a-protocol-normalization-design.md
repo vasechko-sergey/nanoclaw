@@ -204,15 +204,23 @@ it is redundant.** Its value is not throughput, it is that the declaration becom
 *binding*. Without it, an agent that skips poll-loop is unchecked, and a gate with a
 bypass is a document again — which is what we are replacing.
 
-### Gate arming: descriptor presence
+### Gate arming: `a2a_in` presence
 
-**No descriptor → `a2a_kinds` is NULL → no gate → everything accepted.**
+**No `a2a_in` declaration → `a2a_kinds` is NULL → no gate → everything accepted.**
+
+What arms the gate is an explicit `a2a_in`, not the presence of the `agent.json`
+file. A descriptor carrying only a `role` (or `aka`) stays disarmed: agent.json
+predates this gate and promises every field is optional, and saying nothing about
+the wire is not the claim "I accept nothing but text". An explicit `"a2a_in": {}`
+*is* that claim, and arms text-only. See `getLegalKinds` in `src/agent-registry.ts`.
 
 This is not a compatibility layer; it is a switch. Consequences, all desirable:
 
-- Code ships inert. Each `agent.json` arms its own agent independently.
+- Code ships inert. Each `a2a_in` arms its own agent independently.
 - Newly created agents (`create_agent`) keep working before anyone authors a
   descriptor.
+- The registry can be populated (roles, aliases) ahead of, and independently of,
+  arming any transport gate.
 - A malformed descriptor fails the gate **open**, not closed — matching
   `readAgentDescriptor`'s existing contract ("a bad descriptor must never take the
   registry down"). A typo must not bounce all of an agent's traffic.

@@ -3,7 +3,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { readAgentDescriptor, buildRegistry, renderRegistryMarkdown, writeAgentRegistry } from './agent-registry.js';
+import {
+  readAgentDescriptor,
+  getLegalKinds,
+  buildRegistry,
+  renderRegistryMarkdown,
+  writeAgentRegistry,
+} from './agent-registry.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup, updateAgentGroup } from './db/index.js';
 
 let tmp: string;
@@ -62,6 +68,44 @@ describe('readAgentDescriptor', () => {
   it('returns null when a2a_in has non-string values', () => {
     writeDescriptor('typo3', JSON.stringify({ a2a_in: { workout_done: { desc: 'nested' } } }));
     expect(readAgentDescriptor(tmp, 'typo3')).toBeNull();
+  });
+});
+
+describe('getLegalKinds', () => {
+  it('returns the declared kinds for an authored descriptor', () => {
+    writeDescriptor(
+      'payne',
+      JSON.stringify({ role: 'фитнес-тренер', a2a_in: { set_log: 'лог подхода', ack: 'квитанция' } }),
+    );
+    expect(getLegalKinds(tmp, 'payne')).toEqual(['set_log', 'ack']);
+  });
+
+  it('returns null when no descriptor is authored — gate disarmed', () => {
+    expect(getLegalKinds(tmp, 'nobody')).toBeNull();
+  });
+
+  it('returns null for a malformed descriptor — fails OPEN, never bounces everything', () => {
+    writeDescriptor('broken', JSON.stringify({ a2a_in: 'not-an-object' }));
+    expect(getLegalKinds(tmp, 'broken')).toBeNull();
+  });
+
+  it('returns null for a descriptor with no a2a_in — a registry-only entry stays disarmed', () => {
+    // agent.json predates the gate and its documented contract is "every field
+    // optional — a partial descriptor degrades to a name-only entry". Adding a
+    // `role` (the shipped registry's entire purpose) must NOT arm anything: an
+    // agent whose owner never made a claim about the a2a wire has not made the
+    // claim "I accept nothing but text". Presence of the FILE is not the
+    // declaration; presence of `a2a_in` is.
+    writeDescriptor('mute', JSON.stringify({ role: 'наблюдатель' }));
+    expect(getLegalKinds(tmp, 'mute')).toBeNull();
+  });
+
+  it('returns an empty array for an explicit empty a2a_in — deliberately armed, text-only', () => {
+    // Distinct from null: this descriptor DOES make a claim about the wire, and
+    // the claim is "nothing structured". Gate ARMED. Collapsing [] to null (or
+    // null to []) inverts the rollout — see the doc comment on getLegalKinds.
+    writeDescriptor('strict', JSON.stringify({ role: 'наблюдатель', a2a_in: {} }));
+    expect(getLegalKinds(tmp, 'strict')).toEqual([]);
   });
 });
 

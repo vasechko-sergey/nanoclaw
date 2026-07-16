@@ -19,10 +19,18 @@ vi.mock('../../container-runner.js', () => ({
 
 vi.mock('../../config.js', async () => {
   const actual = await vi.importActual('../../config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-a2a-route' };
+  return {
+    ...actual,
+    DATA_DIR: '/tmp/nanoclaw-test-a2a-route',
+    // The gate reads the TARGET's agent.json from here. Pointed at the temp
+    // tree so a test can author one; with none authored it resolves to null
+    // (gate disarmed), which is the state of every agent in the wild today.
+    AGENTS_DIR: '/tmp/nanoclaw-test-a2a-route/agents',
+  };
 });
 
 const TEST_DIR = '/tmp/nanoclaw-test-a2a-route';
+const TEST_AGENTS_DIR = '/tmp/nanoclaw-test-a2a-route/agents';
 
 function now(): string {
   return new Date().toISOString();
@@ -671,5 +679,222 @@ describe('stampSenderIdentity', () => {
   it('falls back to the folder id when the group name is empty', () => {
     createAgentGroup({ id: 'noname', name: '', folder: 'noname', agent_provider: null, created_at: now() });
     expect(JSON.parse(stampSenderIdentity('{"text":"hi"}', 'noname')).sender).toBe('noname');
+  });
+});
+
+/**
+ * Layer 2 — the authoritative kind gate.
+ *
+ * routeAgentMessage is the single chokepoint every a2a message crosses, no
+ * matter which emit path produced it. This layer should almost never fire in
+ * steady state: the container gate (Layer 1) catches essentially everything
+ * in-turn with better context. Its value is that the declaration becomes
+ * BINDING — an emit path that skips poll-loop (the MCP send_message tool,
+ * which writes messages_out from a separate subprocess) is still checked.
+ *
+ * A rejected message is bounced into the SENDER's own inbound as a system
+ * self-note rather than dropped: dying silently in the retry path is the
+ * "cuts live traffic" failure the owner explicitly ruled out.
+ */
+describe('routeAgentMessage a2a kind gate (layer 2)', () => {
+  const A = 'ag-A';
+  const B = 'ag-B';
+  let SA: Session;
+  let SB: Session;
+
+  /** Author `<AGENTS_DIR>/<folder>/agent.json` — the TARGET's own descriptor. */
+  function writeDescriptor(folder: string, descriptor: unknown): void {
+    const dir = path.join(TEST_AGENTS_DIR, folder);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'agent.json'), JSON.stringify(descriptor));
+  }
+
+  beforeEach(() => {
+    if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
+    fs.mkdirSync(TEST_DIR, { recursive: true });
+
+    const db = initTestDb();
+    runMigrations(db);
+
+    createAgentGroup({ id: A, name: 'Джарвис', folder: 'a', agent_provider: null, created_at: now() });
+    createAgentGroup({ id: B, name: 'Майор Пейн', folder: 'b', agent_provider: null, created_at: now() });
+
+    SA = {
+      id: 'sess-A',
+      agent_group_id: A,
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: null,
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    };
+    SB = {
+      id: 'sess-B',
+      agent_group_id: B,
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: null,
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    };
+    createSession(SA);
+    createSession(SB);
+    initSessionFolder(A, SA.id);
+    initSessionFolder(B, SB.id);
+
+    createDestination({ agent_group_id: A, local_name: 'b', target_type: 'agent', target_id: B, created_at: now() });
+    createDestination({ agent_group_id: A, local_name: 'a', target_type: 'agent', target_id: A, created_at: now() });
+  });
+
+  afterEach(() => {
+    closeDb();
+    if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
+  });
+
+  const send = (content: object) =>
+    routeAgentMessage({ id: 'm1', platform_id: B, content: JSON.stringify(content), in_reply_to: null }, SA);
+
+  describe('armed target (B declares set_log)', () => {
+    beforeEach(() => {
+      writeDescriptor('b', { role: 'тренер', a2a_in: { set_log: 'лог подхода' } });
+    });
+
+    it('does not route an undeclared kind', async () => {
+      await send({ text: '{}', a2a_kind: 'bogus' });
+      expect(readInbound(B, SB.id)).toHaveLength(0);
+    });
+
+    it('bounces the rejection into the SENDER own inbound as a system self-note', async () => {
+      await send({ text: '{}', a2a_kind: 'bogus' });
+
+      const back = readInbound(A, SA.id);
+      expect(back).toHaveLength(1);
+      // Addressed from the sender to itself — the formatter renders this
+      // agent="system", which is why the `system` folder is reserved.
+      expect(back[0].platform_id).toBe(A);
+      expect(back[0].channel_type).toBe('agent');
+      const parsed = JSON.parse(back[0].content);
+      expect(parsed.sender).toBe('system');
+      expect(parsed.senderId).toBe('system');
+      // The note must name the offence and the target, or the agent cannot fix it.
+      expect(parsed.text).toContain('bogus');
+      expect(parsed.text).toContain('Майор Пейн');
+      expect(parsed.text).toContain('set_log');
+    });
+
+    it('routes a declared kind', async () => {
+      // Guards the inverse mutation: a gate that bounced everything once armed
+      // would pass the tests above while cutting all live traffic.
+      await send({ text: '{"reps":8}', a2a_kind: 'set_log' });
+      expect(readInbound(B, SB.id)).toHaveLength(1);
+      expect(readInbound(A, SA.id)).toHaveLength(0);
+    });
+
+    it('delivers a container status row — its `kind` is a status category, not an envelope kind', async () => {
+      // REGRESSION. The envelope field is `a2a_kind` because `kind` was already
+      // taken. poll-loop.ts writes status rows as
+      // `{type:'status', text, level, kind}` (kind: 'system' from
+      // providers/claude.ts's compact_boundary; the send_status MCP tool writes
+      // the same shape), stamped with the BATCH's channel_type — which is
+      // 'agent' for every turn woken by an a2a inbound, i.e. the normal case for
+      // greg/payne/gordon/scrooge. Reading the envelope kind off `kind` made
+      // this gate bounce the sender a compaction notice it never authored, and
+      // the `sender === 'system'` exemption does not cover it: a status row has
+      // no sender at gate time (stampSenderIdentity runs later).
+      await send({
+        type: 'status',
+        text: 'Context compacted (12,345 tokens compacted)',
+        level: 'info',
+        kind: 'system',
+      });
+      expect(readInbound(B, SB.id)).toHaveLength(1);
+      expect(readInbound(A, SA.id)).toHaveLength(0);
+    });
+
+    it('rejects a JSON-object body carrying no kind — the MCP send_message path', async () => {
+      // send_message writes {text} with no kind at all. That is exactly how a
+      // structured payload sails through as prose, so it must bounce.
+      await send({ text: '{"reps":8}' });
+      expect(readInbound(B, SB.id)).toHaveLength(0);
+      expect(JSON.parse(readInbound(A, SA.id)[0].content).text).toContain('kind');
+    });
+
+    it('routes prose carrying no kind', async () => {
+      // `text` is legal without being declared. Without this, the test above
+      // would also pass a gate that bounced every kind-less message.
+      await send({ text: 'как продвигается?' });
+      expect(readInbound(B, SB.id)).toHaveLength(1);
+    });
+
+    it('routes non-JSON content untouched', async () => {
+      // A bare string has no envelope to judge; Layer 1 already saw it.
+      await routeAgentMessage({ id: 'm1', platform_id: B, content: 'plain text', in_reply_to: null }, SA);
+      expect(readInbound(B, SB.id)).toHaveLength(1);
+    });
+
+    it('never gates a host-authored system note', async () => {
+      // Host notes (approvals, restarts, bounces) are not agent protocol and
+      // must always land. Today no system note reaches this function — bounces
+      // are written straight to inbound, which is the real reason a bounce
+      // cannot bounce — so this pins the exemption as the second guard rather
+      // than reproducing a live path. Killable: drop the exemption and the
+      // illegal kind below bounces instead of routing.
+      await routeAgentMessage(
+        {
+          id: 'm1',
+          platform_id: B,
+          content: JSON.stringify({ text: '{}', a2a_kind: 'bogus', sender: 'system' }),
+          in_reply_to: null,
+        },
+        SA,
+      );
+      expect(readInbound(B, SB.id)).toHaveLength(1);
+      expect(readInbound(A, SA.id)).toHaveLength(0);
+    });
+  });
+
+  it('routes normally when the target has no descriptor (gate disarmed)', async () => {
+    // SHIP-INERT. No agent.json exists anywhere in the wild, so this is the
+    // live behaviour of every message today.
+    //
+    // Honest note on killability: deleting the gate would NOT fail this test.
+    // It kills a different mutation — normalizing a missing descriptor to `[]`
+    // instead of null, which would bounce every structured a2a message in
+    // production. Verified by running that mutation.
+    await send({ text: '{"reps":8}', a2a_kind: 'anything_at_all' });
+    expect(readInbound(B, SB.id)).toHaveLength(1);
+    expect(readInbound(A, SA.id)).toHaveLength(0);
+  });
+
+  it('routes normally when the target descriptor is malformed (fail open)', async () => {
+    // A typo in agent.json must not bounce an agent's entire inbox.
+    fs.mkdirSync(path.join(TEST_AGENTS_DIR, 'b'), { recursive: true });
+    fs.writeFileSync(path.join(TEST_AGENTS_DIR, 'b', 'agent.json'), '{ this is not json');
+    await send({ text: '{}', a2a_kind: 'bogus' });
+    expect(readInbound(B, SB.id)).toHaveLength(1);
+  });
+
+  it('routes normally for a descriptor with no a2a_in — registry-only, still disarmed', async () => {
+    // SHIP-INERT. `role` alone is the shipped registry's whole purpose and says
+    // nothing about the wire, so it must not arm anything.
+    writeDescriptor('b', { role: 'аналитик' });
+    await send({ text: '{}', a2a_kind: 'set_log' });
+    expect(readInbound(B, SB.id)).toHaveLength(1);
+    expect(readInbound(A, SA.id)).toHaveLength(0);
+  });
+
+  it('bounces a target whose a2a_in is explicitly empty when the body is structured', async () => {
+    // `[]` is NOT null: the descriptor DOES declare, and declares nothing
+    // structured → text-only, ARMED.
+    writeDescriptor('b', { role: 'аналитик', a2a_in: {} });
+    await send({ text: '{}', a2a_kind: 'set_log' });
+    expect(readInbound(B, SB.id)).toHaveLength(0);
+    expect(readInbound(A, SA.id)).toHaveLength(1);
   });
 });

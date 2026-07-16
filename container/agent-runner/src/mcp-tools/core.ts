@@ -399,6 +399,14 @@ export const addReaction: McpToolDefinition = {
       return err(`Cannot determine destination for message #${seq}`);
     }
 
+    // Reactions are a platform affordance — the host renders them on Telegram,
+    // Slack, etc. Between agents there is nothing to render: the host has no a2a
+    // reaction handling at all, so the payload lands as raw JSON noise in the
+    // peer's context. Refuse rather than emit garbage.
+    if (routing.channel_type === 'agent') {
+      return err('Reactions are not supported for agent destinations — send a message instead.');
+    }
+
     const id = generateId();
     writeMessageOut({
       id,
