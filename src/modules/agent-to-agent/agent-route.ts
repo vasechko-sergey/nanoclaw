@@ -204,8 +204,9 @@ export function resolveTargetSession(
  * `agent_groups.name` is the ONLY name source — deliberately not duplicated
  * into any descriptor, since that duplication is the drift this fixes.
  *
- * Never clobbers an existing `sender`/`senderId`: system notes injected back
- * into a session set their own (`sender: 'system'`). Non-JSON and non-object
+ * Never clobbers a real (truthy) `sender`/`senderId`: system notes injected
+ * back into a session set their own (`sender: 'system'`). A falsy sender
+ * (null/empty) counts as unset and gets stamped. Non-JSON and non-object
  * content is returned unchanged — there is no object to stamp.
  */
 export function stampSenderIdentity(content: string, sourceAgentGroupId: string): string {
@@ -221,10 +222,13 @@ export function stampSenderIdentity(content: string, sourceAgentGroupId: string)
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return content;
 
   const obj = parsed as Record<string, unknown>;
-  // Fall back to the folder id if a group somehow has no name — naming the
-  // sender by id still beats leaving the target to guess.
-  if (obj.sender === undefined) obj.sender = group.name || group.folder;
-  if (obj.senderId === undefined) obj.senderId = group.folder;
+  // Treat null/empty as unset, not as "already stamped": the formatter falls
+  // back to "Unknown" on a falsy sender, which is the very gap this closes.
+  // A real sender like 'system' is truthy and still preserved. Fall back to
+  // the folder id if a group somehow has no name — naming the sender by id
+  // still beats leaving the target to guess.
+  if (!obj.sender) obj.sender = group.name || group.folder;
+  if (!obj.senderId) obj.senderId = group.folder;
   return JSON.stringify(obj);
 }
 

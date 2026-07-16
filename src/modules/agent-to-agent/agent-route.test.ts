@@ -643,12 +643,22 @@ describe('stampSenderIdentity', () => {
     expect(JSON.parse(out).senderId).toBe('system');
   });
 
+  it('treats an empty or null sender as unset and stamps it', () => {
+    const out = stampSenderIdentity('{"text":"hi","sender":"","senderId":null}', 'payne');
+    expect(JSON.parse(out).sender).toBe('Майор Пейн');
+    expect(JSON.parse(out).senderId).toBe('payne');
+  });
+
   it('returns non-JSON content unchanged', () => {
     expect(stampSenderIdentity('plain text', 'payne')).toBe('plain text');
   });
 
   it('returns non-object JSON content unchanged', () => {
     expect(stampSenderIdentity('"just a string"', 'payne')).toBe('"just a string"');
+  });
+
+  it('returns top-level JSON array content unchanged', () => {
+    expect(stampSenderIdentity('[1,2,3]', 'payne')).toBe('[1,2,3]');
   });
 
   it('returns content unchanged when the source group is unknown', () => {
