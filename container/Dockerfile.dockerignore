@@ -2,6 +2,10 @@
 # The build context is the project root (see container/build.sh) so we trim
 # everything the agent image doesn't need.
 #
+# This file — NOT the project-root `.dockerignore` — is the one that applies.
+# A `<dockerfile>.dockerignore` sibling takes precedence over the context root's,
+# and the root's is then never read at all. Put exclusions here.
+#
 # Keep this minimal — only `container/` and `shared/` are actually COPY'd into
 # the image; everything else just bloats the build context send.
 *
@@ -9,3 +13,24 @@
 !shared
 container/agent-runner/node_modules
 container/agent-runner/dist
+
+# Emitted TypeScript artifacts under shared/ must never reach the image. The
+# Dockerfile bakes the tree wholesale (`COPY shared /app/shared`) and the
+# container imports it as `@shared/a2a/kinds.js` via the tsconfig path alias.
+# Bun resolves that specifier to `kinds.ts` when only the source is there — but
+# if a `kinds.js` sits beside it, Bun loads the .js and never looks at the .ts.
+# So any builder that had ever run `pnpm run build` shipped whatever the emitted
+# .js happened to hold, and if the .ts had moved on since, the container would
+# enforce a DIFFERENT a2a verdict than the host reads from the same file. A
+# hand-synced copy of the contract's own decision function is precisely the
+# drift this protocol work removes.
+#
+# These are all gitignored, so a clean clone never has them — which is exactly
+# why the failure is invisible until it isn't: it depends on the state of the
+# builder's working tree, not on the commit. Must stay AFTER `!shared`; the last
+# matching pattern wins.
+shared/**/*.js
+shared/**/*.js.map
+shared/**/*.d.ts
+shared/**/*.d.ts.map
+shared/**/*.tsbuildinfo
