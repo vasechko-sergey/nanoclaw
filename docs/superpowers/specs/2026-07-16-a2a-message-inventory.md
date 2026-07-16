@@ -85,6 +85,41 @@ normalization — writing them against a schema that is about to change is waste
 
 `role` and `aka` are orthogonal to the wire format and survive any decision here.
 
+## Decisions already made (2026-07-16, owner) — start the design here, not from zero
+
+- **Scope: envelope + vocabulary cleanup.** Every a2a message becomes
+  `{kind, …}`; freeform text becomes `kind: "text"` with the prose in a field.
+  Plus vocabulary work driven by the inventory above: collapse the five ack
+  shapes into one, separate the two different payloads both called
+  `workout_done` (payne→jarvis vs payne→greg), drop the retired `health_trend`,
+  give `finding` a real `kind`. **No payload-schema validation** in this pass.
+- **Migration: big-bang.** Rewrite all five agents + emitters at once and drop
+  the old format — no permanent compatibility layer. Note the hazard this
+  implies: all five must be reborn together (CLAUDE.md changes need a container
+  kill + continuation clear, per the instruction-reload rule), and any a2a rows
+  already sitting in an `inbound.db` at switchover are in the old format.
+- **Registry `role`/`aka` are unblocked** — they don't depend on the wire format
+  and survive any decision here. Only `a2a_in` is frozen.
+
+## Open questions for the design pass
+
+1. **Where does the envelope live?** Today the payload is a STRING nested inside
+   `content.text` (`{"text":"{\"action\":\"workout_done\",…}"}`). Two options:
+   put `kind` inside that string (pure agent-side convention — cheap, but the
+   host never sees it), or lift the envelope to the content level
+   (`{kind, payload, sender, senderId}`), where the host already writes
+   (`stampSenderIdentity` in `agent-route.ts`).
+2. **What stops the new format from rotting the same way?** The current mess grew
+   under a documented-but-unenforced convention: contracts existed in CLAUDE.md
+   and agents still shipped `set_log` (23 rows) undeclared, kept sending a
+   retired `health_trend`, and grew five ack spellings. A stricter convention
+   that nothing checks will decay the same way from a tidier start. Owner ruled
+   out hard validation (it could cut live traffic) — but a host-side **warn-only
+   log** on an unknown/unregistered `kind` costs almost nothing and surfaces
+   drift in days instead of months. Decide this deliberately.
+3. **Vocabulary**: derive the `kind` list from the inventory table above; decide
+   per-kind whether it survives, merges, or dies.
+
 ## Already shipped and live (the original bug)
 
 The naming bug this all started from is fixed independently of the protocol
