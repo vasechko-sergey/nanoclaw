@@ -3,12 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import {
-  readAgentDescriptor,
-  buildRegistry,
-  renderRegistryMarkdown,
-  writeAgentRegistry,
-} from './agent-registry.js';
+import { readAgentDescriptor, buildRegistry, renderRegistryMarkdown, writeAgentRegistry } from './agent-registry.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup } from './db/index.js';
 
 let tmp: string;
