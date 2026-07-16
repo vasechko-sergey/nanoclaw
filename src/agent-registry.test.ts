@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 
 import { readAgentDescriptor, buildRegistry, renderRegistryMarkdown, writeAgentRegistry } from './agent-registry.js';
-import { initTestDb, closeDb, runMigrations, createAgentGroup } from './db/index.js';
+import { initTestDb, closeDb, runMigrations, createAgentGroup, updateAgentGroup } from './db/index.js';
 
 let tmp: string;
 
@@ -199,11 +199,11 @@ describe('writeAgentRegistry', () => {
     createAgentGroup({ id: 'greg', name: 'Greg', folder: 'greg', agent_provider: null, created_at: now() });
     const userMemoryBase = path.join(tmp, 'user-memory');
     fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
-    writeAgentRegistry(userMemoryBase, tmp);
-
-    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
     expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(2);
-    expect(fs.readFileSync(path.join(userMemoryBase, 'owner', 'global', 'agents.md'), 'utf8')).toContain('Майор Пейн');
+
+    updateAgentGroup('greg', { name: 'Грег' });
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(2);
+    expect(fs.readFileSync(path.join(userMemoryBase, 'owner', 'global', 'agents.md'), 'utf8')).toContain('Грег');
   });
 
   it('returns 0 when the user-memory base does not exist', () => {
@@ -218,7 +218,25 @@ describe('writeAgentRegistry', () => {
     expect(fs.existsSync(path.join(userMemoryBase, 'owner', 'global', 'agents.md'))).toBe(false);
   });
 
-  it('ignores non-directory entries in the user-memory base', () => {
+  it('does not publish when the agents dir is unreadable (would blank roles/actions)', () => {
+    createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
+    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: 'лог' } }));
+    const userMemoryBase = path.join(tmp, 'user-memory');
+    fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
+
+    expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(2);
+    const good = fs.readFileSync(path.join(userMemoryBase, 'owner', 'global', 'agents.md'), 'utf8');
+    expect(good).toContain('фитнес-тренер');
+
+    // agents dir unreadable → must NOT overwrite the good file with a name-only one
+    expect(writeAgentRegistry(userMemoryBase, path.join(tmp, 'gone'))).toBe(0);
+    expect(fs.readFileSync(path.join(userMemoryBase, 'owner', 'global', 'agents.md'), 'utf8')).toBe(good);
+  });
+
+  // Contract test, NOT branch coverage for the isDirectory() filter: a stray file
+  // contributes 0 either way (mkdir on `<file>/global` throws ENOTDIR and is
+  // swallowed). It still pins that a stray file can't break the fan-out.
+  it('a stray file under the user-memory base does not break the fan-out', () => {
     createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
     const userMemoryBase = path.join(tmp, 'user-memory');
     fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });

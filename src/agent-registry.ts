@@ -211,6 +211,18 @@ export function writeRegistryForPerson(personRoot: string, json: string, md: str
  * the same `/workspace/global/agents.md`. Returns total files written.
  */
 export function writeAgentRegistry(userMemoryBase: string, agentsDir: string): number {
+  // Abort if the descriptor root itself is unreadable. readAgentDescriptor()
+  // returns null for a missing descriptor (normal — not yet authored) and for an
+  // unreadable agents/ dir (broken) alike, so without this check a bad agentsDir
+  // would republish a fully name-only registry over the good one every sweep,
+  // silently. A missing descriptor is expected; a missing agents/ dir is not.
+  try {
+    fs.readdirSync(agentsDir);
+  } catch (err) {
+    log.warn('agent-registry: agents dir unreadable, not publishing', { agentsDir, err });
+    return 0;
+  }
+
   const entries = buildRegistry(agentsDir);
   // Never publish an empty registry: a transient DB read returning nothing must
   // not blank out a good file that agents are relying on.
