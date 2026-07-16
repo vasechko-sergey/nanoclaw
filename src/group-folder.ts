@@ -3,7 +3,11 @@ import path from 'path';
 import { DATA_DIR, GROUPS_DIR } from './config.js';
 
 const GROUP_FOLDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const RESERVED_FOLDERS = new Set(['global']);
+// `global` is the shared cross-agent dir. `system` is reserved because host
+// self-notices (restart, approvals, self-mod) are injected with
+// channel_type='agent' + senderId='system' and render as agent="system" — a
+// real group with that folder would be indistinguishable from a host notice.
+const RESERVED_FOLDERS = new Set(['global', 'system']);
 
 export function isValidGroupFolder(folder: string): boolean {
   if (!folder) return false;

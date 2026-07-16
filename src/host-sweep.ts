@@ -29,7 +29,7 @@
 import type Database from 'better-sqlite3';
 import fs from 'fs';
 
-import { DATA_DIR } from './config.js';
+import { AGENTS_DIR, DATA_DIR } from './config.js';
 import path from 'path';
 import { getActiveSessions } from './db/sessions.js';
 import { getAgentGroup } from './db/agent-groups.js';
@@ -47,6 +47,7 @@ import {
 import { log } from './log.js';
 import { openInboundDb, openOutboundDb, openOutboundDbRw, inboundDbPath, heartbeatPath } from './session-manager.js';
 import { projectAllPublicProfiles } from './public-profiles.js';
+import { writeAgentRegistry } from './agent-registry.js';
 import { isContainerRunning, killContainer, wakeContainer } from './container-runner.js';
 import type { Session } from './types.js';
 import { runSummaryNotify } from './modules/summary-notify/sweep.js';
@@ -145,6 +146,16 @@ async function sweep(): Promise<void> {
     if (written > 0) log.info('Projected public profiles', { written });
   } catch (err) {
     log.error('Public profile projection error', { err });
+  }
+
+  // Publish the shared agent registry (who's who + a2a contracts) into every
+  // person's global/ so agents read peer names as data instead of recalling
+  // them. Own try so a registry failure never skips the session sweep below.
+  try {
+    const written = writeAgentRegistry(path.join(DATA_DIR, 'user-memory'), AGENTS_DIR);
+    if (written > 0) log.info('Wrote agent registry', { written });
+  } catch (err) {
+    log.error('Agent registry write error', { err });
   }
 
   // After projection, observe the morning card batch and fire one grouped

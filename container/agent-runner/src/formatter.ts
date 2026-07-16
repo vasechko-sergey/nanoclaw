@@ -232,7 +232,14 @@ function formatSingleChat(msg: MessageInRow): string {
 
   const fromAttr = originAttr(msg);
 
-  return `<message${idAttr}${fromAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${attachmentsSuffix}</message>`;
+  // a2a rows carry the source agent's folder in `content.senderId` (stamped
+  // host-side by agent-route.ts). Emit it as a stable id alongside the human
+  // name in `sender=`. Gated on channel_type: human messages also populate
+  // `senderId` (a platform user id), which is not an agent.
+  const agentAttr =
+    msg.channel_type === 'agent' && content.senderId ? ` agent="${escapeXml(String(content.senderId))}"` : '';
+
+  return `<message${idAttr}${fromAttr}${agentAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${attachmentsSuffix}</message>`;
 }
 
 /**
