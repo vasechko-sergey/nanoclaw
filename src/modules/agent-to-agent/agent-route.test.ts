@@ -762,7 +762,10 @@ describe('routeAgentMessage a2a kind gate (layer 2)', () => {
 
   describe('armed target (B declares set_log)', () => {
     beforeEach(() => {
-      writeDescriptor('b', { role: 'тренер', a2a_in: { set_log: 'лог подхода' } });
+      writeDescriptor('b', {
+        role: 'тренер',
+        a2a_in: { set_log: { desc: 'лог подхода', from: ['a'], fields: {} } },
+      });
     });
 
     it('does not route an undeclared kind', async () => {

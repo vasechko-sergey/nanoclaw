@@ -94,7 +94,10 @@ describe('writeDestinations — a2a_kinds projection', () => {
     seedAgent('ag-payne', 'payne', 'Майор Пейн');
     writeDescriptor('payne', {
       role: 'Тренер',
-      a2a_in: { set_log: 'записать подход', workout_done: 'закрыть тренировку' },
+      a2a_in: {
+        set_log: { desc: 'записать подход', from: [], fields: {} },
+        workout_done: { desc: 'закрыть тренировку', from: [], fields: {} },
+      },
     });
     createDestination({
       agent_group_id: SOURCE_AG,
@@ -208,8 +211,8 @@ describe('writeDestinations — a2a_kinds projection', () => {
   it('resolves each target against its OWN descriptor, not the first one found', () => {
     seedAgent('ag-payne', 'payne', 'Майор Пейн');
     seedAgent('ag-greg', 'greg', 'Greg');
-    writeDescriptor('payne', { a2a_in: { set_log: 'записать подход' } });
-    writeDescriptor('greg', { a2a_in: { health_query: 'спросить про здоровье' } });
+    writeDescriptor('payne', { a2a_in: { set_log: { desc: 'записать подход', from: [], fields: {} } } });
+    writeDescriptor('greg', { a2a_in: { health_query: { desc: 'спросить про здоровье', from: [], fields: {} } } });
     for (const [localName, targetId] of [
       ['payne', 'ag-payne'],
       ['greg', 'ag-greg'],
