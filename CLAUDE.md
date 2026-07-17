@@ -135,11 +135,11 @@ Per-agent-group container runtime config (provider, model, packages, MCP servers
 
 | Value | Behavior |
 |-------|----------|
-| `disabled` | Agent never learns about ncl (instructions excluded from CLAUDE.md). Host dispatch rejects any `cli_request`. |
+| `disabled` | Host dispatch rejects any `cli_request` with `forbidden` (`src/cli/dispatch.ts:46`). Note: the agent still READS the `## Admin CLI (ncl)` section of the shared `INSTRUCTIONS.md` — instruction files went static in `1d222b76`, and the file is bind-mounted whole, so nothing excludes it per-agent. It learns ncl exists, tries it, and gets refused. |
 | `group` (default) | Agent can access `groups`, `sessions`, `destinations`, `members` only, scoped to its own agent group. `--id` and group args are auto-filled. Cross-group access rejected. `cli_scope` changes blocked. |
 | `global` | Unrestricted. Set automatically for owner agent groups via `init-first-agent`. |
 
-Key files: `src/db/container-configs.ts`, `src/container-config.ts`, `src/cli/dispatch.ts` (scope enforcement), `src/claude-md-compose.ts` (instructions exclusion).
+Key files: `src/db/container-configs.ts`, `src/container-config.ts`, `src/cli/dispatch.ts` (scope enforcement).
 
 ## Container Restart
 
