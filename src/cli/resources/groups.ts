@@ -114,8 +114,26 @@ registerResource({
       description:
         'Check the agent contract layer for drift: kinds sent but not declared, kinds declared but never sent, ' +
         'from[] without a destination edge, dangling replies, fragments with no published contract. ' +
-        'Reads agents/<folder>/agent.json, the skills, and agent_destinations. Read-only.',
-      handler: async () => {
+        'Reads agents/<folder>/agent.json, the skills, and agent_destinations. Read-only, host-only.',
+      handler: async (_args, ctx) => {
+        // Host-only, enforced here rather than by the dispatcher. dispatch.ts
+        // skips its post-handler group-scope filter for every custom operation,
+        // on the stated invariant that custom ops are "already pinned to the
+        // caller's group by the pre-handler `--id` auto-fill (groups/destinations)
+        // or gated behind approval". This verb satisfies NEITHER branch: it takes
+        // no --id (a mesh lint reads the whole mesh by construction — missing_edge,
+        // dangling_reply and phantom_kind are cross-agent and uncomputable from one
+        // group), and it is `access: 'open'`. Without this gate a group-scoped
+        // container would get the full descriptor set, every agent_destinations
+        // edge, and internal skill paths. Approval would be the wrong tool — a
+        // human clicking approve on a container's request for the whole
+        // destination graph is worse than a clean refusal, and it would fire on
+        // every attempt.
+        if (ctx.caller !== 'host') {
+          throw new Error(
+            'groups lint reads the whole agent mesh (every descriptor and destination edge) and is host-only.',
+          );
+        }
         const { gatherLintInput } = await import('../../modules/agent-to-agent/lint-scan.js');
         const { lintA2a } = await import('../../modules/agent-to-agent/a2a-lint.js');
         const { AGENTS_DIR } = await import('../../config.js');

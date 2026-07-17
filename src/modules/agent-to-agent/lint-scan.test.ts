@@ -5,6 +5,7 @@ import path from 'path';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 
 import { scanSends, scanFragmentRefs, rejectedFields, gatherLintInput } from './lint-scan.js';
+import { lintA2a } from './a2a-lint.js';
 import { readAgentDescriptor } from '../../agent-registry.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup } from '../../db/index.js';
 import { getDb } from '../../db/connection.js';
@@ -132,6 +133,46 @@ describe('scanFragmentRefs', () => {
     const refs = scanFragmentRefs(root, ['zzz-agent', 'aaa-agent']);
     expect(refs.map((r) => r.where)).toEqual(['aaa-agent/CLAUDE.md', 'zzz-agent/CLAUDE.md']);
   });
+
+  it('expands the brace form into one ref per name (real jarvis/CLAUDE.md:91 shape)', () => {
+    // Verbatim shape from the real file. This exact construct is invisible to a
+    // single-identifier pattern — it defeated both this scanner's first cut and
+    // a hand grep during design, each time hiding four real reads as zero.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-scan-'));
+    mkAgent(root, 'jarvis', {
+      'CLAUDE.md': '- **Читаешь** `profiles/{greg,gordon,payne,scrooge}.md` по запросу, когда тема смежная.',
+    });
+    expect(scanFragmentRefs(root, ['jarvis'])).toEqual([
+      { from: 'jarvis', target: 'gordon', where: 'jarvis/CLAUDE.md' },
+      { from: 'jarvis', target: 'greg', where: 'jarvis/CLAUDE.md' },
+      { from: 'jarvis', target: 'payne', where: 'jarvis/CLAUDE.md' },
+      { from: 'jarvis', target: 'scrooge', where: 'jarvis/CLAUDE.md' },
+    ]);
+  });
+
+  it("skips the agent's own folder inside a brace list, keeping the others", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-scan-'));
+    mkAgent(root, 'greg', { 'CLAUDE.md': 'profiles/{greg,gordon,payne}.md' });
+    expect(scanFragmentRefs(root, ['greg'])).toEqual([
+      { from: 'greg', target: 'gordon', where: 'greg/CLAUDE.md' },
+      { from: 'greg', target: 'payne', where: 'greg/CLAUDE.md' },
+    ]);
+  });
+
+  it('dedups a name appearing in both a brace list and a single ref in one file', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-scan-'));
+    mkAgent(root, 'jarvis', { 'CLAUDE.md': 'profiles/{greg,payne}.md ... и отдельно profiles/greg.md' });
+    expect(scanFragmentRefs(root, ['jarvis'])).toEqual([
+      { from: 'jarvis', target: 'greg', where: 'jarvis/CLAUDE.md' },
+      { from: 'jarvis', target: 'payne', where: 'jarvis/CLAUDE.md' },
+    ]);
+  });
+
+  it('handles a single-name brace list and ignores empty names from stray commas', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-scan-'));
+    mkAgent(root, 'jarvis', { 'CLAUDE.md': 'profiles/{greg}.md и profiles/{payne,,scrooge}.md' });
+    expect(scanFragmentRefs(root, ['jarvis']).map((r) => r.target)).toEqual(['greg', 'payne', 'scrooge']);
+  });
 });
 
 describe('rejectedFields', () => {
@@ -258,6 +299,27 @@ describe('gatherLintInput', () => {
     });
 
     expect(gatherLintInput(TEST_DIR).edges).toEqual([]);
+  });
+
+  it('surfaces a typo inside a brace list as unknown_fragment_ref (the reason the brace form is scanned)', () => {
+    // The payoff for matching the brace form: before it, all four names in
+    // `profiles/{...}.md` were invisible, so a typo'd peer read clean.
+    createAgentGroup({ id: 'ag-jarvis', name: 'Jarvis', folder: 'jarvis', agent_provider: null, created_at: now() });
+    createAgentGroup({ id: 'ag-greg', name: 'Greg', folder: 'greg', agent_provider: null, created_at: now() });
+    mkAgent(TEST_DIR, 'jarvis', {
+      'agent.json': JSON.stringify({ role: 'Хаб', publishes: { desc: 'd', fields: { A: 'x' } } }),
+      // "gregg" is the typo; "greg" is real.
+      'CLAUDE.md': 'Читаешь profiles/{greg,gregg}.md по запросу',
+    });
+    mkAgent(TEST_DIR, 'greg', {
+      'agent.json': JSON.stringify({ role: 'Аналитик', publishes: { desc: 'd', fields: { A: 'x' } } }),
+    });
+
+    const findings = lintA2a(gatherLintInput(TEST_DIR));
+    const dangling = findings.filter((f) => f.code === 'unknown_fragment_ref');
+    expect(dangling).toHaveLength(1);
+    expect(dangling[0].msg).toContain('gregg');
+    expect(dangling[0].severity).toBe('error');
   });
 
   it('degrades edges to [] instead of throwing when agent_destinations is absent', () => {

@@ -18,6 +18,15 @@ import type { A2aSend, FragmentRef, LintInput, RejectedField } from './a2a-lint.
 
 const SEND_RE = /<message\s+to="([a-zA-Z0-9_-]+)"\s+kind="([a-zA-Z0-9_-]+)"/g;
 const FRAGMENT_RE = /profiles\/([a-zA-Z0-9_-]+)\.md/g;
+/**
+ * Brace-expansion shorthand for several fragments at once, as real skills write
+ * it: `profiles/{greg,gordon,payne,scrooge}.md` (jarvis/CLAUDE.md). FRAGMENT_RE
+ * matches none of those four — it wants a single identifier — so without this
+ * the reads are invisible and a typo'd name inside the list never raises
+ * `unknown_fragment_ref`. Matching the brace form literally can only ever match
+ * a real brace expansion, so this widens coverage without risking prose.
+ */
+const FRAGMENT_BRACE_RE = /profiles\/\{([a-zA-Z0-9_,-]+)\}\.md/g;
 
 /**
  * Fields `readAgentDescriptor` salvages or drops independently (see its doc
@@ -85,9 +94,10 @@ export function scanSends(agentsDir: string, folders: string[]): A2aSend[] {
 
 /**
  * Every `profiles/<target>.md` reference in an agent's own CLAUDE.md or
- * skills — a pull-channel read of a peer's published fragment. An agent's
+ * skills — a pull-channel read of a peer's published fragment. Both the single
+ * form and the brace-expansion form (see FRAGMENT_BRACE_RE) count. An agent's
  * reference to its OWN fragment is its publish target, not a peer read, so
- * it is excluded here rather than reported as a self-loop.
+ * it is excluded here rather than reported as a self-loop — in either form.
  */
 export function scanFragmentRefs(agentsDir: string, folders: string[]): FragmentRef[] {
   const out: FragmentRef[] = [];
@@ -95,12 +105,16 @@ export function scanFragmentRefs(agentsDir: string, folders: string[]): Fragment
   for (const folder of folders) {
     for (const file of agentDocs(agentsDir, folder)) {
       const body = fs.readFileSync(file, 'utf8');
-      for (const m of body.matchAll(FRAGMENT_RE)) {
-        if (m[1] === folder) continue;
-        const key = `${folder}|${m[1]}|${file}`;
+      const targets: string[] = [];
+      for (const m of body.matchAll(FRAGMENT_RE)) targets.push(m[1]);
+      for (const m of body.matchAll(FRAGMENT_BRACE_RE)) targets.push(...m[1].split(','));
+      for (const target of targets) {
+        // A trailing/doubled comma yields an empty name — not a fragment ref.
+        if (!target || target === folder) continue;
+        const key = `${folder}|${target}|${file}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ from: folder, target: m[1], where: rel(agentsDir, file) });
+        out.push({ from: folder, target, where: rel(agentsDir, file) });
       }
     }
   }
