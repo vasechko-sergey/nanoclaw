@@ -1081,8 +1081,6 @@ export async function processQuery(
                       : event.text;
                 const { hasUnwrapped, rejects } = dispatchResultText(finalText, routing, dispatchedKeys);
                 const rejectsThisTurn = turnRejects.concat(rejects);
-                dispatchedKeys = new Set<string>();
-                turnRejects = [];
                 if (hasUnwrapped && !unwrappedNudged && !harnessErroredThisTurn) {
                   unwrappedNudged = true;
                   const destinations = getAllDestinations();
@@ -1109,11 +1107,6 @@ export async function processQuery(
             // Fold in anything the streaming path already refused this turn —
             // one nudge covers the whole turn.
             const rejectsThisTurn = turnRejects.concat(rejects);
-            // Per-turn dedupe — drop the set now that the turn is fully
-            // closed so any follow-up push() can re-send identical content
-            // without being silently suppressed.
-            dispatchedKeys = new Set<string>();
-            turnRejects = [];
             // `harnessErroredThisTurn` suppresses the nudge: the result text is
             // the harness's own notice ("You've hit your limit …"), echoed here
             // unwrapped. Nudging spends another turn against the same limit to
@@ -1146,16 +1139,6 @@ export async function processQuery(
             }
           }
         } else if (turnRejects.length > 0) {
-          // A result with NO text still ends the turn. providers/claude.ts
-          // yields `text: null` for error_max_turns / error_during_execution,
-          // and a turn can simply produce no final text — but both flushes
-          // above live inside `if (event.text)`. Without this, the turn's
-          // rejects outlive it and get folded into the NEXT turn's nudge
-          // (`rejectNudged` is still false, since no nudge fired here), telling
-          // the agent to re-send a block it never wrote to a destination it
-          // never named. Reachable with no descriptor at all, via
-          // unknown_destination.
-          //
           // Dropped rather than nudged, deliberately: this turn produced no
           // text, so it either errored out or said nothing. Pushing a nudge
           // would re-arm the watchdog (`resultReceived = false`) against a
@@ -1167,8 +1150,24 @@ export async function processQuery(
           // Layer 2 (host) remains the backstop for anything that actually
           // reached messages_out.
           log(`Result with no text — dropping ${turnRejects.length} unreported reject(s) from this turn`);
-          turnRejects = [];
         }
+        // The turn is over — reset both accumulators, on EVERY result. A result
+        // with no text is still a turn boundary: providers/claude.ts yields
+        // `text: null` for error_max_turns / error_during_execution, and a turn
+        // can simply produce no final text.
+        //
+        // After the dispatch above, never before: the dedupe's only reader is
+        // the `dispatchResultText` pass that closes the turn, so clearing early
+        // would re-send every block the stream had already delivered. The nudges
+        // likewise snapshot `turnRejects` into `rejectsThisTurn` first.
+        //
+        // Either set surviving a result leaks into the NEXT turn: `turnRejects`
+        // nudges the agent to re-send a block it never wrote to a destination it
+        // never named, and `dispatchedKeys` silently swallows a byte-identical
+        // follow-up — a repeated status ping, a "done" confirmation, a re-sent
+        // ack — with no log line to say so.
+        dispatchedKeys = new Set<string>();
+        turnRejects = [];
       }
     }
   } finally {

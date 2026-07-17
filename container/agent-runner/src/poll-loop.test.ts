@@ -1090,6 +1090,106 @@ describe('processQuery turn-scoped rejects', () => {
 });
 
 /**
+ * `dispatchedKeys` is the (to, kind, body) dedupe shared by the streaming path
+ * and the `result.text` path that closes the turn. Its whole job is intra-turn:
+ * the aggregated result text re-contains the blocks the stream already emitted.
+ * Once the result is handled that job is discharged, so the set must not
+ * outlive the turn — a follow-up turn is allowed to repeat any block: a status
+ * ping, a "done" confirmation, a re-sent ack.
+ *
+ * messages-out.ts enforces a SECOND, unrelated dedupe (DEDUP_WINDOW_SECONDS =
+ * 90) that these tests must not accidentally measure. That one is deliberately
+ * time-bounded and cross-process, and it is why this leak was survivable: it
+ * masks any repeat inside 90s, so `dispatchedKeys` only ever bit repeats
+ * further apart than that — exactly where a repeat is legitimate. `ageOutbound`
+ * below takes it out of the picture so these tests can only fail on the set
+ * under test.
+ */
+describe('processQuery turn-scoped dispatch dedupe', () => {
+  const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: null };
+
+  const outCount = (): number =>
+    (getOutboundDb().prepare('SELECT COUNT(*) AS n FROM messages_out').get() as { n: number }).n;
+
+  function seedAgentDest(name: string, agentGroupId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'agent', NULL, NULL, ?)`,
+      )
+      .run(name, name, agentGroupId);
+  }
+
+  /** Ages every messages_out row past the 90s window messages-out.ts enforces. */
+  function ageOutbound(): void {
+    getOutboundDb()
+      .prepare(`UPDATE messages_out SET timestamp = datetime('now', '-1 hour')`)
+      .run();
+  }
+
+  /** Replays a canned script; a function entry runs in between two events. */
+  function fakeQuery(script: Array<ProviderEvent | (() => void)>): AgentQuery {
+    return {
+      push: () => {},
+      end: () => {},
+      abort: () => {},
+      events: {
+        async *[Symbol.asyncIterator]() {
+          for (const step of script) {
+            if (typeof step === 'function') step();
+            else yield step;
+          }
+        },
+      },
+    };
+  }
+
+  const BLOCK = '<message to="payne">готово</message>';
+
+  it('delivers an identical block in a follow-up turn after a result with no text', async () => {
+    // REGRESSION. providers/claude.ts yields `text: null` for error_max_turns
+    // and error_during_execution, and both resets lived inside `if (event.text)`.
+    // So turn 1's keys survived it, and turn 2's byte-identical confirmation was
+    // deduped against a turn that had already ended — never written to
+    // messages_out, never delivered, and no log line to say so.
+    seedAgentDest('payne', 'ag-payne');
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: BLOCK },
+      { type: 'result', text: null },
+      // The follow-up push lands minutes later, as it does on a query kept
+      // alive by a trickle of user messages. Without this the messages_out
+      // window would suppress turn 2 no matter what dispatchedKeys did.
+      ageOutbound,
+      { type: 'assistant_text', text: BLOCK },
+      { type: 'result', text: BLOCK },
+    ]);
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(outCount()).toBe(2);
+  });
+
+  it('does not re-send a streamed block from the result text of the same turn', async () => {
+    // Inverse-mutation guard: clearing the set BEFORE the result-side dispatch
+    // instead of after would pass the test above while double-sending every
+    // block the stream had already delivered. Aged so that dispatchedKeys is
+    // the only thing that can hold the second write back.
+    seedAgentDest('payne', 'ag-payne');
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: BLOCK },
+      ageOutbound,
+      { type: 'result', text: BLOCK },
+    ]);
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(outCount()).toBe(1);
+  });
+});
+
+/**
  * A usage limit reaches the poll-loop as harness output wearing the agent's
  * voice. Production, jarvis mid-cron (logs/containers.log):
  *
