@@ -185,7 +185,10 @@ describe('writeDestinations — a2a_kinds projection', () => {
   it('projects null for a channel target — a2a kinds are meaningless there', () => {
     // Even when a same-named agents/<folder>/agent.json exists, a channel row
     // must never pick kinds up: `family` is a Telegram chat, not an agent.
-    writeDescriptor('family', { a2a_in: { set_log: 'nope' } });
+    // Must be a VALID contract: the assertion below is `a2a_kinds: null`, and a
+    // descriptor the reader rejects would yield null anyway — passing for the
+    // wrong reason and blinding the test to a channel branch that leaked kinds.
+    writeDescriptor('family', { a2a_in: { set_log: { desc: 'nope', from: [], fields: {} } } });
     createMessagingGroup({
       id: 'mg-family',
       channel_type: 'telegram',
