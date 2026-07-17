@@ -142,7 +142,7 @@ async function sweep(): Promise<void> {
   // Fan out each agent's public.md → groups/global/profiles/<slug>.md.
   // Own try so a projection failure never skips the session sweep below.
   try {
-    const written = projectAllPublicProfiles(path.join(DATA_DIR, 'user-memory'));
+    const written = projectAllPublicProfiles(path.join(DATA_DIR, 'user-memory'), AGENTS_DIR);
     if (written > 0) log.info('Projected public profiles', { written });
   } catch (err) {
     log.error('Public profile projection error', { err });
