@@ -9,6 +9,17 @@
  * a descriptor (that duplication is the drift being fixed). Role + a2a contract
  * come from each agent's own `agents/<folder>/agent.json`. The merged result is
  * rendered to `agents.json` (structured) and `agents.md` (what agents read).
+ *
+ * `agent.json` carries a SECOND, independent contract: `publishes`, which types
+ * the body of the agent's public fragment (`profiles/<folder>.md`). That is the
+ * PULL channel — what a peer reads about this agent on its own schedule — not
+ * the push registry this module renders. The two concerns share the descriptor
+ * file and nothing else: the a2a contract arms the transport gate (through
+ * getLegalKinds), while the fragment contract only warns at projection. That
+ * asymmetry is why readAgentDescriptor degrades per field rather than per file —
+ * see its doc comment.
+ *
+ * See docs/superpowers/plans/2026-07-17-typed-agent-contracts.md.
  */
 import crypto from 'crypto';
 import fs from 'fs';
@@ -141,14 +152,25 @@ export function readAgentDescriptor(agentsDir: string, folder: string): AgentDes
   // Dropping a2a_in leaves it undefined → getLegalKinds returns null → the gate
   // DISARMS for this agent. That is the deliberate fail-open: a typo bouncing
   // every message an agent receives is far worse than the drift the gate stops.
+  //
+  // Fail-open is SILENT by design — no bounce, no error, the gate simply stops
+  // checking — so this warn is the only signal that a wire went open. It must
+  // name the offending kind: one bad contract drops every kind in the file, and
+  // without the name an operator is left bisecting a file of N contracts.
   if (d.a2a_in !== undefined) {
     const a = d.a2a_in;
     if (a === null || typeof a !== 'object' || Array.isArray(a)) {
       log.warn('agent-registry: agent.json `a2a_in` is not an object, dropped (gate disarmed)', { folder });
-    } else if (!Object.values(a as Record<string, unknown>).every(isKindContract)) {
-      log.warn('agent-registry: agent.json `a2a_in` has a malformed contract, dropped (gate disarmed)', { folder });
     } else {
-      out.a2a_in = a as Record<string, KindContract>;
+      const bad = Object.entries(a as Record<string, unknown>).find(([, v]) => !isKindContract(v));
+      if (bad) {
+        log.warn('agent-registry: agent.json `a2a_in` has a malformed contract, dropped (gate disarmed)', {
+          folder,
+          kind: bad[0],
+        });
+      } else {
+        out.a2a_in = a as Record<string, KindContract>;
+      }
     }
   }
 
@@ -268,9 +290,9 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
     if (e.role) lines.push(`Роль: ${oneLine(e.role)}`);
     if (e.aka.length > 0) lines.push(`Также зовут: ${e.aka.map(oneLine).join(', ')}`);
     lines.push('');
-    // Stopgap: render only `desc`, same one-line-per-kind shape as before typed
-    // contracts. Surfacing `from`/`fields`/`reply` is a real render upgrade —
-    // Task 2's job, not this one's.
+    // Stopgap: render only `desc`, the same one-line-per-kind shape as before
+    // typed contracts. Surfacing `from`/`fields`/`reply` is a deliberate
+    // follow-up — see docs/superpowers/plans/2026-07-17-typed-agent-contracts.md.
     for (const [kind, contract] of kinds) {
       lines.push(`- \`${ident(kind)}\` — ${oneLine(contract.desc)}`);
     }

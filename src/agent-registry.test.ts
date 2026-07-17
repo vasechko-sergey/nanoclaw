@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+
+// Mocked so the disarming warn can be asserted on: it is the ONLY signal that a
+// descriptor dropped its a2a_in and opened that agent's wire.
+vi.mock('./log.js', () => ({
+  log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() },
+}));
 
 import {
   readAgentDescriptor,
@@ -11,6 +17,7 @@ import {
   writeAgentRegistry,
 } from './agent-registry.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup, updateAgentGroup } from './db/index.js';
+import { log } from './log.js';
 
 let tmp: string;
 
@@ -24,11 +31,8 @@ function writeDescriptor(folder: string, body: string): void {
   fs.writeFileSync(path.join(dir, 'agent.json'), body);
 }
 
-function mkTmp(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-registry-'));
-}
-
 beforeEach(() => {
+  vi.clearAllMocks();
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-registry-'));
   const db = initTestDb();
   runMigrations(db);
@@ -333,46 +337,40 @@ describe('writeAgentRegistry', () => {
 
 describe('readAgentDescriptor field-level degradation', () => {
   it('drops a malformed publishes but keeps a2a_in armed', () => {
-    const dir = mkTmp();
-    fs.mkdirSync(path.join(dir, 'greg'), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'greg', 'agent.json'),
+    writeDescriptor(
+      'greg',
       JSON.stringify({
         role: 'Аналитик',
         a2a_in: { finding: { desc: 'd', from: ['jarvis'], fields: { severity: 'string' } } },
         publishes: 'не объект',
       }),
     );
-    const d = readAgentDescriptor(dir, 'greg');
+    const d = readAgentDescriptor(tmp, 'greg');
     expect(d?.publishes).toBeUndefined();
     expect(Object.keys(d!.a2a_in!)).toEqual(['finding']);
     // The gate must stay armed — this is the whole point of field-level degradation.
-    expect(getLegalKinds(dir, 'greg')).toEqual(['finding']);
+    expect(getLegalKinds(tmp, 'greg')).toEqual(['finding']);
   });
 
   it('drops a malformed a2a_in (disarming) but keeps publishes and role', () => {
-    const dir = mkTmp();
-    fs.mkdirSync(path.join(dir, 'greg'), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'greg', 'agent.json'),
+    writeDescriptor(
+      'greg',
       JSON.stringify({
         role: 'Аналитик',
         a2a_in: { finding: 'старая строковая форма' },
         publishes: { desc: 'сводка', fields: { Готовность: 'N/100' } },
       }),
     );
-    const d = readAgentDescriptor(dir, 'greg');
+    const d = readAgentDescriptor(tmp, 'greg');
     expect(d?.a2a_in).toBeUndefined();
-    expect(getLegalKinds(dir, 'greg')).toBeNull(); // disarmed, fail-open
+    expect(getLegalKinds(tmp, 'greg')).toBeNull(); // disarmed, fail-open
     expect(d?.role).toBe('Аналитик');
     expect(d?.publishes?.fields).toEqual({ Готовность: 'N/100' });
   });
 
   it('accepts a full typed contract', () => {
-    const dir = mkTmp();
-    fs.mkdirSync(path.join(dir, 'payne'), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'payne', 'agent.json'),
+    writeDescriptor(
+      'payne',
       JSON.stringify({
         role: 'Тренер',
         aka: ['Пейн'],
@@ -387,21 +385,95 @@ describe('readAgentDescriptor field-level degradation', () => {
         publishes: { desc: 'Трен-статус', fields: { Программа: 'текст' }, optional: [] },
       }),
     );
-    const d = readAgentDescriptor(dir, 'payne');
+    const d = readAgentDescriptor(tmp, 'payne');
     expect(d!.a2a_in!.health_signal.from).toEqual(['greg']);
     expect(d!.a2a_in!.health_signal.reply).toBe('health_signal_ack');
-    expect(getLegalKinds(dir, 'payne')).toEqual(['health_signal']);
+    expect(getLegalKinds(tmp, 'payne')).toEqual(['health_signal']);
   });
 
   it('optional naming a field outside fields is dropped, not fatal', () => {
-    const dir = mkTmp();
-    fs.mkdirSync(path.join(dir, 'greg'), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'greg', 'agent.json'),
-      JSON.stringify({ publishes: { desc: 'd', fields: { A: 'x' }, optional: ['B'] } }),
-    );
+    writeDescriptor('greg', JSON.stringify({ publishes: { desc: 'd', fields: { A: 'x' }, optional: ['B'] } }));
     // Shape is valid — `optional` referencing an unknown field is the LINT's job
     // (optional_not_in_fields), not the reader's. The reader only rejects shapes.
-    expect(readAgentDescriptor(dir, 'greg')?.publishes?.optional).toEqual(['B']);
+    expect(readAgentDescriptor(tmp, 'greg')?.publishes?.optional).toEqual(['B']);
+  });
+});
+
+/**
+ * One fixture per guard sub-check, each violating EXACTLY ONE check.
+ *
+ * These exist because a single fixture that breaks several checks at once pins
+ * none of them: delete any one check and the others still reject it, so the
+ * test stays green and the deletion goes unnoticed. Measured before these were
+ * written: deleting each of the nine guard checks in turn left all 79 tests
+ * green, nine times out of nine.
+ *
+ * If you add a check to a guard, add the fixture that fails ONLY when that check
+ * is gone — then delete the check and watch this file go red before you trust it.
+ */
+describe('readAgentDescriptor guard sub-checks', () => {
+  const badContracts: Array<[string, unknown]> = [
+    ['desc is not a string', { desc: 5, from: ['jarvis'], fields: {} }],
+    ['from is not an array', { desc: 'd', from: 'jarvis', fields: {} }],
+    ['from holds a non-string', { desc: 'd', from: [1], fields: {} }],
+    ['fields holds a non-string value', { desc: 'd', from: ['jarvis'], fields: { severity: 1 } }],
+    ['fields is an array, not a record', { desc: 'd', from: ['jarvis'], fields: ['severity'] }],
+    // JSON has no `undefined`, and the KindContract JSDoc says "Absent =
+    // terminal" — so null is the natural way a human writes "no reply".
+    ['reply is present but null', { desc: 'd', from: ['jarvis'], fields: {}, reply: null }],
+    // A bodyless ack, `fields` omitted entirely. Plausible in a hand-authored
+    // file and currently fatal to the whole a2a_in.
+    ['fields is omitted — the bodyless-ack shape', { desc: 'квитанция', from: ['greg'] }],
+  ];
+
+  for (const [what, contract] of badContracts) {
+    it(`drops a2a_in when ${what} — gate disarmed, role survives`, () => {
+      writeDescriptor('greg', JSON.stringify({ role: 'Аналитик', a2a_in: { finding: contract } }));
+      const d = readAgentDescriptor(tmp, 'greg');
+      expect(d?.a2a_in).toBeUndefined();
+      expect(getLegalKinds(tmp, 'greg')).toBeNull();
+      expect(d?.role).toBe('Аналитик'); // per-field: the bad kind takes only a2a_in
+    });
+  }
+
+  const badPublishes: Array<[string, unknown]> = [
+    ['desc is not a string', { desc: 5, fields: {} }],
+    ['fields holds a non-string value', { desc: 'd', fields: { Готовность: 1 } }],
+    ['optional is not a string array', { desc: 'd', fields: {}, optional: 'Готовность' }],
+  ];
+
+  for (const [what, publishes] of badPublishes) {
+    it(`drops publishes when ${what} — a2a_in stays armed`, () => {
+      writeDescriptor(
+        'greg',
+        JSON.stringify({ a2a_in: { finding: { desc: 'd', from: ['jarvis'], fields: {} } }, publishes }),
+      );
+      expect(readAgentDescriptor(tmp, 'greg')?.publishes).toBeUndefined();
+      // A typo in a fragment label must never move the wire.
+      expect(getLegalKinds(tmp, 'greg')).toEqual(['finding']);
+    });
+  }
+});
+
+describe('readAgentDescriptor disarming warn', () => {
+  it('names the offending kind — the warn is the only signal a wire went open', () => {
+    // Fail-open is silent: no bounce, no error, the gate just stops checking.
+    // A bare `{folder}` warn leaves an operator bisecting a file of N contracts.
+    writeDescriptor(
+      'greg',
+      JSON.stringify({
+        a2a_in: {
+          finding: { desc: 'ок', from: ['jarvis'], fields: {} },
+          health_signal: { desc: 'нет полей', from: ['jarvis'] },
+        },
+      }),
+    );
+
+    // ONE malformed kind disarms ALL of them — not just itself.
+    expect(getLegalKinds(tmp, 'greg')).toBeNull();
+
+    const warn = vi.mocked(log.warn).mock.calls.find(([msg]) => msg.includes('`a2a_in`'));
+    expect(warn?.[0]).toContain('gate disarmed');
+    expect(warn?.[1]).toMatchObject({ folder: 'greg', kind: 'health_signal' });
   });
 });
