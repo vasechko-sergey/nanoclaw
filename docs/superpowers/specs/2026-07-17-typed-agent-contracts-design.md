@@ -1,0 +1,243 @@
+# Typed Agent Contracts — Design
+
+**Дата:** 2026-07-17
+**Предшественник:** `2026-07-16-a2a-protocol-normalization-design.md` (код main `45999379`, взвод LIVE 2026-07-17)
+
+## Цель
+
+Довести «декларация == enforcement» с уровня **имени** контракта до уровня его **содержимого**, и убрать измеренные дыры: 11 фантомных kind'ов, меш 10/20, остров-Гордон, стухшая доктрина в корневом CLAUDE.md.
+
+## Что намерено (2026-07-17, грепом + по живой базе VDS)
+
+| Факт | Значение |
+|---|---|
+| Объявлено kind'ов | 15 |
+| Имеют отправителя | **4** |
+| Рёбер `agent_destinations` (agent→agent) | **10 из 20** |
+| Гордон | 0 in-kinds, 0 исходящих рёбер — полный остров |
+| Джарвис | объявлен «хаб-оркестратор», шлёт **ноль** structured a2a |
+| `INSTRUCTIONS.md` | 31.6 КБ ≈ 9k токенов × 5 агентов × каждый ход |
+| `jarvis/CLAUDE.md` | 32 КБ ≈ 9.2k токенов (264 строки) против 64 строк у Гордона |
+
+Живых потока ровно 4: `greg→jarvis finding`, `greg→payne health_signal`, `payne→jarvis workout_done`, `payne→greg workout_summary`.
+
+### Диагноз
+
+Предыдущий заход сделал **ключ** `a2a_in` единым артефактом: одна запись и публикуется в реестр, и служит гейту. Дрейф по имени контракта стал невозможен.
+
+**Значение осталось свободной прозой** — и проза немедленно завела обязательства, которых никто не исполняет:
+
+- Дескриптор Пейна: *«Ответ — `health_signal_ack` Грегу»*. Ни один скил Пейна его не шлёт.
+- Дескриптор Пейна: *«Ответ — `workout_plan` Джарвису»*. Не реализовано.
+- Дескриптор Грега: *«`differential` — Джарвис просит разбор»*. Джарвис не просит.
+
+Прозовые контракты вернулись **внутрь артефакта, построенного чтобы их убить**.
+
+### Почему фантомов 11 — это не забытая работа
+
+`jarvis/CLAUDE.md:204`: *«Читаешь `profiles/{greg,gordon,payne,scrooge}.md` по запросу, когда тема смежная»*. Джарвис pull-first **по дизайну**. Его push-половину вытеснила фрагментная модель, но дескрипторы и приёмные скилы той эпохи выжили как окаменелости. У Грега до сих пор рабочий `differential` с `analyze.js --mode differential`, ждущий звонящего, которого удалили.
+
+### Та же болезнь в корневом CLAUDE.md
+
+`1d222b76` (10 июня) намеренно убил host-side генерацию инструкций: *«an opaque "black box" that silently mutated on-disk files at runtime… Hand-maintained from here on; nothing regenerates it»*. Удалены `claude-md-compose.ts` и `instructions-gen.ts`.
+
+Но доктрина об этом не знает:
+- `CLAUDE.md:142` числит ключевым файлом `src/claude-md-compose.ts` — удалён 5 недель назад.
+- `docs/db-central.md:320` — то же.
+- `CLAUDE.md` таблица `cli_scope` обещает: `disabled` → *«Agent never learns about ncl (instructions excluded from CLAUDE.md)»*. **Исключать нечем.** Инструкции статические; агент читает все 42 строки про ncl при любом scope, идёт пользоваться и ловит `forbidden` на диспетче.
+
+## Решения владельца
+
+1. **Схема публикуется, но не валидируется.** Гейт остаётся на имени kind. Тип — документация, которую нельзя разъехать, потому что она и есть дескриптор. Валидация тела на проводе отвергнута: LLM обязан был бы попадать в схему точно, иначе поток встаёт (риск bounce-штормов).
+2. **Меш открыт, трафик курируется.** Все 20 рёбер проводятся; kind'ы объявляются только под реальную нужду; в INSTRUCTIONS вбивается явное правило pull-по-умолчанию.
+3. **Генерим в промпт, диск статичен.** `1d222b76` не откатывается. Возражение там было к мутации файлов на диске, а не к генерации; `destinations.ts:206` уже доказал безопасный паттерн.
+4. **Хороним 8 фоссилий, воскрешаем 3 живых.** Итог — 7 живых контрактов вместо 15 объявленных.
+
+## Архитектура
+
+### 1. Дескриптор: значение из строки → объект
+
+```ts
+/** Contract for one a2a kind. Published to the registry; NOT validated on the wire. */
+export interface KindContract {
+  /** One-line description of what the RECEIVER does with it. Rendered to the registry. */
+  desc: string;
+  /** Agent folders allowed to send this kind. Lint: each needs an edge + a sending skill. */
+  from: string[];
+  /** Field name → type description. Published only; the wire does not check it. */
+  fields: Record<string, string>;
+  /** Kind the receiver replies with. Absent = terminal. Lint: must exist in every sender's descriptor. */
+  reply?: string;
+}
+
+export interface AgentDescriptor {
+  role?: string;
+  aka?: string[];
+  a2a_in?: Record<string, KindContract>;
+}
+```
+
+`from` и `reply` — это ровно те прозовые обещания, ставшие машинно-проверяемыми.
+
+Пример:
+
+```json
+"health_signal": {
+  "desc": "Грег — готовность на сегодня. yellow → set_modifier *= 0.9 и rir +1; red → отдых или лёгкое кардио.",
+  "from": ["greg"],
+  "fields": {
+    "date": "string (ISO date)",
+    "level": "green|yellow|red",
+    "factors": "string[]",
+    "recommendation": "string",
+    "readiness": "number 0-100"
+  },
+  "reply": "health_signal_ack"
+}
+```
+
+**Инвариант, который держит всё безопасным:** `getLegalKinds` = `Object.keys(d.a2a_in)` — **не меняется**. У неё ровно два потребителя (`write-destinations.ts:55` — проекция в сессионную БД; `agent-route.ts:259` — гейт слоя 2), оба едят `string[] | null`. Тип значения меняется, `Object.keys()` — нет. **Гейт не трогается.**
+
+`readAgentDescriptor` сегодня отвергает нестроковые значения `a2a_in` → надо научить проверять форму объекта. Контракт деградации сохраняется дословно: негодный дескриптор → `null` → запись name-only + гейт **разоружён** (fail-open). Опечатка не должна бунсать всё.
+
+**Порядок деплоя безразличен, и это надо зафиксировать:**
+- новый код + старые дескрипторы → значения-строки не проходят проверку → `null` → разоружено;
+- старый код + новые дескрипторы → значения-объекты не проходят `typeof v !== 'string'` → `null` → разоружено.
+
+Оба порядка временно **разоружают**, ни один не вооружает неверно. Big-bang безопасен.
+
+### 2. Типы живут в реестре, не в промпте
+
+Пункт владельца — «знают **где** получить типизированную инфу», а не «всегда в контексте».
+
+- **Промпт:** без изменений — `destinations.ts:206` рендерит `— kind: a, b, c`. Дёшево, и это ровно та проекция, по которой бьёт гейт.
+- **Реестр `agents.md`:** несёт полный типизированный контракт, агент читает по нужде.
+
+Рендер полей в промпт стоил бы ~1.5k токенов на агента за ход при нулевой пользе для гейта — отвергнуто.
+
+`renderRegistryMarkdown` на каждый kind:
+
+```
+- `health_signal` — Грег: готовность на сегодня. yellow → set_modifier *= 0.9 и rir +1.
+  От: `greg`. Ответ: `health_signal_ack`.
+  Поля: `date` string (ISO date) · `level` green|yellow|red · `factors` string[] · `readiness` number 0-100
+```
+
+Экранирование: имена полей и типы — agent-authorable, то есть semi-untrusted вход в единственный документ, который агенты читают как истину о пирах. Идентификаторы в code span → `ident()`; проза → `oneLine()`. Таблица «Принимает a2a» не меняется (имена kind'ов). `agents.json` получает полную структуру даром через `JSON.stringify`.
+
+### 3. Линт
+
+`groups/` gitignored и installation-specific → тест в репе не может утверждать про конкретных пятерых. Разделение:
+
+- **`src/modules/agent-to-agent/a2a-lint.ts`** — чистая функция, тестируется на фикстурах в `pnpm test`. Едет в trunk.
+- **`ncl groups lint`** — гоняет её по живой установке (дескрипторы с диска + рёбра из БД + скан скилов). Новый verb у существующего ресурса `groups`, не новый ресурс.
+
+```ts
+export interface A2aSend { from: string; to: string; kind: string; where: string }
+export interface LintInput {
+  descriptors: Record<string, AgentDescriptor | null>;  // folder → descriptor
+  sends: A2aSend[];                                      // <message to="X" kind="Y"> найденные в скилах/CLAUDE.md
+  edges: Array<{ from: string; to: string }>;            // agent_destinations, target_type='agent'
+}
+export interface LintFinding { severity: 'error' | 'warn'; code: string; msg: string }
+export function lintA2a(input: LintInput): LintFinding[];
+```
+
+Проверки:
+
+| code | severity | Что ловит |
+|---|---|---|
+| `unknown_kind` | error | скил шлёт A→B kind K, K ∉ `B.a2a_in` — отскочит в рантайме |
+| `phantom_kind` | error | B объявил K, ни один скил его не шлёт (текущие 11) |
+| `undeclared_sender` | error | скил шлёт A→B kind K, A ∉ `B.a2a_in[K].from` |
+| `missing_edge` | error | `from` называет A, ребра A→B в `agent_destinations` нет |
+| `dangling_reply` | error | `reply: R`, но R ∉ `a2a_in` какого-то из отправителей |
+| `reply_not_sent` | warn | B объявил `reply: R`, но ни один скил B его не шлёт |
+| `no_role` | warn | дескриптор без `role` — в реестре пустая роль |
+
+Скан `sends`: регексп по `groups/*/skills/**/*.md` и `groups/*/CLAUDE.md` на `<message to="X" kind="Y">`. Host-side.
+
+### 4. Меш: 10 новых рёбер
+
+Есть 10, надо 20. Недостающие: `jarvis→gordon`, `greg→{scrooge,gordon}`, `payne→{scrooge,gordon}`, `scrooge→gordon`, `gordon→{jarvis,greg,payne,scrooge}`.
+
+Гордон и Скрудж получают `"a2a_in": {}` — **взведено text-only**: «прозу принимаю, структурных контрактов пока нет». Честное измеренное состояние, не выдуманные kind'ы.
+
+Регрессии нет, и это проверено:
+- В Гордона сегодня **никто не может** слать (ребра нет) → открытие ребра + text-only = чистая новая возможность.
+- В Скруджа ребро `jarvis→scrooge` **есть**, и он сейчас разоружён. После `{}` structured JSON от Джарвиса отскочил бы — но Джарвис не шлёт ничего (измерено). Безопасно.
+
+### 5. Вердикт по 15 объявленным kind'ам
+
+**Живые (4, без изменений):** `greg.workout_summary` ← payne · `payne.health_signal` ← greg · `jarvis.finding` ← greg · `jarvis.workout_done` ← payne
+
+**Воскресить (3) — есть настоящая нужда:**
+
+| kind | Кто шлёт | Зачем |
+|---|---|---|
+| `greg.health_signal_ack` | payne | Грег узнаёт, применил ли Пейн модификатор. Дескриптор Пейна это уже обещает. |
+| `greg.sick_day_ack` | jarvis | Грегу нужен для продления/снятия suppress — `sick-day` скил на него рассчитывает. |
+| `greg.differential` | jarvis | У Грега готовый скил + `analyze.js --mode differential`. Не хватает только звонящего. |
+
+**Похоронить (8) — вытеснены pull-моделью:** `payne.next_workout`, `jarvis.workout_plan`, `payne.reschedule_request`, `payne.workout_cancel`, `jarvis.workout_cancel_ack`, `jarvis.update_user_fact`, `greg.update_confirmed`, `payne.ack`
+
+Итог: **7 живых контрактов**. Цепочки ответов: `health_signal → health_signal_ack` (терминал), `differential → finding` (терминал, `mode: "differential"` уже в `finding-contract`). Циклов нет — `MAX_A2A_HOPS` не в игре.
+
+### 6. Правило pull-по-умолчанию
+
+INSTRUCTIONS §Agent-to-agent получает явный абзац: **a2a — это push, он будит контейнер пира = полный ход агента**. Фрагменты в `/workspace/global/profiles/` — pull, бесплатно. По умолчанию — pull. a2a — только когда пир должен **действовать** или его надо **разбудить**.
+
+Без этого правила открытый меш = приглашение сжечь токены ровно там, где стоит цель их экономить.
+
+### 7. Единый скелет
+
+Все 5 `CLAUDE.md` — один порядок секций, проверяемый линтом на присутствие:
+
+```
+@./INSTRUCTIONS.md
+# <Имя> — <роль одной строкой>
+## Личность
+## Манера общения
+## Память
+## Скилы
+## Данные
+## Команда
+## Старт сессии
+```
+
+Размер — **warn, не error**. 264 строки Джарвиса против 64 у Гордона — реальный перекос, но подрезка персоны меняет поведение (утренний бриф) и в этот скоуп не входит. Линт про это скажет; правка — отдельным заходом.
+
+### 8. Починка стухшей доктрины
+
+- `CLAUDE.md:142` — убрать `src/claude-md-compose.ts`.
+- `CLAUDE.md` таблица `cli_scope` — `disabled` больше не исключает ничего из промпта; обещание переписать на правду (отказ на диспетче).
+- `docs/db-central.md:320` — убрать ссылку.
+- `groups/greg/skills/differential:3` — описывает вызов голым JSON (доармейная форма); при воскрешении `differential` это бы отскочило `unmarked_json`. Переписать на `kind=`.
+
+## Границы деплоя
+
+| Что | Куда | Как |
+|---|---|---|
+| `src/**`, `CLAUDE.md`, `docs/**` | git | commit → push → VDS `git pull` + `pnpm run build` |
+| `groups/*/agent.json`, `groups/*/skills/**`, `groups/INSTRUCTIONS.md` | scp | `groups/` gitignored — **никогда git** |
+| 10 рёбер | БД VDS | `ncl destinations add` |
+
+Перед scp — сверить хэши VDS `agents/*/skills` с локальным `groups/`: скилы в контейнере RW и могли дрейфануть от runtime-самоправок.
+
+Реестр перегенерится в host-sweep (60с); `writeDestinations` — на каждом пробуждении. Но `INSTRUCTIONS.md` и `CLAUDE.md` bind-mounted RO и читаются при старте контейнера → **нужен rebirth пятерых** (kill container + wipe continuation), как в прошлый раз.
+
+## Что НЕ делаем
+
+- **Не валидируем payload на проводе.** Решение владельца, подтверждено повторно.
+- **Не откатываем `1d222b76`.** Никакой генерации файлов на диске.
+- **Не трогаем гейт.** `shared/a2a/kinds.ts`, `validateA2aKind`, оба слоя — без изменений.
+- **Не подрезаем персону Джарвиса.** Отдельный заход.
+- **Не выдумываем kind'ы Гордону и Скруджу.** Ноль измеренного трафика → `{}`.
+
+## Порядок
+
+1. **Типы + реестр** — `KindContract`, валидация формы, рендер полей. Гейт не трогается.
+2. **Линт** — чистая функция + фикстуры + `ncl groups lint`. Гоняем по живой установке: должен показать ровно 11 `phantom_kind` и 10 `missing_edge`. Это доказательство, что линт видит реальность.
+3. **Меш + вердикт** — 10 рёбер, `{}` Гордону/Скруджу, 8 фоссилий под нож, 3 воскрешения (скилы-отправители). Линт → чисто.
+4. **Скелет + доктрина + pull-правило.**
+5. **Деплой** — code push + descriptors scp + рёбра + rebirth пятерых. Верификация: `ncl groups lint` чист на VDS, реестр несёт поля, 0 warning'ов agent-registry, гейт по-прежнему 7/7 DELIVER.
