@@ -427,7 +427,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
         continuation = result.continuation;
         setContinuation(config.providerName, continuation);
       }
-      leaveForRetry = result.transientError === true;
+      leaveForRetry = result.transientError === true || result.deliveryFailure === true;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
 
@@ -507,7 +507,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       // promptly. After MAX_TRIES the host force-completes a recurring task so
       // its series still advances (see resetStuckProcessingRows in
       // src/host-sweep.ts).
-      log(`Left ${processingIds.length} message(s) un-acked — exiting for prompt host retry (transient API error)`);
+      log(`Left ${processingIds.length} message(s) un-acked — exiting for prompt host retry`);
       return;
     }
 
@@ -590,6 +590,15 @@ interface QueryResult {
    * retries it with backoff, instead of completing a task that did no work.
    */
   transientError?: boolean;
+  /**
+   * True when the turn ended with a `result` carrying no text AND nothing
+   * reached the user — the model produced output that could not be delivered
+   * (an unclosed <message> we couldn't salvage, or unwrapped scratchpad) and
+   * there was no result text to fall back on. Handled exactly like
+   * `transientError`: the caller leaves the batch un-acked so host-sweep
+   * re-wakes it, rather than marking a silent turn `completed`.
+   */
+  deliveryFailure?: boolean;
 }
 
 /**
@@ -626,6 +635,9 @@ export async function processQuery(
   // rate-limit) and nothing user-facing was delivered — the batch is left
   // un-acked for the host to retry rather than completed.
   let transientError = false;
+  // Set when a `result` with no text left the user with nothing deliverable —
+  // treated like `transientError` (batch left un-acked for host re-wake).
+  let deliveryFailure = false;
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open avoids
@@ -833,6 +845,14 @@ export async function processQuery(
         if (resultReceived) {
           log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms after result — ending turn cleanly`);
           watchdogFired = true;
+          // A follow-up push after the turn's result may have streamed a block
+          // (closed or unclosed) that never got its own result event. Salvage it
+          // before abandoning the stream so it isn't silently discarded.
+          if (streamBuffer.length > 0) {
+            const { remainder } = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+            flushOpenBlock(remainder, routing, dispatchedKeys);
+            streamBuffer = '';
+          }
           try {
             query.abort();
           } catch (err) {
@@ -845,8 +865,12 @@ export async function processQuery(
         if (streamBuffer.length > 0) {
           // Rejects are dropped here on purpose: the turn is being aborted, so
           // there is no query left to push a nudge into. They were logged.
+          // The remainder is an unclosed <message> the model never finished —
+          // salvage its body rather than discard it (the stream stalled mid-
+          // block). Then clear: the abort means nothing will re-feed the tail.
           const { remainder } = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
-          streamBuffer = remainder;
+          flushOpenBlock(remainder, routing, dispatchedKeys);
+          streamBuffer = '';
         }
         markCompleted(initialBatchIds);
         // Only surface the "[stream stalled]" error if the user got NOTHING
@@ -971,13 +995,15 @@ export async function processQuery(
           }
           break;
         }
-        // A result — with or without text — means the turn is done. Mark
-        // the initial batch completed now so the host sweep doesn't see
-        // stale 'processing' claims while the query stays open for
-        // follow-up pushes. The agent may have responded via MCP
-        // (send_message) mid-turn, or the message may not need a response
-        // at all — either way the turn is finished.
-        markCompleted(initialBatchIds);
+        // A result ends the turn, but completion is decided per-branch below,
+        // NOT unconditionally here. A result WITH text always completes (it
+        // carries the canonical turn output). A result with NO text completes
+        // only if something actually reached the user this turn — otherwise it
+        // is a silent delivery failure and the batch is left un-acked for host
+        // re-wake (see the `else` branch). Marking completed up here regardless
+        // was the bug: a `text:null` result (error_max_turns /
+        // error_during_execution) with an unclosed <message> still buffered
+        // completed the row with nothing delivered and no retry.
         resultReceived = true;
         // Each `result` ends a turn. Clear any orphan tool ids — the SDK
         // should always pair tool_use with tool_result before result, but
@@ -985,6 +1011,8 @@ export async function processQuery(
         // leave the watchdog permanently suppressed for this query.
         inFlightTools.clear();
         if (event.text) {
+          // Text path: the turn produced canonical output. Complete the batch.
+          markCompleted(initialBatchIds);
           // Stream buffer may still hold tail scratchpad. Reset it — the
           // result.text below covers the full turn and is the canonical
           // scratchpad source.
@@ -1138,18 +1166,53 @@ export async function processQuery(
               query.push(buildRejectNudge(rejectsThisTurn));
             }
           }
-        } else if (turnRejects.length > 0) {
-          // Dropped rather than nudged, deliberately: this turn produced no
-          // text, so it either errored out or said nothing. Pushing a nudge
-          // would re-arm the watchdog (`resultReceived = false`) against a
-          // query that may already be dead, buying a full STREAM_IDLE_TIMEOUT_MS
-          // stall and a spurious "[stream stalled]" for a turn that is over —
-          // and the provider event carries no success/error discriminator to
-          // tell those apart. Same call the watchdog's abort path makes above:
-          // no query left to nudge into, and they were logged at reject time.
-          // Layer 2 (host) remains the backstop for anything that actually
-          // reached messages_out.
-          log(`Result with no text — dropping ${turnRejects.length} unreported reject(s) from this turn`);
+        } else {
+          // No result text. Anything the model streamed is still sitting in
+          // streamBuffer: complete <message> blocks the factuality gate held
+          // back (gateOn suppresses streaming dispatch), or a block the model
+          // opened and never closed because a mid-message tool call or an empty
+          // result ended the turn. Salvage it — discarding it silences the user
+          // with no trace (the reported failure). Drain closed blocks first,
+          // then flush any unclosed trailing one.
+          const hadBuffered = streamBuffer.trim().length > 0;
+          if (streamBuffer.length > 0) {
+            const { remainder } = dispatchCompleteBlocks(streamBuffer, routing, dispatchedKeys);
+            flushOpenBlock(remainder, routing, dispatchedKeys);
+            streamBuffer = '';
+          }
+          if (getUserFacingDispatchCount() === 0 && hadBuffered) {
+            // The model produced output this turn but none of it was
+            // deliverable (unwrapped scratchpad, or a half-open tag we could
+            // not parse) and the result gave no text to fall back on. Marking
+            // the batch completed here is exactly the silent failure: the user
+            // gets nothing and the row reads done. Leave it un-acked so the
+            // outer loop exits and host-sweep re-wakes a fresh turn with backoff
+            // (bounded by MAX_TRIES) — the same recovery the transient-API path
+            // uses. Break now rather than fall through: otherwise the query
+            // stays open and the after-result watchdog burns a full
+            // STREAM_IDLE_TIMEOUT_MS before exiting (the reported 240s hang).
+            log('Result with no text and nothing deliverable after salvage — leaving batch un-acked for host retry');
+            deliveryFailure = true;
+            try {
+              query.abort();
+            } catch (err) {
+              log(`query.abort() threw: ${err instanceof Error ? err.message : String(err)}`);
+            }
+            dispatchedKeys = new Set<string>();
+            turnRejects = [];
+            break;
+          }
+          // Salvage delivered, or the turn legitimately produced nothing (an
+          // a2a ack, a no-reply-needed message) — either way the turn is done.
+          markCompleted(initialBatchIds);
+          if (turnRejects.length > 0) {
+            // Dropped rather than nudged, deliberately: pushing a nudge would
+            // re-arm the watchdog against a query that may already be dead,
+            // buying a full STREAM_IDLE_TIMEOUT_MS stall and a spurious
+            // "[stream stalled]" for a turn that is over. They were logged at
+            // reject time; Layer 2 (host) backstops anything already emitted.
+            log(`Result with no text — dropping ${turnRejects.length} unreported reject(s) from this turn`);
+          }
         }
         // The turn is over — reset both accumulators, on EVERY result. A result
         // with no text is still a turn boundary: providers/claude.ts yields
@@ -1186,7 +1249,7 @@ export async function processQuery(
     }
   }
 
-  return { continuation: queryContinuation, transientError };
+  return { continuation: queryContinuation, transientError, deliveryFailure };
 }
 
 function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
@@ -1381,6 +1444,48 @@ export function dispatchCompleteBlocks(
     dispatched.add(key);
   }
   return { remainder: text.slice(lastIndex), rejects };
+}
+
+/**
+ * Salvage an UNCLOSED <message to="…"> block from the tail of a stream buffer.
+ *
+ * `dispatchCompleteBlocks` only extracts blocks that have a closing </message>.
+ * When a turn ends with the model mid-block — it opened <message>, streamed a
+ * partial body, then a tool call or an empty/error `result` ended the turn
+ * before the close — that partial reply has no </message>, so the streaming
+ * path leaves it in the buffer and it is silently discarded. Discarding it is
+ * the reported failure: the user gets nothing, with no trace. Here we treat
+ * everything after the opening tag as the body and send it, so a truncated
+ * answer still reaches the user rather than vanishing.
+ *
+ * Call ONLY on a buffer already drained of closed blocks (the `remainder` from
+ * dispatchCompleteBlocks): the first `<message …>` it then finds is, by
+ * construction, the unclosed one. Returns true iff a block was dispatched. An
+ * empty/whitespace body, a half-open tag with no closing `>`, a missing `to=`,
+ * an unknown destination, or a gate reject all yield false (nothing salvaged).
+ */
+export function flushOpenBlock(text: string, routing: RoutingContext, dispatched: Set<string>): boolean {
+  const m = /<message\s+(?=[^>]*\bto=")([^>]*?)\s*>([\s\S]*)$/.exec(text);
+  if (!m) return false;
+  const { toName, kind } = parseBlockAttrs(m[1]);
+  const body = m[2].trim();
+  if (!body) return false;
+  const key = blockKey(toName, kind, body);
+  if (dispatched.has(key)) return false;
+  const dest = findByName(toName);
+  if (!dest) {
+    log(`Unknown destination in unclosed <message to="${toName}"> — dropping salvaged block`);
+    dispatched.add(key);
+    return false;
+  }
+  if (gateBlock(dest, toName, kind, body)) {
+    dispatched.add(key);
+    return false;
+  }
+  log(`Salvaged unclosed <message to="${toName}"> (${body.length} chars) at turn end`);
+  sendToDestination(dest, body, routing, kind);
+  dispatched.add(key);
+  return true;
 }
 
 /**

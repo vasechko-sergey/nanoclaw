@@ -16,6 +16,7 @@ import {
   serveImageRequests,
   dispatchResultText,
   dispatchCompleteBlocks,
+  flushOpenBlock,
   buildRejectNudge,
   processQuery,
 } from './poll-loop.js';
@@ -1186,6 +1187,175 @@ describe('processQuery turn-scoped dispatch dedupe', () => {
     await processQuery(query, routing, [], 'mock');
 
     expect(outCount()).toBe(1);
+  });
+});
+
+/**
+ * The silent-delivery-failure the field reported (payne, sess-…-n41swm): the
+ * model opened a <message> block, streamed a partial body, called a tool
+ * mid-message, then the turn ended with `result` text:null and the block was
+ * never closed. dispatchCompleteBlocks can only extract a CLOSED block, so the
+ * unclosed one sat in streamBuffer and was discarded — the user got nothing —
+ * while markCompleted ran unconditionally, so the inbound row read `completed`
+ * (tries=0) and never retried.
+ */
+describe('processQuery — silent-delivery-failure recovery', () => {
+  const routing: RoutingContext = { platformId: 'tg-1', channelType: 'telegram', threadId: null, inReplyTo: null };
+
+  function seedChannelDest(name: string, channelType: string, platformId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'channel', ?, ?, NULL)`,
+      )
+      .run(name, name, channelType, platformId);
+  }
+
+  function fakeQuery(events: ProviderEvent[]): AgentQuery {
+    return {
+      push: () => {},
+      end: () => {},
+      abort: () => {},
+      events: {
+        async *[Symbol.asyncIterator]() {
+          for (const e of events) yield e;
+        },
+      },
+    };
+  }
+
+  function ackStatus(id: string): string | undefined {
+    return (
+      getOutboundDb().prepare('SELECT status FROM processing_ack WHERE message_id = ?').get(id) as
+        | { status: string }
+        | undefined
+    )?.status;
+  }
+
+  const outRows = () =>
+    getOutboundDb().prepare('SELECT content FROM messages_out ORDER BY seq').all() as Array<{ content: string }>;
+
+  beforeEach(() => {
+    seedChannelDest('family', 'telegram', 'tg-1');
+  });
+
+  it('flushes an unclosed <message> block stranded by an empty result', async () => {
+    const { markProcessing } = await import('./db/messages-in.js');
+    markProcessing(['m1']);
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: '<message to="family">1. Разминка\n2. Присед' },
+      { type: 'tool_use_start', id: 't1' },
+      { type: 'tool_use_end', id: 't1', output: '' },
+      { type: 'result', text: null },
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock');
+
+    const rows = outRows();
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0].content).text).toBe('1. Разминка\n2. Присед');
+    // The partial answer reached the user, so completing the batch is correct.
+    expect(result.deliveryFailure).toBeFalsy();
+    expect(ackStatus('m1')).toBe('completed');
+  });
+
+  it('leaves the batch un-acked for host retry when a turn delivers nothing', async () => {
+    // Empty result AND nothing deliverable in the buffer (bare scratchpad, no
+    // <message> wrapper). Completing it strands the user in silence with no
+    // retry; leaving it 'processing' lets host-sweep re-wake a fresh turn.
+    const { markProcessing } = await import('./db/messages-in.js');
+    markProcessing(['m1']);
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: 'Думаю над ответом, но забыл обёртку.' },
+      { type: 'result', text: null },
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock');
+
+    expect(outRows()).toHaveLength(0);
+    expect(result.deliveryFailure).toBe(true);
+    expect(ackStatus('m1')).toBe('processing');
+  });
+
+  it('completes a genuine no-op turn (empty result, no streamed text)', async () => {
+    // Regression guard: a turn that produced no text at all (agent decided no
+    // reply is needed, e.g. an a2a ack) must still complete — not retry.
+    const { markProcessing } = await import('./db/messages-in.js');
+    markProcessing(['m1']);
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'result', text: null },
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock');
+
+    expect(outRows()).toHaveLength(0);
+    expect(result.deliveryFailure).toBeFalsy();
+    expect(ackStatus('m1')).toBe('completed');
+  });
+});
+
+/**
+ * `flushOpenBlock` is the salvage primitive shared by all three turn-end call
+ * sites (empty-result branch + both idle-watchdog paths). It recovers the body
+ * of an UNCLOSED <message to="…"> block — the one shape dispatchCompleteBlocks
+ * cannot, and the exact shape that stranded the reported reply.
+ */
+describe('flushOpenBlock (unclosed-block salvage)', () => {
+  const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: null };
+
+  function seedChannelDest(name: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'channel', 'telegram', 'tg-1', NULL)`,
+      )
+      .run(name, name);
+  }
+
+  const outRows = () =>
+    getOutboundDb().prepare('SELECT content FROM messages_out ORDER BY seq').all() as Array<{ content: string }>;
+
+  beforeEach(() => seedChannelDest('family'));
+
+  it('dispatches the body of an unclosed <message> block', () => {
+    const sent = flushOpenBlock('<message to="family">частичный ответ', routing, new Set());
+    expect(sent).toBe(true);
+    const rows = outRows();
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0].content).text).toBe('частичный ответ');
+  });
+
+  it('returns false and sends nothing for a whitespace-only body', () => {
+    expect(flushOpenBlock('<message to="family">   \n  ', routing, new Set())).toBe(false);
+    expect(outRows()).toHaveLength(0);
+  });
+
+  it('returns false for an unknown destination', () => {
+    expect(flushOpenBlock('<message to="nobody">hi', routing, new Set())).toBe(false);
+    expect(outRows()).toHaveLength(0);
+  });
+
+  it('returns false for bare text with no opening tag', () => {
+    expect(flushOpenBlock('just thinking, no wrapper', routing, new Set())).toBe(false);
+    expect(outRows()).toHaveLength(0);
+  });
+
+  it('returns false for a half-open tag with no closing >', () => {
+    // The tag itself is still streaming (`<message to="fam` — no `>` yet); there
+    // is no parseable block to salvage.
+    expect(flushOpenBlock('<message to="family"', routing, new Set())).toBe(false);
+    expect(outRows()).toHaveLength(0);
+  });
+
+  it('skips a block already in the dispatched set (no double-send)', () => {
+    const dispatched = new Set<string>();
+    expect(flushOpenBlock('<message to="family">один', routing, dispatched)).toBe(true);
+    // Same (to, kind, body) key — a re-flush must not send it twice.
+    expect(flushOpenBlock('<message to="family">один', routing, dispatched)).toBe(false);
+    expect(outRows()).toHaveLength(1);
   });
 });
 
