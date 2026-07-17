@@ -21,26 +21,91 @@ function sha(s: string): string {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
+/**
+ * Contract for one a2a kind. Published to the registry; NOT validated on the
+ * wire — the owner ruled that out: an LLM forced to hit a schema exactly would
+ * stall live traffic on a stray field. The gate checks the kind NAME only.
+ */
+export interface KindContract {
+  /** One-line description of what the RECEIVER does with it. */
+  desc: string;
+  /** Agent folders allowed to send this kind. Lint-checked, not wire-checked. */
+  from: string[];
+  /** Field name → type description. Published to the registry only. */
+  fields: Record<string, string>;
+  /** Kind the receiver replies with. Absent = terminal. */
+  reply?: string;
+}
+
+/** What this agent's public fragment (`profiles/<folder>.md`) carries FOR PEERS. */
+export interface PublishContract {
+  /** What the fragment is for — one line. */
+  desc: string;
+  /**
+   * Body label → what it carries. Only the BODY: the frontmatter is already
+   * typed by the parser in `channels/ios-app/v2/profiles.ts`, so declaration
+   * already equals enforcement there. The body is the half with no type at all.
+   */
+  fields: Record<string, string>;
+  /** Labels legitimately absent sometimes (no source data yet). No warn when missing. */
+  optional?: string[];
+}
+
 /** Shape of `agents/<folder>/agent.json`. Every field optional — a partial descriptor degrades to a name-only entry. */
 export interface AgentDescriptor {
   role?: string;
-  /** kind name → human description of what the agent does with it. */
-  a2a_in?: Record<string, string>;
+  a2a_in?: Record<string, KindContract>;
   aka?: string[];
+  publishes?: PublishContract;
 }
 
 export interface RegistryEntry {
   id: string;
   name: string;
   role: string;
-  a2a_in: Record<string, string>;
+  a2a_in: Record<string, KindContract>;
   aka: string[];
+  publishes: PublishContract | null;
+}
+
+function isStringRecord(v: unknown): v is Record<string, string> {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).every((x) => typeof x === 'string');
+}
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === 'string');
+}
+
+function isKindContract(v: unknown): v is KindContract {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const c = v as Record<string, unknown>;
+  if (typeof c.desc !== 'string') return false;
+  if (!isStringArray(c.from)) return false;
+  if (!isStringRecord(c.fields)) return false;
+  if (c.reply !== undefined && typeof c.reply !== 'string') return false;
+  return true;
+}
+
+function isPublishContract(v: unknown): v is PublishContract {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const p = v as Record<string, unknown>;
+  if (typeof p.desc !== 'string') return false;
+  if (!isStringRecord(p.fields)) return false;
+  if (p.optional !== undefined && !isStringArray(p.optional)) return false;
+  return true;
 }
 
 /**
  * Read `<agentsDir>/<folder>/agent.json`. Returns null when absent (not yet
- * authored) or unusable. A bad descriptor must never take the registry down —
+ * authored) or unparseable. A bad descriptor must never take the registry down —
  * the agent still appears, name-only.
+ *
+ * Degradation is PER FIELD, not per file. The descriptor now carries two
+ * independent concerns: the a2a contract (which arms the transport gate through
+ * getLegalKinds) and the fragment contract (which only warns at projection). A
+ * typo in a body label must not disarm the wire. So each field is salvaged or
+ * dropped on its own; only unreadable/unparseable JSON kills the whole thing.
  */
 export function readAgentDescriptor(agentsDir: string, folder: string): AgentDescriptor | null {
   let raw: string;
@@ -61,31 +126,38 @@ export function readAgentDescriptor(agentsDir: string, folder: string): AgentDes
     return null;
   }
   const d = parsed as Record<string, unknown>;
-  // Validate field TYPES, not just the top-level shape. A hand-authored typo
-  // (`"aka": "Пейн"` instead of `["Пейн"]`) would otherwise sail through and
-  // throw inside the renderer, taking the whole registry down for every agent —
-  // exactly what the degrade-gracefully contract above promises cannot happen.
-  // An unusable field fails the same way malformed JSON does: name-only entry.
-  if (d.role !== undefined && typeof d.role !== 'string') {
-    log.warn('agent-registry: agent.json `role` is not a string, ignored', { folder });
-    return null;
+  const out: AgentDescriptor = {};
+
+  if (d.role !== undefined) {
+    if (typeof d.role === 'string') out.role = d.role;
+    else log.warn('agent-registry: agent.json `role` is not a string, dropped', { folder });
   }
-  if (d.aka !== undefined && (!Array.isArray(d.aka) || d.aka.some((x) => typeof x !== 'string'))) {
-    log.warn('agent-registry: agent.json `aka` is not a string array, ignored', { folder });
-    return null;
+
+  if (d.aka !== undefined) {
+    if (isStringArray(d.aka)) out.aka = d.aka;
+    else log.warn('agent-registry: agent.json `aka` is not a string array, dropped', { folder });
   }
+
+  // Dropping a2a_in leaves it undefined → getLegalKinds returns null → the gate
+  // DISARMS for this agent. That is the deliberate fail-open: a typo bouncing
+  // every message an agent receives is far worse than the drift the gate stops.
   if (d.a2a_in !== undefined) {
     const a = d.a2a_in;
     if (a === null || typeof a !== 'object' || Array.isArray(a)) {
-      log.warn('agent-registry: agent.json `a2a_in` is not an object, ignored', { folder });
-      return null;
-    }
-    if (Object.values(a as Record<string, unknown>).some((v) => typeof v !== 'string')) {
-      log.warn('agent-registry: agent.json `a2a_in` has non-string values, ignored', { folder });
-      return null;
+      log.warn('agent-registry: agent.json `a2a_in` is not an object, dropped (gate disarmed)', { folder });
+    } else if (!Object.values(a as Record<string, unknown>).every(isKindContract)) {
+      log.warn('agent-registry: agent.json `a2a_in` has a malformed contract, dropped (gate disarmed)', { folder });
+    } else {
+      out.a2a_in = a as Record<string, KindContract>;
     }
   }
-  return d as AgentDescriptor;
+
+  if (d.publishes !== undefined) {
+    if (isPublishContract(d.publishes)) out.publishes = d.publishes;
+    else log.warn('agent-registry: agent.json `publishes` is malformed, dropped', { folder });
+  }
+
+  return out;
 }
 
 /**
@@ -134,6 +206,7 @@ export function buildRegistry(agentsDir: string): RegistryEntry[] {
       role: d?.role ?? '',
       a2a_in: d?.a2a_in ?? {},
       aka: d?.aka ?? [],
+      publishes: d?.publishes ?? null,
     };
   });
 }
@@ -195,8 +268,11 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
     if (e.role) lines.push(`Роль: ${oneLine(e.role)}`);
     if (e.aka.length > 0) lines.push(`Также зовут: ${e.aka.map(oneLine).join(', ')}`);
     lines.push('');
-    for (const [kind, desc] of kinds) {
-      lines.push(`- \`${ident(kind)}\` — ${oneLine(desc)}`);
+    // Stopgap: render only `desc`, same one-line-per-kind shape as before typed
+    // contracts. Surfacing `from`/`fields`/`reply` is a real render upgrade —
+    // Task 2's job, not this one's.
+    for (const [kind, contract] of kinds) {
+      lines.push(`- \`${ident(kind)}\` — ${oneLine(contract.desc)}`);
     }
   }
   lines.push('');

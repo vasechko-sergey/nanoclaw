@@ -24,6 +24,10 @@ function writeDescriptor(folder: string, body: string): void {
   fs.writeFileSync(path.join(dir, 'agent.json'), body);
 }
 
+function mkTmp(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-registry-'));
+}
+
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-registry-'));
   const db = initTestDb();
@@ -37,8 +41,12 @@ afterEach(() => {
 
 describe('readAgentDescriptor', () => {
   it('reads a well-formed descriptor', () => {
-    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: 'лог' } }));
-    expect(readAgentDescriptor(tmp, 'payne')).toEqual({ role: 'фитнес-тренер', a2a_in: { workout_done: 'лог' } });
+    const workoutDone = { desc: 'лог', from: ['jarvis'], fields: { reps: 'number' } };
+    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: workoutDone } }));
+    expect(readAgentDescriptor(tmp, 'payne')).toEqual({
+      role: 'фитнес-тренер',
+      a2a_in: { workout_done: workoutDone },
+    });
   });
 
   it('returns null when the descriptor is absent', () => {
@@ -55,19 +63,19 @@ describe('readAgentDescriptor', () => {
     expect(readAgentDescriptor(tmp, 'weird')).toBeNull();
   });
 
-  it('returns null when aka is not a string array', () => {
+  it('drops aka when it is not a string array, keeps the rest (field-level degradation)', () => {
     writeDescriptor('typo', JSON.stringify({ role: 'x', aka: 'Пейн' }));
-    expect(readAgentDescriptor(tmp, 'typo')).toBeNull();
+    expect(readAgentDescriptor(tmp, 'typo')).toEqual({ role: 'x' });
   });
 
-  it('returns null when a2a_in is not an object', () => {
-    writeDescriptor('typo2', JSON.stringify({ a2a_in: 'workout_done' }));
-    expect(readAgentDescriptor(tmp, 'typo2')).toBeNull();
+  it('drops a2a_in when it is not an object, keeps the rest (gate disarmed)', () => {
+    writeDescriptor('typo2', JSON.stringify({ role: 'x', a2a_in: 'workout_done' }));
+    expect(readAgentDescriptor(tmp, 'typo2')).toEqual({ role: 'x' });
   });
 
-  it('returns null when a2a_in has non-string values', () => {
-    writeDescriptor('typo3', JSON.stringify({ a2a_in: { workout_done: { desc: 'nested' } } }));
-    expect(readAgentDescriptor(tmp, 'typo3')).toBeNull();
+  it('drops a2a_in when a contract entry is missing required fields (gate disarmed)', () => {
+    writeDescriptor('typo3', JSON.stringify({ role: 'x', a2a_in: { workout_done: { desc: 'nested' } } }));
+    expect(readAgentDescriptor(tmp, 'typo3')).toEqual({ role: 'x' });
   });
 });
 
@@ -75,7 +83,13 @@ describe('getLegalKinds', () => {
   it('returns the declared kinds for an authored descriptor', () => {
     writeDescriptor(
       'payne',
-      JSON.stringify({ role: 'фитнес-тренер', a2a_in: { set_log: 'лог подхода', ack: 'квитанция' } }),
+      JSON.stringify({
+        role: 'фитнес-тренер',
+        a2a_in: {
+          set_log: { desc: 'лог подхода', from: ['jarvis'], fields: {} },
+          ack: { desc: 'квитанция', from: ['jarvis'], fields: {} },
+        },
+      }),
     );
     expect(getLegalKinds(tmp, 'payne')).toEqual(['set_log', 'ack']);
   });
@@ -118,22 +132,24 @@ describe('buildRegistry', () => {
       agent_provider: null,
       created_at: now(),
     });
-    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: 'лог тренировки' } }));
+    const workoutDone = { desc: 'лог тренировки', from: ['jarvis'], fields: { reps: 'number' } };
+    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: workoutDone } }));
 
     expect(buildRegistry(tmp)).toEqual([
       {
         id: 'payne',
         name: 'Майор Пейн',
         role: 'фитнес-тренер',
-        a2a_in: { workout_done: 'лог тренировки' },
+        a2a_in: { workout_done: workoutDone },
         aka: [],
+        publishes: null,
       },
     ]);
   });
 
   it('still lists an agent that has no descriptor (name-only entry)', () => {
     createAgentGroup({ id: 'greg', name: 'Greg', folder: 'greg', agent_provider: null, created_at: now() });
-    expect(buildRegistry(tmp)).toEqual([{ id: 'greg', name: 'Greg', role: '', a2a_in: {}, aka: [] }]);
+    expect(buildRegistry(tmp)).toEqual([{ id: 'greg', name: 'Greg', role: '', a2a_in: {}, aka: [], publishes: null }]);
   });
 
   it('returns an empty list when there are no agent groups', () => {
@@ -163,46 +179,64 @@ describe('renderRegistryMarkdown', () => {
 
   it('renders a table row per agent with name, role and actions', () => {
     const md = renderRegistryMarkdown([
-      { id: 'payne', name: 'Майор Пейн', role: 'фитнес-тренер', a2a_in: { workout_done: 'лог тренировки' }, aka: [] },
+      {
+        id: 'payne',
+        name: 'Майор Пейн',
+        role: 'фитнес-тренер',
+        a2a_in: { workout_done: { desc: 'лог тренировки', from: ['jarvis'], fields: {} } },
+        aka: [],
+        publishes: null,
+      },
     ]);
     expect(md).toContain('| `payne` | Майор Пейн | фитнес-тренер | `workout_done` |');
     expect(md).toContain('- `workout_done` — лог тренировки');
   });
 
   it('renders a dash for an agent with no role or actions', () => {
-    const md = renderRegistryMarkdown([{ id: 'greg', name: 'Greg', role: '', a2a_in: {}, aka: [] }]);
+    const md = renderRegistryMarkdown([{ id: 'greg', name: 'Greg', role: '', a2a_in: {}, aka: [], publishes: null }]);
     expect(md).toContain('| `greg` | Greg | — | — |');
   });
 
   it('renders a detail section for an agent with aliases but no a2a actions', () => {
     const md = renderRegistryMarkdown([
-      { id: 'greg', name: 'Greg', role: 'аналитик здоровья', a2a_in: {}, aka: ['Грег'] },
+      { id: 'greg', name: 'Greg', role: 'аналитик здоровья', a2a_in: {}, aka: ['Грег'], publishes: null },
     ]);
     expect(md).toContain('## Greg (`greg`)');
     expect(md).toContain('Также зовут: Грег');
   });
 
   it('escapes pipes and newlines so a crafted name cannot corrupt the table', () => {
-    const md = renderRegistryMarkdown([{ id: 'evil', name: 'Evil | ghost', role: 'a\nb', a2a_in: {}, aka: [] }]);
+    const md = renderRegistryMarkdown([
+      { id: 'evil', name: 'Evil | ghost', role: 'a\nb', a2a_in: {}, aka: [], publishes: null },
+    ]);
     const row = md.split('\n').find((l) => l.startsWith('| `evil`'))!;
     expect(cells(row)).toEqual(['`evil`', 'Evil \\| ghost', 'a b', '—']);
   });
 
   it('escapes a pre-existing backslash so it cannot defeat the pipe escape', () => {
-    const md = renderRegistryMarkdown([{ id: 'bs', name: 'a\\|b', role: 'r', a2a_in: {}, aka: [] }]);
+    const md = renderRegistryMarkdown([{ id: 'bs', name: 'a\\|b', role: 'r', a2a_in: {}, aka: [], publishes: null }]);
     const row = md.split('\n').find((l) => l.startsWith('| `bs`'))!;
     // 4 cells, not 5: the pipe must stay escaped even though a backslash preceded it
     expect(cells(row)).toHaveLength(4);
   });
 
   it('collapses a bare carriage return, which alone splits a row', () => {
-    const md = renderRegistryMarkdown([{ id: 'cr', name: 'a\rb', role: 'r', a2a_in: {}, aka: [] }]);
+    const md = renderRegistryMarkdown([{ id: 'cr', name: 'a\rb', role: 'r', a2a_in: {}, aka: [], publishes: null }]);
     const row = md.split('\n').find((l) => l.startsWith('| `cr`'))!;
     expect(cells(row)).toEqual(['`cr`', 'a b', 'r', '—']);
   });
 
   it('strips backticks from ids and action names so code spans cannot break', () => {
-    const md = renderRegistryMarkdown([{ id: 'x`y', name: 'N', role: 'r', a2a_in: { 'ev`il': 'd' }, aka: [] }]);
+    const md = renderRegistryMarkdown([
+      {
+        id: 'x`y',
+        name: 'N',
+        role: 'r',
+        a2a_in: { 'ev`il': { desc: 'd', from: [], fields: {} } },
+        aka: [],
+        publishes: null,
+      },
+    ]);
     const row = md.split('\n').find((l) => l.startsWith('| `xy`'))!;
     expect(cells(row)).toEqual(['`xy`', 'N', 'r', '`evil`']);
   });
@@ -211,7 +245,8 @@ describe('renderRegistryMarkdown', () => {
 describe('writeAgentRegistry', () => {
   it('writes agents.json + agents.md into every person global dir', () => {
     createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });
-    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: 'лог' } }));
+    const workoutDone = { desc: 'лог', from: ['jarvis'], fields: {} };
+    writeDescriptor('payne', JSON.stringify({ role: 'фитнес-тренер', a2a_in: { workout_done: workoutDone } }));
 
     const userMemoryBase = path.join(tmp, 'user-memory');
     fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
@@ -225,7 +260,14 @@ describe('writeAgentRegistry', () => {
       expect(md).toContain('Майор Пейн');
       const json = JSON.parse(fs.readFileSync(path.join(userMemoryBase, person, 'global', 'agents.json'), 'utf8'));
       expect(json).toEqual([
-        { id: 'payne', name: 'Майор Пейн', role: 'фитнес-тренер', a2a_in: { workout_done: 'лог' }, aka: [] },
+        {
+          id: 'payne',
+          name: 'Майор Пейн',
+          role: 'фитнес-тренер',
+          a2a_in: { workout_done: workoutDone },
+          aka: [],
+          publishes: null,
+        },
       ]);
     }
   });
@@ -286,5 +328,80 @@ describe('writeAgentRegistry', () => {
     fs.mkdirSync(path.join(userMemoryBase, 'owner'), { recursive: true });
     fs.writeFileSync(path.join(userMemoryBase, 'stray.txt'), 'not a person');
     expect(writeAgentRegistry(userMemoryBase, tmp)).toBe(2);
+  });
+});
+
+describe('readAgentDescriptor field-level degradation', () => {
+  it('drops a malformed publishes but keeps a2a_in armed', () => {
+    const dir = mkTmp();
+    fs.mkdirSync(path.join(dir, 'greg'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'greg', 'agent.json'),
+      JSON.stringify({
+        role: 'Аналитик',
+        a2a_in: { finding: { desc: 'd', from: ['jarvis'], fields: { severity: 'string' } } },
+        publishes: 'не объект',
+      }),
+    );
+    const d = readAgentDescriptor(dir, 'greg');
+    expect(d?.publishes).toBeUndefined();
+    expect(Object.keys(d!.a2a_in!)).toEqual(['finding']);
+    // The gate must stay armed — this is the whole point of field-level degradation.
+    expect(getLegalKinds(dir, 'greg')).toEqual(['finding']);
+  });
+
+  it('drops a malformed a2a_in (disarming) but keeps publishes and role', () => {
+    const dir = mkTmp();
+    fs.mkdirSync(path.join(dir, 'greg'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'greg', 'agent.json'),
+      JSON.stringify({
+        role: 'Аналитик',
+        a2a_in: { finding: 'старая строковая форма' },
+        publishes: { desc: 'сводка', fields: { Готовность: 'N/100' } },
+      }),
+    );
+    const d = readAgentDescriptor(dir, 'greg');
+    expect(d?.a2a_in).toBeUndefined();
+    expect(getLegalKinds(dir, 'greg')).toBeNull(); // disarmed, fail-open
+    expect(d?.role).toBe('Аналитик');
+    expect(d?.publishes?.fields).toEqual({ Готовность: 'N/100' });
+  });
+
+  it('accepts a full typed contract', () => {
+    const dir = mkTmp();
+    fs.mkdirSync(path.join(dir, 'payne'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'payne', 'agent.json'),
+      JSON.stringify({
+        role: 'Тренер',
+        aka: ['Пейн'],
+        a2a_in: {
+          health_signal: {
+            desc: 'Готовность на сегодня',
+            from: ['greg'],
+            fields: { date: 'string (ISO)', level: 'green|yellow|red' },
+            reply: 'health_signal_ack',
+          },
+        },
+        publishes: { desc: 'Трен-статус', fields: { Программа: 'текст' }, optional: [] },
+      }),
+    );
+    const d = readAgentDescriptor(dir, 'payne');
+    expect(d!.a2a_in!.health_signal.from).toEqual(['greg']);
+    expect(d!.a2a_in!.health_signal.reply).toBe('health_signal_ack');
+    expect(getLegalKinds(dir, 'payne')).toEqual(['health_signal']);
+  });
+
+  it('optional naming a field outside fields is dropped, not fatal', () => {
+    const dir = mkTmp();
+    fs.mkdirSync(path.join(dir, 'greg'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'greg', 'agent.json'),
+      JSON.stringify({ publishes: { desc: 'd', fields: { A: 'x' }, optional: ['B'] } }),
+    );
+    // Shape is valid — `optional` referencing an unknown field is the LINT's job
+    // (optional_not_in_fields), not the reader's. The reader only rejects shapes.
+    expect(readAgentDescriptor(dir, 'greg')?.publishes?.optional).toEqual(['B']);
   });
 });
