@@ -1753,7 +1753,9 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ### Task 10: Деплой + верификация
 
-**Контекст.** Порядок безразличен: и новый код со старыми дескрипторами, и старый код с новыми дают `null` → разоружено. Ни один порядок не вооружает неверно.
+> **ИСПОЛНЕНО 2026-07-17. Четыре команды ниже были неверны — исправлены по месту, см. «Правки, найденные исполнением» в конце файла.** Главная: `scp groups/INSTRUCTIONS.md` ехал в `agents/`, а читается из `GROUPS_DIR` — молчаливый no-op, доктрина Task 8 не дошла бы ни до кого. И между Step 3 и Step 4 не хватало рестарта хоста.
+
+**Контекст.** Порядок безразличен: и новый код со старыми дескрипторами, и старый код с новыми дают `null` → разоружено. Ни один порядок не вооружает неверно. **Замерено на исполнении:** 21 warning между scp и рестартом, 0 после. Окно реально, fail-open — но закрывать рестартом сразу.
 
 `INSTRUCTIONS.md`/`CLAUDE.md` bind-mounted RO и читаются при старте контейнера → нужен rebirth пятерых.
 
@@ -1783,6 +1785,14 @@ ssh root@148.253.211.164 'cd /home/nanoclaw/nanoclaw && sudo -u nanoclaw git pul
 ```
 `dist/` gitignored — без билда изменения хоста не поедут.
 
+- [ ] **Step 3b: Рестарт хоста — БЕЗ НЕГО БИЛД НИЧЕГО НЕ МЕНЯЕТ**
+
+```bash
+ssh root@148.253.211.164 'systemctl --user --machine=nanoclaw@ restart nanoclaw'
+ssh root@148.253.211.164 'systemctl --user --machine=nanoclaw@ status nanoclaw --no-pager | head -4'
+```
+`ExecStart=/usr/bin/node /home/nanoclaw/nanoclaw/dist/index.js` — хост крутится из `dist/`, сборка живой процесс не трогает. Двойное следствие: (1) `ncl` диспатчит **в работающий хост** через `data/ncl.sock`, значит verb `lint` без рестарта не существует и Step 5 упадёт; (2) старый ридер отвергает новые дескрипторы (старая проверка — `Object.values(a).some(v => typeof v !== 'string')`) → whole-file null → все пятеро разоружены, и так и останутся.
+
 - [ ] **Step 4: scp дескрипторов, INSTRUCTIONS и скилов**
 
 Маковый мусор не везти: `._*` (AppleDouble) и `.DS_Store`.
@@ -1792,7 +1802,9 @@ cd /Users/serg/git/nanoclaw
 for f in greg payne jarvis gordon scrooge; do
   scp groups/$f/agent.json root@148.253.211.164:/home/nanoclaw/nanoclaw/agents/$f/agent.json
 done
-scp groups/INSTRUCTIONS.md root@148.253.211.164:/home/nanoclaw/nanoclaw/agents/INSTRUCTIONS.md
+# INSTRUCTIONS.md живёт под GROUPS_DIR, НЕ под agents/ — container-runner.ts:511 + :569.
+# Один общий файл на пятерых не может лежать в папке одного из них.
+scp groups/INSTRUCTIONS.md root@148.253.211.164:/home/nanoclaw/nanoclaw/groups/INSTRUCTIONS.md
 scp groups/payne/skills/workout-mode/SKILL.md root@148.253.211.164:/home/nanoclaw/nanoclaw/agents/payne/skills/workout-mode/SKILL.md
 scp groups/greg/skills/differential/SKILL.md root@148.253.211.164:/home/nanoclaw/nanoclaw/agents/greg/skills/differential/SKILL.md
 scp -r groups/jarvis/skills/health-relay root@148.253.211.164:/home/nanoclaw/nanoclaw/agents/jarvis/skills/
@@ -1813,16 +1825,23 @@ ssh root@148.253.211.164 'grep -n "^GROUPS_DIR\|AGENTS_DIR" /home/nanoclaw/nanoc
 - [ ] **Step 5: Линт — должен быть ЧИСТ**
 
 ```bash
-ssh root@148.253.211.164 'cd /home/nanoclaw/nanoclaw && ncl groups lint'
+# `ncl` не на PATH под sudo -u nanoclaw — абсолютным путём.
+ssh root@148.253.211.164 'cd /home/nanoclaw/nanoclaw && sudo -u nanoclaw /home/nanoclaw/nanoclaw/bin/ncl groups lint'
 ```
-Ожидаемо: `errors: 0`. Предупреждения допустимы только осознанные. **Любой `phantom_kind` или `missing_edge` = вердикт из Task 6 разошёлся с реальностью Task 7 — чинить, а не объяснять.**
+Ожидаемо: `errors: 0`. **Получено на исполнении: `{"errors": 0, "warnings": 0, "findings": []}`.** Предупреждения допустимы только осознанные. **Любой `phantom_kind` или `missing_edge` = вердикт из Task 6 разошёлся с реальностью Task 7 — чинить, а не объяснять.**
 
 - [ ] **Step 6: Rebirth пятерых**
 
 ```bash
-ssh root@148.253.211.164 'cd /home/nanoclaw/nanoclaw && for g in ag-1778740750341-ru9i6e greg payne gordon scrooge; do ncl groups restart --id $g; done'
+ssh root@148.253.211.164 'cd /home/nanoclaw/nanoclaw && for g in ag-1778740750341-ru9i6e greg payne gordon scrooge; do sudo -u nanoclaw /home/nanoclaw/nanoclaw/bin/ncl groups restart --id $g; done'
 ```
-Continuation-строки надо снести, иначе агенты продолжат со старым системным промптом (см. `feedback_agent_instruction_reload`).
+
+**`ncl groups restart` continuation НЕ снимает** — `container-restart.ts` к `session_state` не прикасается. Снимать отдельно, иначе свежий контейнер возобновит SDK-сессию со старым системным промптом (см. `feedback_agent_instruction_reload`):
+
+```bash
+# в <session>/outbound.db: DELETE FROM session_state WHERE key LIKE 'continuation:%'
+```
+На исполнении: 51 сессия, живой continuation оказался **один** (headless-сессия Джарвиса) — остальные уже без него. Рестарт хоста снимает контейнеры сам, так что `restarted: 0` — норма, а не ошибка: свежие поднимутся на первом сообщении.
 
 - [ ] **Step 7: Верификация — измерить, не предположить**
 
@@ -1865,5 +1884,25 @@ ssh root@148.253.211.164 'systemctl --user --machine=nanoclaw@ status nanoclaw -
 **Плейсхолдеры.** Каждый шаг несёт код или точную команду. Единственное «свериться на месте» — синтаксис `ncl destinations add` (Task 7 Step 1) и `GROUPS_DIR` (Task 10 Step 4); оба с явной командой проверки, потому что угадывать чужой CLI хуже, чем спросить его самого.
 
 **Согласованность типов.** `KindContract`/`PublishContract`/`AgentDescriptor` (Task 1) — те же имена в Tasks 2,3,5. `LintInput`/`LintFinding`/`A2aSend`/`FragmentRef` (Task 3) — те же в Task 4. `projectPublicProfiles(groupsDir, agentsDir)` (Task 5) — та же сигнатура в host-sweep.
+
+---
+
+## Правки, найденные исполнением (2026-07-17)
+
+Все — измерением, не чтением. Три из пяти были **молчаливыми**: деплой отрапортовал бы успех.
+
+1. **INSTRUCTIONS.md ехал не туда.** Step 4 слал в `agents/INSTRUCTIONS.md`; читается из `GROUPS_DIR/INSTRUCTIONS.md` (`container-runner.ts:511` → маунт `:569`). Создался бы файл, который никто не читает, живой остался бы протухшим → доктрина pull-first из Task 8 не дошла бы **ни до одного агента**. Асимметрия неслучайна: всё агент-специфичное (CLAUDE.md, skills, scripts, agent.json) — из `agents/<folder>/`, а один общий файл на пятерых не может лежать в папке одного.
+2. **Не было рестарта хоста** (Step 3b добавлен). Хост крутится из `dist/`; `ncl` диспатчит в живой процесс → Step 5 упал бы на несуществующем verb'е, а старый ридер держал бы всех пятерых разоружёнными.
+3. **Линт не отличал сознательный disarm от случайного.** `readAgentDescriptor` отдаёт `a2a_in: undefined` и когда ключа нет (политика), и когда он отброшен (открытый провод). Правило `if (!d?.a2a_in) continue` читало второе как первое — checkpoint был слеп ровно к тому дрейфу, что открывает гейт. Закрыто: `lint-scan.ts` диффает сырой JSON против распарсенного → `rejected[]` → `malformed_descriptor`. Вероятнейший триггер — `"reply": null`.
+4. **`ncl` не на PATH** под `sudo -u nanoclaw` → `/home/nanoclaw/nanoclaw/bin/ncl`. (Падает громко.)
+5. **Скелет Task 9 не назвал слот `## Специфика`**, которым пользуются 4 из 5. Гордон был взят за образец — единственный, у кого его нет, потому что он самый маленький. У Джарвиса в нём бо́льшая часть файла. Реальный скелет: `Личность → Манера → Память → Скилы → [Данные] → Команда → [Специфика] → [Старт сессии]`.
+
+**Слепые фикстуры в тестах самого плана — трижды.** Гарды: 9 внутренних проверок, **ни одну нельзя было убить** (одна негативная фикстура нарушала три разом → не пиннила ни одной). `unknown_target`/`unknown_sender`: изолирующего теста не было вовсе. Фикстура `family`: потеряла различающую силу от смены типа. Причина одна — тесты писались, описывая что правило делает, а не спрашивая что его убьёт. Все три поймала мутация; ни одну — перечитывание.
+
+**Найдено сверх плана:** `ncl groups lint` был доступен любому контейнеру с полным графом маршрутов (`dispatch.ts` пропускает scope-фильтр для custom ops, обосновывая тем, что они pinned by `--id` или gated by approval — `lint` не выполнял ни одной ветки). Сделан host-only. И `FRAGMENT_RE` не видел brace-форму `profiles/{a,b,c}.md` — та же конструкция, что обманула grep на этапе дизайна; Джарвис был невидим как читатель фрагментов (4→8 ссылок).
+
+**Не сделано, вынесено:** у greg/payne/scrooge нет `## Старт сессии` — не читают baseline при старте разговора, в отличие от gordon/jarvis. Поведенческая дыра, спека исключила («Содержание не переписывать»).
+
+---
 
 **Вердикт сходится.** greg принимает 4, payne 1, jarvis 2 = **7**. Объявлено было 15 → похоронено 8. Отправители: payne→greg `workout_summary`+`health_signal_ack`, greg→payne `health_signal`, greg→jarvis `finding`, payne→jarvis `workout_done`, jarvis→greg `differential`+`sick_day_ack` = 7 контрактов, у каждого ≥1 отправитель → `phantom_kind` = 0. `reply`: `health_signal→health_signal_ack` (payne шлёт, Task 7 Step 3 ✓), `differential→finding` (greg шлёт ✓). Висячих нет.
