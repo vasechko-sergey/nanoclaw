@@ -23,9 +23,11 @@ IMAGE_NAME="$(container_image_base)"
 TAG="${1:-latest}"
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-docker}"
 
-# Caller's env takes precedence; fall back to .env.
-if [ -z "${INSTALL_CJK_FONTS:-}" ] && [ -f "../.env" ]; then
-    INSTALL_CJK_FONTS="$(grep '^INSTALL_CJK_FONTS=' ../.env | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
+# Caller's env takes precedence; fall back to .env. Absolute path — this used
+# to be `../.env`, which broke silently when the build context moved to the
+# project root and left the relative path pointing at the checkout's parent.
+if [ -z "${INSTALL_CJK_FONTS:-}" ] && [ -f "$PROJECT_ROOT/.env" ]; then
+    INSTALL_CJK_FONTS="$(grep '^INSTALL_CJK_FONTS=' "$PROJECT_ROOT/.env" | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
 fi
 
 BUILD_ARGS=()

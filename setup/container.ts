@@ -168,44 +168,32 @@ export async function run(args: string[]): Promise<void> {
     }
   }
 
-  const buildCmd = 'docker build';
   const runCmd = 'docker';
 
-  // Build-args from .env. Only INSTALL_CJK_FONTS is passed through today.
-  // Keeps /setup and ./container/build.sh in sync — both read the same source.
-  const buildArgs: string[] = [];
-  try {
-    const fs = await import('fs');
-    const envPath = path.join(projectRoot, '.env');
-    if (fs.existsSync(envPath)) {
-      const match = fs.readFileSync(envPath, 'utf-8').match(/^INSTALL_CJK_FONTS=(.+)$/m);
-      const val = match?.[1].trim().replace(/^["']|["']$/g, '').toLowerCase();
-      if (val === 'true') buildArgs.push('--build-arg INSTALL_CJK_FONTS=true');
-    }
-  } catch {
-    // .env is optional; absence is normal on a fresh checkout
-  }
-
-  // Build — stdio inherit so the parent setup runner can tail docker's
-  // per-step output and render it in a rolling window. Previously we used
-  // execSync which buffered everything; users couldn't tell whether a
-  // 3–10 minute build was making progress or hung.
+  // Build — delegate to container/build.sh rather than re-implementing the
+  // invocation here. The image needs a project-root build context (the
+  // Dockerfile COPYs both container/ and shared/) with the Dockerfile passed
+  // explicitly via -f, and it reads INSTALL_CJK_FONTS from .env. Keeping a
+  // second copy of that is what silently broke this step: the context was
+  // `container/`, so every COPY failed and /setup could never build an image.
+  //
+  // stdio inherit so the parent setup runner can tail docker's per-step output
+  // and render it in a rolling window. Previously we used execSync which
+  // buffered everything; users couldn't tell whether a 3–10 minute build was
+  // making progress or hung.
   let buildOk = false;
-  log.info('Building container', { runtime, buildArgs });
-  const buildRes = spawnSync(
-    buildCmd.split(' ')[0],
-    [
-      ...buildCmd.split(' ').slice(1),
-      ...buildArgs.flatMap((a) => a.split(' ')),
-      '-t',
-      image,
-      '.',
-    ],
-    {
-      cwd: path.join(projectRoot, 'container'),
-      stdio: 'inherit',
+  log.info('Building container', { runtime, image });
+  const buildRes = spawnSync('bash', ['container/build.sh'], {
+    cwd: projectRoot,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      // Pin the slug source so build.sh tags exactly the image we test and
+      // report below; install-slug.sh honors this over its own $PWD guess.
+      NANOCLAW_PROJECT_ROOT: projectRoot,
+      CONTAINER_RUNTIME: runtime,
     },
-  );
+  });
   if (buildRes.status === 0) {
     buildOk = true;
     log.info('Container build succeeded');
