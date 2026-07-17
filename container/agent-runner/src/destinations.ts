@@ -11,6 +11,7 @@
  * so even if this table is stale the host's enforcement is authoritative.
  */
 import { getInboundDb } from './db/connection.js';
+import { getSessionRouting } from './db/session-routing.js';
 
 export interface DestinationEntry {
   name: string;
@@ -76,6 +77,71 @@ export function getAllDestinations(): DestinationEntry[] {
 export function findByName(name: string): DestinationEntry | undefined {
   const row = getInboundDb().prepare('SELECT * FROM destinations WHERE name = ?').get(name) as DestRow | undefined;
   return row ? rowToEntry(row) : undefined;
+}
+
+/**
+ * Where does outbound content go when nobody named a destination?
+ *
+ * The chain `send_message` has always used for a bare `to`-less call, lifted
+ * here so the poll-loop can reuse it verbatim. Two callers, one policy:
+ *
+ *   1. The session's own routing — the channel/thread this session is bound
+ *      to. Host-written on every wake (session-manager.ts `writeSessionRouting`).
+ *   2. Failing that (agent-shared / internal-only agents have no messaging
+ *      group, so the host writes nothing), the sole destination — unambiguous
+ *      by definition.
+ *
+ * Anything else refuses to resolve rather than guess. `ambiguous` is a real
+ * answer, not a failure: picking one of several destinations would mean
+ * broadcasting to an unrelated human or agent.
+ *
+ * Lives in destinations.ts, NOT mcp-tools/core.ts where the original was:
+ * core.ts calls `registerTools()` at module scope, so importing it from the
+ * poll-loop would register the MCP tool set into the main process, which only
+ * the MCP subprocess should host. This module is side-effect free.
+ */
+export type DefaultRouting =
+  | {
+      ok: true;
+      /** Which rung of the chain answered — callers log it; core.ts names the destination from it. */
+      via: 'session' | 'sole-destination';
+      name: string;
+      channel_type: string;
+      platform_id: string;
+      thread_id: string | null;
+    }
+  | { ok: false; reason: 'none' | 'ambiguous'; options: string[] };
+
+export function resolveDefaultRouting(): DefaultRouting {
+  const session = getSessionRouting();
+  // Both fields or neither: a routing row with only one of them is unroutable,
+  // and must fall through rather than produce a half-addressed write.
+  if (session.channel_type && session.platform_id) {
+    return {
+      ok: true,
+      via: 'session',
+      name: '(current conversation)',
+      channel_type: session.channel_type,
+      platform_id: session.platform_id,
+      thread_id: session.thread_id,
+    };
+  }
+
+  const all = getAllDestinations();
+  if (all.length === 0) return { ok: false, reason: 'none', options: [] };
+  if (all.length > 1) return { ok: false, reason: 'ambiguous', options: all.map((d) => d.name) };
+
+  const only = all[0];
+  return {
+    ok: true,
+    via: 'sole-destination',
+    name: only.name,
+    channel_type: only.type === 'channel' ? only.channelType! : 'agent',
+    platform_id: only.type === 'channel' ? only.platformId! : only.agentGroupId!,
+    // No thread: we only reach here when the session has no routing of its
+    // own, so there is no thread context to preserve.
+    thread_id: null,
+  };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { validateA2aKind } from '@shared/a2a/kinds.js';
 
-import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
+import { findByName, getAllDestinations, resolveDefaultRouting, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
@@ -618,6 +618,10 @@ export async function processQuery(
   // second offence is dropped and logged instead; the host bounce (Layer 2) is
   // the backstop for the traffic itself.
   let rejectNudged = false;
+  // Set when THIS turn carried a harness_error, and consumed by its `result`.
+  // Turn-scoped, unlike the nudge latches above: a limit hit on turn 1 must not
+  // disarm the no-wrap guard for the rest of a long-lived query.
+  let harnessErrored = false;
   // Set when the turn's `result` is a transient upstream API error (529/5xx/
   // rate-limit) and nothing user-facing was delivered — the batch is left
   // un-acked for the host to retry rather than completed.
@@ -918,6 +922,13 @@ export async function processQuery(
           thread_id: routing.threadId,
           content: JSON.stringify({ type: 'status', text: event.text, level: event.level, kind: event.kind }),
         });
+      } else if (event.type === 'harness_error') {
+        // The harness failed and said so in the agent's voice (usage limit,
+        // auth, billing). Deliver it as a system notice and remember it for
+        // the turn: the `result` below will echo the same text unwrapped, and
+        // the no-wrap nudge must not fire on output the agent never wrote.
+        harnessErrored = true;
+        deliverHarnessNotice(event.code, event.text);
       } else if (event.type === 'assistant_text') {
         // Stream-side dispatch: peel complete <message> blocks out of the
         // running buffer and send them NOW. Anything past the last
@@ -935,6 +946,12 @@ export async function processQuery(
           turnRejects.push(...rejects);
         }
       } else if (event.type === 'result') {
+        // Consume the harness-error flag at the turn boundary — read once here,
+        // cleared immediately, so every exit from this branch (text, no text,
+        // the transient `break` below) re-arms the next turn. The nudge
+        // decisions further down use the captured value.
+        const harnessErroredThisTurn = harnessErrored;
+        harnessErrored = false;
         // Transient upstream failure (529 overloaded / 5xx / rate-limit): the
         // SDK exhausted its own retries and surfaced the error as the turn's
         // result. Do NOT complete the batch — leave it 'processing' so the
@@ -1066,7 +1083,7 @@ export async function processQuery(
                 const rejectsThisTurn = turnRejects.concat(rejects);
                 dispatchedKeys = new Set<string>();
                 turnRejects = [];
-                if (hasUnwrapped && !unwrappedNudged) {
+                if (hasUnwrapped && !unwrappedNudged && !harnessErroredThisTurn) {
                   unwrappedNudged = true;
                   const destinations = getAllDestinations();
                   const names = destinations.map((d) => d.name).join(', ');
@@ -1077,6 +1094,8 @@ export async function processQuery(
                       `Your destinations: ${names}. ` +
                       `Please re-send your response with the correct wrapping.</system>`,
                   );
+                } else if (hasUnwrapped && harnessErroredThisTurn) {
+                  log(`Unwrapped text was the harness notice, not agent output — no-wrap nudge suppressed`);
                 }
                 if (rejectsThisTurn.length > 0 && !rejectNudged) {
                   rejectNudged = true;
@@ -1095,7 +1114,12 @@ export async function processQuery(
             // without being silently suppressed.
             dispatchedKeys = new Set<string>();
             turnRejects = [];
-            if (hasUnwrapped && !unwrappedNudged) {
+            // `harnessErroredThisTurn` suppresses the nudge: the result text is
+            // the harness's own notice ("You've hit your limit …"), echoed here
+            // unwrapped. Nudging spends another turn against the same limit to
+            // re-produce the same text — the agent cannot wrap what it did not
+            // write. Already delivered as a system notice above.
+            if (hasUnwrapped && !unwrappedNudged && !harnessErroredThisTurn) {
               unwrappedNudged = true;
               const destinations = getAllDestinations();
               const names = destinations.map((d) => d.name).join(', ');
@@ -1108,6 +1132,12 @@ export async function processQuery(
                   `Your destinations: ${names}. ` +
                   `Please re-send your response with the correct wrapping.</system>`,
               );
+            } else if (hasUnwrapped && harnessErroredThisTurn) {
+              // Corrects the record: dispatchResultText just logged "agent
+              // output had no <message…> blocks — nothing was sent", which is
+              // wrong twice over here. It was not agent output, and the notice
+              // WAS sent — as a system message, above.
+              log(`Unwrapped text was the harness notice, not agent output — no-wrap nudge suppressed`);
             }
             if (rejectsThisTurn.length > 0 && !rejectNudged) {
               rejectNudged = true;
@@ -1187,6 +1217,12 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
       break;
     case 'status_msg':
       log(`Status [${event.level}/${event.kind ?? 'system'}]: ${event.text}`);
+      break;
+    case 'harness_error':
+      // WARNING-shaped so it survives a log-level filter and greps out of
+      // logs/containers.log: this is the harness refusing to run the turn, and
+      // for a long time the container log was its only trace anywhere.
+      log(`WARNING: harness error [${event.code}] — not agent output: ${event.text || '(no text)'}`);
       break;
   }
 }
@@ -1421,6 +1457,72 @@ export function dispatchResultText(
     log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
   }
   return { newlySent, hasUnwrapped, rejects };
+}
+
+/**
+ * User-facing wording for a harness failure. The SDK's own text is the payload
+ * — it carries the only operational fact that exists nowhere else (a usage
+ * limit's reset time), so it goes through verbatim, never parsed or reworded.
+ *
+ * The prefix is load-bearing, not decoration: the text reads as though the
+ * agent wrote it ("You've hit your limit"), and without an explicit disclaimer
+ * the owner has no way to tell a harness notice from the agent's own voice.
+ * `code` rides along for the operator — it's the greppable discriminator.
+ */
+export function buildHarnessNoticeText(code: string, text: string): string {
+  const detail = text.trim() || `The agent harness reported "${code}" and stopped the turn.`;
+  return `⚠️ System notice (not from the agent) — this turn did not complete [${code}]:\n${detail}`;
+}
+
+/**
+ * Deliver a harness-originated failure notice straight to `messages_out`.
+ *
+ * Deliberately bypasses the <message to="…"> wrap rule. That rule exists to
+ * stop the AGENT leaking its own scratchpad; this text is not the agent's —
+ * it's the harness speaking in the agent's voice, and holding it to a rule the
+ * agent alone can satisfy is exactly what silenced it in production.
+ *
+ * No API call is involved: the container writes SQLite and the host polls and
+ * delivers. So a rate-limited agent — which by definition cannot get another
+ * token out of the model — can still tell its owner what happened.
+ *
+ * Addressed through the same chain as a bare `send_message` (session routing,
+ * then the sole destination). The batch's own routing is NOT used: a cron/
+ * headless wake carries none, and that is precisely the case where the agent
+ * cannot be asked and the owner is least likely to notice the silence.
+ *
+ * Never throws. An undeliverable notice is logged and dropped — raising here
+ * would strand the batch that is still waiting on this turn's markCompleted.
+ */
+function deliverHarnessNotice(code: string, text: string): void {
+  try {
+    const dest = resolveDefaultRouting();
+    if (!dest.ok) {
+      const detail = dest.options.length > 0 ? `${dest.reason}: ${dest.options.join(', ')}` : dest.reason;
+      // WARNING-shaped and greppable: this is the last trace of a notice the
+      // owner will never see. The container log is host-captured via
+      // src/container-log-sink.ts, so it survives the container's --rm exit.
+      log(`WARNING: harness error [${code}] UNDELIVERABLE — no destination (${detail}). Text: ${text || '(none)'}`);
+      return;
+    }
+    writeMessageOut({
+      id: generateId(),
+      kind: 'chat',
+      platform_id: dest.platform_id,
+      channel_type: dest.channel_type,
+      thread_id: dest.thread_id,
+      // `sender: 'system'` is the established marker for host/harness-authored
+      // content (container-restart.ts, modules/approvals/primitive.ts). On an
+      // agent destination it does double duty: the host's a2a gate passes
+      // system notes unconditionally, and stampSenderIdentity leaves a truthy
+      // sender alone — so a peer can never mistake this for the agent's own
+      // protocol traffic. Channel delivery reads only `text` and ignores it.
+      content: JSON.stringify({ text: buildHarnessNoticeText(code, text), sender: 'system' }),
+    });
+    log(`Harness error [${code}] reported to "${dest.name}" (via ${dest.via}): ${text || '(no text)'}`);
+  } catch (err) {
+    log(`WARNING: harness error [${code}] delivery threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 function sendToDestination(

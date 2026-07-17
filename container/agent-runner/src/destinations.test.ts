@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 
 import { closeSessionDb, getInboundDb, initTestSessionDb } from './db/connection.js';
-import { buildSystemPromptAddendum, findByName } from './destinations.js';
+import { buildSystemPromptAddendum, findByName, resolveDefaultRouting } from './destinations.js';
 
 beforeEach(() => {
   initTestSessionDb();
@@ -228,5 +228,93 @@ describe('buildSystemPromptAddendum — legal kinds, generated from the descript
 
     expect(prompt).toContain('`undescribed`');
     expect(prompt).not.toMatch(/kind/i);
+  });
+});
+
+/**
+ * The default-routing chain behind `send_message` with no `to` — and behind
+ * the poll-loop's harness-error notice, which has no agent to ask "to where?".
+ * A cron/headless turn is exactly where the notice matters most and where the
+ * inbound batch's own routing is emptiest.
+ */
+describe('resolveDefaultRouting', () => {
+  function seedSessionRouting(channelType: string | null, platformId: string | null, threadId: string | null): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO session_routing (id, channel_type, platform_id, thread_id) VALUES (1, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET channel_type = excluded.channel_type,
+           platform_id = excluded.platform_id, thread_id = excluded.thread_id`,
+      )
+      .run(channelType, platformId, threadId);
+  }
+
+  function seedAgentDest(name: string, agentGroupId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'agent', NULL, NULL, ?)`,
+      )
+      .run(name, name, agentGroupId);
+  }
+
+  it('prefers session routing, thread included', () => {
+    seedSessionRouting('telegram', 'chat-99', 'thread-7');
+    seedDestination('casa', 'Casa', 'whatsapp', 'group-1@g.us');
+
+    expect(resolveDefaultRouting()).toEqual({
+      ok: true,
+      via: 'session',
+      name: '(current conversation)',
+      channel_type: 'telegram',
+      platform_id: 'chat-99',
+      thread_id: 'thread-7',
+    });
+  });
+
+  it('falls back to the sole destination when the session has no routing', () => {
+    // The headless case: no messaging group, so the host wrote no routing.
+    seedDestination('casa', 'Casa', 'whatsapp', 'group-1@g.us');
+
+    expect(resolveDefaultRouting()).toEqual({
+      ok: true,
+      via: 'sole-destination',
+      name: 'casa',
+      channel_type: 'whatsapp',
+      platform_id: 'group-1@g.us',
+      thread_id: null,
+    });
+  });
+
+  it('resolves a sole agent destination to the agent channel', () => {
+    seedAgentDest('payne', 'ag-payne');
+
+    expect(resolveDefaultRouting()).toEqual({
+      ok: true,
+      via: 'sole-destination',
+      name: 'payne',
+      channel_type: 'agent',
+      platform_id: 'ag-payne',
+      thread_id: null,
+    });
+  });
+
+  it('reports none when there is nowhere to send', () => {
+    expect(resolveDefaultRouting()).toEqual({ ok: false, reason: 'none', options: [] });
+  });
+
+  it('refuses to guess between several destinations', () => {
+    seedDestination('casa', 'Casa', 'whatsapp', 'group-1@g.us');
+    seedAgentDest('payne', 'ag-payne');
+
+    expect(resolveDefaultRouting()).toEqual({ ok: false, reason: 'ambiguous', options: ['casa', 'payne'] });
+  });
+
+  it('treats half-written session routing as absent', () => {
+    // channel_type without platform_id is unroutable — must not win over a
+    // destination that actually resolves.
+    seedSessionRouting('telegram', null, null);
+    seedDestination('casa', 'Casa', 'whatsapp', 'group-1@g.us');
+
+    expect(resolveDefaultRouting()).toMatchObject({ ok: true, via: 'sole-destination' });
   });
 });

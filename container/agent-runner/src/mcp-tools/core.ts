@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { getCurrentInReplyTo } from '../current-batch.js';
-import { findByName, getAllDestinations } from '../destinations.js';
+import { findByName, getAllDestinations, resolveDefaultRouting } from '../destinations.js';
 import {
   getCurrentOutboundTextBySeq,
   getLatestUserFacingOutboundSeq,
@@ -74,26 +74,20 @@ function resolveRouting(
   to: string | undefined,
 ): { channel_type: string; platform_id: string; thread_id: string | null; resolvedName: string } | { error: string } {
   if (!to) {
-    // Default: reply to whatever thread/channel this session is bound to.
-    const session = getSessionRouting();
-    if (session.channel_type && session.platform_id) {
+    // Default: the session's own channel/thread, else the sole destination.
+    // The chain lives in destinations.ts — the poll-loop needs the same one
+    // to address a harness-error notice, which has no agent to ask.
+    const def = resolveDefaultRouting();
+    if (def.ok) {
       return {
-        channel_type: session.channel_type,
-        platform_id: session.platform_id,
-        thread_id: session.thread_id,
-        resolvedName: '(current conversation)',
+        channel_type: def.channel_type,
+        platform_id: def.platform_id,
+        thread_id: def.thread_id,
+        resolvedName: def.via === 'session' ? '(current conversation)' : def.name,
       };
     }
-    // No session routing (e.g., agent-shared or internal-only agent) —
-    // fall back to the legacy single-destination shortcut.
-    const all = getAllDestinations();
-    if (all.length === 0) return { error: 'No destinations configured.' };
-    if (all.length > 1) {
-      return {
-        error: `You have multiple destinations — specify "to". Options: ${all.map((d) => d.name).join(', ')}`,
-      };
-    }
-    to = all[0].name;
+    if (def.reason === 'none') return { error: 'No destinations configured.' };
+    return { error: `You have multiple destinations — specify "to". Options: ${def.options.join(', ')}` };
   }
   const dest = findByName(to);
   if (!dest) return { error: `Unknown destination "${to}". Known: ${destinationList()}` };

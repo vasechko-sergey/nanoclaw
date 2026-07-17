@@ -86,6 +86,32 @@ export type ProviderEvent =
   | { type: 'progress'; message: string }
   | { type: 'status_msg'; text: string; level: 'info' | 'warning' | 'error'; kind?: string }
   /**
+   * The HARNESS failed, and said so in the agent's voice.
+   *
+   * Distinct from `error` (which the provider synthesizes from a system
+   * event) and from `assistant_text` (which the model actually authored).
+   * Providers MUST emit this — never `assistant_text` — when their SDK
+   * reports a turn-level failure whose text is indistinguishable from
+   * ordinary model output. The Claude SDK does exactly that for usage
+   * limits: the notice arrives as a normal `assistant` message ("You've hit
+   * your limit · resets 9:50pm"), and the ONLY discriminator is a
+   * structural `error` field beside the content — never the text.
+   *
+   * Routing it as `assistant_text` misattributes harness output to the
+   * agent: the text isn't wrapped in <message to="…">, so the poll-loop
+   * scratchpads it, drops it, and then nudges the agent to "re-send it
+   * wrapped" — burning a second turn against the same limit on text the
+   * agent never wrote and cannot fix. The poll-loop delivers this event as
+   * a system notice instead, and suppresses the nudge for the turn.
+   *
+   * `code` is the provider's own failure code (Claude: `rate_limit`,
+   * `authentication_failed`, `billing_error`, …) — kept a plain string so
+   * this contract stays provider-agnostic. `text` is whatever the harness
+   * surfaced, verbatim, and MAY be empty; it carries operator-critical
+   * detail (a usage limit's reset time) that exists nowhere else.
+   */
+  | { type: 'harness_error'; code: string; text: string }
+  /**
    * Streaming assistant text. Yielded per text content-block as the model
    * produces it, BEFORE the final `result` event. Lets the poll-loop
    * dispatch <message to="..."> blocks immediately instead of waiting for

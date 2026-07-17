@@ -243,6 +243,15 @@ export function initTestSessionDb(): { inbound: Database; outbound: Database } {
       agent_group_id  TEXT,
       a2a_kinds       TEXT
     );
+    -- Mirrors the host's inbound DDL (src/db/schema.ts). Empty by default, so
+    -- getSessionRouting() still returns all-null for tests that don't seed it —
+    -- same answer its missing-table catch used to give, now for the right reason.
+    CREATE TABLE session_routing (
+      id           INTEGER PRIMARY KEY CHECK (id = 1),
+      channel_type TEXT,
+      platform_id  TEXT,
+      thread_id    TEXT
+    );
   `);
 
   _outbound = new Database(':memory:');

@@ -1088,3 +1088,201 @@ describe('processQuery turn-scoped rejects', () => {
     expect(pushes.join('\n')).toContain('nobody');
   });
 });
+
+/**
+ * A usage limit reaches the poll-loop as harness output wearing the agent's
+ * voice. Production, jarvis mid-cron (logs/containers.log):
+ *
+ *   [poll-loop] Assistant text (53 chars): You've hit your limit · resets 9:50pm
+ *   [poll-loop] [scratchpad] You've hit your limit · resets 9:50pm
+ *   [poll-loop] WARNING: agent output had no <message to="..."> blocks — nothing was sent
+ *   …identical block again — the nudge burned a second turn against the limit…
+ *   [poll-loop] Completed 1 message(s)
+ *
+ * The owner was told nothing. The wrap rule — built to stop the agent leaking
+ * scratchpad — silenced a notice the agent never wrote and could not re-wrap.
+ *
+ * Delivery needs no API call (container writes messages_out, host delivers), so
+ * a rate-limited agent can still report. These drive `processQuery` with the
+ * `harness_error` event providers/claude.ts now yields for it.
+ */
+describe('processQuery — harness errors', () => {
+  const LIMIT_TEXT = "You've hit your limit · resets 9:50pm (Asia/Makassar)";
+  const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: null };
+
+  function fakeQuery(events: ProviderEvent[]): { query: AgentQuery; pushes: string[] } {
+    const pushes: string[] = [];
+    return {
+      pushes,
+      query: {
+        push: (message: string) => {
+          pushes.push(message);
+        },
+        end: () => {},
+        abort: () => {},
+        events: {
+          async *[Symbol.asyncIterator]() {
+            for (const e of events) yield e;
+          },
+        },
+      },
+    };
+  }
+
+  function seedChannelDest(name: string, channelType: string, platformId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'channel', ?, ?, NULL)`,
+      )
+      .run(name, name, channelType, platformId);
+  }
+
+  function seedSessionRouting(channelType: string, platformId: string, threadId: string | null): void {
+    getInboundDb()
+      .prepare(`INSERT INTO session_routing (id, channel_type, platform_id, thread_id) VALUES (1, ?, ?, ?)`)
+      .run(channelType, platformId, threadId);
+  }
+
+  /** The exact production shape: harness error, then a result echoing its text. */
+  function limitTurn(): ProviderEvent[] {
+    return [
+      { type: 'init', continuation: 'c1' },
+      { type: 'harness_error', code: 'rate_limit', text: LIMIT_TEXT },
+      { type: 'result', text: LIMIT_TEXT },
+    ];
+  }
+
+  it('delivers the notice with the SDK text verbatim', async () => {
+    seedChannelDest('casa', 'telegram', 'chat-1');
+    const { query } = fakeQuery(limitTurn());
+
+    await processQuery(query, routing, [], 'mock');
+
+    const rows = getUndeliveredMessages();
+    expect(rows).toHaveLength(1);
+    const content = JSON.parse(rows[0].content);
+    // Verbatim: the reset time exists nowhere else — not in the code, not in
+    // any other event. Truncating or paraphrasing it loses the only fact the
+    // owner needs.
+    expect(content.text).toContain(LIMIT_TEXT);
+    expect(rows[0].kind).toBe('chat');
+  });
+
+  it('marks the notice as not-the-agent-speaking', async () => {
+    seedChannelDest('casa', 'telegram', 'chat-1');
+    const { query } = fakeQuery(limitTurn());
+
+    await processQuery(query, routing, [], 'mock');
+
+    const content = JSON.parse(getUndeliveredMessages()[0].content);
+    // `sender: 'system'` is the established marker for host/harness-authored
+    // content (container-restart.ts, approvals/primitive.ts). It also carries
+    // real weight: the host's a2a gate passes system notes unconditionally
+    // (agent-route.ts checkA2aKind) and stampSenderIdentity won't overwrite it
+    // with the sending agent's name.
+    expect(content.sender).toBe('system');
+    // And visibly so, for a human reading the chat.
+    expect(content.text).not.toBe(LIMIT_TEXT);
+    expect(content.text.toLowerCase()).toContain('system notice');
+  });
+
+  it('delivers as user-facing, not a status ping', async () => {
+    // Status rows are excluded by isUserFacing (messages-out.ts) and never
+    // reach the owner. The whole bug is the owner not being told.
+    seedChannelDest('casa', 'telegram', 'chat-1');
+    const { query } = fakeQuery(limitTurn());
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(getUndeliveredMessages()[0].content).not.toContain('"type":"status"');
+  });
+
+  it('does NOT nudge the agent to re-wrap a notice it never wrote', async () => {
+    // THE burned-turn bug. The nudge cannot help: the agent did not author the
+    // text, cannot re-wrap it, and is rate-limited — so the "retry" spends a
+    // second turn against the same limit and reproduces the same notice.
+    seedChannelDest('casa', 'telegram', 'chat-1');
+    const { query, pushes } = fakeQuery(limitTurn());
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(pushes).toHaveLength(0);
+  });
+
+  it('REGRESSION: still nudges a normal unwrapped-text turn', async () => {
+    // The guard this fix must not break: real agent scratchpad with no
+    // <message to=> wrapper still gets the nudge.
+    seedChannelDest('casa', 'telegram', 'chat-1');
+    const { query, pushes } = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'result', text: 'я просто думаю вслух' },
+    ]);
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(pushes.join('\n')).toContain('not wrapped');
+  });
+
+  it('re-arms the nudge on a later turn — suppression is turn-scoped', async () => {
+    // Inverse-mutation guard: a query-scoped flag would pass every test above
+    // while silently disabling the no-wrap nudge for the rest of the query.
+    seedChannelDest('casa', 'telegram', 'chat-1');
+    const { query, pushes } = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'harness_error', code: 'rate_limit', text: LIMIT_TEXT },
+      { type: 'result', text: LIMIT_TEXT },
+      // A later turn, agent back on its feet, genuinely unwrapped output.
+      { type: 'result', text: 'опять забыл обернуть' },
+    ]);
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(pushes.join('\n')).toContain('not wrapped');
+  });
+
+  it('addresses the notice by session routing when the batch has none', async () => {
+    // The cron case: the task row carries no channel/platform, so `routing` is
+    // all-null and the existing writes here would produce an unaddressed row.
+    seedSessionRouting('telegram', 'chat-99', 'thread-7');
+    seedChannelDest('casa', 'whatsapp', 'group-1@g.us');
+    const { query } = fakeQuery(limitTurn());
+
+    await processQuery(query, routing, [], 'mock');
+
+    const row = getUndeliveredMessages()[0];
+    expect(row.channel_type).toBe('telegram');
+    expect(row.platform_id).toBe('chat-99');
+    expect(row.thread_id).toBe('thread-7');
+  });
+
+  it('falls back to the sole destination for a headless session', async () => {
+    seedChannelDest('casa', 'whatsapp', 'group-1@g.us');
+    const { query } = fakeQuery(limitTurn());
+
+    await processQuery(query, routing, [], 'mock');
+
+    const row = getUndeliveredMessages()[0];
+    expect(row.channel_type).toBe('whatsapp');
+    expect(row.platform_id).toBe('group-1@g.us');
+  });
+
+  it('drops the notice without throwing when nothing resolves', async () => {
+    // No destinations, no session routing. Must not kill the turn: the batch
+    // still needs its markCompleted, and an exception here would strand it.
+    const { query } = fakeQuery(limitTurn());
+
+    await expect(processQuery(query, routing, [], 'mock')).resolves.toBeDefined();
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it('does not nudge even when the notice could not be delivered', async () => {
+    // Suppression must not depend on delivery succeeding — an undeliverable
+    // notice is still not the agent's text to re-wrap.
+    const { query, pushes } = fakeQuery(limitTurn());
+
+    await processQuery(query, routing, [], 'mock');
+
+    expect(pushes).toHaveLength(0);
+  });
+});

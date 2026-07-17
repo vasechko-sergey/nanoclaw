@@ -32,6 +32,129 @@ export function extractToolResultText(content: unknown): string {
   return '';
 }
 
+/** Concatenate the `text` parts of an SDK message's content array. */
+function joinTextParts(content: unknown): string {
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => part as { type?: string; text?: string })
+    .filter((p) => p.type === 'text' && typeof p.text === 'string')
+    .map((p) => p.text as string)
+    .join('');
+}
+
+/**
+ * Translate ONE SDK message into zero or more provider events.
+ *
+ * Split out of `translateEvents` so the mapping is testable without standing
+ * up the real SDK subprocess — the `activity` liveness event and the abort
+ * check stay with the caller, since they're per-stream, not per-message.
+ *
+ * Takes `unknown` rather than the SDK's message union deliberately: every
+ * branch already narrows structurally, and the union is a moving target
+ * across SDK versions.
+ */
+export function translateSdkMessage(message: unknown): ProviderEvent[] {
+  const m = message as { type?: string; subtype?: string };
+
+  if (m.type === 'system' && m.subtype === 'init') {
+    return [{ type: 'init', continuation: (message as { session_id: string }).session_id }];
+  }
+
+  if (m.type === 'assistant') {
+    const content = (message as { message?: { content?: unknown[] } }).message?.content;
+
+    // A harness failure — usage limit, auth, billing — is delivered as a
+    // plain assistant message whose text reads exactly like the model wrote
+    // it ("You've hit your limit · resets 9:50pm"). `error` is the only
+    // discriminator (SDKAssistantMessage.error, sdk.d.ts) — the text is not
+    // one, and must never be treated as one.
+    //
+    // Yielding it as `assistant_text` hands harness output to the poll-loop
+    // as if the agent authored it: unwrapped by <message to="…">, so it gets
+    // scratchpadded and dropped, then nudged for re-wrapping — a second turn
+    // burned against the same limit, producing the same notice. Emit the
+    // dedicated event so the poll-loop can deliver it and skip the nudge.
+    const harnessError = (message as { error?: string }).error;
+    if (harnessError) {
+      // Content parts other than text (a tool_use) are deliberately dropped:
+      // the turn failed, so no tool_result can ever pair with a
+      // tool_use_start, and the orphan would suppress the idle watchdog.
+      return [{ type: 'harness_error', code: harnessError, text: joinTextParts(content) }];
+    }
+
+    // Stream per-block assistant text so the poll-loop can dispatch
+    // <message to="..."> blocks immediately, before the SDK reaches
+    // its final `result` event. The SDK's `assistant` message carries
+    // one or more content parts; we yield text parts as
+    // `assistant_text` and tool_use parts as `tool_use_start` so the
+    // poll-loop knows a tool is in flight and can suppress its idle
+    // watchdog while it runs. Without that, a turn that emits text
+    // then a long tool call (Bash, MCP, etc.) would either lose the
+    // text on stall or get killed by the 2-min watchdog while the
+    // tool was still doing real work.
+    const events: ProviderEvent[] = [];
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        const p = part as { type?: string; text?: string; id?: string };
+        if (p.type === 'text' && typeof p.text === 'string' && p.text.length > 0) {
+          events.push({ type: 'assistant_text', text: p.text });
+        } else if (p.type === 'tool_use' && typeof p.id === 'string' && p.id.length > 0) {
+          events.push({ type: 'tool_use_start', id: p.id });
+        }
+      }
+    }
+    return events;
+  }
+
+  if (m.type === 'user') {
+    // The SDK reports tool_result parts inside `user` messages — when
+    // a tool returns, its result is fed back as user input for the
+    // next model turn. Emit `tool_use_end` so the poll-loop can
+    // remove the id from its in-flight set and let the idle watchdog
+    // resume policing genuine SDK stalls.
+    const content = (message as { message?: { content?: unknown[] } }).message?.content;
+    const events: ProviderEvent[] = [];
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        const p = part as { type?: string; tool_use_id?: string; content?: unknown };
+        if (p.type === 'tool_result' && typeof p.tool_use_id === 'string' && p.tool_use_id.length > 0) {
+          events.push({ type: 'tool_use_end', id: p.tool_use_id, output: extractToolResultText(p.content) });
+        }
+      }
+    }
+    return events;
+  }
+
+  if (m.type === 'result') {
+    const text = 'result' in (message as object) ? (message as { result?: string }).result ?? null : null;
+    return [{ type: 'result', text }];
+  }
+
+  if (m.type === 'system' && m.subtype === 'api_retry') {
+    return [{ type: 'error', message: 'API retry', retryable: true }];
+  }
+
+  // The SDK's dedicated rate-limit SYSTEM event. Note this is NOT the path a
+  // usage limit takes — that arrives as an errored `assistant` message above.
+  // Both exist; this one carries no reset time.
+  if (m.type === 'system' && m.subtype === 'rate_limit_event') {
+    return [{ type: 'error', message: 'Rate limit', retryable: false, classification: 'quota' }];
+  }
+
+  if (m.type === 'system' && m.subtype === 'compact_boundary') {
+    const meta = (message as { compact_metadata?: { pre_tokens?: number } }).compact_metadata;
+    const detail = meta?.pre_tokens ? ` (${meta.pre_tokens.toLocaleString()} tokens compacted)` : '';
+    return [{ type: 'status_msg', text: `Context compacted${detail}`, level: 'info', kind: 'system' }];
+  }
+
+  if (m.type === 'system' && m.subtype === 'task_notification') {
+    const tn = message as { summary?: string };
+    return [{ type: 'progress', message: tn.summary || 'Task notification' }];
+  }
+
+  return [];
+}
+
 // Deferred SDK builtins that either sidestep nanoclaw's own scheduling or
 // don't fit our async message-passing model (they're designed for Claude
 // Code's interactive UI and would hang here).
@@ -359,60 +482,7 @@ export class ClaudeProvider implements AgentProvider {
         // Yield activity for every SDK event so the poll loop knows the agent is working
         yield { type: 'activity' };
 
-        if (message.type === 'system' && message.subtype === 'init') {
-          yield { type: 'init', continuation: message.session_id };
-        } else if (message.type === 'assistant') {
-          // Stream per-block assistant text so the poll-loop can dispatch
-          // <message to="..."> blocks immediately, before the SDK reaches
-          // its final `result` event. The SDK's `assistant` message carries
-          // one or more content parts; we yield text parts as
-          // `assistant_text` and tool_use parts as `tool_use_start` so the
-          // poll-loop knows a tool is in flight and can suppress its idle
-          // watchdog while it runs. Without that, a turn that emits text
-          // then a long tool call (Bash, MCP, etc.) would either lose the
-          // text on stall or get killed by the 2-min watchdog while the
-          // tool was still doing real work.
-          const content = (message as { message?: { content?: unknown[] } }).message?.content;
-          if (Array.isArray(content)) {
-            for (const part of content) {
-              const p = part as { type?: string; text?: string; id?: string };
-              if (p.type === 'text' && typeof p.text === 'string' && p.text.length > 0) {
-                yield { type: 'assistant_text', text: p.text };
-              } else if (p.type === 'tool_use' && typeof p.id === 'string' && p.id.length > 0) {
-                yield { type: 'tool_use_start', id: p.id };
-              }
-            }
-          }
-        } else if (message.type === 'user') {
-          // The SDK reports tool_result parts inside `user` messages — when
-          // a tool returns, its result is fed back as user input for the
-          // next model turn. Emit `tool_use_end` so the poll-loop can
-          // remove the id from its in-flight set and let the idle watchdog
-          // resume policing genuine SDK stalls.
-          const content = (message as { message?: { content?: unknown[] } }).message?.content;
-          if (Array.isArray(content)) {
-            for (const part of content) {
-              const p = part as { type?: string; tool_use_id?: string; content?: unknown };
-              if (p.type === 'tool_result' && typeof p.tool_use_id === 'string' && p.tool_use_id.length > 0) {
-                yield { type: 'tool_use_end', id: p.tool_use_id, output: extractToolResultText(p.content) };
-              }
-            }
-          }
-        } else if (message.type === 'result') {
-          const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
-          yield { type: 'result', text };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
-          yield { type: 'error', message: 'API retry', retryable: true };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'rate_limit_event') {
-          yield { type: 'error', message: 'Rate limit', retryable: false, classification: 'quota' };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'compact_boundary') {
-          const meta = (message as { compact_metadata?: { pre_tokens?: number } }).compact_metadata;
-          const detail = meta?.pre_tokens ? ` (${meta.pre_tokens.toLocaleString()} tokens compacted)` : '';
-          yield { type: 'status_msg', text: `Context compacted${detail}`, level: 'info', kind: 'system' };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
-          const tn = message as { summary?: string };
-          yield { type: 'progress', message: tn.summary || 'Task notification' };
-        }
+        for (const event of translateSdkMessage(message)) yield event;
       }
       log(`Query completed after ${messageCount} SDK messages`);
     }
