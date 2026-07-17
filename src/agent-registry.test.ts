@@ -246,6 +246,60 @@ describe('renderRegistryMarkdown', () => {
   });
 });
 
+describe('renderRegistryMarkdown typed contracts', () => {
+  it('renders fields, from, reply and the fragment', () => {
+    const md = renderRegistryMarkdown([
+      {
+        id: 'greg',
+        name: 'Greg',
+        role: 'Аналитик здоровья',
+        aka: ['Грег'],
+        a2a_in: {
+          workout_summary: {
+            desc: 'Пейн — итог тренировки',
+            from: ['payne'],
+            fields: { date: 'string (ISO)', tonnage_kg: 'number' },
+          },
+          differential: {
+            desc: 'Джарвис просит разбор жалобы',
+            from: ['jarvis'],
+            fields: { complaint: 'string' },
+            reply: 'finding',
+          },
+        },
+        publishes: {
+          desc: 'Дневная сводка здоровья',
+          fields: { Готовность: 'N/100', 'Состав тела': 'вес кг · жир кг' },
+          optional: ['Состав тела'],
+        },
+      },
+    ]);
+    expect(md).toContain('| `greg` | Greg | Аналитик здоровья | `workout_summary`, `differential` |');
+    expect(md).toContain('- `workout_summary` — Пейн — итог тренировки');
+    expect(md).toContain('От: `payne`.');
+    expect(md).toContain('Ответ: `finding`.');
+    expect(md).toContain('`date` string (ISO)');
+    expect(md).toContain('### Публикует: `profiles/greg.md`');
+    expect(md).toContain('- `Готовность` — N/100');
+    expect(md).toContain('_(может отсутствовать)_');
+  });
+
+  it('renders a publishes-only agent (no a2a kinds)', () => {
+    const md = renderRegistryMarkdown([
+      {
+        id: 'gordon',
+        name: 'Гордон Рамзи',
+        role: 'Нутрициолог',
+        aka: [],
+        a2a_in: {},
+        publishes: { desc: 'Сводка питания', fields: { Цель: 'текст' } },
+      },
+    ]);
+    expect(md).toContain('### Публикует: `profiles/gordon.md`');
+    expect(md).toContain('| `gordon` | Гордон Рамзи | Нутрициолог | — |');
+  });
+});
+
 describe('writeAgentRegistry', () => {
   it('writes agents.json + agents.md into every person global dir', () => {
     createAgentGroup({ id: 'payne', name: 'Майор Пейн', folder: 'payne', agent_provider: null, created_at: now() });

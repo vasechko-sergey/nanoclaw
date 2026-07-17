@@ -251,10 +251,13 @@ function cell(s: string): string {
 }
 
 /**
- * Identifier destined for a `code span` (ids, kind names). Backslash escapes do
- * not apply inside code spans, so escaping can't save us — strip the characters
- * that would break the span or the row instead. Real folders and kind names are
- * `[A-Za-z0-9_-]`, so this is a no-op on every legitimate value.
+ * Identifier destined for a `code span` (ids, kind names, fragment body labels).
+ * Backslash escapes do not apply inside code spans, so escaping can't save us —
+ * strip the characters that would break the span or the row instead.
+ *
+ * Folders and kind names are `[A-Za-z0-9_-]`, so this is a no-op on them. Body
+ * labels are human prose ("Состав тела") and legitimately carry spaces and
+ * Cyrillic — those pass through untouched; only the span/row breakers go.
  */
 function ident(s: string): string {
   return s.replace(/[`|\\\r\n]/g, '').trim();
@@ -272,6 +275,8 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
     '',
     'Кто есть кто в команде. **Генерируется хостом — не редактировать вручную.**',
     'Имя — канон из `agent_groups.name`. `a2a_in` — какие kind агент принимает.',
+    '«Публикует» — что лежит в его фрагменте `/workspace/global/profiles/<id>.md`,',
+    'который ты можешь читать бесплатно (pull), не будя его контейнер.',
     '',
     '| id | Имя | Роль | Принимает a2a |',
     '|---|---|---|---|',
@@ -283,18 +288,32 @@ export function renderRegistryMarkdown(entries: RegistryEntry[]): string {
   }
   for (const e of entries) {
     const kinds = Object.entries(e.a2a_in);
-    // Gate on anything worth showing — NOT on kinds alone. `aka` is rendered
-    // only here, so a receive-only agent's aliases would otherwise never appear.
-    if (kinds.length === 0 && !e.role && e.aka.length === 0) continue;
+    // Gate on anything worth showing — NOT on kinds alone. `aka` and `publishes`
+    // are rendered only here, so a receive-only or publish-only agent would
+    // otherwise never appear.
+    if (kinds.length === 0 && !e.role && e.aka.length === 0 && !e.publishes) continue;
     lines.push('', `## ${oneLine(e.name)} (\`${ident(e.id)}\`)`);
     if (e.role) lines.push(`Роль: ${oneLine(e.role)}`);
     if (e.aka.length > 0) lines.push(`Также зовут: ${e.aka.map(oneLine).join(', ')}`);
-    lines.push('');
-    // Stopgap: render only `desc`, the same one-line-per-kind shape as before
-    // typed contracts. Surfacing `from`/`fields`/`reply` is a deliberate
-    // follow-up — see docs/superpowers/plans/2026-07-17-typed-agent-contracts.md.
-    for (const [kind, contract] of kinds) {
-      lines.push(`- \`${ident(kind)}\` — ${oneLine(contract.desc)}`);
+    if (kinds.length > 0) lines.push('');
+    for (const [kind, c] of kinds) {
+      lines.push(`- \`${ident(kind)}\` — ${oneLine(c.desc)}`);
+      const meta: string[] = [];
+      if (c.from.length > 0) meta.push(`От: ${c.from.map((f) => `\`${ident(f)}\``).join(', ')}.`);
+      if (c.reply) meta.push(`Ответ: \`${ident(c.reply)}\`.`);
+      if (meta.length > 0) lines.push(`  ${meta.join(' ')}`);
+      const fields = Object.entries(c.fields);
+      if (fields.length > 0) {
+        lines.push(`  Поля: ${fields.map(([k, t]) => `\`${ident(k)}\` ${oneLine(t)}`).join(' · ')}`);
+      }
+    }
+    if (e.publishes) {
+      const opt = new Set(e.publishes.optional ?? []);
+      lines.push('', `### Публикует: \`profiles/${ident(e.id)}.md\``, oneLine(e.publishes.desc), '');
+      for (const [label, type] of Object.entries(e.publishes.fields)) {
+        const mark = opt.has(label) ? ' _(может отсутствовать)_' : '';
+        lines.push(`- \`${ident(label)}\` — ${oneLine(type)}${mark}`);
+      }
     }
   }
   lines.push('');
