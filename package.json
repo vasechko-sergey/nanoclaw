@@ -9,11 +9,12 @@
     "ncl": "bin/ncl"
   },
   "scripts": {
-    "build": "tsc -p shared/ios-app-protocol && tsc -p shared/a2a && tsc",
+    "build": "pnpm run build:shared && tsc",
+    "build:shared": "tsc -p shared/ios-app-protocol && tsc -p shared/a2a",
     "build:protocol": "tsc -p shared/ios-app-protocol",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "pretypecheck": "tsc -p shared/ios-app-protocol && tsc -p shared/a2a",
+    "pretypecheck": "pnpm run build:shared",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:fix": "prettier --write \"src/**/*.ts\"",

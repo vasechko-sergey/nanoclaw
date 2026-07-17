@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -24,6 +26,11 @@ jobs:
 
       - name: Format check
         run: pnpm run format:check
+
+      # Host and container tsconfigs reference shared/ as composite projects.
+      # Without their emitted .d.ts, both typechecks fail with TS6305.
+      - name: Build shared protocol projects
+        run: pnpm run build:shared
 
       - name: Typecheck host
         run: pnpm exec tsc --noEmit
