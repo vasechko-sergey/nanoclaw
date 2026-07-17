@@ -109,6 +109,24 @@ registerResource({
         return { restarted: count, rebuilt: !!args.rebuild };
       },
     },
+    lint: {
+      access: 'open',
+      description:
+        'Check the agent contract layer for drift: kinds sent but not declared, kinds declared but never sent, ' +
+        'from[] without a destination edge, dangling replies, fragments with no published contract. ' +
+        'Reads agents/<folder>/agent.json, the skills, and agent_destinations. Read-only.',
+      handler: async () => {
+        const { gatherLintInput } = await import('../../modules/agent-to-agent/lint-scan.js');
+        const { lintA2a } = await import('../../modules/agent-to-agent/a2a-lint.js');
+        const { AGENTS_DIR } = await import('../../config.js');
+        const findings = lintA2a(gatherLintInput(AGENTS_DIR));
+        return {
+          errors: findings.filter((f) => f.severity === 'error').length,
+          warnings: findings.filter((f) => f.severity === 'warn').length,
+          findings,
+        };
+      },
+    },
     'config get': {
       access: 'open',
       description: 'Show the container config for a group. Use --id <group-id>.',
