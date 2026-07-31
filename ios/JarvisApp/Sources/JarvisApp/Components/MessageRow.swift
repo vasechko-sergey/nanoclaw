@@ -719,7 +719,10 @@ struct WorkoutPlanRow: View {
                             // hit target inside the UICollectionViewListCell.
                             Button {
                                 Theme.hapticSend()
-                                onCancel?(info.plan.workoutId)
+                                // Cancel this card by its own row id, NOT the plan's
+                                // workoutId — Payne derives workoutId from the date, so
+                                // a same-day sibling shares it and would be cancelled too.
+                                onCancel?(messageId)
                             } label: {
                                 Text("Отменить")
                                     .font(.system(size: 13, weight: .medium))

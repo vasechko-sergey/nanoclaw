@@ -78,4 +78,43 @@ final class WorkoutCardIntegrationTests: XCTestCase {
         // Idempotent: re-marking finds nothing left open.
         XCTAssertEqual(try store.markWorkoutCardDone(workoutId: "w-done"), 0)
     }
+
+    /// Cancelling a plan card must resolve ONLY the tapped card — even when a
+    /// second card shares the same `workout_id`. Payne derives `workout_id` from
+    /// the calendar date ("YYYY-MM-DD"), so two plans proposed the same day
+    /// collide on it; the by-workoutId finish-matcher greys BOTH. Cancel is a
+    /// per-card action (the button knows its own row id) and must key on the row.
+    @MainActor
+    func test_cancelWorkoutCard_byMessageId_resolvesOnlyTappedCard_sharedWorkoutId() throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ConversationStoreV2(writer: dbq)
+
+        func plan(slug: String) -> WorkoutPlan {
+            WorkoutPlan(workoutId: "2026-07-31", dayName: "Верх", week: 1, intensityLabel: "лёгкая",
+                        exercises: [ExercisePlan(exerciseSlug: slug, targetSets: 4, targetReps: "8",
+                                                 targetRir: 2, restSec: 90, notes: nil)],
+                        imageManifest: [])
+        }
+        // Two cards, SAME workout_id (same-day double send), DIFFERENT row ids.
+        try store.insertWorkoutPlan(id: "row-A", agentId: "payne", plan: plan(slug: "a"))
+        try store.insertWorkoutPlan(id: "row-B", agentId: "payne", plan: plan(slug: "b"))
+
+        func done(rowId: String) throws -> Bool {
+            let rows = try dbq.read { try ConversationStoreV2.windowedRows($0, perAgent: 500) }
+            guard let row = rows.first(where: { $0.id == rowId }),
+                  case .workoutPlan(let info) = WebSocketClientV2.toChatMessage(row)[0].content else {
+                XCTFail("no card for \(rowId)"); return false
+            }
+            return info.done
+        }
+
+        let marked = try store.markWorkoutCardDone(messageId: "row-A")
+        XCTAssertEqual(marked, 1, "exactly the cancelled card is marked")
+        XCTAssertTrue(try done(rowId: "row-A"), "cancelled card resolves")
+        XCTAssertFalse(try done(rowId: "row-B"), "sibling sharing workout_id stays active")
+
+        // Idempotent: re-cancelling the same card finds nothing open.
+        XCTAssertEqual(try store.markWorkoutCardDone(messageId: "row-A"), 0)
+    }
 }

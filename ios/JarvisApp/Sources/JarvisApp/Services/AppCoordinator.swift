@@ -289,6 +289,13 @@ final class AppCoordinator {
         _ = try? chatStore?.markWorkoutCardDone(workoutId: workoutId)
     }
 
+    /// Dismiss a single plan card the user tapped "Отменить" on — matched by the
+    /// card's own row id so a same-day sibling (Payne shares `workout_id` across
+    /// plans proposed the same date) stays active. No-op if the store isn't built.
+    func markWorkoutCardDone(messageId: String) {
+        _ = try? chatStore?.markWorkoutCardDone(messageId: messageId)
+    }
+
     /// Inject a coach text as a synthetic inbound Payne chat message when the
     /// runner is CLOSED — a `workout.coach` envelope carries text but no chat
     /// row of its own, and without an open `WorkoutView` the 4-sec banner

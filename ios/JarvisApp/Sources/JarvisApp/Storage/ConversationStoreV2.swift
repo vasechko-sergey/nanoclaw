@@ -434,6 +434,23 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// Resolve exactly ONE plan card — the tapped one — by its row id. Cancel is a
+    /// per-card action: the "Отменить" button knows its own `messageId`, so it must
+    /// grey only that card. This is deliberately NOT the by-`workoutId` matcher
+    /// above — Payne derives `workout_id` from the calendar date ("YYYY-MM-DD"), so
+    /// two plans proposed the same day share an id and a by-workoutId cancel would
+    /// dismiss both (the finish path WANTS that fan-out; cancel does not). Returns 1
+    /// if a still-open plan card with this id was marked, else 0.
+    @discardableResult
+    func markWorkoutCardDone(messageId: String) throws -> Int {
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE messages SET action_choice = 'completed' WHERE id = ? AND workout_plan_json IS NOT NULL AND action_choice IS NULL",
+                arguments: [messageId])
+            return db.changesCount
+        }
+    }
+
     /// Clear the voice-only flag on a row (render failed → reveal its text).
     /// Returns whether a row changed.
     @discardableResult
