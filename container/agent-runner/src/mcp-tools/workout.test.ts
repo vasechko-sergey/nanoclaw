@@ -153,11 +153,22 @@ describe('workout MCP tools', () => {
     expect(body.payload.set_ref).toBeUndefined();
   });
 
-  it('workout.swap writes an exercise_swap_options row', async () => {
+  // The wire contract (shared/ios-app-protocol/v2.ts ExerciseSwapOptions) and
+  // the iOS Codable (V2.ExerciseSwapOptions) require `original_slug` +
+  // `alternatives: [{slug, why}]`. The handler used to pass the tool's INPUT
+  // field names through verbatim (`from_exercise_slug`, `options: [{slug,
+  // reason}]`), so iOS's decode of the required `original_slug`/`alternatives`
+  // fields threw and the whole envelope was dropped — the swap sheet spun
+  // forever and "замена упражнений" never worked. The handler must MAP the
+  // ergonomic input onto the canonical wire shape.
+  it('workout.swap emits the canonical wire shape (original_slug + alternatives[{slug,why}])', async () => {
     const res = await workoutSwap.handler({
       workout_id: 'w1',
       from_exercise_slug: 'squat',
-      options: [{ slug: 'leg_press', reason: 'knee' }],
+      options: [
+        { slug: 'leg_press', reason: 'knee' },
+        { slug: 'hack_squat', reason: 'quad focus' },
+      ],
     });
     expect(res.isError).toBeUndefined();
     const rows = getUndeliveredMessages();
@@ -165,8 +176,15 @@ describe('workout MCP tools', () => {
     expect(rows[0].kind).toBe('control');
     const body = JSON.parse(rows[0].content);
     expect(body.type).toBe('exercise_swap_options');
-    expect(body.payload.from_exercise_slug).toBe('squat');
-    expect(body.payload.options).toEqual([{ slug: 'leg_press', reason: 'knee' }]);
+    expect(body.payload.workout_id).toBe('w1');
+    expect(body.payload.original_slug).toBe('squat');
+    expect(body.payload.alternatives).toEqual([
+      { slug: 'leg_press', why: 'knee' },
+      { slug: 'hack_squat', why: 'quad focus' },
+    ]);
+    // The pre-fix field names must be gone — their presence is what broke decode.
+    expect(body.payload.from_exercise_slug).toBeUndefined();
+    expect(body.payload.options).toBeUndefined();
   });
 
   it('refuses when AGENT_GROUP_ID is not payne', async () => {

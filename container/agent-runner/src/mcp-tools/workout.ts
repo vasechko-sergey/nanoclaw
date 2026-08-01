@@ -180,14 +180,23 @@ export const workoutSwap: McpToolDefinition = {
   async handler(args) {
     const g = guard();
     if (!g.ok) return g.res;
+    // Map the ergonomic tool input (from_exercise_slug + options[{slug,reason}])
+    // onto the canonical wire shape the iOS Codable requires: original_slug +
+    // alternatives[{slug,why}] (shared/ios-app-protocol/v2.ts ExerciseSwapOptions).
+    // Passing the input field names through verbatim made iOS drop the whole
+    // envelope on decode (required original_slug/alternatives missing), so the
+    // swap sheet never received its options.
+    const options = Array.isArray(args.options)
+      ? (args.options as Array<{ slug: string; reason: string }>)
+      : [];
     writeWorkoutOut({
       type: 'exercise_swap_options',
       payload: {
         workout_id: args.workout_id,
-        from_exercise_slug: args.from_exercise_slug,
-        options: args.options,
+        original_slug: args.from_exercise_slug,
+        alternatives: options.map((o) => ({ slug: o.slug, why: o.reason })),
       },
     });
-    return ok(`swap options sent (${(args.options as unknown[]).length})`);
+    return ok(`swap options sent (${options.length})`);
   },
 };
