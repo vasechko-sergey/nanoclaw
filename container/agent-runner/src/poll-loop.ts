@@ -1011,8 +1011,21 @@ export async function processQuery(
         // leave the watchdog permanently suppressed for this query.
         inFlightTools.clear();
         if (event.text) {
-          // Text path: the turn produced canonical output. Complete the batch.
-          markCompleted(initialBatchIds);
+          // Text path: the turn produced canonical output.
+          //
+          // gateOff: streaming already dispatched this turn's <message> blocks
+          // (or the else-branch below dispatches now), so completing here is
+          // sound — delivery is synchronous with this result.
+          //
+          // gateOn: delivery is DEFERRED to the gate verdict below (blocks are
+          // buffered, never streamed). Completing here would race ahead of it:
+          // a gate BOUNCE re-queries with nothing delivered, and a transient API
+          // error on that re-query would then find the row already 'completed' —
+          // the un-acked-for-retry recovery becomes a no-op and the regenerated
+          // reply is dropped (the scrooge field loss, sess-…-lnmvwi). Under the
+          // gate, completion rides with the actual dispatch in the
+          // `!proseBounced && !l3Bounced` block, guarded on real delivery.
+          if (!gateOn) markCompleted(initialBatchIds);
           // Stream buffer may still hold tail scratchpad. Reset it — the
           // result.text below covers the full turn and is the canonical
           // scratchpad source.
@@ -1128,6 +1141,15 @@ export async function processQuery(
                   resultReceived = false;
                   query.push(buildRejectNudge(rejectsThisTurn));
                 }
+                // finalText was dispatched just above (real answer or hedge) —
+                // NOW complete the batch. Deferred from the first-result site so
+                // a gate bounce + transient API error leaves the row un-acked for
+                // host retry instead of completing before anything was delivered.
+                // Guarded on real delivery: an unwrapped result (pure scratchpad,
+                // no <message>) delivered nothing and re-queries via the no-wrap
+                // nudge — completing it here would strand the same silent loss.
+                // A clean return still completes via the outer markCompleted.
+                if (getUserFacingDispatchCount() > 0) markCompleted(initialBatchIds);
               }
             }
           } else {

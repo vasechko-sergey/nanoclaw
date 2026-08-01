@@ -1295,6 +1295,56 @@ describe('processQuery — silent-delivery-failure recovery', () => {
     expect(result.deliveryFailure).toBeFalsy();
     expect(ackStatus('m1')).toBe('completed');
   });
+
+  it('leaves the batch un-acked when the factuality gate bounces then hits a transient error', async () => {
+    // The field loss (scrooge, sess-…-lnmvwi): gateOn. A result with an
+    // ungrounded number BOUNCES (re-query, nothing delivered yet). A transient
+    // API error surfaces on the re-query. Completion must NOT have raced ahead
+    // of delivery — the batch stays 'processing' so host-sweep retries and the
+    // (already-generated) reply is regenerated, not silently dropped. The bug:
+    // markCompleted fired on the FIRST result, before the gate verdict, so the
+    // row read 'completed' while the runner logged "left un-acked" and no reply
+    // ever reached the user.
+    const { markProcessing } = await import('./db/messages-in.js');
+    markProcessing(['m1']);
+    const ungrounded = '<message to="family">T-Bank накопительный: 4088500 ₽</message>';
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: ungrounded },
+      { type: 'result', text: ungrounded }, // ungrounded 4088500 → gate bounces, re-query
+      { type: 'result', text: 'API Error: 529 overloaded' }, // transient on the re-query
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock', true, new Set(), 1, []);
+
+    expect(outRows()).toHaveLength(0); // gate suppressed the ungrounded block; nothing delivered
+    expect(result.transientError).toBe(true);
+    expect(ackStatus('m1')).toBe('processing'); // un-acked → host retries, reply not lost
+  });
+
+  it('delivers and completes when the gate bounces then the corrected reply is grounded', async () => {
+    // The positive half of the deferral: once the gate lets a corrected reply
+    // through, delivery AND completion must happen. Guards that moving
+    // markCompleted off the first result did not strand a legitimately-delivered
+    // gated turn as 'processing' (processQuery returns before the outer
+    // safety-net, so completion must come from the delivery site itself).
+    const { markProcessing } = await import('./db/messages-in.js');
+    markProcessing(['m1']);
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: '<message to="family">Итого 4088500 ₽</message>' },
+      { type: 'result', text: '<message to="family">Итого 4088500 ₽</message>' }, // ungrounded → bounce
+      { type: 'result', text: '<message to="family">Проверил по выписке — всё сходится</message>' }, // grounded
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock', true, new Set(), 1, []);
+
+    const rows = outRows();
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0].content).text).toBe('Проверил по выписке — всё сходится');
+    expect(result.transientError).toBeFalsy();
+    expect(ackStatus('m1')).toBe('completed');
+  });
 });
 
 /**
