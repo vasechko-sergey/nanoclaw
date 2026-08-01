@@ -121,6 +121,46 @@ final class WorkoutCoordinator: ObservableObject {
         persist()
     }
 
+    /// Remove a mis-entered set (e.g. tapped "Записать" twice). Local-only: the
+    /// already-queued `set_log` for it is harmless telemetry — the authoritative
+    /// record is `workout_complete.full_session_json`, rebuilt from `logged`, so
+    /// dropping it here is enough. When the edit hits the ACTIVE exercise, the
+    /// running cursor snaps back to the new set count so the input card's "подход
+    /// N" and prefill stay consistent. No-op after finish or on a bad index.
+    func deleteSet(exerciseIdx: Int, setIdx: Int) {
+        guard !isFinished,
+              logged.indices.contains(exerciseIdx),
+              logged[exerciseIdx].sets.indices.contains(setIdx) else { return }
+        activeDeviationHint = nil
+        logged[exerciseIdx].sets.remove(at: setIdx)
+        if exerciseIdx == currentExerciseIdx {
+            currentSetIdx = logged[exerciseIdx].sets.count
+        }
+        persist()
+    }
+
+    /// Correct a logged set's numbers (wrong weight/reps/reserve picked). Re-runs
+    /// deviation detection so the chip badge matches the corrected values, and
+    /// preserves the original timestamp + any coach hint already anchored on it.
+    /// Local-only for the same reason as `deleteSet`. No-op after finish or on a
+    /// bad index. Leaves the cursor alone — the set count is unchanged.
+    func editSet(exerciseIdx: Int, setIdx: Int, reps: Int, weight: Double, repsInReserve: Int) {
+        guard !isFinished,
+              logged.indices.contains(exerciseIdx),
+              plan.exercises.indices.contains(exerciseIdx),
+              logged[exerciseIdx].sets.indices.contains(setIdx) else { return }
+        let old = logged[exerciseIdx].sets[setIdx]
+        let devs = WorkoutRunnerLogic.detectDeviation(
+            actualReps: reps, actualWeight: weight, actualRir: repsInReserve,
+            exercise: plan.exercises[exerciseIdx], intensityLabel: plan.intensityLabel
+        )
+        logged[exerciseIdx].sets[setIdx] = LoggedSet(
+            reps: reps, weight: weight, repsInReserve: repsInReserve,
+            ts: old.ts, deviations: devs, coachHint: old.coachHint
+        )
+        persist()
+    }
+
     /// Mark current exercise done and advance — or signal end of workout.
     func finishExercise(comment: String?) {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }

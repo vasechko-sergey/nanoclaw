@@ -131,7 +131,14 @@ struct WorkoutView: View {
                             LoggedSetChips(
                                 logged: coordinator.loggedForCurrentExercise,
                                 currentSetIdx: coordinator.currentSetIdx,
-                                targetSets: coordinator.currentExercise.targetSets)
+                                targetSets: coordinator.currentExercise.targetSets,
+                                onDeleteSet: { setIdx in
+                                    coordinator.deleteSet(exerciseIdx: coordinator.currentExerciseIdx, setIdx: setIdx)
+                                },
+                                onEditSet: { setIdx, reps, weight, rir in
+                                    coordinator.editSet(exerciseIdx: coordinator.currentExerciseIdx,
+                                                        setIdx: setIdx, reps: reps, weight: weight, repsInReserve: rir)
+                                })
                             // Deviation hint (coach_message WITH set_ref) lands here,
                             // right above the input, so it's read before the next set.
                             if let hint = coordinator.activeDeviationHint {

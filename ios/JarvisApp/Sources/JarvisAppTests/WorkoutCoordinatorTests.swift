@@ -414,4 +414,96 @@ final class WorkoutCoordinatorTests: XCTestCase {
         coord.finishExercise(comment: nil)
         XCTAssertNil(coord.activeDeviationHint)
     }
+
+    // MARK: - deleteSet / editSet (mis-entry correction)
+
+    /// Deleting a logged set removes it AND pulls the running cursor back so the
+    /// input card's "подход N" and prefill stay consistent — an accidental extra
+    /// set must be undoable.
+    func test_deleteSet_removesSetAndDropsCurrentSetIdx() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(setsPerExercise: 4), queue: try makeQueue())
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        coord.logSet(reps: 9, weight: 20, repsInReserve: 1)
+        XCTAssertEqual(coord.loggedForCurrentExercise.count, 2)
+        XCTAssertEqual(coord.currentSetIdx, 2)
+        coord.deleteSet(exerciseIdx: 0, setIdx: 0)          // remove the accidental first set
+        XCTAssertEqual(coord.loggedForCurrentExercise.count, 1)
+        XCTAssertEqual(coord.currentSetIdx, 1)              // cursor follows the shrunken history
+        XCTAssertEqual(coord.loggedForCurrentExercise.first?.reps, 9)  // survivor is the 2nd set
+    }
+
+    func test_deleteSet_outOfRange_isNoOp() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: try makeQueue())
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        coord.deleteSet(exerciseIdx: 0, setIdx: 9)
+        coord.deleteSet(exerciseIdx: 9, setIdx: 0)
+        XCTAssertEqual(coord.loggedForCurrentExercise.count, 1)
+    }
+
+    func test_deleteSet_afterFinished_isNoOp() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 1, setsPerExercise: 1), queue: try makeQueue())
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        _ = coord.complete(sessionFeeling: 3, sessionFeelingLabel: "ok")
+        coord.deleteSet(exerciseIdx: 0, setIdx: 0)
+        XCTAssertEqual(coord.logged[0].sets.count, 1)      // finished → untouched
+    }
+
+    /// The deletion must flow into the authoritative `workout_complete` session,
+    /// not just the on-screen chips.
+    func test_deleteSet_reflectedInCompletedSession() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 1, setsPerExercise: 3), queue: try makeQueue())
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 1)
+        coord.deleteSet(exerciseIdx: 0, setIdx: 0)
+        let session = coord.complete(sessionFeeling: 3, sessionFeelingLabel: "ok")
+        XCTAssertEqual(session.exercises.flatMap(\.sets).count, 1)
+        XCTAssertEqual(session.exercises[0].sets[0].reps, 8)
+    }
+
+    /// Editing a set updates its numbers and re-runs deviation detection so the
+    /// chip badge matches the corrected values (wrong weight picked → fixed).
+    func test_editSet_updatesValuesAndRecomputesDeviation() throws {
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "Верх A", week: 2, intensityLabel: "тяжёлая",
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                                     targetRir: 2, restSec: 120, notes: nil, nameRu: nil,
+                                     durationSec: nil, weightKgTarget: 100)],
+            imageManifest: [])
+        let coord = WorkoutCoordinator(plan: plan, queue: try makeQueue())
+        coord.logSet(reps: 10, weight: 100, repsInReserve: 2)   // on-plan, no deviation
+        XCTAssertTrue(coord.logged[0].sets[0].deviations.isEmpty)
+        coord.editSet(exerciseIdx: 0, setIdx: 0, reps: 10, weight: 80, repsInReserve: 2)  // corrected down
+        XCTAssertEqual(coord.logged[0].sets[0].weight, 80)
+        XCTAssertEqual(coord.logged[0].sets[0].deviations.map(\.kind), [.weightUnder])
+    }
+
+    /// Editing preserves the set's timestamp + any coach hint, and leaves the
+    /// running cursor alone (count is unchanged).
+    func test_editSet_preservesCoachHintAndTs() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: try makeQueue())
+        let ts = Date(timeIntervalSince1970: 42)
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2, ts: ts)
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "паузу внизу")
+        coord.editSet(exerciseIdx: 0, setIdx: 0, reps: 9, weight: 25, repsInReserve: 1)
+        XCTAssertEqual(coord.logged[0].sets[0].reps, 9)
+        XCTAssertEqual(coord.logged[0].sets[0].coachHint, "паузу внизу")   // preserved
+        XCTAssertEqual(coord.logged[0].sets[0].ts, ts)                     // preserved
+        XCTAssertEqual(coord.currentSetIdx, 1)                             // unchanged by edit
+    }
+
+    func test_editSet_outOfRange_isNoOp() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(), queue: try makeQueue())
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2)
+        coord.editSet(exerciseIdx: 0, setIdx: 9, reps: 1, weight: 1, repsInReserve: 0)
+        coord.editSet(exerciseIdx: 9, setIdx: 0, reps: 1, weight: 1, repsInReserve: 0)
+        XCTAssertEqual(coord.logged[0].sets[0].reps, 8)   // untouched
+    }
+
+    func test_editSet_afterFinished_isNoOp() throws {
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 1, setsPerExercise: 1), queue: try makeQueue())
+        coord.logSet(reps: 8, weight: 20, repsInReserve: 2)
+        _ = coord.complete(sessionFeeling: 3, sessionFeelingLabel: "ok")
+        coord.editSet(exerciseIdx: 0, setIdx: 0, reps: 1, weight: 1, repsInReserve: 0)
+        XCTAssertEqual(coord.logged[0].sets[0].reps, 8)   // finished → untouched
+    }
 }

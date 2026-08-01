@@ -1,13 +1,22 @@
 import SwiftUI
 
 /// Compact chip strip of the current exercise's logged sets + a muted
-/// "подход N из M" position chip. Sets with a Payne coach hint get a
-/// 💬 badge; tapping opens a sheet with the hint text.
+/// "подход N из M" position chip. Tapping a logged chip opens an action sheet:
+/// изменить (fix a wrong weight/reps entry), удалить (drop an accidental set),
+/// and — when Payne left a note — показать его совет. Sets with a coach hint
+/// keep the accent outline + 💬 badge as before.
 struct LoggedSetChips: View {
     let logged: [LoggedSet]
     let currentSetIdx: Int
     let targetSets: Int
-    @State private var tappedIdx: Int? = nil
+    /// Drop the set at this index (mis-entry). Parent maps to the active exercise.
+    var onDeleteSet: (Int) -> Void = { _ in }
+    /// Correct the set at this index → (setIdx, reps, weight, repsInReserve).
+    var onEditSet: (Int, Int, Double, Int) -> Void = { _, _, _, _ in }
+
+    @State private var tappedIdx: Int? = nil    // coach-hint sheet
+    @State private var actionIdx: Int? = nil    // изменить / удалить action sheet
+    @State private var editIdx: Int? = nil      // edit-values sheet
 
     var body: some View {
         HStack(spacing: 6) {
@@ -23,6 +32,24 @@ struct LoggedSetChips: View {
                     .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
             }
             Spacer(minLength: 0)
+        }
+        .confirmationDialog(
+            actionIdx.map { "Подход \($0 + 1)" } ?? "",
+            isPresented: Binding(get: { actionIdx != nil }, set: { if !$0 { actionIdx = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let idx = actionIdx, logged.indices.contains(idx) {
+                Button("Изменить вес или повторы") { editIdx = idx; actionIdx = nil }
+                if logged[idx].coachHint != nil {
+                    Button("Показать совет Пейна") { tappedIdx = idx; actionIdx = nil }
+                }
+                Button("Удалить подход", role: .destructive) {
+                    Theme.hapticSend()
+                    onDeleteSet(idx)
+                    actionIdx = nil
+                }
+                Button("Отмена", role: .cancel) { actionIdx = nil }
+            }
         }
         .sheet(isPresented: Binding(
             get: { tappedIdx != nil },
@@ -47,6 +74,19 @@ struct LoggedSetChips: View {
                 Color.clear.onAppear { tappedIdx = nil }
             }
         }
+        .sheet(isPresented: Binding(
+            get: { editIdx != nil },
+            set: { if !$0 { editIdx = nil } }
+        )) {
+            if let idx = editIdx, logged.indices.contains(idx) {
+                EditSetSheet(set: logged[idx], setNumber: idx + 1) { reps, weight, rir in
+                    onEditSet(idx, reps, weight, rir)
+                    editIdx = nil
+                }
+            } else {
+                Color.clear.onAppear { editIdx = nil }
+            }
+        }
     }
 
     @ViewBuilder
@@ -55,7 +95,7 @@ struct LoggedSetChips: View {
         // sheet are driven by Payne's coachHint — separate signals.
         let hasHint = set.coachHint != nil
         Button {
-            if hasHint { tappedIdx = idx }
+            actionIdx = idx
         } label: {
             HStack(spacing: 4) {
                 Text("✓ \(set.reps)×\(WorkoutSetFormat.weight(set.weight))")
@@ -79,6 +119,103 @@ struct LoggedSetChips: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(!hasHint)
+    }
+}
+
+/// Correct an already-logged set. Same reps/weight wheels + reserve buttons as
+/// the live logger (FocusSetCard), prefilled with the set's current values so a
+/// mis-picked weight is a two-tap fix. Presented as a medium sheet from the chip
+/// action menu; "Сохранить" hands the new numbers back to the coordinator.
+private struct EditSetSheet: View {
+    let setNumber: Int
+    let onSave: (Int, Double, Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var reps: Int
+    @State private var weight: Double
+    @State private var rir: Int
+
+    /// Dark teal used for text sitting on the accent fill.
+    private let onAccent = Color(red: 0.02, green: 0.16, blue: 0.17)
+
+    init(set: LoggedSet, setNumber: Int, onSave: @escaping (Int, Double, Int) -> Void) {
+        self.setNumber = setNumber
+        self.onSave = onSave
+        _reps = State(initialValue: set.reps)
+        _weight = State(initialValue: set.weight)
+        _rir = State(initialValue: set.repsInReserve)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Подход \(setNumber)").font(.headline).foregroundStyle(Theme.textPrimary)
+                .padding(.top, 4)
+            HStack(spacing: 10) {
+                wheelColumn(title: "Повторы") {
+                    Picker("Повторы", selection: $reps) {
+                        ForEach(WorkoutRunnerLogic.repsOptions, id: \.self) { Text("\($0)").tag($0) }
+                    }
+                }
+                wheelColumn(title: "Вес, кг") {
+                    Picker("Вес", selection: $weight) {
+                        ForEach(WorkoutRunnerLogic.weightOptions, id: \.self) { Text(WorkoutSetFormat.weight($0)).tag($0) }
+                    }
+                }
+            }
+            rirRow
+            Button {
+                Theme.hapticSend()
+                onSave(reps, weight, rir)
+                dismiss()
+            } label: {
+                Text("Сохранить").font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(Capsule().fill(Theme.accent))
+            }
+            Button("Отмена") { dismiss() }
+                .foregroundStyle(.white.opacity(0.6)).font(.subheadline)
+        }
+        .padding(16)
+        .preferredColorScheme(.dark)
+        .presentationDetents([.height(360), .medium])
+        .presentationBackground(Theme.background)
+        .presentationDragIndicator(.visible)
+        .accessibilityIdentifier("edit-set-sheet")
+    }
+
+    @ViewBuilder
+    private func wheelColumn<P: View>(title: String, @ViewBuilder picker: () -> P) -> some View {
+        VStack(spacing: 3) {
+            Text(title).font(.caption).foregroundStyle(.white.opacity(0.6))
+            picker()
+                .pickerStyle(.wheel)
+                .frame(height: 100)
+                .clipped()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
+    }
+
+    private var rirRow: some View {
+        HStack {
+            Text("Запас").foregroundStyle(.white.opacity(0.65))
+            Spacer()
+            HStack(spacing: 8) {
+                ForEach(WorkoutRunnerLogic.rirButtons, id: \.self) { v in
+                    Button { Theme.hapticSend(); rir = v } label: {
+                        Text("\(v)")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 40, height: 36)
+                            .foregroundStyle(rir == v ? onAccent : .white.opacity(0.6))
+                            .background(RoundedRectangle(cornerRadius: 10).fill(rir == v ? Theme.accent : Color.white.opacity(0.05)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
