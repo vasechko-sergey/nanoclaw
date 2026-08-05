@@ -9,7 +9,11 @@
  * db/messages-out.test.ts saw the stubbed writeMessageOut and its dispatch
  * counter never moved). A real DB keeps these tests hermetic.
  */
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { initTestSessionDb, getInboundDb } from '../db/connection.js';
 import { getUndeliveredMessages } from '../db/messages-out.js';
 import { workoutStartPlan, workoutCoach, workoutSwap } from './workout.js';
@@ -141,6 +145,72 @@ describe('workout MCP tools', () => {
     expect(body.payload.plan_json.exercises[0]).toEqual({
       slug: 'incline', name_ru: 'Наклонный', target_sets: 4, target_reps: '5-6',
       reps_in_reserve: 2, rest_seconds: 180, weight_kg_target: 66.25,
+    });
+  });
+
+  // Images regression: Payne usually builds image_manifest (slug + sha256 of the
+  // on-disk asset) per the workout-mode skill, but on a drift run it shipped an
+  // empty manifest — iOS had nothing to reconcile, fired zero image_request, and
+  // the card rendered with placeholders only ("раньше картинки были"). The
+  // manifest is the ONLY trigger for image prefetch. When Payne omits it, derive
+  // it from the plan's slugs + the same on-disk assets the image_blob responder
+  // serves, so the sha256 matches and iOS caches/looks-up under one key.
+  describe('image_manifest auto-derive when Payne omits it', () => {
+    let exDir: string;
+    beforeEach(() => {
+      exDir = mkdtempSync(join(tmpdir(), 'workout-ex-'));
+      process.env.WORKOUT_EXERCISES_DIR = exDir;
+    });
+    afterEach(() => {
+      delete process.env.WORKOUT_EXERCISES_DIR;
+      rmSync(exDir, { recursive: true, force: true });
+    });
+
+    it('derives image_manifest from plan slugs when the manifest is empty', async () => {
+      const bytes = Buffer.from('BENCHIMG');
+      writeFileSync(join(exDir, 'zhim.jpg'), bytes);
+      await workoutStartPlan.handler({
+        workout_id: 'w1',
+        // canonical vocab, empty manifest
+        plan_json: {
+          day_name: 'Верх', week: 1, week_label: 'лёгкая',
+          exercises: [
+            { slug: 'hodba', name_ru: 'Ходьба', target_sets: null, target_reps: '', reps_in_reserve: null, rest_seconds: 0, duration_seconds: 300 },
+            { slug: 'zhim', name_ru: 'Жим', target_sets: 4, target_reps: '8-10', reps_in_reserve: 2, rest_seconds: 120, weight_kg_target: 70 },
+          ],
+        },
+        image_manifest: [],
+      });
+      const body = JSON.parse(getUndeliveredMessages().at(-1)!.content);
+      // 'hodba' has no asset → skipped; 'zhim' hashed to the responder's key.
+      expect(body.payload.image_manifest).toEqual([
+        { slug: 'zhim', sha256: createHash('sha256').update(bytes).digest('hex') },
+      ]);
+    });
+
+    it('derives from program-vocab slugs after normalization (exercise_slug → slug)', async () => {
+      const bytes = Buffer.from('IMG');
+      writeFileSync(join(exDir, 'zhim.jpg'), bytes);
+      await workoutStartPlan.handler({
+        workout_id: 'w1',
+        plan_json: { exercises: [{ exercise_slug: 'zhim', name: 'Жим', target_sets: 4, target_reps: '8', target_rir: 2, weight_kg: 70, rest_sec: 120 }] },
+        // manifest omitted entirely
+      });
+      const body = JSON.parse(getUndeliveredMessages().at(-1)!.content);
+      expect(body.payload.image_manifest).toEqual([
+        { slug: 'zhim', sha256: createHash('sha256').update(bytes).digest('hex') },
+      ]);
+    });
+
+    it('does NOT overwrite a manifest Payne already supplied', async () => {
+      writeFileSync(join(exDir, 'zhim.jpg'), Buffer.from('IMG'));
+      await workoutStartPlan.handler({
+        workout_id: 'w1',
+        plan_json: { exercises: [{ slug: 'zhim', name_ru: 'Жим', target_sets: 4, target_reps: '8', reps_in_reserve: 2, rest_seconds: 120 }] },
+        image_manifest: [{ slug: 'zhim', sha256: 'payne-supplied-sha' }],
+      });
+      const body = JSON.parse(getUndeliveredMessages().at(-1)!.content);
+      expect(body.payload.image_manifest).toEqual([{ slug: 'zhim', sha256: 'payne-supplied-sha' }]);
     });
   });
 

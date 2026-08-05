@@ -16,6 +16,9 @@ import {
   type RoutingContext,
 } from './formatter.js';
 import { onContextResponse } from './mcp-tools/request_context.js';
+// Single source of truth for the exercise-image dir + extension priority, shared
+// with workout.start_plan's image_manifest auto-derive (exercise-images.ts).
+import { DEFAULT_EXERCISES_DIR, IMAGE_EXTS } from './exercise-images.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 import type { FactualityLevel } from './config.js';
 import { extractDataNumbers } from './verification/numbers.js';
@@ -148,9 +151,6 @@ export function dispatchSystemReplies(rows: MessageInRow[]): MessageInRow[] {
   }
   return survivors;
 }
-
-const DEFAULT_EXERCISES_DIR = '/workspace/agent/exercises';
-const IMAGE_EXTS = ['.gif', '.jpg', '.png'] as const;
 
 /**
  * Auto-serve iOS `image_request` workout events: read the exercise image from

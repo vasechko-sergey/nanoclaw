@@ -17,6 +17,7 @@
 import { loadConfig } from '../config.js';
 import { writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
+import { buildImageManifest, DEFAULT_EXERCISES_DIR, type ImageManifestEntry } from '../exercise-images.js';
 import type { McpToolDefinition } from './types.js';
 
 function ok(text: string) {
@@ -101,6 +102,16 @@ function normalizePlanJson(plan: unknown): unknown {
   };
 }
 
+/** Canonical slugs from a normalized plan (post-normalizeExercise, so `slug`). */
+function planSlugs(plan: unknown): string[] {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return [];
+  const ex = (plan as Record<string, unknown>).exercises;
+  if (!Array.isArray(ex)) return [];
+  return ex
+    .map((e) => (e && typeof e === 'object' ? (e as Record<string, unknown>).slug : undefined))
+    .filter((s): s is string => typeof s === 'string' && s.length > 0);
+}
+
 /**
  * Write a workout-family control row STAMPED with the current session's channel
  * routing. Without platform_id/channel_type the host delivery poller drops the
@@ -151,17 +162,30 @@ export const workoutStartPlan: McpToolDefinition = {
   async handler(args) {
     const g = guard();
     if (!g.ok) return g.res;
+    // Map Payne's internal program vocab onto the canonical iOS wire vocab.
+    // Pass-through here left iOS with a blank card (see normalizePlanJson).
+    const planJson = normalizePlanJson(args.plan_json);
+    // image_manifest is the ONLY trigger for iOS image prefetch. Payne usually
+    // builds it, but on a drift run it shipped [] — no manifest, no images. When
+    // it's empty, derive it from the plan's slugs + the same on-disk assets the
+    // image_blob responder (poll-loop serveImageRequests) serves, so the sha256
+    // matches and iOS caches/looks-up under one key. A supplied manifest is
+    // trusted untouched.
+    const supplied = Array.isArray(args.image_manifest)
+      ? (args.image_manifest as ImageManifestEntry[])
+      : [];
+    const exercisesDir = process.env.WORKOUT_EXERCISES_DIR || DEFAULT_EXERCISES_DIR;
+    const imageManifest = supplied.length > 0 ? supplied : buildImageManifest(planSlugs(planJson), exercisesDir);
     writeWorkoutOut({
       type: 'workout_plan',
       payload: {
         workout_id: args.workout_id,
-        // Map Payne's internal program vocab onto the canonical iOS wire vocab.
-        // Pass-through here left iOS with a blank card (see normalizePlanJson).
-        plan_json: normalizePlanJson(args.plan_json),
-        image_manifest: args.image_manifest ?? [],
+        plan_json: planJson,
+        image_manifest: imageManifest,
       },
     });
-    return ok(`workout_plan sent for ${args.workout_id}`);
+    const derived = supplied.length === 0 && imageManifest.length > 0 ? ` (auto-derived ${imageManifest.length} images)` : '';
+    return ok(`workout_plan sent for ${args.workout_id}${derived}`);
   },
 };
 
