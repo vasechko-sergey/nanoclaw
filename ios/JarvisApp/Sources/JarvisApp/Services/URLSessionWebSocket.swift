@@ -19,6 +19,14 @@ final class URLSessionWebSocket: NSObject, WebSocketLike, @unchecked Sendable {
     private var session: URLSession?
     private var pingTimer: Timer?
     private var didFireClose = false
+    /// Serializes `connect()` teardown+setup against `close()`. Both mutate
+    /// `session`/`task`, and they run on DIFFERENT threads: `connect()` on the
+    /// TransportV2 actor's executor, `close()` from a URLSession ping-failure
+    /// callback (`sendPing`'s completion queue). Without this, close() could
+    /// `invalidateAndCancel()` the session that connect() had just stored, in
+    /// the window before `webSocketTask(with:)` — which throws
+    /// 'Task created in a session that has been invalidated' (NSGenericException).
+    private let stateLock = NSLock()
 
     var onMessage: ((Data) -> Void)?
     var onClose: ((Error?) -> Void)?
@@ -33,14 +41,23 @@ final class URLSessionWebSocket: NSObject, WebSocketLike, @unchecked Sendable {
         // task, and ping timer FIRST — otherwise each reconnect orphans a
         // URLSession + a RunLoop-scheduled ping Timer that keep firing, which
         // accumulates over a flaky-network session (memory/FD growth + a
-        // saturated main RunLoop). close() is idempotent.
-        close()
+        // saturated main RunLoop).
+        //
+        // The teardown + fresh session/task creation run under `stateLock` as
+        // one atomic step so a concurrent `close()` (on a URLSession callback
+        // thread) cannot invalidate the just-stored session between the
+        // `self.session =` assignment and `webSocketTask(with:)`. `resume()` and
+        // the receive/ping loops are started AFTER unlocking — they don't need
+        // the lock and shouldn't hold it during scheduling.
+        stateLock.lock()
+        teardownLocked()
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
         self.session = session
         let task = session.webSocketTask(with: url)
         self.task = task
         didFireClose = false
+        stateLock.unlock()
         task.resume()
         startReceiveLoop(task: task)
         startPingTimer(task: task)
@@ -52,6 +69,19 @@ final class URLSessionWebSocket: NSObject, WebSocketLike, @unchecked Sendable {
     }
 
     func close() {
+        stateLock.lock()
+        teardownLocked()
+        stateLock.unlock()
+    }
+
+    // MARK: - Private
+
+    /// Invalidate the ping timer, cancel the task, and invalidate the session.
+    /// MUST be called with `stateLock` held — it is the shared teardown body for
+    /// both `connect()` (reconnect reuse) and `close()`, and serializing it is
+    /// what prevents connect/close from racing on `session`/`task`. Idempotent:
+    /// nil fields make a repeat call a no-op.
+    private func teardownLocked() {
         pingTimer?.invalidate()
         pingTimer = nil
         task?.cancel(with: .goingAway, reason: nil)
@@ -59,8 +89,6 @@ final class URLSessionWebSocket: NSObject, WebSocketLike, @unchecked Sendable {
         session?.invalidateAndCancel()
         session = nil
     }
-
-    // MARK: - Private
 
     private func fireCloseOnce(_ error: Error?) {
         guard !didFireClose else { return }
