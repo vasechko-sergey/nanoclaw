@@ -40,6 +40,68 @@ function generateId(): string {
 }
 
 /**
+ * Nullish pick: first defined, non-null value among the candidates. Uses `??`
+ * semantics so a legitimate 0 (target_rir: 0 = to-failure) or "" survives —
+ * a `||` fallback would silently drop them.
+ */
+function pick(...vals: unknown[]): unknown {
+  for (const v of vals) if (v !== undefined && v !== null) return v;
+  return undefined;
+}
+
+/**
+ * Normalize one plan exercise onto the canonical iOS wire vocab
+ * (shared/ios-app-protocol/v2.ts PlanExerciseSchema): slug / name_ru /
+ * target_sets / target_reps / reps_in_reserve / rest_seconds / duration_seconds /
+ * weight_kg_target / notes.
+ *
+ * Payne builds plan_json from its INTERNAL program vocab (exercise_slug / name /
+ * target_rir / rest_sec / execution_duration_seconds / weight_kg |
+ * starting_weight, plus a `sets` array iOS never reads). Left un-mapped, iOS
+ * decodes the array length but every renamed field falls to its default: empty
+ * slug (identical "" ids collapse the ForEach), blank name, no weight, no rest —
+ * "8 упражнений" and a blank card. Accept BOTH vocabs so already-canonical plans
+ * (e.g. the historical seq-389 envelope) pass through idempotently.
+ */
+function normalizeExercise(e: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    slug: pick(e.slug, e.exercise_slug),
+    target_sets: e.target_sets ?? null,       // warmup/cardio → null
+    target_reps: e.target_reps ?? '',
+    reps_in_reserve: pick(e.reps_in_reserve, e.target_rir) ?? null,
+    rest_seconds: pick(e.rest_seconds, e.rest_sec) ?? 0,
+  };
+  const nameRu = pick(e.name_ru, e.name);
+  if (nameRu !== undefined) out.name_ru = nameRu;
+  const dur = pick(e.duration_seconds, e.execution_duration_seconds);
+  if (dur !== undefined) out.duration_seconds = dur;
+  const weight = pick(e.weight_kg_target, e.weight_kg, e.starting_weight);
+  if (weight !== undefined) out.weight_kg_target = weight;
+  if (e.notes !== undefined && e.notes !== null) out.notes = e.notes;
+  return out;
+}
+
+/**
+ * Remap plan_json.exercises[] to the canonical wire vocab, passing plan-level
+ * keys (day_name / week / week_label / …) through untouched — those already
+ * match the wire. Defensive: a plan without an `exercises` array is returned
+ * verbatim rather than throwing.
+ */
+function normalizePlanJson(plan: unknown): unknown {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return plan;
+  const p = plan as Record<string, unknown>;
+  if (!Array.isArray(p.exercises)) return plan;
+  return {
+    ...p,
+    exercises: (p.exercises as unknown[]).map((e) =>
+      e && typeof e === 'object' && !Array.isArray(e)
+        ? normalizeExercise(e as Record<string, unknown>)
+        : e,
+    ),
+  };
+}
+
+/**
  * Write a workout-family control row STAMPED with the current session's channel
  * routing. Without platform_id/channel_type the host delivery poller drops the
  * row ("Message missing routing fields") before it ever reaches the ios-app
@@ -93,7 +155,9 @@ export const workoutStartPlan: McpToolDefinition = {
       type: 'workout_plan',
       payload: {
         workout_id: args.workout_id,
-        plan_json: args.plan_json,
+        // Map Payne's internal program vocab onto the canonical iOS wire vocab.
+        // Pass-through here left iOS with a blank card (see normalizePlanJson).
+        plan_json: normalizePlanJson(args.plan_json),
         image_manifest: args.image_manifest ?? [],
       },
     });

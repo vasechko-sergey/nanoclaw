@@ -76,6 +76,74 @@ describe('workout MCP tools', () => {
     expect(body.payload.image_manifest).toEqual([]);
   });
 
+  // The wire contract (shared/ios-app-protocol/v2.ts PlanExerciseSchema) pins the
+  // per-exercise vocab to slug / name_ru / reps_in_reserve / rest_seconds /
+  // duration_seconds / weight_kg_target. Payne builds plan_json from its INTERNAL
+  // program vocab (exercise_slug / name / target_rir / rest_sec /
+  // execution_duration_seconds / weight_kg) and the handler used to pass it
+  // through verbatim, so iOS decoded N exercises but every remapped field fell to
+  // its default — empty slug (identical "" ids collapse the ForEach), blank name,
+  // no weight, no rest. The card said "8 упражнений" and rendered nothing. The
+  // handler must NORMALIZE each exercise onto the canonical wire vocab.
+  it('workout.start_plan normalizes program-vocab exercises onto the canonical wire vocab', async () => {
+    await workoutStartPlan.handler({
+      workout_id: '2026-08-05',
+      plan_json: {
+        day_name: 'Верх А',
+        week: 3,
+        week_label: 'тяжёлая',
+        exercises: [
+          { exercise_slug: 'hodba', name: 'Ходьба', sets: [], execution_duration_seconds: 300, rest_sec: 0, notes: 'разминка' },
+          { exercise_slug: 'zhim', name: 'Жим', target_sets: 5, target_reps: '8-10', target_rir: 0, weight_kg: 70, rest_sec: 180 },
+        ],
+      },
+      image_manifest: [],
+    });
+    const body = JSON.parse(getUndeliveredMessages().at(-1)!.content);
+    // Plan-level keys pass through untouched (they already match the wire).
+    expect(body.payload.plan_json.day_name).toBe('Верх А');
+    expect(body.payload.plan_json.week).toBe(3);
+    expect(body.payload.plan_json.week_label).toBe('тяжёлая');
+    // Warmup: null sets, timed, no weight. `sets` array is dropped (not wire).
+    expect(body.payload.plan_json.exercises[0]).toEqual({
+      slug: 'hodba', name_ru: 'Ходьба', target_sets: null, target_reps: '',
+      reps_in_reserve: null, rest_seconds: 0, duration_seconds: 300, notes: 'разминка',
+    });
+    // Working set: target_rir 0 must survive (nullish map, not truthy).
+    expect(body.payload.plan_json.exercises[1]).toEqual({
+      slug: 'zhim', name_ru: 'Жим', target_sets: 5, target_reps: '8-10',
+      reps_in_reserve: 0, rest_seconds: 180, weight_kg_target: 70,
+    });
+    // The internal-vocab keys must be GONE — their presence is what broke decode.
+    const ex1 = body.payload.plan_json.exercises[1];
+    expect(ex1.exercise_slug).toBeUndefined();
+    expect(ex1.target_rir).toBeUndefined();
+    expect(ex1.rest_sec).toBeUndefined();
+    expect(ex1.weight_kg).toBeUndefined();
+    expect(ex1.name).toBeUndefined();
+  });
+
+  // An already-canonical plan (Payne emitting the documented plan_json vocab, as
+  // the historical seq-389 envelope did) must pass through unchanged — the
+  // normalizer is idempotent, never a second remap that corrupts correct plans.
+  it('workout.start_plan leaves an already-canonical exercise unchanged', async () => {
+    await workoutStartPlan.handler({
+      workout_id: 'w1',
+      plan_json: {
+        day_name: 'X', week: 2, week_label: 'Средняя',
+        exercises: [
+          { slug: 'incline', name_ru: 'Наклонный', target_sets: 4, target_reps: '5-6', reps_in_reserve: 2, rest_seconds: 180, weight_kg_target: 66.25 },
+        ],
+      },
+      image_manifest: [],
+    });
+    const body = JSON.parse(getUndeliveredMessages().at(-1)!.content);
+    expect(body.payload.plan_json.exercises[0]).toEqual({
+      slug: 'incline', name_ru: 'Наклонный', target_sets: 4, target_reps: '5-6',
+      reps_in_reserve: 2, rest_seconds: 180, weight_kg_target: 66.25,
+    });
+  });
+
   it('workout.coach writes a coach_message row', async () => {
     const res = await workoutCoach.handler({ workout_id: 'w1', text: 'good set' });
     expect(res.isError).toBeUndefined();
