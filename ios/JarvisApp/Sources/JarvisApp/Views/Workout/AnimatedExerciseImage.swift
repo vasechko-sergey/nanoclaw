@@ -30,6 +30,19 @@ enum ExerciseImageFormat {
         return UIImage.animatedImage(with: frames, duration: total > 0 ? total : Double(frames.count) / 20)
     }
 
+    /// Size an exercise image into the frame the parent proposes rather than its
+    /// own (possibly portrait) intrinsic size. A concrete, finite proposed
+    /// dimension wins; an unspecified/infinite one falls back to intrinsic. Pure
+    /// so the sizing contract is unit-testable without a live representable.
+    static func fittedSize(proposalWidth: CGFloat?, proposalHeight: CGFloat?, intrinsic: CGSize) -> CGSize {
+        func dim(_ v: CGFloat?, _ fallback: CGFloat) -> CGFloat {
+            guard let v, v.isFinite else { return fallback }
+            return v
+        }
+        return CGSize(width: dim(proposalWidth, intrinsic.width),
+                      height: dim(proposalHeight, intrinsic.height))
+    }
+
     private static func gifDelay(_ src: CGImageSource, _ i: Int) -> Double {
         guard let props = CGImageSourceCopyPropertiesAtIndex(src, i, nil) as? [CFString: Any],
               let gif = props[kCGImagePropertyGIFDictionary] as? [CFString: Any] else { return 0.1 }
@@ -59,5 +72,19 @@ struct AnimatedExerciseImage: UIViewRepresentable {
         } else {
             v.image = UIImage(contentsOfFile: url.path)
         }
+    }
+
+    /// Honor the frame the parent proposes instead of the image's intrinsic size.
+    /// A UIImageView keeps default (required) compression resistance, so a tall
+    /// PORTRAIT image otherwise refuses to shrink into the 16:9 hero the card /
+    /// runner impose — it overflows, and in the runner (a non-scrolling VStack)
+    /// it shoves the set-logging card + toolbar off-screen entirely. Returning
+    /// the proposed size lets `scaleAspectFill` + `clipsToBounds` crop the image
+    /// into whatever box the layout gives it. Falls back to the image's own size
+    /// only for an unspecified/infinite dimension.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIImageView, context: Context) -> CGSize? {
+        ExerciseImageFormat.fittedSize(
+            proposalWidth: proposal.width, proposalHeight: proposal.height,
+            intrinsic: uiView.image?.size ?? uiView.intrinsicContentSize)
     }
 }
