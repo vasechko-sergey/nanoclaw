@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EnvelopeBase, InlineContext, ContextFieldEnum, Envelopes, AnyEnvelope } from './v2.js';
+import { EnvelopeBase, InlineContext, ContextFieldEnum, Envelopes, AnyEnvelope, HealthUploadDay } from './v2.js';
 
 describe('EnvelopeBase', () => {
   const ok = {
@@ -359,5 +359,21 @@ describe('workout envelopes', () => {
       payload: { slug: 's', sha256: 'h' },
     });
     expect(parsed.type).toBe('image_ready');
+  });
+});
+
+describe('HealthUploadDay — timezone', () => {
+  it('carries the device UTC offset for the day', () => {
+    const parsed = HealthUploadDay.parse({ date: '2026-06-20', sleepOnsetMin: -77, tzOffsetMin: 480 });
+    expect(parsed.tzOffsetMin).toBe(480);
+  });
+
+  it('accepts a negative offset and omission', () => {
+    expect(HealthUploadDay.parse({ date: '2026-06-20', tzOffsetMin: -300 }).tzOffsetMin).toBe(-300);
+    expect(HealthUploadDay.parse({ date: '2026-06-20' }).tzOffsetMin).toBeUndefined();
+  });
+
+  it('rejects a non-integer offset', () => {
+    expect(() => HealthUploadDay.parse({ date: '2026-06-20', tzOffsetMin: 330.5 })).toThrow();
   });
 });

@@ -784,6 +784,11 @@ extension V2 {
             var coreMin: Int?
             var awakeMin: Int?
             var sleepOnsetMin: Int?              // minutes from local midnight; <0 = before midnight
+            // Device UTC offset in minutes for THIS day (330 = +05:30, 480 = +08:00).
+            // sleepOnsetMin is local-midnight-relative and nothing else records the
+            // frame, so without this a relocation is indistinguishable from a
+            // collapsing sleep routine. Stamped per-day, not at upload time.
+            var tzOffsetMin: Int?
             var hrvMorning: Int?                 // ms, SDNN over sleep window
             var spo2Avg: Double?                 // %
             var spo2Min: Double?                 // %

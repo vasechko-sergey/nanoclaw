@@ -402,6 +402,19 @@ enum HealthHistory {
         store.execute(workoutQuery)
 
         group.notify(queue: .main) {
+            // Stamp each day with the UTC offset that applied ON THAT DAY, not the
+            // one in force now — a backfill run after a move must not label last
+            // month's nights with this month's timezone. sleepOnsetMin is measured
+            // from LOCAL midnight and nothing recorded which local, so the
+            // 2026-07-01 Bali → Sri Lanka move read as a collapsing routine and
+            // held sleepRegularity in warn/critical for three weeks.
+            lock.lock()
+            for k in byDay.keys {
+                guard let dayStart = fmt.date(from: k) else { continue }
+                byDay[k]?.tzOffsetMin = TimeZone.current.secondsFromGMT(for: dayStart) / 60
+            }
+            lock.unlock()
+
             // The widened sleep window can surface a partial (from-1) wake-day row;
             // emit only days within the requested [from, to] range.
             let rows = byDay.values

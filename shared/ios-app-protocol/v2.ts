@@ -458,6 +458,19 @@ export const HealthUploadDay = z.object({
   coreMin: z.number().int().nonnegative().optional(),
   awakeMin: z.number().int().nonnegative().optional(),
   sleepOnsetMin: z.number().int().optional(),       // minutes from local midnight; <0 = before midnight
+  // New 2026-08-12. The device's UTC offset in minutes for THIS day (330 for
+  // +05:30, 480 for +08:00). sleepOnsetMin is measured from LOCAL midnight and
+  // nothing recorded which local, so a relocation was indistinguishable from a
+  // disintegrating routine: the 2026-07-01 Bali → Sri Lanka move shifted bedtime
+  // 63 minutes and kept sleepRegularity in warn/critical for three weeks.
+  //
+  // Must be read per-day on the device. Apple's own Health export rewrites every
+  // timestamp in the device's CURRENT timezone, so the offset that actually
+  // applied is not recoverable after the fact — and person_tz in the central DB
+  // holds one current value with no history (it recorded the 07-01 move on the
+  // 5th). Storage keeps the UTC instant plus the offset; each metric then picks
+  // its own frame, and circadian ones reason in local.
+  tzOffsetMin: z.number().int().optional(),
   hrvMorning: z.number().int().nonnegative().optional(),
   spo2Avg: z.number().nonnegative().optional(),
   spo2Min: z.number().nonnegative().optional(),

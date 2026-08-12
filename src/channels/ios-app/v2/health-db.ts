@@ -24,6 +24,7 @@ const SCALARS = [
   'coreMin',
   'awakeMin',
   'sleepOnsetMin',
+  'tzOffsetMin',
   'hrv',
   'hrvMorning',
   'spo2Avg',
@@ -49,6 +50,17 @@ export function openHealthDb(path: string): Database.Database {
        ingested_at INTEGER
      )`,
   );
+  // The table predates every column added after its first release and has never
+  // had a migration path — CREATE TABLE IF NOT EXISTS silently no-ops on an
+  // existing file, so a new SCALARS entry would blow up the next upsert with
+  // "table health_days has no column named X". Backfill additively; SQLite has
+  // no IF NOT EXISTS for ADD COLUMN, so probe first.
+  const existing = new Set(
+    (db.prepare(`PRAGMA table_info(health_days)`).all() as { name: string }[]).map((c) => c.name),
+  );
+  for (const col of SCALARS) {
+    if (!existing.has(col)) db.exec(`ALTER TABLE health_days ADD COLUMN ${col} REAL`);
+  }
   return db;
 }
 
