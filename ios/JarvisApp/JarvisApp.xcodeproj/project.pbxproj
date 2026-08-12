@@ -34,6 +34,7 @@
 		1FB22DB3AC46D6DC773E9148 /* LocalNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692FF9CBB21BDC62448E95E9 /* LocalNotifierTests.swift */; };
 		2288F6210104BE661E4B71C6 /* LocalStorageBoundsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A4B12C1E7C46DBC0645D34 /* LocalStorageBoundsTests.swift */; };
 		23DA7C08B5BB329264C71290 /* V2SummaryReadyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1862BB4D1C3A773681EBB8 /* V2SummaryReadyTests.swift */; };
+		2464270C19B05F7EFB86225F /* WristTempAttributionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D41D17E408A2E5A98EACEE /* WristTempAttributionTests.swift */; };
 		250E4BBF96D871228E8E7C41 /* MarkdownTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008661D2D21BA968650C4E29 /* MarkdownTextTests.swift */; };
 		25CF2928D7A95077DF5F7FEF /* RightDrawerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBD576F66D1AFE2F6EAE842 /* RightDrawerContent.swift */; };
 		298B9483C7C8766EF3A807D7 /* SpeechSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEE7B678DE38F9253E0F483 /* SpeechSynthesizer.swift */; };
@@ -331,6 +332,7 @@
 		83D3D7941261E832088202BF /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		87683378CBFC1F9C7E4CEBC6 /* WorkoutPlanDecodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPlanDecodeTests.swift; sourceTree = "<group>"; };
 		88D0FB537AE4C8BCE53B1A96 /* WorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutView.swift; sourceTree = "<group>"; };
+		88D41D17E408A2E5A98EACEE /* WristTempAttributionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WristTempAttributionTests.swift; sourceTree = "<group>"; };
 		88FA93322E65754B4635F934 /* ExerciseImageFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseImageFormatTests.swift; sourceTree = "<group>"; };
 		8B288DE4478FD534ADB9C861 /* RestTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimer.swift; sourceTree = "<group>"; };
 		8C9EB1688DB74A7280A71824 /* ConversationStoreV2AgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationStoreV2AgentTests.swift; sourceTree = "<group>"; };
@@ -643,6 +645,7 @@
 				70CB3BB03A2BE8986BF2ECD4 /* WorkoutPlanRealEnvelopeTests.swift */,
 				30BC68D46F2D2CB7210A1C1D /* WorkoutPreviewUpdateTests.swift */,
 				356D5EEBE95E4BA3082109E3 /* WorkoutRunnerLogicTests.swift */,
+				88D41D17E408A2E5A98EACEE /* WristTempAttributionTests.swift */,
 				A91EE1529D439338A641F961 /* E2E */,
 			);
 			name = JarvisAppTests;
@@ -1125,6 +1128,7 @@
 				959453A92AA1D6910B038CC4 /* WorkoutPlanRealEnvelopeTests.swift in Sources */,
 				0F7D198D445B06AD693036EF /* WorkoutPreviewUpdateTests.swift in Sources */,
 				E76647B937E3C7A455964FC8 /* WorkoutRunnerLogicTests.swift in Sources */,
+				2464270C19B05F7EFB86225F /* WristTempAttributionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1171,7 +1175,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 105;
+				CURRENT_PROJECT_VERSION = 106;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1180,7 +1184,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.32.0;
+				MARKETING_VERSION = 1.32.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;
@@ -1417,7 +1421,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 105;
+				CURRENT_PROJECT_VERSION = 106;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1426,7 +1430,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.32.0;
+				MARKETING_VERSION = 1.32.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;

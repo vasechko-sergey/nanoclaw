@@ -236,20 +236,43 @@ enum HealthHistory {
 
         // New in 2026-06-05 spec: scalar metrics for sick-day detection + differential.
 
-        // Wrist temperature deviation — °C, signed. Daily average of HK's per-night
-        // deviation reading. Apple Watch S8+ only; older devices simply return no data.
+        // Sleeping wrist temperature — °C absolute (NOT a deviation, despite the
+        // field name; typical values here are 35.0–35.4). Apple Watch S8+ only.
+        //
+        // Raw sample query, NOT `collection`. A daily HKStatisticsCollectionQuery
+        // buckets each sample by its own start time, so a 23:20 → 07:20 night is
+        // filed under the evening date — and the statistics bucket only reports
+        // its interval midnight, so the sample's real time is unrecoverable
+        // downstream. Measured against a raw HealthKit dump: 52 of 58 samples
+        // landed a day early that way. On the reference illness it put the fever
+        // peak (36.19) under 08-10 instead of 08-11, and left 08-12 — the day the
+        // sick-day rule actually ran — null, when the real value was 35.98,
+        // +0.76 °C over baseline and well past the 0.4 threshold.
+        //
+        // Keyed on the wake day via `sleepWakeDay`, matching hrvMorning, spo2 and
+        // the sleep phases. Query from `sleepStart` for the same reason they do:
+        // the night belonging to the first requested day begins before it.
         group.enter()
-        collection(.appleSleepingWristTemperature, start: start, end: end, options: .discreteAverage) { stats in
+        let wristTempQ = HKSampleQuery(
+            sampleType: HKQuantityType(.appleSleepingWristTemperature),
+            predicate: HKQuery.predicateForSamples(withStart: sleepStart, end: end),
+            limit: HKObjectQueryNoLimit, sortDescriptors: nil
+        ) { _, samples, _ in
             let degC = HKUnit.degreeCelsius()
-            for s in stats {
-                if let q = s.averageQuantity() {
-                    let k = bucketKey(s.startDate)
-                    let v = (q.doubleValue(for: degC) * 100).rounded() / 100   // 2-decimal precision
-                    mutate(k) { $0.wristTempDeviation = v }
-                }
+            var byDay: [String: [Double]] = [:]
+            for s in (samples as? [HKQuantitySample]) ?? [] {
+                let k = bucketKey(HealthHistory.sleepWakeDay(start: s.startDate, calendar: cal))
+                byDay[k, default: []].append(s.quantity.doubleValue(for: degC))
+            }
+            for (k, vals) in byDay {
+                // More than one sample on a night is rare; average as the daily
+                // statistics query did, so the value is unchanged apart from its day.
+                let avg = vals.reduce(0, +) / Double(vals.count)
+                mutate(k) { $0.wristTempDeviation = (avg * 100).rounded() / 100 }
             }
             group.leave()
         }
+        store.execute(wristTempQ)
 
         // Respiratory rate — breaths/min, sleep-window aggregate.
         group.enter()
