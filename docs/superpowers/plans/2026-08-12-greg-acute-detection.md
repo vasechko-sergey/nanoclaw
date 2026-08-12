@@ -139,11 +139,17 @@ Note the dependency Phase 0 exposed: after Task 20 corrects the temperature, ons
 
 ### Phase D — Start accumulating what calibration needs
 
+**SHIPPED and live 2026-08-12** (scp + seeded log). Two deviations, recorded at the task.
+
 | # | Task | Delivers |
 |---|---|---|
 | **15** | Episode log — onset, label, resolution, false alarms | **The blocker for everything in Phase 5.** Until it exists, lead time is unmeasurable and no threshold is honestly tunable |
 
 Start this as early as convenient — it costs almost nothing and only accrues value with time. It is placed after Phase C only because the others fix active defects.
+
+The reference episode's lead time is now a computed value rather than a claim in this document: the deployed script emits `episode: {onset: "2026-08-10", lead_time_days: -2}` against live `health.db`.
+
+**Phase A's last open item closed on the same day.** iOS build 1.33.0 (109) was installed and its rows landed: `tzOffsetMin` non-null on all 97 days, 08-10's nap split back out (`napMin: 72`, `sleepOnsetMin` −560 → −42), and `sleepRegularity` fell from 153.2 min of dispersion to **57.3**, dropping from `critical` to `info`. The fictional circadian finding Task 21 was written to kill is gone from real data, not just from tests.
 
 ### Phase E — Derived metrics from data already present
 
@@ -2406,6 +2412,15 @@ Expected: the logged symptom appears as a JSON array on today's row.
 Today Сергей answers "болею", Jarvis emits `sick_day_ack`, and nothing records when it started, what it was, or when it ended. The onset date for the reference episode (2026-08-10) exists only because he was asked in conversation two days later. Without a stored onset date, lead time is unmeasurable — which means every threshold in this plan is untunable and Phase 5's calibration has no training signal.
 
 The pattern already exists: `loadWorkoutsLog` reads a Greg-appended `workouts.jsonl` from his own writable agent dir. Mirror it.
+
+> **Shipped 2026-08-12 with two deviations from the steps below.**
+>
+> 1. **`onset: sick.date` in Step 3 is wrong** — that labels the detection date as the day symptoms started, which is the exact confusion this log exists to end. On the reference episode it would have written `onset: 2026-08-12` next to `lead_time_days: -2`, a self-contradicting record. Fixed by making `nearestEpisode(detectionDate, episodes)` the primitive: it returns `{onset, lead_time_days}` carried out of the lookup, and `leadTimeDays` is a thin wrapper over it so the two can never disagree. The plan's six tests are unchanged and pass; two more pin the onset and the nearest-of-several choice.
+> 2. **Normal mode never computed `sick`.** Step 3 says "after computing `sick`", but the normal-mode entry point only called `sickDates(rows)` (which keeps dates, not the detection) — `sick` did not exist. Added the `sickDayDetect(rows)` call inside the `episode` field.
+>
+> One skill-level addition beyond Step 5: `lead_time_days` is an honest lead-time claim **only on an episode's first fire**. If the rule fires again on day three, `-3` means "the illness is three days old", not "we were three days late". Without that sentence Greg would report a fresh apology every morning of an illness.
+>
+> Verified live: 64 bun tests in the real agent image, and `--mode normal` against live `health.db` emits `episode: {onset: "2026-08-10", lead_time_days: -2}`.
 
 **Files:**
 - Modify: `groups/greg/scripts/analyze.js` (add `loadEpisodes`, `leadTimeDays`; wire into the normal-mode output)
