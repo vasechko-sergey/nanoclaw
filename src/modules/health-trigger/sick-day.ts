@@ -13,7 +13,7 @@
  * (sick-day.test.ts) and Bun-side test (analyze.test.js) both pin the
  * canonical values.
  */
-import { writeSessionMessage, resolveSession } from '../../session-manager.js';
+import { writeSessionMessage, resolveSession, readSessionMessagesByPlatform } from '../../session-manager.js';
 import { wakeContainer } from '../../container-runner.js';
 import { getSessionsByAgentGroup } from '../../db/sessions.js';
 import { OWNER_PERSON_KEY } from '../../config.js';
@@ -179,6 +179,38 @@ export interface SickDayCheckArgs {
   allRows: HealthUploadDay[]; // entire raw.jsonl decoded, oldest→newest
 }
 
+/** Most recent sick_day_check already written into this session for `date`. */
+function readPriorSickDayCheck(
+  agentGroupId: string,
+  sessionId: string,
+  date: string,
+): { matched: number; score: number | null; fires: Record<string, boolean> } | null {
+  const rows = readSessionMessagesByPlatform(agentGroupId, sessionId, 'host-sick-day');
+  for (let i = rows.length - 1; i >= 0; i--) {
+    try {
+      const c = JSON.parse(rows[i].content);
+      if (c.kind === 'sick_day_check' && c.detection?.date === date) {
+        return {
+          matched: c.detection.matched,
+          // Rows written before the weighted score shipped have no `score`.
+          score: typeof c.detection.score === 'number' ? c.detection.score : null,
+          fires: c.detection.fires ?? {},
+        };
+      }
+    } catch {
+      /* non-JSON rows are not ours */
+    }
+  }
+  return null;
+}
+
+/**
+ * One median-weight signal's worth of new evidence (weights are normalised to
+ * mean 1.0, exceedance is 1.0 at threshold). Below this the score is drifting
+ * as the day's readings fill in, not deteriorating.
+ */
+const SCORE_WORSENED_BY = 1.0;
+
 export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayCheckArgs): Promise<void> {
   if (!agentGroupId) return; // not configured on this install
   const detection = detect(allRows);
@@ -199,6 +231,31 @@ export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayC
       ownerKey,
     });
     fresh = resolveSession(agentGroupId, null, null, 'per-thread', ownerKey).session;
+  }
+
+  // The host fires on every health upload; iOS uploads several times a day.
+  // Without a guard that is one container wake and one full LLM turn per upload
+  // for the same detection — five on 2026-08-12. Re-fire only when the picture
+  // actually worsens, so a deteriorating day still reaches Greg immediately.
+  const prior = readPriorSickDayCheck(agentGroupId, fresh.id, detection.date);
+  if (prior) {
+    const keys = Object.keys(detection.fires) as (keyof typeof detection.fires)[];
+    const newSignal = keys.some((k) => detection.fires[k] && !prior.fires[k]);
+    // `matched` is no longer the fire decision — the weighted score is — so a
+    // fever climbing from +0.4 °C to +2.0 °C worsens the picture without moving
+    // the vote count or adding a signal. Watch the score too, or the guard
+    // swallows exactly the deterioration it promises to let through.
+    const scoreWorsened = prior.score !== null && detection.score >= prior.score + SCORE_WORSENED_BY;
+    if (detection.matched <= prior.matched && !newSignal && !scoreWorsened) {
+      log.info('sick-day trigger suppressed (already reported, not worse)', {
+        agentGroupId,
+        date: detection.date,
+        matched: detection.matched,
+        score: detection.score,
+        priorScore: prior.score,
+      });
+      return;
+    }
   }
 
   const msgId = `sickday-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

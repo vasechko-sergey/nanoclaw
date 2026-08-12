@@ -9,10 +9,12 @@ const writeSessionMessage = vi.fn<(...args: unknown[]) => void>();
 const wakeContainer = vi.fn<(...args: unknown[]) => Promise<void>>();
 const getSessionsByAgentGroup = vi.fn<(...args: unknown[]) => unknown[]>();
 const resolveSession = vi.fn<(...args: unknown[]) => { session: unknown; created: boolean }>();
+const readSessionMessagesByPlatform = vi.fn<(...args: unknown[]) => { id: string; content: string }[]>();
 
 vi.mock('../../session-manager.js', () => ({
   writeSessionMessage: (...args: unknown[]) => writeSessionMessage(...args),
   resolveSession: (...args: unknown[]) => resolveSession(...args),
+  readSessionMessagesByPlatform: (...args: unknown[]) => readSessionMessagesByPlatform(...args),
 }));
 vi.mock('../../container-runner.js', () => ({
   wakeContainer: (...args: unknown[]) => wakeContainer(...args),
@@ -50,6 +52,8 @@ describe('sickDayCheck', () => {
     wakeContainer.mockReset();
     getSessionsByAgentGroup.mockReset();
     resolveSession.mockReset();
+    readSessionMessagesByPlatform.mockReset();
+    readSessionMessagesByPlatform.mockReturnValue([]);
     getSessionsByAgentGroup.mockReturnValue([DEFAULT_SESSION]);
   });
 
@@ -166,6 +170,82 @@ describe('sickDayCheck', () => {
     // The session passed to wakeContainer must be p2's.
     const wakenSession = (wakeContainer.mock.calls[0] as [{ id: string }])[0];
     expect(wakenSession.id).toBe('sess-greg-p2');
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 5: one wake per day unless the picture worsens. iOS uploads several
+  // times a day; on 2026-08-12 that was five identical sick_day_check rows.
+  // -------------------------------------------------------------------------
+
+  function priorCheck(date: string, matched: number, fires: Record<string, boolean>, score?: number) {
+    return [
+      {
+        id: 'sickday-prior',
+        content: JSON.stringify({
+          kind: 'sick_day_check',
+          detection: { date, matched, fires, ...(score === undefined ? {} : { score }) },
+          signal: {},
+        }),
+      },
+    ];
+  }
+
+  it('does not re-fire for the same day when the picture is unchanged', async () => {
+    const rows = fourteenDays();
+    rows[13] = stableDay(rows[13].date, { restingHeartRate: 66, wristTempDeviation: 0.5 });
+    readSessionMessagesByPlatform.mockReturnValue(
+      priorCheck(rows[13].date, 2, { rhr: true, hrv: false, temp: true, rr: false, awake: false }),
+    );
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    expect(writeSessionMessage).not.toHaveBeenCalled();
+    expect(wakeContainer).not.toHaveBeenCalled();
+  });
+
+  it('re-fires for the same day when a new signal joins', async () => {
+    const rows = fourteenDays();
+    rows[13] = stableDay(rows[13].date, { restingHeartRate: 66, wristTempDeviation: 0.5, hrv: 40 });
+    readSessionMessagesByPlatform.mockReturnValue(
+      priorCheck(rows[13].date, 2, { rhr: true, hrv: false, temp: true, rr: false, awake: false }),
+    );
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    expect(writeSessionMessage).toHaveBeenCalledOnce();
+    const content = JSON.parse((writeSessionMessage.mock.calls[0] as [string, string, { content: string }])[2].content);
+    expect(content.detection.matched).toBe(3);
+  });
+
+  it('fires normally when nothing was reported for this day', async () => {
+    const rows = fourteenDays();
+    rows[13] = stableDay(rows[13].date, { restingHeartRate: 66, wristTempDeviation: 0.5 });
+    readSessionMessagesByPlatform.mockReturnValue(priorCheck('2026-06-13', 2, { rhr: true, temp: true }));
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    expect(writeSessionMessage).toHaveBeenCalledOnce();
+  });
+
+  // Deviation from the plan's guard, which watched only `matched` and `fires`.
+  // Task 19 made the weighted score the fire decision, so the same two signals
+  // getting much louder is a real deterioration the vote count cannot see.
+  it('re-fires when the same signals worsen enough to move the score', async () => {
+    const rows = fourteenDays();
+    rows[13] = stableDay(rows[13].date, { restingHeartRate: 66, wristTempDeviation: 2.0 });
+    readSessionMessagesByPlatform.mockReturnValue(
+      priorCheck(rows[13].date, 2, { rhr: true, hrv: false, temp: true, rr: false, awake: false }, 3.33),
+    );
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    expect(writeSessionMessage).toHaveBeenCalledOnce();
+    const content = JSON.parse((writeSessionMessage.mock.calls[0] as [string, string, { content: string }])[2].content);
+    // +10% RHR (1.76 × 1.43) + a temp exceedance clipped at 3× (0.65 × 3).
+    expect(content.detection.score).toBeCloseTo(4.46, 2);
+  });
+
+  it('stays quiet when the score only drifts as the day fills in', async () => {
+    const rows = fourteenDays();
+    rows[13] = stableDay(rows[13].date, { restingHeartRate: 66, wristTempDeviation: 0.6 });
+    readSessionMessagesByPlatform.mockReturnValue(
+      priorCheck(rows[13].date, 2, { rhr: true, hrv: false, temp: true, rr: false, awake: false }, 3.33),
+    );
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    // Score moves 3.33 → 3.49, under one median-weight signal's worth.
+    expect(writeSessionMessage).not.toHaveBeenCalled();
   });
 });
 

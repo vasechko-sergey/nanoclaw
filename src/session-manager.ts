@@ -326,6 +326,30 @@ export function writeSessionMessage(
 }
 
 /**
+ * Rows this host previously wrote into a session's inbound DB from one synthetic
+ * platform (e.g. `host-sick-day`). Used by triggers that must not re-announce
+ * something they already announced. Oldest→newest.
+ *
+ * ⚠ Same open/close-per-call rule as `writeSessionMessage` — see the
+ * "Cross-mount visibility invariants" note at the top of this file.
+ */
+export function readSessionMessagesByPlatform(
+  agentGroupId: string,
+  sessionId: string,
+  platformId: string,
+): { id: string; content: string }[] {
+  const db = openInboundDb(agentGroupId, sessionId);
+  try {
+    return db.prepare('SELECT id, content FROM messages_in WHERE platform_id = ? ORDER BY seq ASC').all(platformId) as {
+      id: string;
+      content: string;
+    }[];
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * If message content has attachments with base64 `data`, save them to
  * the session's inbox directory and replace with `localPath`.
  *
