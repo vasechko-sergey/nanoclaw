@@ -128,6 +128,8 @@ Note the dependency Phase 0 exposed: after Task 20 corrects the temperature, ons
 
 ### Phase C — Stop saying it five times
 
+**SHIPPED and live 2026-08-12** (`196d1075` + scp). Three deviations from the body below, each recorded at its task:
+
 | # | Task | Delivers |
 |---|---|---|
 | **5** | Per-day sick-day fire guard | One wake per day unless the picture worsens, instead of five |
@@ -1244,6 +1246,10 @@ Phase 1 makes Greg see more. Phase 2 stops him from saying it five times.
 
 On 2026-08-12 the host wrote five identical `sick_day_check` messages (03:16, 05:01 ×2, 05:02, 05:13) — one per health upload, with no memory of having already fired. Greg correctly deduplicated them, at the cost of four extra container wakes and four full LLM turns. The suppress rule lives in the agent's `state.md`; the host has never heard of it.
 
+> **Measured at implementation time, 2026-08-12.** Counting the rows rather than the log lines: **seven** on 2026-08-12 (two more at 06:06 and 12:14), nine across 2026-07-03..04, and **about 230 on 2026-06-17 alone** — 244 `host-sick-day` rows in one session since June. The five-message figure above was an undercount taken from a partial log window; the defect is an order of magnitude larger than it reads.
+>
+> **Deviation, implemented:** the guard also re-fires when `score` climbs by ≥ 1.0 (one median-weight signal's worth of evidence). Task 19 made the weighted score the fire decision, so a fever going +0.4 °C → +2.0 °C worsens the picture without moving `matched` or adding a signal — the guard as written below would have swallowed exactly the deterioration its own comment promises to let through. Two tests pin both directions (`re-fires when the same signals worsen enough to move the score`, `stays quiet when the score only drifts as the day fills in`). Rows written before Phase B carry no `score`; the guard falls back to `matched`/`fires` for those.
+
 **Files:**
 - Modify: `src/modules/health-trigger/sick-day.ts:101-142` (`sickDayCheck`)
 - Test: `src/modules/health-trigger/sick-day.test.ts`
@@ -1456,6 +1462,8 @@ On 2026-08-12 Greg sent Jarvis three separate `finding` messages inside 14 minut
 **Interfaces:**
 - Consumes: `shape` and `z_today` from Task 2, `fires`/`matched` from Task 1.
 - Produces: at most one `finding` per run, with a new optional field `related_metrics: string[]` naming the other anomalies folded into it. Jarvis's relay is unchanged — one message in, one alarm out.
+
+> **Deviation, implemented 2026-08-12.** `sick-day/SKILL.md` still described the superseded 2-of-3 vote in its frontmatter `description`, its opening line, its suppress rule, its `house_quote` example and its payload example — Phase B changed the detector and left the skill behind, so Greg would have narrated a weighted five-signal score as "два из трёх индикаторов". Corrected in the same pass: five signals named, `score`/`score_threshold`/`unavailable` in the payload example, the agent-side suppress rule aligned with the host guard, and an instruction to name the signals in words rather than as "N из 5" (the count is not the threshold and means nothing to a human).
 
 - [ ] **Step 1: Read the current contract**
 
@@ -2592,6 +2600,8 @@ Expected: the one seeded line. Confirm the path matches the container's `/worksp
 - Consumes: `sickDayDetect` / `detect` from Task 1 and Task 14.
 - Produces: both add `unavailable: string[]` to their return value — the signal names that could not be evaluated today, either because today's value is missing or because the baseline had fewer than 4 points. `matched` keeps counting only real fires; `unavailable.length` is reported separately, never folded into it.
 - Produces: `computeCoverage` tracks the sick-day signal set in addition to its current seven metrics.
+
+> **Partly delivered early.** Task 19's weighted score needed the same "which signals can we even see tonight" split, so `unavailable` shipped in Phase B on both sides (`ccad4314`/`45e98927`) along with its threshold-normalisation test. What was left for Phase C, and is now done: the `computeCoverage` tracked list, the CLAUDE.md instruction to *say it out loud*, and the empty-list test. `computeCoverage` was also exported so the tracked list is pinned by tests in both directions rather than asserted by eye. Measured after deploy: wrist temperature present on 12 of the last 14 days (86%), so `sparse_metrics` is correctly empty — the 6-of-61 gaps are older than the window.
 
 - [ ] **Step 1: Write the failing test**
 
