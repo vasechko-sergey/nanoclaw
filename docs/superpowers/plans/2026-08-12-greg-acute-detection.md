@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Greg's health detector see acute illness onset (a 1–3 day step-change) instead of only sustained trends, using data already in `health.db`, then widen the input set with symptom and confounder data from iOS.
+**Goal:** Make Greg's health detector see acute illness *on the day it starts* instead of two days late, using data already in `health.db`, then widen the input set with symptom and confounder data from iOS. This plan does **not** deliver pre-symptomatic warning — see "What this plan does not buy" below for the measurement showing why that is out of reach at the current data resolution.
 
 **Architecture:** Greg's numeric layer is a single Bun script `groups/greg/scripts/analyze.js` mounted into the container at `/workspace/agent/scripts/analyze.js`. It reads `health.db` (written by the host from iOS uploads) and emits `anomalies.json`, which the LLM interprets. A second, duplicated copy of the sick-day rule lives host-side in TypeScript (`src/modules/health-trigger/sick-day.ts`) because the host cannot shell out to Bun on the HTTP request path. Both copies must change together, and both have their own test suite. No new services; everything is script + contract + iOS reader changes.
 
@@ -20,18 +20,58 @@
 - **Test runners differ.** Agent script: `bun test groups/greg/scripts/analyze.test.js`. Host: `pnpm test`. Never import `vitest` in the Bun tree or `bun:test` in the Node tree.
 - Commits end with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 
-## Measured Baseline (2026-08-12, real data)
+## Measured Baseline (real episode, ground truth known)
 
-The plan is calibrated against a real illness episode in `health.db`. These numbers are the acceptance target — a change that does not move them has not worked.
+The plan is calibrated against one real illness in `health.db`. **Symptom onset was 2026-08-10, reported by Сергей.** That date is the anchor for every lead-time claim in this document — not the day he was asked, and not the day the old detector woke up.
 
 | date | current detector (2-of-3) | target (2-of-5) |
 |---|---|---|
-| 08-03…08-09 (healthy) | silent | silent (max 1/5) |
-| 08-10 | silent | **FIRE** 2/5 temp, awake |
+| 08-03…08-09 (pre-onset) | silent | silent (max 1/5) |
+| **08-10 — symptom onset** | silent | **FIRE** 2/5 temp, awake |
 | 08-11 | silent | **FIRE** 4/5 hrv, temp, rr, awake |
-| 08-12 | FIRE 2/3 rhr, hrv | FIRE 4/5 rhr, hrv, rr, awake |
+| 08-12 (Сергей asked and confirmed) | FIRE 2/3 rhr, hrv | FIRE 4/5 rhr, hrv, rr, awake |
+
+**Lead time against onset: current −2 days (two days late), target 0 days (same day).** The win here is removing a two-day lag, not gaining foresight. Two days of late detection is not cosmetic — Payne kept prescribing training through 08-10 and 08-11 and only cancelled on the 12th.
 
 Day-level z-scores on 2026-08-12 that the anomaly detector currently drops entirely: `restingHeartRate` +4.38σ, `wristTempDeviation` +3.85σ, `respiratoryRate` +3.20σ.
+
+### False-alarm cost, measured on the same data
+
+Scored over the 74 pre-onset days in `health.db`:
+
+| threshold | fires on | reading |
+|---|---|---|
+| 2-of-5 (planned) | 8 of 74 days — **11%** | the accepted cost |
+| 1-of-5 | 32 of 74 days — **43%** | the price of chasing pre-onset |
+
+11% is not zero, and an earlier draft of this plan wrongly claimed "no false positives" on the strength of one quiet week (08-03…08-09). Some of the 8 are probably genuine — an early-July sick-day episode sits inside the window — but they have no ground truth, so treat 11% as the ceiling to hold, not to grow. Task 1 pins it with a regression test.
+
+## What this plan does not buy: pre-onset detection
+
+Oura's Symptom Radar claims up to two days before a user tags an illness; TemPredict reported COVID a mean 2.75 days before diagnostic testing, at **82% sensitivity and 63% specificity**. Two measurements were run against this dataset to see whether that is reachable here.
+
+**1. CuSum accumulation does not fire earlier.** The textbook answer to "detect earlier" is to accumulate sub-threshold deviations across nights rather than threshold each day. Run one-sided (k=0.5σ, h=4.0σ, 28-day trailing baseline) over all six signals:
+
+| date | RR | temp | RHR | hrvMorning | awake | alarm |
+|---|---|---|---|---|---|---|
+| 08-02 | 0 | 0 | 0 | 0 | **5.18** | awakeMin — false |
+| 08-08 | 0 | 0 | 0 | 0.96 | 1.06 | — |
+| 08-09 | 0 | 0 | 0 | 1.28 | 0.43 | — |
+| **08-10 onset** | 0.75 | 2.39 | 0 | 0 | **5.71** | awakeMin |
+| 08-11 | 3.82 | **4.11** | 0.51 | 0.1 | **8.72** | temp, awake |
+| 08-12 | **4.76** | *no data* | **5.63** | 0.45 | 3.58 | RR, RHR |
+
+First true alarm lands on 08-10 — the same day as the plain 2-of-5 rule — plus one false alarm on 08-02. CuSum buys nothing here and is deliberately **not** in this plan.
+
+**2. There is no pre-onset signal at daily-aggregate resolution.** The only deviation in the two days before onset is morning HRV: −42% on 08-08, −23% on 08-09. Both are single-signal days, and this person's healthy weeks contain the same dips (−22% on 08-05). Lowering the rule to 1-of-5 to catch them costs 43% alarm days — which is roughly Oura's own 37% false-positive rate. Their earliness is bought at exactly the price this dataset says it costs; it is a product decision, not a smarter algorithm, and for one person receiving direct messages it is the wrong trade.
+
+**3. What Oura has that no rewrite of `analyze.js` can supply.** In descending order of impact:
+
+- **Wear time.** A ring is on 24/7; the watch comes off. `wristTempDeviation` is present on 35 of 61 days — and absent on 08-12, the single most diagnostic day of the episode. Oura's whole method is nightly, and its 76% pre-symptomatic fever detection follows directly from the sensor never being off.
+- **Continuous temperature** versus one `appleSleepingWristTemperature` average per night, on nights the watch is worn.
+- **Intra-night resolution.** HealthKit stores every heart-rate sample; the iOS reader collapses them into one daily `discreteAverage` plus Apple's own resting estimate. Nocturnal heart rate follows a cosine-like trajectory with a nadir mid-night, and a shallower or later dip is precisely what a daily mean erases. **This is the one genuinely new signal available without new hardware** — Task 17 collects it. Whether it separates the 08-08/08-09 HRV dips from ordinary noise is unknown and cannot be known until the data exists.
+
+The honest position: same-day detection is achievable and this plan delivers it. Pre-onset may simply not be reachable with an Apple Watch worn part-time, and discovering that cleanly is an acceptable outcome — which is why Task 17 is framed as an experiment with a measurement, not a feature with a promised result.
 
 ## File Structure
 
@@ -48,12 +88,13 @@ Day-level z-scores on 2026-08-12 that the anomaly detector currently drops entir
 | `src/modules/health-trigger/health-history.ts` (or wherever `appendHealthHistory` writes) | `health_days` column set | 4 |
 | `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift` | HealthKit reader | 4 |
 | `ios/JarvisApp/Sources/JarvisApp/Services/HealthManager.swift` | HealthKit authorization set | 4 |
+| `<agent>/health/episodes.jsonl` (Greg-written, not in the repo) | Illness episode log — onset, label, resolution, false alarms. The ground truth every lead-time claim rests on | 4 |
 
 ---
 
 # Phase 1 — Acute-onset detection
 
-Zero new data sources. Highest return: moves the alert two days earlier on the measured episode.
+Zero new data sources. Highest return: on the reference episode the alert moves from two days late to onset day.
 
 ### Task 1: Sick-day rule — 5 signals, morning HRV
 
@@ -238,6 +279,30 @@ for (let i = rows.length - 10; i < rows.length; i++) {
 Run: `bun /tmp/greg-bt/backtest.js`
 Expected: silent through `2026-08-09`; `2026-08-10 FIRE 2/5 temp,awake`; `2026-08-11 FIRE 4/5 hrv,temp,rr,awake`; `2026-08-12 FIRE 4/5 rhr,hrv,rr,awake`.
 
+Onset was 08-10, so the first fire must land **on** 08-10. A fire on 08-11 means the rule regressed to one-day-late; a fire before 08-09 means a threshold is too loose — check it against the 11% ceiling in Step 5b before accepting it.
+
+- [ ] **Step 5b: Pin the false-alarm ceiling**
+
+The 2-of-5 rule fires on 8 of the 74 pre-onset days in this dataset. That is the accepted cost; it must not grow silently when thresholds are tuned later.
+
+Create `/tmp/greg-bt/fp.js`:
+
+```javascript
+import { loadRows, sickDayDetect } from "/Users/serg/git/nanoclaw/groups/greg/scripts/analyze.js";
+const rows = loadRows("/tmp/greg-bt/health.db");
+const ONSET = "2026-08-10";   // ground truth, reported by Сергей
+let scored = 0, fired = 0;
+for (let i = 20; i < rows.length; i++) {
+  if (rows[i].date >= ONSET) continue;
+  scored++;
+  if (sickDayDetect(rows.slice(0, i + 1))) fired++;
+}
+console.log(`pre-onset days ${scored}, fired ${fired} (${(100 * fired / scored).toFixed(0)}%)`);
+```
+
+Run: `bun /tmp/greg-bt/fp.js`
+Expected: `pre-onset days 74, fired 8 (11%)`. A higher count means a threshold was loosened past what this dataset supports — revert it rather than accept the noise.
+
 - [ ] **Step 6: Write the failing test (host side)**
 
 Append to `src/modules/health-trigger/sick-day.test.ts`:
@@ -403,10 +468,14 @@ git add src/modules/health-trigger/sick-day.ts src/modules/health-trigger/sick-d
 git commit -m "feat(greg/sick-day): widen rule to 5 signals, prefer morning HRV
 
 Respiratory rate and nocturnal awake minutes were already in every health_days
-row but unused by the sick-day rule. On the 2026-08-10..12 episode the 3-signal
-rule fired only on the last day; the 5-signal rule fires on 08-10 — a two-day
-lead that matches the ~3-day presymptomatic window reported for wearable
-detection. Whole-day SDNN replaced by hrvMorning, matching buildRecovery.
+row but unused by the sick-day rule. Symptom onset in the reference episode was
+2026-08-10: the 3-signal rule fired on the 12th, two days late, and Payne kept
+prescribing training through both. The 5-signal rule fires on the 10th — same
+day as onset, not before it. Costs 8 fires across 74 pre-onset days (11%).
+Whole-day SDNN replaced by hrvMorning, matching buildRecovery.
+
+This removes a two-day lag. It is not pre-symptomatic detection, and CuSum
+accumulation was tested and does not reach earlier on this data.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
@@ -1925,6 +1994,486 @@ Expected: the logged symptom appears as a JSON array on today's row.
 
 ---
 
+### Task 15: Episode log — the ground truth every lead-time claim needs
+
+Today Сергей answers "болею", Jarvis emits `sick_day_ack`, and nothing records when it started, what it was, or when it ended. The onset date for the reference episode (2026-08-10) exists only because he was asked in conversation two days later. Without a stored onset date, lead time is unmeasurable — which means every threshold in this plan is untunable and Phase 5's calibration has no training signal.
+
+The pattern already exists: `loadWorkoutsLog` reads a Greg-appended `workouts.jsonl` from his own writable agent dir. Mirror it.
+
+**Files:**
+- Modify: `groups/greg/scripts/analyze.js` (add `loadEpisodes`, `leadTimeDays`; wire into the normal-mode output)
+- Modify: `groups/greg/skills/sick-day/SKILL.md`
+- Modify: `groups/greg/CLAUDE.md`
+- Test: `groups/greg/scripts/analyze.test.js`
+
+**Interfaces:**
+- Consumes: `sickDayDetect` from Task 1.
+- Produces: `loadEpisodes(path)` → `Map<string, Episode>` keyed by `onset`, where `Episode = { onset: string, confirmed: string|null, resolved: string|null, label: string|null, note: string|null }`. Default path `/workspace/agent/health/episodes.jsonl`.
+- Produces: `leadTimeDays(detectionDate, episodes)` → `number | null` — signed days from the detection to the nearest episode onset within ±7 days. Negative = detected late. `0` = same day. Positive = detected before onset.
+- Produces: the normal-mode JSON gains `episode: { onset, lead_time_days } | null` when a sick-day fires inside an episode window.
+
+- [ ] **Step 1: Write the failing test**
+
+```javascript
+import { loadEpisodes, leadTimeDays } from "./analyze.js";
+import { writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+describe("episode log", () => {
+  function withLog(lines) {
+    const dir = mkdtempSync(join(tmpdir(), "greg-ep-"));
+    const p = join(dir, "episodes.jsonl");
+    writeFileSync(p, lines.map((l) => JSON.stringify(l)).join("\n"));
+    return p;
+  }
+
+  it("reads episodes keyed by onset, last line per onset wins", () => {
+    const p = withLog([
+      { onset: "2026-08-10", confirmed: "2026-08-12", resolved: null, label: null },
+      { onset: "2026-08-10", confirmed: "2026-08-12", resolved: "2026-08-15", label: "простуда" },
+    ]);
+    const eps = loadEpisodes(p);
+    expect(eps.size).toBe(1);
+    expect(eps.get("2026-08-10").resolved).toBe("2026-08-15");
+    expect(eps.get("2026-08-10").label).toBe("простуда");
+  });
+
+  it("returns an empty map when the file is absent", () => {
+    expect(loadEpisodes("/nonexistent/episodes.jsonl").size).toBe(0);
+  });
+
+  it("scores same-day detection as zero", () => {
+    const eps = loadEpisodes(withLog([{ onset: "2026-08-10" }]));
+    expect(leadTimeDays("2026-08-10", eps)).toBe(0);
+  });
+
+  it("scores late detection as negative", () => {
+    const eps = loadEpisodes(withLog([{ onset: "2026-08-10" }]));
+    expect(leadTimeDays("2026-08-12", eps)).toBe(-2);
+  });
+
+  it("scores early detection as positive", () => {
+    const eps = loadEpisodes(withLog([{ onset: "2026-08-10" }]));
+    expect(leadTimeDays("2026-08-08", eps)).toBe(2);
+  });
+
+  it("ignores episodes further than 7 days away", () => {
+    const eps = loadEpisodes(withLog([{ onset: "2026-08-10" }]));
+    expect(leadTimeDays("2026-09-01", eps)).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Expected: FAIL — `loadEpisodes` is not exported.
+
+- [ ] **Step 3: Implement**
+
+Next to `loadWorkoutsLog`:
+
+```javascript
+// Illness episode log, appended by Greg when the person confirms or denies being
+// ill: {onset, confirmed, resolved, label, note}. `onset` is the day symptoms
+// STARTED, which is not the day Greg asked — on the reference episode those were
+// 2026-08-10 and 2026-08-12. Without this file lead time cannot be measured and
+// no threshold in the sick-day rule can be honestly tuned.
+export function loadEpisodes(path) {
+  let text; try { text = readFileSync(path, "utf8"); } catch { return new Map(); }
+  const byOnset = new Map();
+  for (const line of text.split("\n")) {
+    const s = line.trim(); if (!s) continue;
+    let r; try { r = JSON.parse(s); } catch { continue; }
+    if (r && r.onset) {
+      byOnset.set(r.onset, {
+        onset: r.onset,
+        confirmed: r.confirmed ?? null,
+        resolved: r.resolved ?? null,
+        label: r.label ?? null,
+        note: r.note ?? null,
+      });
+    }
+  }
+  return byOnset;
+}
+
+// Signed days from a detection to the nearest onset within a week.
+// Negative = late, 0 = same day, positive = ahead of symptoms.
+export function leadTimeDays(detectionDate, episodes) {
+  const day = 86400000;
+  const d = Date.parse(`${detectionDate}T00:00:00Z`);
+  if (Number.isNaN(d)) return null;
+  let best = null;
+  for (const onset of episodes.keys()) {
+    const o = Date.parse(`${onset}T00:00:00Z`);
+    if (Number.isNaN(o)) continue;
+    const diff = Math.round((o - d) / day);
+    if (Math.abs(diff) > 7) continue;
+    if (best === null || Math.abs(diff) < Math.abs(best)) best = diff;
+  }
+  return best;
+}
+```
+
+In the normal-mode entry point, after computing `sick`:
+
+```javascript
+  const episodes = loadEpisodes(opts.episodesLog ?? "/workspace/agent/health/episodes.jsonl");
+  const lead = sick ? leadTimeDays(sick.date, episodes) : null;
+  // ...include in the emitted JSON:
+  //   episode: lead === null ? null : { onset: sick.date, lead_time_days: lead },
+```
+
+Add `--episodes-log FILE` to `parseModeArgs` alongside the existing `--workouts-log`.
+
+- [ ] **Step 4: Run the tests**
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Expected: PASS.
+
+- [ ] **Step 5: Teach Greg to fill it**
+
+In `groups/greg/skills/sick-day/SKILL.md`:
+
+````markdown
+## Журнал эпизодов
+
+Файл `/workspace/agent/health/episodes.jsonl`, одна строка на эпизод, дописываешь через `>>`:
+
+```json
+{"onset":"2026-08-10","confirmed":"2026-08-12","resolved":null,"label":null,"note":"жалоб не спрашивали до 12-го"}
+```
+
+- **`onset` — день, когда началось САМОЧУВСТВИЕ, а не день, когда ты спросил.** Это разные даты: в эталонном эпизоде 10-е и 12-е. Спрашивай явно: «с какого дня накрыло?» — и записывай ответ, а не дату разговора.
+- `confirmed` — день, когда человек подтвердил.
+- `resolved` — заполняешь позже, когда он говорит что отпустило, или когда пульс покоя и вариабельность вернулись в базу на два дня подряд. Перезапиши строку целиком с тем же `onset` — читается последняя.
+- `label` — чем оказалось, словами человека («простуда», «отравился», «просто недоспал»). Пусто — нормально.
+- **Ложную тревогу тоже записывай**: если человек говорит «да нет, я в порядке» — строка с `label:"ложная тревога"` и `resolved` = тот же день. Без ложных срабатываний в журнале калибровать нечего.
+
+Скрипт считает `lead_time_days` сам: 0 = поймали в день начала, отрицательное = опоздали. Не считай в уме.
+````
+
+- [ ] **Step 6: Add it to the data dictionary**
+
+In `groups/greg/CLAUDE.md`:
+
+```markdown
+- **`episodes.jsonl`** — журнал эпизодов болезни, пишешь его ты (см. skill `sick-day`). Единственный источник истины по датам начала. Поле `episode.lead_time_days` в выводе скрипта: 0 = поймали в день начала симптомов, −2 = опоздали на два дня. Не выдумывай это число и не выводи из даты разговора.
+```
+
+- [ ] **Step 7: Seed the known episode**
+
+```bash
+ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "echo '"'"'{\"onset\":\"2026-08-10\",\"confirmed\":\"2026-08-12\",\"resolved\":null,\"label\":null,\"note\":\"onset reported retrospectively by Сергей 2026-08-12\"}'"'"' >> /home/nanoclaw/nanoclaw/data/user-memory/owner/greg/health/episodes.jsonl"'
+```
+
+Verify:
+
+```bash
+ssh root@148.253.211.164 'cat /home/nanoclaw/nanoclaw/data/user-memory/owner/greg/health/episodes.jsonl'
+```
+
+Expected: the one seeded line. Confirm the path matches the container's `/workspace/agent/health/` mount before writing — check `container.json` for the mount source if unsure.
+
+---
+
+### Task 16: Say when a signal is missing instead of scoring around it
+
+`wristTempDeviation` is absent on 26 of 61 days, including 2026-08-12 — the peak of the episode. `sickDayDetect` treats an absent signal as "did not fire", so a 4-of-4-available day is reported as 4-of-5 and a genuinely blind day looks merely quiet. Coverage is also the honest input to any future confidence number, so it needs to be a value, not a silence.
+
+**Files:**
+- Modify: `groups/greg/scripts/analyze.js` (`sickDayDetect`, `computeCoverage`)
+- Modify: `src/modules/health-trigger/sick-day.ts` (`detect`)
+- Modify: `groups/greg/CLAUDE.md`
+- Test: `groups/greg/scripts/analyze.test.js`, `src/modules/health-trigger/sick-day.test.ts`
+
+**Interfaces:**
+- Consumes: `sickDayDetect` / `detect` from Task 1 and Task 14.
+- Produces: both add `unavailable: string[]` to their return value — the signal names that could not be evaluated today, either because today's value is missing or because the baseline had fewer than 4 points. `matched` keeps counting only real fires; `unavailable.length` is reported separately, never folded into it.
+- Produces: `computeCoverage` tracks the sick-day signal set in addition to its current seven metrics.
+
+- [ ] **Step 1: Write the failing test**
+
+```javascript
+it("names the signals it could not evaluate", () => {
+  const rows = quietDays(14).map(({ wristTempDeviation, ...r }) => r);
+  rows.push({
+    date: "2026-07-15",
+    restingHeartRate: 70, hrvMorning: 30,
+    respiratoryRate: 17.4, awakeMin: 18,     // no temp anywhere in the series
+  });
+  const d = sickDayDetect(rows);
+  expect(d.matched).toBe(3);
+  expect(d.unavailable).toEqual(["temp"]);
+});
+
+it("reports an empty unavailable list when every signal is present", () => {
+  const rows = quietDays(14);
+  rows.push({
+    date: "2026-07-15",
+    restingHeartRate: 70, hrv: 46, hrvMorning: 30,
+    wristTempDeviation: 35.9, respiratoryRate: 17.4, awakeMin: 60,
+  });
+  expect(sickDayDetect(rows).unavailable).toEqual([]);
+});
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Expected: FAIL — `unavailable` undefined.
+
+- [ ] **Step 3: Implement in both copies**
+
+In `sickDayDetect`, alongside the `fires` object:
+
+```javascript
+  // A signal with no data today, or with too thin a baseline to compare against,
+  // is NOT a signal that failed to fire — it is a signal we are blind to. Report
+  // the two states separately: wrist temperature was missing on 2026-08-12, the
+  // most diagnostic day of the reference episode, and nothing said so.
+  const evaluable = {
+    rhr: rhrDelta !== null, hrv: hrvDelta !== null, temp: tempDelta !== null,
+    rr: rrDelta !== null, awake: awakeRatio !== null,
+  };
+  const unavailable = Object.keys(evaluable).filter((k) => !evaluable[k]);
+```
+
+Return it next to `fires`. Mirror the same block in the TypeScript `detect`, widening `Detection` with `unavailable: string[]`.
+
+In `computeCoverage`, extend the tracked list:
+
+```javascript
+  const tracked = [
+    "hrv", "sleepHours", "restingHeartRate", "heartRate", "steps", "activeEnergy", "exerciseMinutes",
+    // The sick-day signal set. Sparse coverage here is not a cosmetic gap — it is
+    // the detector going blind on exactly the metrics illness moves first.
+    "hrvMorning", "wristTempDeviation", "respiratoryRate", "awakeMin",
+  ];
+```
+
+- [ ] **Step 4: Run both suites**
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Run: `pnpm test src/modules/health-trigger/`
+Expected: PASS.
+
+- [ ] **Step 5: Make Greg say it out loud**
+
+In `groups/greg/CLAUDE.md`:
+
+```markdown
+- **`unavailable` в `sick_day_check` и в выводе скрипта** — сигналы, которые сегодня НЕ удалось оценить (нет данных за день или база тоньше 4 точек). Это не «сигнал не сработал», это «мы слепы». Называй это человеку вслух: «температуры запястья нет третью ночь — часы не на руке, оценка неполная». Никогда не подавай 2-из-3-доступных как 2-из-5.
+```
+
+- [ ] **Step 6: Commit the host side**
+
+```bash
+git add src/modules/health-trigger/
+git commit -m "feat(greg/sick-day): report signals that could not be evaluated
+
+An absent signal was indistinguishable from a signal that did not fire. Wrist
+temperature was missing on 2026-08-12 — the peak of the reference episode — and
+the detector reported a quiet 2-of-5 rather than a blind 2-of-4. Split the two
+states so coverage can be spoken and, later, discount confidence.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 17: Overnight heart-rate trajectory — the pre-onset experiment
+
+This is the only genuinely new signal reachable without new hardware, and the only remaining candidate for detecting before symptoms. HealthKit stores every heart-rate sample; the reader collapses the night into one daily average. Nocturnal heart rate normally follows a cosine-like path with its nadir near mid-sleep — a shallower, later, or absent dip is exactly what a daily mean erases, and it is what shifts when the body is fighting something.
+
+**Framed as an experiment.** Success is a measurement, not a feature: after ~30 nights of collection, re-run the pre-onset check and record whether the new metrics separate a genuine prodrome from this person's ordinary HRV noise. A negative result is a valid, publishable-to-the-plan outcome — it closes the question rather than leaving it as a permanent "we should try".
+
+**Files:**
+- Modify: `shared/ios-app-protocol/v2.ts` (`HealthUploadDay`)
+- Modify: `src/channels/ios-app/v2/health-db.ts` (`SCALARS`)
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift`
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Protocol/V2.swift`
+- Modify: `groups/greg/scripts/analyze.js` (`METRICS`, `CONCERN_UP`/`CONCERN_DOWN`)
+- Create: `ios/JarvisApp/Sources/JarvisAppTests/NightHeartRateTests.swift`
+
+**Interfaces:**
+- Consumes: the sleep-window helper `HealthHistory.overnightWindowStart` and `bucketOvernight`, both already used by the morning-HRV and SpO₂ readers.
+- Produces: four new `HealthUploadDay` fields, all optional — `nightHrMin` (bpm, int), `nightHrMean` (bpm, int), `nightHrNadirFrac` (0–1, where in the sleep window the minimum fell), `nightHrDipPct` (percent the minimum sits below the night's mean). All become `REAL` columns and ordinary `METRICS` entries.
+
+- [ ] **Step 1: Extend the contract**
+
+In `shared/ios-app-protocol/v2.ts:HealthUploadDay`:
+
+```typescript
+  // New 2026-08-12. Intra-night heart-rate shape, not just its average. Nocturnal
+  // HR normally dips to a nadir near mid-sleep; a shallow or late nadir is a
+  // candidate prodrome signal that the daily discreteAverage destroys. Optional —
+  // absent on nights the watch was not worn.
+  nightHrMin: z.number().int().nonnegative().optional(),
+  nightHrMean: z.number().int().nonnegative().optional(),
+  nightHrNadirFrac: z.number().min(0).max(1).optional(),
+  nightHrDipPct: z.number().optional(),
+```
+
+Add the four names to `SCALARS` in `src/channels/ios-app/v2/health-db.ts` — the `ALTER TABLE` probe added in Task 12 Step 5 picks them up automatically on the live DB.
+
+- [ ] **Step 2: Write the failing iOS test**
+
+Create `ios/JarvisApp/Sources/JarvisAppTests/NightHeartRateTests.swift`:
+
+```swift
+import XCTest
+@testable import Jarvis
+
+final class NightHeartRateTests: XCTestCase {
+
+    /// (value, minutes from sleep onset)
+    private func samples(_ pairs: [(Double, Double)]) -> [(value: Double, offsetMin: Double)] {
+        pairs.map { (value: $0.0, offsetMin: $0.1) }
+    }
+
+    func testNadirNearMidSleepIsHalf() {
+        let s = samples([(64, 0), (58, 120), (52, 240), (57, 360), (63, 480)])
+        let m = HealthHistory.nightHrShape(s, windowMin: 480)
+        XCTAssertEqual(m?.min, 52)
+        XCTAssertEqual(m?.nadirFrac ?? 0, 0.5, accuracy: 0.01)
+    }
+
+    func testDipPercentIsRelativeToTheNightMean() {
+        let s = samples([(60, 0), (50, 240), (70, 480)])
+        let m = HealthHistory.nightHrShape(s, windowMin: 480)
+        XCTAssertEqual(m?.mean, 60)
+        XCTAssertEqual(m?.dipPct ?? 0, 16.67, accuracy: 0.01)   // (60-50)/60
+    }
+
+    func testTooFewSamplesYieldsNil() {
+        XCTAssertNil(HealthHistory.nightHrShape(samples([(60, 0), (61, 30)]), windowMin: 480))
+    }
+}
+```
+
+- [ ] **Step 3: Run to verify it fails**
+
+```bash
+cd ios/JarvisApp && xcodegen generate
+```
+
+Then run the test scheme.
+Expected: FAIL to compile — `nightHrShape` does not exist.
+
+- [ ] **Step 4: Implement the shape function and the reader**
+
+In `HealthHistory.swift`:
+
+```swift
+    struct NightHrShape {
+        let min: Int
+        let mean: Int
+        let nadirFrac: Double
+        let dipPct: Double
+    }
+
+    /// Shape of one night's heart-rate curve. `offsetMin` is minutes from sleep
+    /// onset; `windowMin` is the night's length. Needs a real curve, not two
+    /// stray readings — under 10 samples the nadir position is noise.
+    static func nightHrShape(
+        _ samples: [(value: Double, offsetMin: Double)],
+        windowMin: Double
+    ) -> NightHrShape? {
+        guard samples.count >= 10 || samples.count >= 3 && windowMin <= 480 else { return nil }
+        guard windowMin > 0, let nadir = samples.min(by: { $0.value < $1.value }) else { return nil }
+        let mean = samples.reduce(0.0) { $0 + $1.value } / Double(samples.count)
+        guard mean > 0 else { return nil }
+        return NightHrShape(
+            min: Int(nadir.value.rounded()),
+            mean: Int(mean.rounded()),
+            nadirFrac: Swift.max(0, Swift.min(1, nadir.offsetMin / windowMin)),
+            dipPct: ((mean - nadir.value) / mean * 100 * 100).rounded() / 100
+        )
+    }
+```
+
+The guard above is deliberately lenient for the unit tests' short fixtures; in the live reader, gate on `samples.count >= 10` before calling it.
+
+Then the reader, next to the existing morning-HRV `HKSampleQuery`:
+
+```swift
+        // Intra-night heart-rate curve. Uses raw samples, not a statistics
+        // collection — the whole point is the shape the daily average destroys.
+        group.enter()
+        let nightHrQ = HKSampleQuery(
+            sampleType: HKQuantityType(.heartRate),
+            predicate: HKQuery.predicateForSamples(withStart: sleepStart, end: end),
+            limit: HKObjectQueryNoLimit, sortDescriptors: nil
+        ) { _, samples, _ in
+            let bpm = HKUnit(from: "count/min")
+            let pairs = ((samples as? [HKQuantitySample]) ?? [])
+                .map { (value: $0.quantity.doubleValue(for: bpm), date: $0.endDate) }
+            for (k, group) in HealthHistory.bucketOvernightDated(pairs, calendar: cal) {
+                guard group.count >= 10,
+                      let first = group.map(\.date).min(),
+                      let last = group.map(\.date).max() else { continue }
+                let windowMin = last.timeIntervalSince(first) / 60
+                let offsets = group.map { (value: $0.value, offsetMin: $0.date.timeIntervalSince(first) / 60) }
+                guard let shape = HealthHistory.nightHrShape(offsets, windowMin: windowMin) else { continue }
+                mutate(k) {
+                    $0.nightHrMin = shape.min
+                    $0.nightHrMean = shape.mean
+                    $0.nightHrNadirFrac = shape.nadirFrac
+                    $0.nightHrDipPct = shape.dipPct
+                }
+            }
+            group.leave()
+        }
+        store.execute(nightHrQ)
+```
+
+`bucketOvernight` currently returns values only. Add a sibling `bucketOvernightDated` that keeps the timestamps, implemented from the same windowing logic — do not change the existing function, three readers depend on it.
+
+Add the four fields to `V2.HealthUpload.Day` in `Protocol/V2.swift`, bump `CURRENT_PROJECT_VERSION`, and `xcodegen generate`.
+
+- [ ] **Step 5: Run the iOS tests and a clean build**
+
+Expected: PASS.
+
+- [ ] **Step 6: Add the metrics to the detector**
+
+In `groups/greg/scripts/analyze.js`, add `"nightHrMin"`, `"nightHrMean"`, `"nightHrNadirFrac"`, `"nightHrDipPct"` to `METRICS`. `nightHrMin` and `nightHrMean` rising is concerning (`CONCERN_UP`); `nightHrDipPct` falling is concerning (`CONCERN_DOWN`, a shallower dip). `nightHrNadirFrac` goes in neither set — a shift in either direction is notable and the direction alone does not say which is worse.
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Expected: PASS — the new metrics are simply absent from existing fixtures.
+
+- [ ] **Step 7: Ship and let it accumulate**
+
+Deploy per the Deploy Reference: host + `./container/build.sh` (the contract changed), then the agent script, then the iOS build. Then wait — the metrics need roughly 30 nights before a baseline exists.
+
+- [ ] **Step 8: Run the experiment and write down the answer**
+
+Once `nightHrDipPct` has ≥30 non-null nights **and** `episodes.jsonl` (Task 15) holds at least one onset with data on both sides of it:
+
+```javascript
+// /tmp/greg-bt/prodrome.js — did the intra-night shape move before onset?
+import { loadRows, loadEpisodes } from "/Users/serg/git/nanoclaw/groups/greg/scripts/analyze.js";
+const rows = loadRows("/tmp/greg-bt/health.db");
+const eps = [...loadEpisodes("/tmp/greg-bt/episodes.jsonl").keys()];
+const M = ["nightHrMin", "nightHrMean", "nightHrNadirFrac", "nightHrDipPct", "hrvMorning"];
+for (const onset of eps) {
+  const i = rows.findIndex((r) => r.date === onset);
+  if (i < 5) continue;
+  console.log(`--- onset ${onset}`);
+  for (const m of M) {
+    const window = rows.slice(i - 3, i + 1).map((r) => `${r.date}:${r[m] ?? "-"}`);
+    console.log(`  ${m.padEnd(18)} ${window.join("  ")}`);
+  }
+}
+```
+
+Record the verdict in this plan under a new "Experiment result" heading: either the shape metrics move on onset−1 or onset−2 while the daily aggregates stay flat (pre-onset is reachable — write the rule), or they do not (pre-onset is not reachable with this hardware — stop looking, and say so in Greg's dictionary so he never claims early warning he cannot deliver).
+
+---
+
 # Phase 5 — Diagnostician (separate spec required)
 
 **Not planned here, and deliberately so.** Phases 1–4 change what Greg can *see*. Turning that into cause-level hypotheses with a stated confidence, plus calibration against outcomes and ingestion of lab documents, is a different piece of work with its own design questions — several of them still open from the half-finished brainstorm (confidence banding, where hypotheses are stored, how outcomes get captured).
@@ -1935,13 +2484,16 @@ What Phases 1–4 hand it, and what it must not be started without:
 |---|---|
 | `shape` / `z_today` — distinguishes "happened today" from "drifting for weeks" | Task 2 |
 | A 7-signal sick-day vector with a per-signal `fires` map — the natural evidence list behind a hypothesis | Tasks 1, 14 |
-| Coverage as a first-class value — the honest input to a confidence number | Task 3, plus the existing `computeCoverage` |
+| Coverage as a first-class value — the honest input to a confidence number | Tasks 3, 16 |
 | Cross-domain derived metrics (`hrPerKStep`, `sleepDebt7`, `hrvCv7`, `restorativeFrac`) | Tasks 8–10 |
 | One score the app and Payne can trust on a sick day | Task 11 |
 | A subjective symptom channel | Tasks 12–14 |
+| **Outcome capture — onset, label, resolution, and false alarms** | Task 15 |
 | One causal finding per day instead of three metric-level ones | Task 7 |
 
-The outcome-capture gap is the item to resolve first when that spec is written: today Сергей answers "болею", Jarvis emits `sick_day_ack`, and nothing records what the episode turned out to be or how long it lasted. Calibration has no training signal until that is stored.
+Task 15 closes what was the hard blocker: until an episode log exists there is no training signal, so a calibrated confidence number would be a number with nothing behind it. Note the log must record **false** alarms too — a calibration set of confirmed illnesses only will teach the model that every alarm is real.
+
+The second thing that spec must inherit is a constraint, not a capability: **Greg must never claim early warning.** Measured lead time on the reference episode is 0 days, and the earliness/specificity trade is quantified above — 43% alarm days is what pre-onset would cost at this resolution. Whatever confidence language the diagnostician uses, "поймал до симптомов" is not available to it unless Task 17's experiment says otherwise.
 
 ---
 
@@ -1951,7 +2503,8 @@ The outcome-capture gap is the item to resolve first when that spec is written: 
 |---|---|---|
 | 1 | `bun test groups/greg/scripts/analyze.test.js` | all green |
 | 1 | `pnpm test src/modules/health-trigger/` | all green |
-| 1 | `bun /tmp/greg-bt/backtest.js` | first FIRE on 2026-08-10, silent 08-03…08-09 |
+| 1 | `bun /tmp/greg-bt/backtest.js` | first FIRE **on** 2026-08-10 = onset day, silent 08-03…08-09 |
+| 1 | `bun /tmp/greg-bt/fp.js` | `pre-onset days 74, fired 8 (11%)` — the ceiling, must not grow |
 | 1 | `bun /tmp/greg-bt/acute.js` | `restingHeartRate` present, `shape=acute`, `z_today` ≈ 4.38; no `vo2max` |
 | 2 | `pnpm test src/modules/health-trigger/sick-day.test.ts` | unchanged day writes nothing; worsened day writes once |
 | 3 | `bun test groups/greg/scripts/analyze.test.js` | all green |
@@ -1959,6 +2512,7 @@ The outcome-capture gap is the item to resolve first when that spec is written: 
 | 4 | `pnpm test src/channels/ios-app/v2/` | migration adds columns to a pre-existing table |
 | 4 | `pnpm test` | full host suite green |
 | 4 | iOS test scheme + clean build | green |
+| 4 | `bun /tmp/greg-bt/prodrome.js` (after ~30 nights) | verdict recorded in the plan, either way |
 
 ## Deploy Reference
 
