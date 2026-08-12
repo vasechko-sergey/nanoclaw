@@ -67,11 +67,12 @@ First true alarm lands on 08-10 — the same day as the plain 2-of-5 rule — pl
 
 **3. What Oura has that no rewrite of `analyze.js` can supply.** In descending order of impact:
 
-- **Wear time.** A ring is on 24/7; the watch comes off. `wristTempDeviation` is present on 35 of 61 days — and absent on 08-12, the single most diagnostic day of the episode. Oura's whole method is nightly, and its 76% pre-symptomatic fever detection follows directly from the sensor never being off.
-- **Continuous temperature** versus one `appleSleepingWristTemperature` average per night, on nights the watch is worn.
+- ~~**Wear time.**~~ **Struck — measured and false for this user.** An earlier draft claimed wrist temperature was present on only 35 of 61 days and named wear time the primary limiter. That was a misread column. The real coverage over 2026-06-13…08-12: sleep tracked **61/61 nights**, `respiratoryRate` **61/61**, `hrvMorning` **61/61**, `spo2Avg` **61/61**, `wristTempDeviation` **55/61 (90%)**. Сергей sleeps in the watch and the data says so. Wear time is not the gap.
+- **The six temperature gaps are not behavioural either.** 06-26, 07-03, 08-04, 08-05, 08-07, 08-12 — sleep 6.7–7.7 h, ordinary phases, ordinary onset, nothing short or fragmented. Every other overnight metric survived those same nights. So the loss is specific to `appleSleepingWristTemperature`, and Task 18 identifies one mechanism inside our own pipeline that can produce exactly this pattern.
+- **Continuous temperature** versus one `appleSleepingWristTemperature` average per night. This one stands: Oura samples temperature continuously; Apple emits a single nightly figure, and when it does not emit one there is nothing to fall back on.
 - **Intra-night resolution.** HealthKit stores every heart-rate sample; the iOS reader collapses them into one daily `discreteAverage` plus Apple's own resting estimate. Nocturnal heart rate follows a cosine-like trajectory with a nadir mid-night, and a shallower or later dip is precisely what a daily mean erases. **This is the one genuinely new signal available without new hardware** — Task 17 collects it. Whether it separates the 08-08/08-09 HRV dips from ordinary noise is unknown and cannot be known until the data exists.
 
-The honest position: same-day detection is achievable and this plan delivers it. Pre-onset may simply not be reachable with an Apple Watch worn part-time, and discovering that cleanly is an acceptable outcome — which is why Task 17 is framed as an experiment with a measurement, not a feature with a promised result.
+The honest position: same-day detection is achievable and this plan delivers it. Pre-onset may simply not be reachable from one aggregate row per night, whatever the wear time — and discovering that cleanly is an acceptable outcome, which is why Task 17 is framed as an experiment with a measurement rather than a feature with a promised result. What is *not* an acceptable outcome is losing the resolution we already have, which is what Task 18 is about.
 
 ## File Structure
 
@@ -80,6 +81,7 @@ The honest position: same-day detection is achievable and this plan delivers it.
 | `groups/greg/scripts/analyze.js` | All numeric work: anomaly detection, sick-day rule, recovery/readiness/levels, coverage | 1, 2, 3, 4 |
 | `groups/greg/scripts/analyze.test.js` | Bun test suite for the above | 1, 2, 3, 4 |
 | `src/modules/health-trigger/sick-day.ts` | Host-side duplicate of the sick-day rule + per-day fire guard | 1, 2 |
+| `src/channels/ios-app/v2/health-db.ts` | `health_days` schema, column migration, non-destructive upsert | 4 |
 | `src/modules/health-trigger/sick-day.test.ts` | vitest suite for the host copy | 1, 2 |
 | `groups/greg/CLAUDE.md` | Data dictionary Greg reads; must describe every new field | 1, 3, 4 |
 | `groups/greg/skills/daily-cycle/SKILL.md` | Run loop; where findings get collapsed | 2 |
@@ -2181,7 +2183,7 @@ Expected: the one seeded line. Confirm the path matches the container's `/worksp
 
 ### Task 16: Say when a signal is missing instead of scoring around it
 
-`wristTempDeviation` is absent on 26 of 61 days, including 2026-08-12 — the peak of the episode. `sickDayDetect` treats an absent signal as "did not fire", so a 4-of-4-available day is reported as 4-of-5 and a genuinely blind day looks merely quiet. Coverage is also the honest input to any future confidence number, so it needs to be a value, not a silence.
+`wristTempDeviation` is absent on 6 of 61 days — and one of those six is 2026-08-12, the peak of the episode. 90% coverage does not help when the missing 10% lands on the day that matters. `sickDayDetect` treats an absent signal as "did not fire", so that day was scored as a quiet 4-of-5 rather than a blind 4-of-4. Coverage is also the honest input to any future confidence number, so it needs to be a value, not a silence.
 
 **Files:**
 - Modify: `groups/greg/scripts/analyze.js` (`sickDayDetect`, `computeCoverage`)
@@ -2474,6 +2476,133 @@ Record the verdict in this plan under a new "Experiment result" heading: either 
 
 ---
 
+### Task 18: Stop partial re-uploads from erasing stored measurements
+
+`upsertHealthDays` rebuilds every column on every write:
+
+```typescript
+for (const c of SCALARS) rec[c] = (d as Record<string, unknown>)[c] ?? null;
+// ... ON CONFLICT(date) DO UPDATE SET <every column> = excluded.<column>
+```
+
+Every field of `HealthUploadDay` is optional, and the iOS client sends only what HealthKit had at query time. So **any** upload for a date overwrites that date's whole row, nulling every column the new payload happens to lack. A refetch that runs before Apple has materialised the night's sleeping wrist temperature does not leave the old value alone — it deletes it.
+
+This is not hypothetical traffic. Every row in the store gets rewritten, often days after the fact, and `refresh_<date>.json` requests fire daily:
+
+| date | last ingested | temp |
+|---|---|---|
+| 2026-08-04 | 2026-08-07 15:09 | **missing** |
+| 2026-08-05 | 2026-08-08 18:22 | **missing** |
+| 2026-08-06 | 2026-08-09 16:46 | present |
+| 2026-08-07 | 2026-08-10 13:58 | **missing** |
+| 2026-08-09…08-12 | 2026-08-12 06:06 (one bulk refetch) | 08-12 **missing** |
+
+Three of the four August gaps sit on rows last written ~3 days after the date they describe. That is consistent with a late partial write clobbering a good value, though it does not prove it — Apple may also simply not have emitted those samples. The fix is correct either way, and it is one line: a re-upload should be able to add a measurement or correct one, never to erase one.
+
+**Files:**
+- Modify: `src/channels/ios-app/v2/health-db.ts` (`upsertHealthDays`)
+- Test: `src/channels/ios-app/v2/health-db.test.ts` (created in Task 12 Step 5b)
+
+**Interfaces:**
+- Consumes: the `SCALARS` list and `symptoms` column from Task 12.
+- Produces: `upsertHealthDays` becomes additive — a column already holding a value keeps it unless the incoming payload carries a non-null replacement. `date` and `ingested_at` still overwrite unconditionally.
+
+- [ ] **Step 1: Write the failing test**
+
+```typescript
+it('a partial re-upload does not erase columns it omits', () => {
+  const db = openHealthDb(`${tmpdir()}/health-partial-${Date.now()}.db`);
+  upsertHealthDays(db, [{
+    date: '2026-08-12',
+    steps: 1847,
+    restingHeartRate: 74,
+    wristTempDeviation: 36.19,
+    respiratoryRate: 16.7,
+  }]);
+  // A later refetch for the same date that HealthKit could not fully answer.
+  upsertHealthDays(db, [{ date: '2026-08-12', steps: 1902 }]);
+
+  const [row] = readHealthDays(db);
+  expect(row.steps).toBe(1902);                 // present in the new payload → updated
+  expect(row.wristTempDeviation).toBe(36.19);   // absent from it → preserved
+  expect(row.respiratoryRate).toBe(16.7);
+  expect(row.restingHeartRate).toBe(74);
+});
+
+it('still overwrites a value when the new payload carries one', () => {
+  const db = openHealthDb(`${tmpdir()}/health-overwrite-${Date.now()}.db`);
+  upsertHealthDays(db, [{ date: '2026-08-12', restingHeartRate: 74 }]);
+  upsertHealthDays(db, [{ date: '2026-08-12', restingHeartRate: 68 }]);
+  expect(readHealthDays(db)[0].restingHeartRate).toBe(68);
+});
+
+it('preserves symptoms and workouts across a partial re-upload', () => {
+  const db = openHealthDb(`${tmpdir()}/health-json-${Date.now()}.db`);
+  upsertHealthDays(db, [{ date: '2026-08-12', symptoms: ['fever'], steps: 100 }]);
+  upsertHealthDays(db, [{ date: '2026-08-12', steps: 200 }]);
+  expect(readHealthDays(db)[0].symptoms).toEqual(['fever']);
+});
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `pnpm test src/channels/ios-app/v2/health-db.test.ts`
+Expected: FAIL — `row.wristTempDeviation` is `null`; `symptoms` is `undefined`.
+
+- [ ] **Step 3: Make the upsert additive**
+
+In `upsertHealthDays`, change only how `updates` is built:
+
+```typescript
+  // COALESCE, not plain assignment. Every HealthUploadDay field is optional and
+  // iOS sends only what HealthKit had at query time, so a plain overwrite lets a
+  // partial refetch delete measurements that were already stored — the row for a
+  // date is rewritten repeatedly, sometimes days later. A re-upload may add a
+  // value or replace one, never erase one. `ingested_at` is exempt: it must
+  // always advance so the last-write time stays truthful.
+  const updates = cols
+    .filter((c) => c !== 'date')
+    .map((c) => (c === 'ingested_at' ? `${c}=excluded.${c}` : `${c}=COALESCE(excluded.${c}, ${c})`))
+    .join(', ');
+```
+
+Leave the `rec[c] = … ?? null` line alone — `excluded.<col>` being null is exactly what `COALESCE` needs to see in order to fall through to the stored value.
+
+- [ ] **Step 4: Run the tests**
+
+Run: `pnpm test src/channels/ios-app/v2/`
+Expected: PASS, including Task 12's migration test.
+
+- [ ] **Step 5: Check whether it explains the gaps**
+
+Deploy, then watch whether new temperature gaps stop appearing:
+
+```bash
+ssh root@148.253.211.164 '/usr/bin/node /tmp/q.cjs /home/nanoclaw/nanoclaw/data/user-memory/owner/greg/health/health.db "SELECT count(*) days, count(wristTempDeviation) temp FROM health_days WHERE date >= date(\"now\",\"-14 days\")"'
+```
+
+Expected after two weeks: `temp` equals `days`. If gaps persist at a similar rate, the cause is upstream in HealthKit rather than in our writer — record that conclusion here, because it changes Task 17's read of what continuous temperature would buy.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/channels/ios-app/v2/
+git commit -m "fix(health): partial re-uploads must not erase stored measurements
+
+Every HealthUploadDay field is optional and iOS sends only what HealthKit had
+at query time, but the upsert rebuilt every column from the incoming payload
+and nulled whatever it omitted. Rows are rewritten routinely — three of four
+August wrist-temperature gaps sit on rows last written ~3 days after their own
+date, and one of them is the peak day of a real illness episode.
+
+COALESCE on update: a re-upload can add or correct a value, never delete one.
+ingested_at still advances unconditionally.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
 # Phase 5 — Diagnostician (separate spec required)
 
 **Not planned here, and deliberately so.** Phases 1–4 change what Greg can *see*. Turning that into cause-level hypotheses with a stated confidence, plus calibration against outcomes and ingestion of lab documents, is a different piece of work with its own design questions — several of them still open from the half-finished brainstorm (confidence banding, where hypotheses are stored, how outcomes get captured).
@@ -2509,10 +2638,24 @@ The second thing that spec must inherit is a constraint, not a capability: **Gre
 | 2 | `pnpm test src/modules/health-trigger/sick-day.test.ts` | unchanged day writes nothing; worsened day writes once |
 | 3 | `bun test groups/greg/scripts/analyze.test.js` | all green |
 | 3 | `bun /tmp/greg-bt/acute.js` | `readiness.score ≤ 45` band `red`, `levels.stress ≥ 60` on 2026-08-12 |
-| 4 | `pnpm test src/channels/ios-app/v2/` | migration adds columns to a pre-existing table |
+| 4 | `pnpm test src/channels/ios-app/v2/` | migration adds columns to a pre-existing table; partial re-upload preserves omitted ones |
 | 4 | `pnpm test` | full host suite green |
 | 4 | iOS test scheme + clean build | green |
+| 4 | temp coverage over 14 days, two weeks after Task 18 | `temp` = `days`, or the cause recorded as upstream |
 | 4 | `bun /tmp/greg-bt/prodrome.js` (after ~30 nights) | verdict recorded in the plan, either way |
+
+## Measured Coverage (2026-06-13 … 08-12, 61 days)
+
+Recorded here because an earlier draft got it wrong and built an argument on it.
+
+| metric | present | note |
+|---|---|---|
+| sleep phases, `sleepOnsetMin` | 61/61 | the watch is worn every night |
+| `respiratoryRate` | 61/61 | |
+| `hrvMorning`, `spo2Avg` | 61/61 | |
+| `wristTempDeviation` | 55/61 (90%) | gaps 06-26, 07-03, 08-04, 08-05, 08-07, 08-12 — one of them the episode peak |
+| `bodyMass`, `bodyFatPercentage` | 35/61 | scale, not worn — sparse by nature, not a defect |
+| `vo2max` | 7/61 | removed from the detector in Task 3 |
 
 ## Deploy Reference
 
