@@ -96,6 +96,76 @@ The honest position: same-day detection is achievable and this plan delivers it.
 
 ---
 
+## Execution Phases — read this before the body
+
+**Task numbers are stable identifiers, not an order.** They were assigned as the work was discovered, and Phase 0's measurements reordered the priorities substantially — three data-integrity bugs surfaced that were not visible when the body was written, and two speculative tasks were cut down or killed. The `# Phase N` headers further down are where each task is *written*, not when it is *done*.
+
+This table is the schedule. Work it top to bottom.
+
+### Phase A — Fix the data before tuning anything on it
+
+Every threshold in this plan is calibrated against a series that has three known defects in it. Tuning a detector on a corrupted series bakes the corruption into the constants, so nothing here is optional and nothing after it should start first.
+
+| # | Task | Why first |
+|---|---|---|
+| **20** | Wrist temperature on the wake day | 52/58 samples filed a day early. Cost the detector its temperature vote on the worst day of the reference illness |
+| **22** | Record `tzOffsetMin`, rebase regularity | Three weeks of `warn`/`critical` came from a relocation the pipeline could not see. Also puts an absolute floor under `sleepRegularity`'s severity |
+| **21** | Split naps from the night | One 72-minute nap became a `critical` circadian finding. Stage classification is the marker |
+
+Gate: re-run `fp.js` and `backtest.js` after each. The false-alarm count must not rise, and the first fire must stay on 2026-08-10.
+
+### Phase B — Make the detector see acute onset
+
+| # | Task | Delivers |
+|---|---|---|
+| **1** | Sick-day rule: 5 signals, morning HRV | Onset-day detection instead of two days late |
+| **2** | `z_today` / `shape` beside the window score | A +4.4σ day stops scoring 1.0 and vanishing |
+| **3** | Drop `vo2max`, exclude sick days from the baseline | Removes stale noise and stops an illness diluting its own signal |
+| **19** | Weight signals by their healthy-day noise | Same detection at 5% false alarms instead of 11%. **Its respiratory-rate change is load-bearing** — without it onset day is a day late |
+| **4** | Deploy Phase B and verify live | — |
+
+Note the dependency Phase 0 exposed: after Task 20 corrects the temperature, onset-day detection rests entirely on respiratory rate plus awake minutes, at a margin of 3.18 against 3.01. Task 19 Step 1 is not polish.
+
+### Phase C — Stop saying it five times
+
+| # | Task | Delivers |
+|---|---|---|
+| **5** | Per-day sick-day fire guard | One wake per day unless the picture worsens, instead of five |
+| **7** | One causal finding per day | One alarm to the human, not three metric-level ones 14 minutes apart |
+| **16** | Report signals that could not be evaluated | "No temperature for a third night" said out loud, not scored around |
+| **6** | Delete the stale orphan `analyze.js` | Local hygiene, two minutes |
+
+### Phase D — Start accumulating what calibration needs
+
+| # | Task | Delivers |
+|---|---|---|
+| **15** | Episode log — onset, label, resolution, false alarms | **The blocker for everything in Phase 5.** Until it exists, lead time is unmeasurable and no threshold is honestly tunable |
+
+Start this as early as convenient — it costs almost nothing and only accrues value with time. It is placed after Phase C only because the others fix active defects.
+
+### Phase E — Derived metrics from data already present
+
+| # | Task | Delivers |
+|---|---|---|
+| **8** | `hrPerKStep` | High pulse at zero activity — neither term is anomalous alone |
+| **9** | `sleepPhaseShift` | The per-night event, distinct from the dispersion measure |
+| **10** | `sleepDebt7`, `restorativeFrac`, `hrvCv7` | Leading indicators that cost nothing to compute |
+| **11** | Sick-day verdict reaches `readiness` and `levels` | Stops the app publishing "stress 26" on a day with a fever |
+
+### Phase F — New inputs, in value order
+
+| # | Task | Delivers |
+|---|---|---|
+| **12–14** | HealthKit symptom types + `bodyTemperature` | The subjective channel. Highest value of what remains — Phase 5 needs it |
+| **17** | Interval store, cut down | Keeps the `sleepHr` / `wakeRestHr` split, which fixes the whole-day `heartRate` conflation. Early-warning framing dropped, `hrvDeep` cut |
+| **18** | Non-destructive upsert | Hardening. Exonerated as the cause of the temperature gaps, so no longer urgent |
+
+### Phase G — Diagnostician
+
+Its own spec, gated on Phase D having accumulated episodes. See the section at the end of this document for what it inherits and the one constraint it must respect.
+
+---
+
 # Phase 0 — Pre-verification, before any code
 
 ### Task 0: Answer Task 17's question from an Apple Health export
@@ -405,6 +475,8 @@ The nap is plausibly the real signal — an unusual daytime sleep on the day bef
 ---
 
 # Phase 1 — Acute-onset detection
+
+> Scheduled as **Phase B**, after the data-integrity fixes in Phase A (Tasks 20, 22, 21). See Execution Phases at the top.
 
 Zero new data sources. Highest return: on the reference episode the alert moves from two days late to onset day.
 
@@ -1155,6 +1227,8 @@ Expected: the `health_signal` / `finding` payloads reference `shape` or the five
 
 # Phase 2 — Signal hygiene
 
+> Scheduled as **Phase C**, together with Task 16. See Execution Phases at the top.
+
 Phase 1 makes Greg see more. Phase 2 stops him from saying it five times.
 
 ### Task 5: Per-day sick-day fire guard
@@ -1426,6 +1500,8 @@ Expected: at most one `a2a_kind:"finding"` row per cycle, carrying `related_metr
 ---
 
 # Phase 3 — More signal from the same data
+
+> Scheduled as **Phase E**. Nothing here fixes a defect, so it waits for the detector and the episode log. See Execution Phases at the top.
 
 Derived metrics only. No new source, no contract change, no iOS work.
 
@@ -1855,6 +1931,8 @@ Covered by Task 10 Step 7 if executed together; otherwise repeat that scp + rebi
 ---
 
 # Phase 4 — New inputs from iOS
+
+> **Split by the Phase 0 findings.** Tasks 20, 22 and 21 in this section are data-integrity fixes and run FIRST, as Phase A. Tasks 15 and 16 are pulled forward into Phases D and C. What remains here — Tasks 12–14, 17, 18 — is scheduled as Phase F. See Execution Phases at the top.
 
 Everything above squeezes the existing data. This phase widens it. The single highest-value addition is HealthKit's symptom category types: they are the subjective channel the diagnostician phase needs, and iOS already has permission infrastructure for them.
 
