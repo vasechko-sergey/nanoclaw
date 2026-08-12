@@ -789,6 +789,13 @@ extension V2 {
             // frame, so without this a relocation is indistinguishable from a
             // collapsing sleep routine. Stamped per-day, not at upload time.
             var tzOffsetMin: Int?
+            // Sleep outside the main night block. Previously it merged into the
+            // night: a 72-minute afternoon sleep on 2026-08-09 joined the 23:17
+            // night, sleepOnsetMin became -560 and sleepRegularity produced a
+            // critical finding out of it. Daytime sleep is near-unprecedented for
+            // this person — one occurrence in 61 days — so it is its own signal.
+            var napMin: Int?
+            var napCount: Int?
             var hrvMorning: Int?                 // ms, SDNN over sleep window
             var spo2Avg: Double?                 // %
             var spo2Min: Double?                 // %

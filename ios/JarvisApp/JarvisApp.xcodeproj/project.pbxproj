@@ -70,6 +70,7 @@
 		4BF4C88458642156C18BD71E /* RestTimerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B6DEE248F4B0193B7B08FC /* RestTimerTests.swift */; };
 		4C81E915D4CA0441EEA698DF /* HealthHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC04EA76CC0F89FF14E7849 /* HealthHistory.swift */; };
 		4E3C2BC7DEE98EE4B972F929 /* StatusV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08ADF5C053B4AD89D3CD44E /* StatusV2.swift */; };
+		4E6D64B448B42E1EAA6D7029 /* SleepBlockSplitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E426FB5B43BA70E72C65C2F /* SleepBlockSplitTests.swift */; };
 		4F6A7B2753439E98EEC8AB93 /* ContextBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114A888276D0E083FC387EB /* ContextBuilderTests.swift */; };
 		501D267AF3286A98E4EDE610 /* CoachHintE2ERenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82DA77B4FEC76B11CA4C7 /* CoachHintE2ERenderTests.swift */; };
 		50C5C4BB9518C430E4CC3188 /* AgentIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38E1835A732AD75F82D9CEF /* AgentIdentity.swift */; };
@@ -303,6 +304,7 @@
 		5A9CEE91F5EB65998B79A8E2 /* NotificationReplySender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationReplySender.swift; sourceTree = "<group>"; };
 		5CCB707636F2B2A030B31229 /* MessageFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFeedbackTests.swift; sourceTree = "<group>"; };
 		5CF4706CEA962FA2A8E7F5D4 /* AudioPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlaybackService.swift; sourceTree = "<group>"; };
+		5E426FB5B43BA70E72C65C2F /* SleepBlockSplitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepBlockSplitTests.swift; sourceTree = "<group>"; };
 		5F1865E9C40A015A0AFD1026 /* ProtocolFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolFixtureTests.swift; sourceTree = "<group>"; };
 		6316B6B9C92A4FBA72FB5739 /* NotificationTapRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationTapRouterTests.swift; sourceTree = "<group>"; };
 		63F99A4953300541E52CE55B /* DraftAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftAttachment.swift; sourceTree = "<group>"; };
@@ -617,6 +619,7 @@
 				BC8AA1266F068858AEA1D784 /* SchemaV3MigrationTests.swift */,
 				2250C57E19EC871F52553D27 /* ServerConfigTests.swift */,
 				BC64D6340917C38B04005455 /* SetLogQueueTests.swift */,
+				5E426FB5B43BA70E72C65C2F /* SleepBlockSplitTests.swift */,
 				72069FC546766200DF7310C7 /* StateBoardViewTests.swift */,
 				A96DB97B10316EC2BF92DDB4 /* StateModelTests.swift */,
 				E676498A47D5EE166C7C9CF4 /* StoredAttachmentTests.swift */,
@@ -1100,6 +1103,7 @@
 				448AB35003310B3C4C2C14AA /* SchemaV3MigrationTests.swift in Sources */,
 				16A35A00C45932635364EDAB /* ServerConfigTests.swift in Sources */,
 				59423F16C2BD22F74CCAFC27 /* SetLogQueueTests.swift in Sources */,
+				4E6D64B448B42E1EAA6D7029 /* SleepBlockSplitTests.swift in Sources */,
 				7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */,
 				8B8DBA1244BFD9A7D1B54CF0 /* StateModelTests.swift in Sources */,
 				ADB927AF6429AD509FE016CE /* StoreNotifiedTests.swift in Sources */,
@@ -1175,7 +1179,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 107;
+				CURRENT_PROJECT_VERSION = 108;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1184,7 +1188,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.32.1;
+				MARKETING_VERSION = 1.33.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;
@@ -1421,7 +1425,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 107;
+				CURRENT_PROJECT_VERSION = 108;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1430,7 +1434,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.32.1;
+				MARKETING_VERSION = 1.33.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.vasechko.jarvis;
 				PRODUCT_NAME = Jarvis;
 				SDKROOT = iphoneos;

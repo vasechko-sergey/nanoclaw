@@ -17,9 +17,123 @@ enum HealthHistory {
         var onsetMin: Int?; var sleepHours: Double
     }
 
+    struct SleepDayResult: Equatable {
+        var stages: SleepStageResult
+        var napMin: Int
+        var napCount: Int
+    }
+
+    /// Stages that count as asleep at all.
+    private static let asleepStages: Set<Int> = [
+        SleepStage.asleepUnspecified.rawValue, SleepStage.asleepCore.rawValue,
+        SleepStage.asleepDeep.rawValue, SleepStage.asleepREM.rawValue,
+    ]
+
+    /// Stages the watch only assigns inside a tracked sleep session. Sleep it
+    /// picks up outside one arrives as `asleepUnspecified` — which is why stage
+    /// presence, not clock time or gap width, is the primary night/nap marker.
+    /// Measured over 1,734 real intervals: 1,726 staged, and all 8 unstaged ones
+    /// are sleep outside the night.
+    private static let stagedStages: Set<Int> = [
+        SleepStage.asleepCore.rawValue, SleepStage.asleepDeep.rawValue, SleepStage.asleepREM.rawValue,
+    ]
+
+    /// Split a wake day's intervals into contiguous blocks, breaking on any gap of
+    /// `gapMin` or more. A nap and the night that follows it are different events;
+    /// merged, they produced a `sleepOnsetMin` of −560 and a critical circadian
+    /// finding out of a 72-minute afternoon sleep.
+    ///
+    /// 120 minutes is not a guess: across 61 nights the gap distribution is empty
+    /// between 120 and 240 minutes, and every threshold from 90 to 240 gives the
+    /// identical partition. At 60 it starts cutting real nights in half — including
+    /// 2026-08-10 and 08-11, where a long awakening *is* the symptom.
+    static func splitSleepBlocks(
+        _ samples: [SleepSampleInput], gapMin: Int = 120
+    ) -> [[SleepSampleInput]] {
+        let sorted = samples.sorted { $0.start < $1.start }
+        guard var last = sorted.first?.end else { return [] }
+        var blocks: [[SleepSampleInput]] = []
+        var cur: [SleepSampleInput] = []
+        for s in sorted {
+            if !cur.isEmpty, s.start.timeIntervalSince(last) >= Double(gapMin) * 60 {
+                blocks.append(cur); cur = []
+            }
+            cur.append(s)
+            last = Swift.max(last, s.end)
+        }
+        if !cur.isEmpty { blocks.append(cur) }
+        return blocks
+    }
+
+    /// Minutes actually asleep in a block — awake intervals inside it do not count.
+    static func blockMinutes(_ block: [SleepSampleInput]) -> Double {
+        block.filter { asleepStages.contains($0.stage) }
+             .reduce(0) { $0 + $1.end.timeIntervalSince($1.start) / 60 }
+    }
+
+    /// True when at least half a block's asleep minutes carry a real stage. Half
+    /// rather than all: a staged night can contain a stray unspecified fragment,
+    /// and one such fragment must not disqualify the night.
+    static func isStagedBlock(_ block: [SleepSampleInput]) -> Bool {
+        let asleep = block.filter { asleepStages.contains($0.stage) }
+        let total = asleep.reduce(0.0) { $0 + $1.end.timeIntervalSince($1.start) }
+        guard total > 0 else { return false }
+        let staged = asleep.filter { stagedStages.contains($0.stage) }
+            .reduce(0.0) { $0 + $1.end.timeIntervalSince($1.start) }
+        return staged / total >= 0.5
+    }
+
+    /// Within one gap-joined block, separate the staged run (the night) from any
+    /// unstaged sleep riding along with it. Catches the 2026-07-01 morning doze,
+    /// which sits only 47 minutes after the night and so survives the gap split.
+    /// Awake intervals stay with the night — they belong to whatever surrounds them.
+    static func splitStagedRuns(
+        _ block: [SleepSampleInput]
+    ) -> (night: [SleepSampleInput], outside: [SleepSampleInput]) {
+        var night: [SleepSampleInput] = [], outside: [SleepSampleInput] = []
+        for s in block.sorted(by: { $0.start < $1.start }) {
+            if asleepStages.contains(s.stage) && !stagedStages.contains(s.stage) { outside.append(s) }
+            else { night.append(s) }
+        }
+        return (night, outside)
+    }
+
+    /// Pure: reduce a wake day's sleep to the NIGHT's stages plus whatever slept
+    /// outside it. The night is the longest staged block; everything else — an
+    /// unstaged block, or unstaged sleep riding inside the night's block — is a nap.
+    static func reduceSleepDay(_ samples: [SleepSampleInput], dayStart: Date) -> SleepDayResult {
+        let blocks = splitSleepBlocks(samples)
+        guard !blocks.isEmpty else {
+            return SleepDayResult(stages: bucketSleepStages([], dayStart: dayStart), napMin: 0, napCount: 0)
+        }
+        let staged = blocks.filter { isStagedBlock($0) }
+        // No staged block at all (watch off, or a day of pure naps): fall back to
+        // the longest block so the day is not silently emptied.
+        let candidates = staged.isEmpty ? blocks : staged
+        let nightBlock = candidates.max(by: { blockMinutes($0) < blockMinutes($1) })!
+
+        let runs = splitStagedRuns(nightBlock)
+        var napMin = 0.0, napCount = 0
+        for b in blocks where !(b.first?.start == nightBlock.first?.start) {
+            let m = blockMinutes(b)
+            if m > 0 { napMin += m; napCount += 1 }
+        }
+        if !runs.outside.isEmpty {
+            napMin += blockMinutes(runs.outside)
+            napCount += 1
+        }
+        return SleepDayResult(
+            stages: bucketSleepStages(runs.night, dayStart: dayStart),
+            napMin: Int(napMin.rounded()), napCount: napCount
+        )
+    }
+
     /// Pure: split sleep samples into per-stage minutes + onset (minutes from
     /// `dayStart` local midnight to the earliest asleep sample; negative = before
     /// midnight). `inBed` ignored; `asleepUnspecified`→core. sleepHours = (deep+rem+core)/60.
+    ///
+    /// Callers should go through `reduceSleepDay`, which hands this the night only.
+    /// Fed a whole wake day it will happily take a nap's start as the night's onset.
     static func bucketSleepStages(_ samples: [SleepSampleInput], dayStart: Date) -> SleepStageResult {
         var deep = 0.0, rem = 0.0, core = 0.0, awake = 0.0
         var earliestAsleep: Date? = nil
@@ -223,12 +337,15 @@ enum HealthHistory {
         sleepSamplesByWakeDay(start: sleepStart, end: end, bucket: bucketKey) { byWakeDay in
             for (k, samples) in byWakeDay {
                 let dayStart = cal.startOfDay(for: fmt.date(from: k) ?? start)
-                let r = HealthHistory.bucketSleepStages(samples, dayStart: dayStart)
+                let d = HealthHistory.reduceSleepDay(samples, dayStart: dayStart)
+                let r = d.stages
                 mutate(k) {
                     $0.deepMin = r.deepMin; $0.remMin = r.remMin
                     $0.coreMin = r.coreMin; $0.awakeMin = r.awakeMin
                     $0.sleepOnsetMin = r.onsetMin
                     $0.sleepHours = r.sleepHours
+                    $0.napMin = d.napMin
+                    $0.napCount = d.napCount
                 }
             }
             group.leave()

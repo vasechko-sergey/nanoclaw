@@ -471,6 +471,16 @@ export const HealthUploadDay = z.object({
   // 5th). Storage keeps the UTC instant plus the offset; each metric then picks
   // its own frame, and circadian ones reason in local.
   tzOffsetMin: z.number().int().optional(),
+  // New 2026-08-12. Sleep outside the main night block, split off rather than
+  // merged into it. `sleepSamplesByWakeDay` used to hand the reducer every
+  // interval on a wake day and min(start) took the earliest: on 2026-08-09 a
+  // 72-minute afternoon sleep joined the 23:17 night, sleepOnsetMin became −560,
+  // sleepRegularity scored mod_z 19.53 and Greg reported a circadian collapse
+  // that never happened. Daytime sleep is near-unprecedented for this person —
+  // one occurrence across 61 days — so it is a signal in its own right, not
+  // something to dissolve into a regularity statistic.
+  napMin: z.number().int().nonnegative().optional(),
+  napCount: z.number().int().nonnegative().optional(),
   hrvMorning: z.number().int().nonnegative().optional(),
   spo2Avg: z.number().nonnegative().optional(),
   spo2Min: z.number().nonnegative().optional(),
