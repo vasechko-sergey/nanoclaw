@@ -3507,7 +3507,24 @@ The nap is probably the real signal — an unusual daytime sleep the day before 
 - Create: `ios/JarvisApp/Sources/JarvisAppTests/SleepBlockSplitTests.swift`
 
 **Interfaces:**
-- Produces: `HealthHistory.splitSleepBlocks(_:gapMin:)` → `[[SleepSampleInput]]`, splitting on any gap of `gapMin` minutes or more (default 120). The **main block** is the longest; everything else is a nap.
+**Why a gap split and not "start day equals end day".** The obvious cheap test — a nap does not cross midnight, a night does — was measured against the 61 real sleep blocks and fails badly. At the current +5:30 offset, **16 blocks of four hours or more begin and end on the same calendar date**: real nights that started at 00:22, 00:36, 01:48, 00:23. At the +8:00 offset he was on in June it is 43 of 61. The error is entirely one-directional (no short block crosses midnight in this data), so the rule would not miss naps — it would reclassify a quarter to two-thirds of his nights as naps. Midnight is not a physiological boundary and this person's bedtime sits right on it; the test also changes its answer when he changes timezone. Duration relative to the day's other blocks is the real discriminator, and to compare blocks you must first have blocks.
+
+**Why 120 minutes.** The gap distribution across all 61 nights is cleanly bimodal, with an empty band exactly where the threshold goes:
+
+| gap | count | what it is |
+|---|---|---|
+| 0–15 min | 419 | awakenings inside one night |
+| 15–60 min | 12 | longer awakenings, same night |
+| 60–120 min | 2 | |
+| **120–240 min** | **0** | — the empty band |
+| 240–480 min | 2 | nap separated from the night |
+| 480+ min | 58 | one day to the next |
+
+Any threshold from 90 to 240 minutes gives the identical partition — 61 blocks, 59 of four hours or more, 2 short. At 60 minutes it over-splits into 63 and starts cutting real nights. 120 sits in the middle of the empty band and the choice is insensitive.
+
+**And daytime sleep is essentially unprecedented for this person.** Filtering those 61 blocks for genuine daytime sleep leaves exactly one: 2026-08-09, 14:39–15:52, 72 minutes. (The other short block, 07-05 03:37–07:19, is a short night, not a nap — and falls inside the early-July illness.) One afternoon nap in two months, on the day before onset. That single bit carries more than the regularity statistic the pipeline dissolved it into.
+
+- Produces: `HealthHistory.splitSleepBlocks(_:gapMin:)` → `[[SleepSampleInput]]`, splitting on any gap of `gapMin` minutes or more (default 120, validated above). The **main block** is the longest; everything else is a nap.
 - Produces: two new optional `HealthUploadDay` fields — `napMin` (int, minutes asleep outside the main block) and `napCount` (int). `sleepOnsetMin`, `sleepHours` and the phase minutes are computed from the **main block only**.
 
 - [ ] **Step 1: Write the failing test**
@@ -3590,7 +3607,8 @@ Expected: PASS. Bump the build number, `xcodegen generate`. The contract changed
 - [ ] **Step 5: Tell Greg what the new field means**
 
 ```markdown
-- **`napMin` / `napCount`** — дневной сон вне основного ночного блока. Раньше он приклеивался к ночи: 73-минутный сон днём 9 августа склеился со следующей ночью, `sleepOnsetMin` стал −560, а `sleepRegularity` выдал mod_z 19.5 и critical на ровном месте. Теперь ночь и дневной сон разделены. Внезапный дневной сон у человека, который обычно не спит днём, — сам по себе сигнал: назови его, не прячь в статистику режима.
+- **`napMin` / `napCount`** — дневной сон вне основного ночного блока. Раньше он приклеивался к ночи: 72-минутный сон днём 9 августа склеился со следующей ночью, `sleepOnsetMin` стал −560, а `sleepRegularity` выдал mod_z 19.5 и critical на ровном месте. Теперь ночь и дневной сон разделены.
+- **`napMin > 0` — редчайшее событие, трактуй его как сильный сигнал.** За 61 день наблюдений дневной сон случился РОВНО ОДИН раз — 9 августа, накануне дня, с которого человек отсчитывает начало болезни. Он днём не спит. Поэтому «лёг днём» стоит дороже любой статистики регулярности: называй это прямо и спрашивай почему, а не подшивай к тренду.
 ```
 
 - [ ] **Step 6: Re-examine the July `sleepRegularity` history**
