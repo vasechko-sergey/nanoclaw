@@ -375,7 +375,20 @@ The trajectory question, against 51 baseline nights:
 
 Nothing distinguishes the pre-onset days, and on onset day HRV is *high*, not low. Combined with the heart-rate trajectory result from the first pass, sub-daily resolution does not deliver pre-onset warning here by any route tested.
 
-### Finding D — a 73-minute nap became a `critical` finding
+### Finding E — `sleepRegularity`'s two-month run of criticals is mostly artifact
+
+Сергей: "на Бали я как раз таки очень регулярно ложился в десять". Correct, and the data pins the relocation to **2026-07-01** — stored `sleepOnsetMin` matches UTC-derived night starts to 0 minutes under one candidate offset and to exactly 150 minutes under the other, every day, flipping cleanly on that date.
+
+| period | offset | nights | bedtime | MAD |
+|---|---|---|---|---|
+| …–06-30 | +8:00 Bali | 15 | 22:43 | ±21 min |
+| 07-01–… | +5:30 Sri Lanka | 43 | 23:46 | ±33 min |
+
+Regular in both. The +63-minute step between them is a move. Nothing in the pipeline records the timezone, so a rolling dispersion window straddling 07-01 cannot read it as anything but a disintegrating routine — and did, for three weeks. Add the August nap merge and two of the three runs of findings this metric produced are artifacts; the third (23 → 49 minutes of spread in late June) is real but was reported as `critical` when it describes going to bed between 22:20 and 23:10.
+
+A trap worth recording: Apple's export rewrites every timestamp in the device's *current* timezone, so the raw file shows a uniform `+0530` across a window that actually spans two offsets. The offset has to be captured on-device at the time, or it is gone. Task 22.
+
+### Finding D — a 72-minute nap became a `critical` finding
 
 The 2026-08-10 `sleepOnsetMin = −560` mystery, resolved from the real intervals. Three separate sleep blocks, all from the watch:
 
@@ -3732,6 +3745,179 @@ Expected: PASS. Bump the build number, `xcodegen generate`. The contract changed
 - [ ] **Step 6: Re-examine the July `sleepRegularity` history**
 
 `sleepRegularity` ran `critical` for most of June and July. Some of that may be the same nap-merge artifact rather than a drifting schedule. Once `napMin` has a few weeks of data, re-read those findings — and if they were artifacts, say so in `memories/state.md` so Greg stops treating a month of false criticals as an established pattern.
+
+---
+
+### Task 22: A relocation is not a circadian disorder
+
+> Found by Task 0 Finding E, prompted by Сергей: "на Бали я как раз таки очень регулярно ложился в десять". The data agrees, and `sleepRegularity` — the metric that produced more findings than any other over two months — turns out to be mostly artifact.
+
+`sleepOnsetMin` is minutes from **local** midnight, computed on-device. Nothing anywhere records which local. When the device timezone changes, every subsequent onset shifts by the offset difference, and a rolling dispersion window straddling the change sees a step it has no way to interpret as anything but a collapsing routine.
+
+Measured on the dump, with the relocation pinned to **2026-07-01** by comparing stored `sleepOnsetMin` against UTC-derived night starts at both candidate offsets (the residual is 0 min under one and exactly 150 min under the other, every single day):
+
+| period | offset | nights | bedtime | MAD |
+|---|---|---|---|---|
+| …–06-30 | +8:00 | 15 | 22:43 | **±21 min** |
+| 07-01–… | +5:30 | 43 | 23:46 | **±33 min** |
+
+Regular in both places. The +63-minute step between them is a move, not a symptom.
+
+Attributing the two-month run of findings:
+
+| window | reported | actual cause |
+|---|---|---|
+| 06-21…06-28 | `critical`, spread 23 → 49 min | genuine, but a shift from *extremely* regular to *regular* — not critical |
+| July | `warn`/`critical`, spread 80–97 min | **the relocation step contaminating the rolling window** |
+| 08-10…08-11 | `critical`, mod_z 19.28, spread 152 min | **the nap merge from Task 21** |
+
+Two of the three are artifacts, and the third is miscalibrated severity. Note also the export's own trap: Apple rewrites every timestamp in the device's *current* timezone at export time, so the raw file shows a uniform `+0530` across a window that actually spans two offsets. The offset must come from the device at capture time or not at all.
+
+**Files:**
+- Modify: `shared/ios-app-protocol/v2.ts` (`HealthUploadDay`)
+- Modify: `src/channels/ios-app/v2/health-db.ts` (`SCALARS`)
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift`
+- Modify: `groups/greg/scripts/analyze.js` (`sleepRegularity`, severity mapping)
+- Modify: `groups/greg/CLAUDE.md`
+- Test: `groups/greg/scripts/analyze.test.js`
+
+**Interfaces:**
+- Produces: `HealthUploadDay.tzOffsetMin?: number` — the device's UTC offset in minutes for that day (330 for +5:30, 480 for +8:00), taken from `TimeZone.current.secondsFromGMT(for:)` at the day being reported, not at upload time.
+- Produces: `analyze.js` gains `tzShifted: boolean` on the `sleepRegularity` anomaly, and rebases its baseline at any offset change.
+
+- [ ] **Step 1: Capture the offset**
+
+In the contract, beside `sleepOnsetMin`:
+
+```typescript
+  // New 2026-08-12. sleepOnsetMin is minutes from LOCAL midnight and nothing
+  // recorded which local. A relocation therefore looked exactly like a
+  // collapsing sleep routine: the 2026-07-01 Bali -> Sri Lanka move shifted
+  // bedtime 63 minutes and kept sleepRegularity in warn/critical for three
+  // weeks. Note this must be read from the device per-day — Apple's own Health
+  // export rewrites all timestamps in the current timezone, so the offset is
+  // not recoverable after the fact.
+  tzOffsetMin: z.number().int().optional(),
+```
+
+In `HealthHistory`, for each day bucket:
+
+```swift
+        // Offset for the day being reported, not for now — a backfill run after
+        // a move must not stamp today's timezone onto last month's nights.
+        mutate(k) { $0.tzOffsetMin = TimeZone.current.secondsFromGMT(for: dayStart) / 60 }
+```
+
+Add `tzOffsetMin` to `SCALARS`.
+
+- [ ] **Step 2: Write the failing test**
+
+```javascript
+describe("sleepRegularity across a timezone change", () => {
+  function nights(spec) {
+    return spec.map(([date, onset, tz]) => ({ date, sleepOnsetMin: onset, tzOffsetMin: tz }));
+  }
+  // 14 tight nights at +8:00, then 7 equally tight nights at +5:30. Bedtime is
+  // regular throughout; only the label on the clock moved.
+  const rows = nights([
+    ...Array.from({ length: 14 }, (_, i) => [`2026-06-${String(i + 10).padStart(2, "0")}`, -77 + (i % 3) * 8, 480]),
+    ...Array.from({ length: 7 }, (_, i) => [`2026-07-${String(i + 1).padStart(2, "0")}`, -14 + (i % 3) * 8, 330]),
+  ]);
+
+  it("does not report a routine collapse when only the offset changed", () => {
+    const out = analyze(rows, { recent: 3, baseline: 21, minN: 7, topK: 8 });
+    const reg = out.find((a) => a.metric === "sleepRegularity");
+    expect(reg === undefined || reg.severity === "info").toBe(true);
+  });
+
+  it("marks the anomaly when a shift is present", () => {
+    const out = analyze(rows, { recent: 3, baseline: 21, minN: 7, topK: 8 });
+    const reg = out.find((a) => a.metric === "sleepRegularity");
+    if (reg) expect(reg.tzShifted).toBe(true);
+  });
+
+  it("still catches a real collapse inside one timezone", () => {
+    const messy = nights([
+      ...Array.from({ length: 18 }, (_, i) => [`2026-06-${String(i + 1).padStart(2, "0")}`, -20 + (i % 3) * 6, 330]),
+      ["2026-06-19", 180, 330], ["2026-06-20", -240, 330], ["2026-06-21", 120, 330],
+    ]);
+    const reg = analyze(messy, { recent: 3, baseline: 21, minN: 7, topK: 8 })
+      .find((a) => a.metric === "sleepRegularity");
+    expect(reg).toBeDefined();
+    expect(reg.tzShifted).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 3: Rebase on offset change**
+
+In the `sleepRegularity` computation, normalise each night's onset to a single reference offset before measuring dispersion, and flag when the window spans a change:
+
+```javascript
+// Normalise onset to one reference offset before measuring spread. A move is a
+// step in the LABEL, not in behaviour: Bali 22:43 +-21 min and Sri Lanka 23:46
+// +-33 min are both regular, but a window straddling 2026-07-01 sees a 63-minute
+// jump and calls it a collapse. Measured: three weeks of warn/critical from it.
+function normalizedOnsets(rows) {
+  const withTz = rows.filter((r) => typeof r.sleepOnsetMin === "number");
+  if (!withTz.length) return { values: [], shifted: false };
+  const ref = withTz[withTz.length - 1].tzOffsetMin;
+  const shifted = withTz.some((r) => typeof r.tzOffsetMin === "number" && r.tzOffsetMin !== ref);
+  const values = withTz.map((r) =>
+    typeof r.tzOffsetMin === "number" && typeof ref === "number"
+      ? r.sleepOnsetMin + (ref - r.tzOffsetMin)
+      : r.sleepOnsetMin);
+  return { values, shifted };
+}
+```
+
+Set `tzShifted` on the emitted anomaly, and when it is true, soften severity by one notch — the same treatment `applyLoadContext` already gives an expected post-training dip. Rows with no `tzOffsetMin` (everything before this ships) fall through to the current behaviour.
+
+- [ ] **Step 4: Recalibrate what `critical` means here**
+
+A bedtime spread of 49 minutes was reported to a human as `critical`. That is a person going to bed between 22:20 and 23:10. The severity ladder for `sleepRegularity` is scored on mod_z against the person's own baseline, which is right in principle and useless when the baseline is 23 minutes of spread — every ordinary week doubles it.
+
+Add an absolute floor: `sleepRegularity` cannot exceed `info` while the recent spread is under 60 minutes, whatever the mod_z. Above that, current behaviour.
+
+- [ ] **Step 5: Run the tests**
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Expected: PASS, including the existing suite.
+
+- [ ] **Step 6: Tell Greg, and correct his memory**
+
+In `groups/greg/CLAUDE.md`:
+
+```markdown
+- **`tzOffsetMin`** — часовой пояс устройства в минутах от UTC за этот день. `sleepOnsetMin` считается от ЛОКАЛЬНОЙ полуночи, поэтому переезд сдвигает его целиком. Флаг `tzShifted: true` на аномалии `sleepRegularity` значит «человек сменил пояс» — это НЕ развал режима, severity уже приглушён, не алармируй сверх.
+- **Разброс отхода ко сну меньше часа — это `info`, что бы ни говорил mod_z.** База у человека очень узкая (около 20 минут), поэтому обычная неделя удваивает разброс и выглядит как катастрофа. 49 минут разброса — это «ложится между 22:20 и 23:10». Так и говори.
+```
+
+And in `memories/state.md`, mark the historical record so Greg stops treating it as an established pattern:
+
+```markdown
+2026-08-12 | ПЕРЕСМОТР | sleepRegularity июнь-август: критические findings за июль — артефакт переезда Бали(+8:00) -> Шри-Ланка(+5:30) 1 июля, за 10-11 августа — артефакт склейки дневного сна. Реальным был только умеренный рост разброса 21-28 июня (23 -> 49 мин), и он не тянул на critical. Человек ложится регулярно: Бали 22:43 ±21 мин, Шри-Ланка 23:46 ±33 мин.
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add shared/ios-app-protocol/ src/channels/ios-app/v2/ ios/JarvisApp/
+git commit -m "feat(health): record the device timezone so a move stops reading as a collapse
+
+sleepOnsetMin is minutes from local midnight and nothing recorded which local.
+The 2026-07-01 Bali -> Sri Lanka move shifted bedtime 63 minutes and kept
+sleepRegularity in warn/critical for three weeks; combined with the nap merge
+in August, two of the three runs of findings that metric produced over two
+months were artifacts. Measured per location the person is regular in both:
+22:43 +-21 min on +8:00, 23:46 +-33 min on +5:30.
+
+Captured per-day rather than at upload time, because Apple's Health export
+rewrites every timestamp in the current timezone — the offset is not
+recoverable after the fact.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
 
 ---
 
