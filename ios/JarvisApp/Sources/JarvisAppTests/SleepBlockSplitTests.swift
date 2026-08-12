@@ -136,3 +136,61 @@ final class SleepBlockSplitTests: XCTestCase {
         XCTAssertEqual(r.stages.onsetMin, -40)
     }
 }
+
+/// `sleepOnsetMin` is computed from `Calendar.current` AT UPLOAD TIME, not at
+/// recording time, so a backfill run from a different timezone silently rewrites
+/// history's frame. Measured: rows are written ~3 days late, and the Bali → Sri
+/// Lanka flight on 2026-07-04/05 flipped the frame of nights 07-01…07-04 —
+/// slept in Bali at 03:06, 00:28, 00:04, 02:52 local, stored as if 150 minutes
+/// earlier. Storing the UTC instant alongside makes the row self-describing:
+/// local time can be re-derived under any offset, including a corrected one.
+final class SleepOnsetUtcTests: XCTestCase {
+
+    private let cal = Calendar.current
+
+    func testOnsetUtcIsTheEarliestAsleepInstant() {
+        let start = cal.date(from: DateComponents(year: 2026, month: 8, day: 11, hour: 23, minute: 20))!
+        let end = cal.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 7, minute: 20))!
+        let dayStart = cal.date(from: DateComponents(year: 2026, month: 8, day: 12))!
+        let r = HealthHistory.bucketSleepStages(
+            [HealthHistory.SleepSampleInput(stage: HealthHistory.SleepStage.asleepCore.rawValue,
+                                            start: start, end: end)],
+            dayStart: dayStart
+        )
+        XCTAssertEqual(r.onsetUtcMs, Int((start.timeIntervalSince1970 * 1000).rounded()))
+    }
+
+    func testAwakeIntervalsDoNotSetTheOnsetInstant() {
+        let awake = cal.date(from: DateComponents(year: 2026, month: 8, day: 11, hour: 22, minute: 0))!
+        let asleep = cal.date(from: DateComponents(year: 2026, month: 8, day: 11, hour: 23, minute: 20))!
+        let end = cal.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 7, minute: 0))!
+        let dayStart = cal.date(from: DateComponents(year: 2026, month: 8, day: 12))!
+        let r = HealthHistory.bucketSleepStages([
+            HealthHistory.SleepSampleInput(stage: HealthHistory.SleepStage.awake.rawValue, start: awake, end: asleep),
+            HealthHistory.SleepSampleInput(stage: HealthHistory.SleepStage.asleepCore.rawValue, start: asleep, end: end),
+        ], dayStart: dayStart)
+        XCTAssertEqual(r.onsetUtcMs, Int((asleep.timeIntervalSince1970 * 1000).rounded()))
+    }
+
+    func testNoSleepYieldsNoInstant() {
+        let dayStart = cal.date(from: DateComponents(year: 2026, month: 8, day: 12))!
+        XCTAssertNil(HealthHistory.bucketSleepStages([], dayStart: dayStart).onsetUtcMs)
+    }
+
+    /// The instant and the local minute must describe the same moment under the
+    /// day's own offset — that is the invariant the script relies on to re-derive.
+    func testInstantAndLocalMinuteAgree() {
+        let start = cal.date(from: DateComponents(year: 2026, month: 8, day: 11, hour: 23, minute: 20))!
+        let end = cal.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 7, minute: 0))!
+        let dayStart = cal.date(from: DateComponents(year: 2026, month: 8, day: 12))!
+        let r = HealthHistory.bucketSleepStages(
+            [HealthHistory.SleepSampleInput(stage: HealthHistory.SleepStage.asleepCore.rawValue,
+                                            start: start, end: end)],
+            dayStart: dayStart
+        )
+        let offsetMin = TimeZone.current.secondsFromGMT(for: dayStart) / 60
+        let derivedLocal = Int((Double(r.onsetUtcMs!) / 60000).rounded()) + offsetMin
+        let midnightLocal = Int((dayStart.timeIntervalSince1970 / 60).rounded()) + offsetMin
+        XCTAssertEqual(derivedLocal - midnightLocal, r.onsetMin!)
+    }
+}

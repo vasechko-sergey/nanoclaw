@@ -15,6 +15,13 @@ enum HealthHistory {
     struct SleepStageResult: Equatable {
         var deepMin: Int; var remMin: Int; var coreMin: Int; var awakeMin: Int
         var onsetMin: Int?; var sleepHours: Double
+        /// The onset as an absolute instant (epoch ms), alongside the local
+        /// minute. `onsetMin` is computed from `Calendar.current` AT UPLOAD TIME,
+        /// so a backfill from a different timezone rewrites history's frame —
+        /// measured on the 2026-07-04/05 Bali → Sri Lanka flight, which reframed
+        /// four nights already slept in Bali. The instant does not move, so local
+        /// time can always be re-derived, including under a corrected offset.
+        var onsetUtcMs: Int?
     }
 
     struct SleepDayResult: Equatable {
@@ -154,7 +161,8 @@ enum HealthHistory {
         return SleepStageResult(
             deepMin: Int(deep.rounded()), remMin: Int(rem.rounded()),
             coreMin: Int(core.rounded()), awakeMin: Int(awake.rounded()),
-            onsetMin: onset, sleepHours: ((deep + rem + core) / 60 * 10).rounded() / 10
+            onsetMin: onset, sleepHours: ((deep + rem + core) / 60 * 10).rounded() / 10,
+            onsetUtcMs: earliestAsleep.map { Int(($0.timeIntervalSince1970 * 1000).rounded()) }
         )
     }
 
@@ -343,6 +351,7 @@ enum HealthHistory {
                     $0.deepMin = r.deepMin; $0.remMin = r.remMin
                     $0.coreMin = r.coreMin; $0.awakeMin = r.awakeMin
                     $0.sleepOnsetMin = r.onsetMin
+                    $0.sleepOnsetUtcMs = r.onsetUtcMs
                     $0.sleepHours = r.sleepHours
                     $0.napMin = d.napMin
                     $0.napCount = d.napCount

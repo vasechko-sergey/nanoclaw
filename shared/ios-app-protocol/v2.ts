@@ -471,6 +471,16 @@ export const HealthUploadDay = z.object({
   // 5th). Storage keeps the UTC instant plus the offset; each metric then picks
   // its own frame, and circadian ones reason in local.
   tzOffsetMin: z.number().int().optional(),
+  // New 2026-08-12. The night's onset as an absolute instant (epoch ms).
+  // `sleepOnsetMin` is local AND computed from the device's timezone at UPLOAD
+  // time, not at recording time, so it is not self-describing: rows are written
+  // ~3 days late, and the 2026-07-04/05 Bali → Sri Lanka flight reframed four
+  // nights that had already been slept in Bali (03:06, 00:28, 00:04, 02:52 local
+  // there, stored as if 150 minutes earlier). The instant does not move, so with
+  // `tzOffsetMin` beside it local time can be re-derived under any offset —
+  // including a corrected one. Storage keeps the instant plus the offset; each
+  // metric then picks its frame.
+  sleepOnsetUtcMs: z.number().int().optional(),
   // New 2026-08-12. Sleep outside the main night block, split off rather than
   // merged into it. `sleepSamplesByWakeDay` used to hand the reducer every
   // interval on a wake day and min(start) took the earliest: on 2026-08-09 a

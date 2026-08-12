@@ -25,6 +25,7 @@ const SCALARS = [
   'awakeMin',
   'sleepOnsetMin',
   'tzOffsetMin',
+  'sleepOnsetUtcMs',
   'napMin',
   'napCount',
   'hrv',
