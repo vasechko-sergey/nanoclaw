@@ -292,6 +292,34 @@ Then re-scope. If nothing moves pre-onset, cut Task 17 down to the interval stor
 
 Whatever the outcome, this task costs one afternoon and no deployed code. Task 17 costs a contract change, an image rebuild, an iOS release and a backfill. Doing them in that order is the whole point.
 
+## Pre-verification result — run 2026-08-12
+
+**Export was truncated.** `~/Downloads/export.zip`, 94,105,600 bytes — exactly 1436 × 64 KiB, and missing its end-of-central-directory record. Salvaged by inflating the raw deflate stream directly (`zlib.decompressobj(-15)`, ignoring the missing trailer), which recovered **3.04 GB of `export.xml`** before the stream ran out.
+
+What survived, for 2026-05-01…08-13: `heartRate` 103,758 samples, `respiratoryRate` 4,786, `spo2` 1,128, `steps` 12,221. What did **not** survive the cut: `HeartRateVariabilitySDNN`, `AppleSleepingWristTemperature`, `RestingHeartRate`, `BodyTemperature`, and every `SleepAnalysis` interval — zero records of each. So questions 2 and 3 below are only partly answered and would need a complete re-export.
+
+**Sample density — question 3, answered.** Heart rate lands ~120 samples per night in a 00:00–09:00 window, on every one of the last 16 nights and 102 nights overall. That is one sample every ~4.5 minutes: **30-minute buckets are the right width**, giving ~7 samples each. No need to widen to 60. `hrvDeep` remains unverified — no HRV samples in the recovered portion — but `hrvMorning` is non-null on 61/61 days in `health_days`, so the samples do exist and were simply past the truncation point.
+
+**The pre-onset question — answered, negative.** Nocturnal heart-rate trajectory computed per night over 100 nights, two windows, baseline = nights 05-15…08-07 (MAD-based z):
+
+Fixed 01:00–06:00 window, 81 baseline nights — assumption-free, does not depend on Apple's sleep attribution:
+
+| feature | baseline | 08-08 | 08-09 | **08-10 onset** |
+|---|---|---|---|---|
+| mean HR | 58.0 | +0.3σ | −0.2σ | −0.7σ |
+| min HR | 49.0 | +0.9σ | +0.2σ | −0.2σ |
+| nadir position | 0.54 | +0.9σ | +1.1σ | −0.7σ |
+| dip depth % | 15.4 | −0.8σ | −0.6σ | −0.9σ |
+| slope | 0.00 | −0.5σ | −0.6σ | +0.1σ |
+
+Nothing reaches 1.2σ anywhere — not on the two pre-onset days, and **not on onset day either**. The reconstructed-sleep-window variant does show movement on onset day (nadir position −2.2σ, slope +1.8σ, mean +1.5σ), but it cannot be trusted here: `sleepOnsetMin` for 08-10 is **−560**, meaning that "night" is an eight-hour block starting 14:40 the previous afternoon. The window being measured is not a night. And 08-08 scores +1.8σ on dip depth in that same variant — the same magnitude as the onset-day signals, which is what noise looks like at n=1.
+
+**Verdict: intra-night heart-rate trajectory does not detect before onset, and in the trustworthy window does not clearly detect at onset either.** Task 17's early-warning premise does not survive contact with the data. Re-scoped accordingly — see the note at the head of that task.
+
+**A defect found on the way.** `sleepOnsetMin = −560` with `sleepHours = 8.0` for 2026-08-10: our pipeline accepted an afternoon sleep block as that night's sleep, and `sleepRegularity` then produced mod_z 19.53 and a `critical` finding out of it. Either Apple merged a long nap with the night, or he genuinely went to bed at 14:40 on 08-09 — which would itself be a symptom worth naming rather than laundering into a regularity statistic. Neither reading is served by silently treating it as one night. Not yet a task; needs the `SleepAnalysis` intervals from a complete export to tell the two apart.
+
+**Still open, needs a complete export.** Whether *HRV* trajectory within the night behaves better than daily HRV does — daily morning HRV is this person's noisiest signal at 27% false alarms, and intra-night HRV is a genuinely different question. Also whether the six wrist-temperature gaps are ours or Apple's (question 2, untouched by the partial file). Both need a re-sent, complete `export.zip`.
+
 ---
 
 # Phase 1 — Acute-onset detection
@@ -2488,7 +2516,13 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 17: Store interval series instead of one number per night
 
-> **Gated on Task 0.** Do not start this before the Health-export pre-check has run. Its results decide the bucket width, whether `hrvDeep` is buildable at all, and whether the pre-onset framing survives. Building first and measuring after is exactly the mistake Task 0 exists to avoid.
+> **RE-SCOPED by Task 0's result, 2026-08-12.** The pre-check ran on a real Health export and the early-warning premise did not survive: over 100 nights, no intra-night heart-rate feature moves more than 1.2σ on either pre-onset day, or on onset day itself, in an assumption-free 01:00–06:00 window. So:
+>
+> - **Keep** the interval store, the 30-minute bucketing (confirmed as the right width — ~120 heart-rate samples a night, ~7 per bucket), and the `sleepHr` / `wakeRestHr` split. That split fixes a defect that is wrong on its own merits: whole-day `heartRate` read 64 on 2026-08-12 and was flagged as cardio adaptation while the person was in bed.
+> - **Drop** the experiment framing, Step 9's `prodrome.js`, and Step 10's verdict section — the verdict is already in, recorded under Task 0.
+> - **Keep the backfill**, but as history for the new metrics rather than as an experiment. Lower priority; the store earns its place going forward either way.
+> - **`hrvDeep` stays unverified.** No HRV samples survived the truncated export. Build it only after a complete export shows several HRV samples landing in deep sleep on a typical night — otherwise it will be null on most nights.
+> - **Priority drops** below Tasks 15, 16 and 18, which all deliver something certain.
 
 The pipeline's deepest limitation is not which metrics it collects — coverage is 90–100% — but that it flattens each of them to **one scalar per day** before anything downstream can look. HealthKit holds every sample; `HealthHistory` reduces a whole day of heart rate to a single `discreteAverage`.
 
