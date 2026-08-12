@@ -96,6 +96,204 @@ The honest position: same-day detection is achievable and this plan delivers it.
 
 ---
 
+# Phase 0 — Pre-verification, before any code
+
+### Task 0: Answer Task 17's question from an Apple Health export
+
+Task 17 is ~400 lines of contract, storage, Swift and script changes written to *find out* whether sub-daily resolution helps. It does not have to be. The Health app exports every raw sample it holds, with timestamps, and that export answers the question on a laptop in an afternoon — no build, no deploy, no waiting.
+
+**Do this before writing any of Phase 4.** It settles three things:
+
+1. **Task 17's premise.** Does any intra-night feature move on 2026-08-08 / 08-09 — the two days before onset where every daily aggregate stayed flat except the noisiest signal? If nothing moves, Task 17 shrinks to "fix the whole-day `heartRate` conflation", which is worth doing on its own merits but is not an early-warning story.
+2. **Task 18's cause.** Were the six missing wrist-temperature nights (06-26, 07-03, 08-04, 08-05, 08-07, 08-12) ever in HealthKit? Samples present in the export but null in `health_days` means our own writer destroyed them and the destructive upsert is confirmed. Samples absent from the export means Apple never emitted them, and Task 18 remains a correctness fix rather than the explanation.
+3. **Whether the Task 17 design is even buildable as specified.** `hrvDeep` assumes several HRV samples land inside deep sleep each night. If the watch produces two or three HRV samples a night total, that metric is stillborn and should not be written. Same question for SpO₂ and respiratory-rate density, and for whether 30 minutes is the right bucket width.
+
+**What Сергей does** (about two minutes, once): Health app → profile picture, top right → scroll to the bottom → **Export All Health Data** → Export → AirDrop to the Mac. It lands as `export.zip` containing `apple_health_export/export.xml`. The file can be large — hundreds of MB is normal for a couple of years of history — so AirDrop or a cable, not email.
+
+The export is his complete health record. It stays on the Mac and is parsed locally; nothing about this task uploads it anywhere.
+
+**Files:**
+- Create: `/tmp/greg-bt/parse_export.py` (throwaway, not committed)
+
+**Interfaces:**
+- Produces: `/tmp/greg-bt/samples.jsonl` — one line per sample, `{metric, start, end, value}` — and `/tmp/greg-bt/sleep.jsonl` — `{stage, start, end}`. Both feed the analysis in Step 3 and, if the verdict is positive, the fixture for Task 17's tests.
+
+- [ ] **Step 1: Extract the four metrics plus sleep stages**
+
+`export.xml` runs to millions of records, so stream it rather than loading it.
+
+```python
+# /tmp/greg-bt/parse_export.py
+import json, sys, xml.etree.ElementTree as ET
+
+SRC = sys.argv[1]                 # .../apple_health_export/export.xml
+FROM, TO = "2026-05-01", "2026-08-13"
+
+WANT = {
+    "HKQuantityTypeIdentifierHeartRate": "heartRate",
+    "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "hrv",
+    "HKQuantityTypeIdentifierRespiratoryRate": "respiratoryRate",
+    "HKQuantityTypeIdentifierOxygenSaturation": "spo2",
+    "HKQuantityTypeIdentifierAppleSleepingWristTemperature": "wristTemp",
+    "HKQuantityTypeIdentifierBodyTemperature": "bodyTemperature",
+}
+SLEEP = "HKCategoryTypeIdentifierSleepAnalysis"
+STAGE = {
+    "HKCategoryValueSleepAnalysisAsleepDeep": "deep",
+    "HKCategoryValueSleepAnalysisAsleepREM": "rem",
+    "HKCategoryValueSleepAnalysisAsleepCore": "core",
+    "HKCategoryValueSleepAnalysisAsleepUnspecified": "core",
+    "HKCategoryValueSleepAnalysisAwake": "awake",
+    "HKCategoryValueSleepAnalysisInBed": "inBed",
+}
+
+n_s = n_z = 0
+with open("/tmp/greg-bt/samples.jsonl", "w") as fs, open("/tmp/greg-bt/sleep.jsonl", "w") as fz:
+    for _, el in ET.iterparse(SRC, events=("end",)):
+        if el.tag != "Record":
+            continue
+        t = el.get("type")
+        start = (el.get("startDate") or "")[:19]
+        if not (FROM <= start[:10] <= TO):
+            el.clear(); continue
+        if t in WANT:
+            try:
+                v = float(el.get("value"))
+            except (TypeError, ValueError):
+                el.clear(); continue
+            fs.write(json.dumps({
+                "metric": WANT[t], "start": start, "end": (el.get("endDate") or "")[:19], "value": v,
+            }) + "\n")
+            n_s += 1
+        elif t == SLEEP:
+            fz.write(json.dumps({
+                "stage": STAGE.get(el.get("value"), "unknown"),
+                "start": start, "end": (el.get("endDate") or "")[:19],
+            }) + "\n")
+            n_z += 1
+        el.clear()
+print(f"samples {n_s}  sleep intervals {n_z}")
+```
+
+Run: `python3 /tmp/greg-bt/parse_export.py ~/Downloads/apple_health_export/export.xml`
+Expected: a five- to six-figure sample count. A count near zero means the date filter or the export path is wrong — check that `export.xml` is the large file, not `export_cda.xml`.
+
+- [ ] **Step 2: Check sample density before designing around it**
+
+```python
+# /tmp/greg-bt/density.py
+import json, collections
+per = collections.Counter()
+nights = collections.defaultdict(lambda: collections.Counter())
+for line in open("/tmp/greg-bt/samples.jsonl"):
+    r = json.loads(line)
+    per[r["metric"]] += 1
+    hh = int(r["start"][11:13])
+    if hh < 9:                      # crude night window, enough for a density check
+        nights[r["start"][:10]][r["metric"]] += 1
+print("total samples per metric:", dict(per))
+days = sorted(nights)[-14:]
+print("\nnight-window samples per day (last 14):")
+print("date        " + "".join(m[:9].ljust(11) for m in ["heartRate","hrv","respiratoryRate","spo2"]))
+for d in days:
+    print(d + "  " + "".join(str(nights[d][m]).ljust(11) for m in ["heartRate","hrv","respiratoryRate","spo2"]))
+```
+
+Run: `python3 /tmp/greg-bt/density.py`
+
+Read the result against Task 17's assumptions:
+- `heartRate` should be roughly 60–120 samples a night (Apple samples every few minutes at rest). Under ~20 and 30-minute buckets are too fine — widen to 60.
+- `hrv` in the low single digits per night kills `hrvDeep`. Cut that metric from Task 17 rather than building something that will be null on most nights.
+- `spo2` and `respiratoryRate` are typically sparse and may only support one figure a night, which is what we already store.
+
+- [ ] **Step 3: Run the actual experiment**
+
+```python
+# /tmp/greg-bt/prodrome_export.py — the question Task 17 was written to answer
+import json, collections, statistics as st
+from datetime import datetime, timedelta
+
+def parse(s): return datetime.fromisoformat(s)
+
+sleep = [json.loads(l) for l in open("/tmp/greg-bt/sleep.jsonl")]
+asleep = [z for z in sleep if z["stage"] in ("deep", "rem", "core")]
+hr = [json.loads(l) for l in open("/tmp/greg-bt/samples.jsonl") if json.loads(l)["metric"] == "heartRate"]
+
+# Attribute each sleep interval to its WAKE day, matching how hrvMorning is bucketed.
+def wake_day(dt): return (dt - timedelta(hours=9)).date().isoformat() if dt.hour < 9 else (dt.date() + timedelta(days=1)).isoformat()
+
+by_night = collections.defaultdict(list)
+for z in asleep:
+    by_night[wake_day(parse(z["start"]))].append((parse(z["start"]), parse(z["end"]), z["stage"]))
+
+rows = {}
+for night, intervals in by_night.items():
+    if not intervals: continue
+    lo, hi = min(i[0] for i in intervals), max(i[1] for i in intervals)
+    vals = [(parse(s["start"]), s["value"]) for s in hr if lo <= parse(s["start"]) <= hi]
+    if len(vals) < 20: continue
+    vals.sort()
+    mean = st.mean(v for _, v in vals)
+    nadir_t, nadir_v = min(vals, key=lambda x: x[1])
+    span = (hi - lo).total_seconds()
+    rows[night] = {
+        "n": len(vals),
+        "sleepHr": round(mean, 1),
+        "nightHrMin": round(nadir_v, 1),
+        "nadirFrac": round((nadir_t - lo).total_seconds() / span, 2) if span else None,
+        "dipPct": round((mean - nadir_v) / mean * 100, 1) if mean else None,
+    }
+
+ONSET = "2026-08-10"
+print("night        n   sleepHr  nightHrMin  nadirFrac  dipPct")
+for d in sorted(rows)[-20:]:
+    r = rows[d]
+    mark = "  <-- ONSET" if d == ONSET else ("  <-- pre-onset" if d in ("2026-08-08", "2026-08-09") else "")
+    print(f"{d}  {r['n']:>3}  {r['sleepHr']:>7}  {r['nightHrMin']:>10}  {str(r['nadirFrac']):>9}  {str(r['dipPct']):>6}{mark}")
+
+# Baseline is every night before the pre-onset window, so the episode cannot
+# inflate the baseline it is being scored against.
+base = [rows[d] for d in sorted(rows) if d < "2026-08-08"]
+print("\nbaseline (nights before 08-08):")
+for k in ("sleepHr", "nightHrMin", "nadirFrac", "dipPct"):
+    vs = [r[k] for r in base if r[k] is not None]
+    if len(vs) < 5: continue
+    med, sd = st.median(vs), st.pstdev(vs) or 1
+    print(f"  {k:<12} median {med:>7.2f}  sd {sd:>5.2f}   " + "  ".join(
+        f"{d[5:]}:{(rows[d][k]-med)/sd:+.1f}σ" for d in ("2026-08-08","2026-08-09","2026-08-10") if d in rows and rows[d][k] is not None))
+```
+
+Run: `python3 /tmp/greg-bt/prodrome_export.py`
+
+The last block is the verdict: the sigma deviation of each intra-night feature on 08-08 and 08-09 against a baseline that excludes the episode. Remember what the daily aggregates did on those two days — everything flat except morning HRV, which is noise 27% of the time.
+
+- [ ] **Step 4: Settle the wrist-temperature question while the data is open**
+
+```bash
+grep -o 'AppleSleepingWristTemperature[^/]*startDate="2026-08-0[4578][^"]*"[^/]*value="[^"]*"' \
+  ~/Downloads/apple_health_export/export.xml | head
+grep -c 'AppleSleepingWristTemperature' ~/Downloads/apple_health_export/export.xml
+```
+
+Compare against the six nights `health_days` has as null: 06-26, 07-03, 08-04, 08-05, 08-07, 08-12.
+
+- Samples present in the export for those dates → **our writer lost them.** Task 18's destructive upsert is the confirmed cause; promote it to the front of Phase 4 and re-run the backfill afterwards to recover the values.
+- Samples absent → Apple never produced them. Task 18 stays a correctness fix, and the six gaps are upstream and permanent.
+
+- [ ] **Step 5: Write the verdicts into the plan and re-scope what follows**
+
+Add an `## Pre-verification result` section under this task recording, with numbers:
+
+- whether any intra-night feature separates 08-08/08-09 from baseline, and by how many sigma;
+- per-metric night-time sample density, and what it means for bucket width and for `hrvDeep`;
+- whether the wrist-temperature gaps are ours or Apple's.
+
+Then re-scope. If nothing moves pre-onset, cut Task 17 down to the interval store plus the `heartRate` split, drop the experiment framing, and delete the backfill steps — the intervals are still worth having, just not as an early-warning bet. If something does move, Task 17 proceeds as written and the export doubles as the test fixture: a real night of samples beats the synthetic arrays in its unit tests.
+
+Whatever the outcome, this task costs one afternoon and no deployed code. Task 17 costs a contract change, an image rebuild, an iOS release and a backfill. Doing them in that order is the whole point.
+
+---
+
 # Phase 1 — Acute-onset detection
 
 Zero new data sources. Highest return: on the reference episode the alert moves from two days late to onset day.
@@ -2290,6 +2488,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 17: Store interval series instead of one number per night
 
+> **Gated on Task 0.** Do not start this before the Health-export pre-check has run. Its results decide the bucket width, whether `hrvDeep` is buildable at all, and whether the pre-onset framing survives. Building first and measuring after is exactly the mistake Task 0 exists to avoid.
+
 The pipeline's deepest limitation is not which metrics it collects — coverage is 90–100% — but that it flattens each of them to **one scalar per day** before anything downstream can look. HealthKit holds every sample; `HealthHistory` reduces a whole day of heart rate to a single `discreteAverage`.
 
 That flattening already produces wrong readings today. On 2026-08-12 `heartRate` was 64 and the detector reported it as *down, info* — read as cardio-adaptation. The man was in bed. A whole-day mean over sleeping, sitting and (absent) exercise heart rate is not a quantity anything can interpret, and no weighting scheme fixes a number that means several different things at once.
@@ -3096,6 +3296,10 @@ The second thing that spec must inherit is a constraint, not a capability: **Gre
 
 | Phase | Command | Expected |
 |---|---|---|
+| 0 | `python3 /tmp/greg-bt/parse_export.py …/export.xml` | five- to six-figure sample count |
+| 0 | `python3 /tmp/greg-bt/density.py` | night-time samples per metric — decides bucket width and whether `hrvDeep` exists |
+| 0 | `python3 /tmp/greg-bt/prodrome_export.py` | sigma deviation on 08-08/08-09 — the verdict Task 17 was written to get |
+| 0 | `grep -c AppleSleepingWristTemperature …/export.xml` | whether the six gaps are ours or Apple's |
 | 1 | `bun test groups/greg/scripts/analyze.test.js` | all green |
 | 1 | `pnpm test src/modules/health-trigger/` | all green |
 | 1 | `bun /tmp/greg-bt/backtest.js` | first FIRE **on** 2026-08-10 = onset day, silent 08-03…08-09 |
