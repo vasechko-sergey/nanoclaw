@@ -454,7 +454,11 @@ Nothing distinguishes the pre-onset days, and on onset day HRV is *high*, not lo
 | …–06-30 | +8:00 Bali | 15 | 22:43 | ±21 min |
 | 07-01–… | +5:30 Sri Lanka | 43 | 23:46 | ±33 min |
 
-Regular in both. The +63-minute step between them is a move. Nothing in the pipeline records the timezone, so a rolling dispersion window straddling 07-01 cannot read it as anything but a disintegrating routine — and did, for three weeks. Add the August nap merge and two of the three runs of findings this metric produced are artifacts; the third (23 → 49 minutes of spread in late June) is real but was reported as `critical` when it describes going to bed between 22:20 and 23:10.
+Regular in both. The +63-minute step between them is a move, and nothing in the pipeline records the timezone, so a rolling window straddling 07-01 cannot read it as anything but a disintegrating routine.
+
+**Corrected after implementing it (Task 22).** The relocation is a smaller contributor than this section first claimed. Centring each offset regime on its own median takes the July peak from 97 to **87** minutes — the move accounts for roughly ten of it, not most. July's irregularity was largely genuine: bedtimes really did range 21:34 to 03:37.
+
+The dominant defect is the one next to it — **the severity ladder had no absolute floor.** Measured across the 61 days, 24 change severity once both fixes are in: **17 by the floor, 8 by the timezone softening**. The starkest is 22–28 July, which stood at `critical` on a spread of **36.7 minutes** — bed between 23:15 and 00:30 — for a week running. Scoring mod_z against a ~20-minute personal baseline is right in principle and useless in practice: any ordinary week doubles it.
 
 A trap worth recording: Apple's export rewrites every timestamp in the device's *current* timezone, so the raw file shows a uniform `+0530` across a window that actually spans two offsets. The offset has to be captured on-device at the time, or it is gone. Task 22.
 
