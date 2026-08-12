@@ -25,7 +25,7 @@ vi.mock('../../config.js', () => ({
 }));
 
 // Import AFTER mocks so module-level imports inside sick-day.ts pick up the mocks.
-const { sickDayCheck } = await import('./sick-day.js');
+const { sickDayCheck, detect, SICK_DAY_THRESHOLDS } = await import('./sick-day.js');
 
 function stableDay(date: string, overrides: Partial<HealthUploadDay> = {}): HealthUploadDay {
   return {
@@ -162,5 +162,61 @@ describe('sickDayCheck', () => {
     // The session passed to wakeContainer must be p2's.
     const wakenSession = (wakeContainer.mock.calls[0] as [{ id: string }])[0];
     expect(wakenSession.id).toBe('sess-greg-p2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 1: five signals, morning HRV preferred. Mirror of analyze.test.js.
+// ---------------------------------------------------------------------------
+
+function quiet(n: number): HealthUploadDay[] {
+  return Array.from({ length: n }, (_, i) => ({
+    date: `2026-07-${String(i + 1).padStart(2, '0')}`,
+    restingHeartRate: 61,
+    hrv: 46,
+    hrvMorning: 47,
+    wristTempDeviation: 35.2,
+    respiratoryRate: 15.9,
+    awakeMin: 18,
+  }));
+}
+
+describe('detect — 5 signals', () => {
+  it('exposes the two new thresholds', () => {
+    expect(SICK_DAY_THRESHOLDS.rrAbs).toBe(1.0);
+    expect(SICK_DAY_THRESHOLDS.awakeRatio).toBe(2.0);
+  });
+
+  it('fires on respiratory rate + awake minutes alone', () => {
+    const rows = quiet(14);
+    rows.push({
+      date: '2026-07-15',
+      restingHeartRate: 61,
+      hrv: 46,
+      hrvMorning: 47,
+      wristTempDeviation: 35.2,
+      respiratoryRate: 17.4,
+      awakeMin: 60,
+    });
+    const d = detect(rows);
+    expect(d).not.toBeNull();
+    expect(d!.matched).toBe(2);
+    expect(d!.fires).toEqual({ rhr: false, hrv: false, temp: false, rr: true, awake: true });
+  });
+
+  it('prefers hrvMorning over whole-day hrv', () => {
+    const rows = quiet(14);
+    rows.push({
+      date: '2026-07-15',
+      restingHeartRate: 61,
+      hrv: 46,
+      hrvMorning: 30,
+      wristTempDeviation: 35.9,
+      respiratoryRate: 15.9,
+      awakeMin: 18,
+    });
+    const d = detect(rows);
+    expect(d!.fires.hrv).toBe(true);
+    expect(d!.fires.temp).toBe(true);
   });
 });

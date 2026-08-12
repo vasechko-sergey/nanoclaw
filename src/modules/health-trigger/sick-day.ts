@@ -2,16 +2,16 @@
  * Host-side sick-day trigger.
  *
  * Called after `appendHealthHistory` writes new rows from the iOS app's
- * `POST /ios/health/upload`. We re-implement the three-threshold rule from
+ * `POST /ios/health/upload`. We re-implement the five-threshold rule from
  * `groups/greg/scripts/analyze.js:sickDayDetect` (deliberately
  * duplicated — the host can't shell out to bun on the request path) and,
- * if 2 of 3 signals fire, write a one-shot wake message into Greg's
+ * if 2 of 5 signals fire, write a one-shot wake message into Greg's
  * session inbound DB so he runs `--mode sick-day` on the next poll.
  *
  * Threshold constants stay in sync with analyze.js by convention. Keep them
  * here as plain numbers — if you change one, change both. The TS-side test
  * (sick-day.test.ts) and Bun-side test (analyze.test.js) both pin the
- * canonical 7%/0.4°C/15% values.
+ * canonical values.
  */
 import { writeSessionMessage, resolveSession } from '../../session-manager.js';
 import { wakeContainer } from '../../container-runner.js';
@@ -24,6 +24,8 @@ export const SICK_DAY_THRESHOLDS = {
   rhrPct: 7,
   tempC: 0.4,
   hrvPct: 15,
+  rrAbs: 1.0,
+  awakeRatio: 2.0,
 };
 
 function median(xs: number[]): number {
@@ -40,8 +42,10 @@ interface Detection {
     rhr_delta_pct: number | null;
     hrv_delta_pct: number | null;
     temp_delta_c: number | null;
+    rr_delta_abs: number | null;
+    awake_ratio: number | null;
   };
-  fires: { rhr: boolean; hrv: boolean; temp: boolean };
+  fires: { rhr: boolean; hrv: boolean; temp: boolean; rr: boolean; awake: boolean };
 }
 
 export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS): Detection | null {
@@ -50,39 +54,59 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
   const baseline = rows.slice(-15, -1);
   if (baseline.length < 6) return null;
 
-  function medOf(metric: keyof HealthUploadDay): number | null {
-    const vs = baseline.map((r) => r[metric]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  // Mirror of analyze.js:sickDayDetect. Morning HRV is the recovery-grade
+  // signal and whole-day SDNN only the fallback — buildRecovery already prefers
+  // it, and on 2026-08-11 that difference alone kept this rule silent.
+  const hrvOf = (r: HealthUploadDay): number | null =>
+    typeof r.hrvMorning === 'number' ? r.hrvMorning : typeof r.hrv === 'number' ? r.hrv : null;
+
+  function medOf(pick: (r: HealthUploadDay) => number | null | undefined): number | null {
+    const vs = baseline.map(pick).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
     return vs.length >= 4 ? median(vs) : null;
   }
+  const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const r2 = (x: number) => Math.round(x * 100) / 100;
+  const r1 = (x: number) => Math.round(x * 10) / 10;
 
-  const rhrMed = medOf('restingHeartRate');
-  const hrvMed = medOf('hrv');
-  const tempMed = medOf('wristTempDeviation');
+  const rhrMed = medOf((r) => r.restingHeartRate);
+  const hrvMed = medOf(hrvOf);
+  const tempMed = medOf((r) => r.wristTempDeviation);
+  const rrMed = medOf((r) => r.respiratoryRate);
+  const awakeMed = medOf((r) => r.awakeMin);
 
-  const todayRhr = typeof today.restingHeartRate === 'number' ? today.restingHeartRate : null;
-  const todayHrv = typeof today.hrv === 'number' ? today.hrv : null;
-  const todayTemp = typeof today.wristTempDeviation === 'number' ? today.wristTempDeviation : null;
+  const todayRhr = num(today.restingHeartRate);
+  const todayHrv = hrvOf(today);
+  const todayTemp = num(today.wristTempDeviation);
+  const todayRr = num(today.respiratoryRate);
+  const todayAwake = num(today.awakeMin);
 
-  const rhrDelta = rhrMed !== null && todayRhr !== null ? ((todayRhr - rhrMed) / rhrMed) * 100 : null;
-  const hrvDelta = hrvMed !== null && todayHrv !== null ? ((todayHrv - hrvMed) / hrvMed) * 100 : null;
+  const rhrDelta = rhrMed && todayRhr !== null ? ((todayRhr - rhrMed) / rhrMed) * 100 : null;
+  const hrvDelta = hrvMed && todayHrv !== null ? ((todayHrv - hrvMed) / hrvMed) * 100 : null;
   const tempDelta = tempMed !== null && todayTemp !== null ? todayTemp - tempMed : null;
+  const rrDelta = rrMed !== null && todayRr !== null ? todayRr - rrMed : null;
+  const awakeRatio = awakeMed !== null && awakeMed > 0 && todayAwake !== null ? todayAwake / awakeMed : null;
 
-  const rhrFires = rhrDelta !== null && rhrDelta >= thresholds.rhrPct;
-  const hrvFires = hrvDelta !== null && hrvDelta <= -thresholds.hrvPct;
-  const tempFires = tempDelta !== null && tempDelta >= thresholds.tempC;
-
-  const matched = [rhrFires, hrvFires, tempFires].filter(Boolean).length;
+  const fires = {
+    rhr: rhrDelta !== null && rhrDelta >= thresholds.rhrPct,
+    hrv: hrvDelta !== null && hrvDelta <= -thresholds.hrvPct,
+    temp: tempDelta !== null && tempDelta >= thresholds.tempC,
+    rr: rrDelta !== null && rrDelta >= thresholds.rrAbs,
+    awake: awakeRatio !== null && awakeRatio >= thresholds.awakeRatio,
+  };
+  const matched = Object.values(fires).filter(Boolean).length;
   if (matched < 2) return null;
 
   return {
     date: today.date,
     matched,
     signal: {
-      rhr_delta_pct: rhrDelta !== null ? Math.round(rhrDelta * 10) / 10 : null,
-      hrv_delta_pct: hrvDelta !== null ? Math.round(hrvDelta * 10) / 10 : null,
-      temp_delta_c: tempDelta !== null ? Math.round(tempDelta * 100) / 100 : null,
+      rhr_delta_pct: rhrDelta !== null ? r1(rhrDelta) : null,
+      hrv_delta_pct: hrvDelta !== null ? r1(hrvDelta) : null,
+      temp_delta_c: tempDelta !== null ? r2(tempDelta) : null,
+      rr_delta_abs: rrDelta !== null ? r2(rrDelta) : null,
+      awake_ratio: awakeRatio !== null ? r2(awakeRatio) : null,
     },
-    fires: { rhr: rhrFires, hrv: hrvFires, temp: tempFires },
+    fires,
   };
 }
 
