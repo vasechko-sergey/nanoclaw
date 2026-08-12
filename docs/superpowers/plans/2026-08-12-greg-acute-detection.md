@@ -3522,9 +3522,50 @@ The nap is probably the real signal — an unusual daytime sleep the day before 
 
 Any threshold from 90 to 240 minutes gives the identical partition — 61 blocks, 59 of four hours or more, 2 short. At 60 minutes it over-splits into 63 and starts cutting real nights. 120 sits in the middle of the empty band and the choice is insensitive.
 
+**The real discriminator is stage classification, not the gap.** Сергей pointed out that the Health app shows daytime sleep without phases, and the data confirms it exactly. Of 1,734 sleep intervals, only **8** carry `AsleepUnspecified`; the other 1,726 are staged core/deep/rem/awake. And those 8 are precisely the sleep that happened outside a tracked session:
+
+```
+2026-07-01 05:15 .. 07:16   6 fragments, 66 min   morning doze after the night
+2026-08-09 14:39 .. 15:52   2 records,   72 min   the nap
+```
+
+Night sleep is 100% staged; the nap is 100% unstaged. The mechanism is that the watch only runs its stage classifier inside a sleep session — ad-hoc sleep is recorded as unspecified. That makes stage presence a **semantic** marker, which is what a gap threshold can only approximate.
+
+It also catches something the gap rule misses. The 2026-07-01 morning doze follows a **47-minute** gap, so a 120-minute split merges it into the night; the stage marker separates it cleanly.
+
+So the rule is a combination, with stages doing the primary work:
+
+> **The night is the longest contiguous run of *staged* intervals.** Everything else — unstaged sleep, or a second staged session separated by a real gap — is sleep outside the night. The 120-minute gap split stays as the second line, for the case of two genuinely staged sessions in one day.
+
+**Why not the user's configured sleep window.** Because that is not in the data and cannot be got. There are **zero `inBed` records** — the watch writes stages directly — and HealthKit exposes no readable Sleep Schedule; the schedule drives Sleep Focus and the watch, but no public API returns it.
+
+A window *learned* from his own history is implementable but unreliable across the record:
+
+| period | median bedtime | MAD | range |
+|---|---|---|---|
+| June–July (+8:00) | 00:48 | **±120 min** | 21:39 – 04:18 |
+| August (+5:30) | 23:51 | **±20 min** | 21:44 – 01:48 |
+
+In August a learned window would work well. In June–July the spread is two hours, so any tolerance wide enough to admit real nights is half a day wide. That looseness is not an artifact — `sleepRegularity` sat at critical through that period for a reason. The gap rule is the only discriminator that holds in both periods and survives a timezone change.
+
+**Known limitation, much narrowed by the stage marker.** A nap ending within two hours of bedtime merges into the night *and* would have to be staged to survive `splitStagedRuns` — the realistic case (a 30-minute doze, recorded unspecified) is already caught. What remains is a fully staged second session close to bedtime, which has never occurred. For the record, across 61 nights every gap in the 30–120 minute band is a mid-night awakening, not a nap boundary —
+
+```
+06-15 04:06 -> 04:38   32 min | 502 min asleep before,   2 after
+06-28 03:57 -> 04:33   36 min | 475 before,  13 after
+07-01 04:28 -> 05:15   47 min | 211 before,  65 after
+08-10 02:28 -> 03:32   64 min | 188 before, 222 after   <- illness night
+08-11 03:36 -> 04:54   78 min | 296 before, 107 after   <- illness night
+```
+
+Tightening the threshold to catch the hypothetical nap would cut the nights of 08-10 and 08-11 in half — precisely the nights where a long awakening *is* the symptom, and where `sleepHours` and `awakeMin` matter most. At 45 minutes the partition goes from 2 short blocks to 7. So 120 minutes is protective, not merely convenient, and the error it admits is bounded: a pre-bed doze shifts `sleepOnsetMin` by ~80 minutes, not by the 560 that started all this.
+
+If it ever does bite, the fix is not a tighter gap but **activity inside the gap** — got up, walked, ate, versus lay awake. There are 103,758 heart-rate samples and daily step data available for exactly that test. Recorded here as a known limitation with a plan, not as a solved problem.
+
 **And daytime sleep is essentially unprecedented for this person.** Filtering those 61 blocks for genuine daytime sleep leaves exactly one: 2026-08-09, 14:39–15:52, 72 minutes. (The other short block, 07-05 03:37–07:19, is a short night, not a nap — and falls inside the early-July illness.) One afternoon nap in two months, on the day before onset. That single bit carries more than the regularity statistic the pipeline dissolved it into.
 
-- Produces: `HealthHistory.splitSleepBlocks(_:gapMin:)` → `[[SleepSampleInput]]`, splitting on any gap of `gapMin` minutes or more (default 120, validated above). The **main block** is the longest; everything else is a nap.
+- Produces: `HealthHistory.splitSleepBlocks(_:gapMin:)` → `[[SleepSampleInput]]`, splitting on any gap of `gapMin` minutes or more (default 120, validated above). Blocks are then classified: a block whose asleep minutes are **staged** (core/deep/rem) is a candidate night; a block made of `AsleepUnspecified` is sleep outside the tracked session. The **night** is the longest staged block; everything else is outside-sleep.
+- Produces: `HealthHistory.isStagedBlock(_:)` → `Bool` — true when at least half the block's asleep minutes carry a real stage. Half rather than all, because a staged night can contain a stray unspecified fragment.
 - Produces: two new optional `HealthUploadDay` fields — `napMin` (int, minutes asleep outside the main block) and `napCount` (int). `sleepOnsetMin`, `sleepHours` and the phase minutes are computed from the **main block only**.
 
 - [ ] **Step 1: Write the failing test**
@@ -3537,12 +3578,52 @@ func testAfternoonNapDoesNotBecomeTheNightsOnset() {
               start: cal.date(from: DateComponents(year: 2026, month: 8, day: day, hour: h1, minute: m1))!,
               end:   cal.date(from: DateComponents(year: 2026, month: 8, day: day, hour: h2, minute: m2))!)
     }
-    // The real 2026-08-09: a 73-minute nap at 14:39, then the night from 23:17.
+    // The real 2026-08-09: a 72-minute nap at 14:39, then the night from 23:17.
     let blocks = HealthHistory.splitSleepBlocks(
         [iv(14, 39, 15, 52, day: 9), iv(23, 17, 23, 59, day: 9)], gapMin: 120)
     XCTAssertEqual(blocks.count, 2)
     let main = blocks.max(by: { HealthHistory.blockMinutes($0) < HealthHistory.blockMinutes($1) })!
     XCTAssertEqual(cal.component(.hour, from: main.first!.start), 23)
+}
+
+/// Stage presence is the primary marker: the watch classifies phases only inside
+/// a tracked session, so ad-hoc sleep arrives as AsleepUnspecified. Measured on
+/// real data — 1,726 of 1,734 intervals staged, and all 8 unstaged ones are
+/// sleep outside the night.
+func testUnstagedBlockIsNotTheNight() {
+    let cal = Calendar.current
+    let unspecified = HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+    let core = HKCategoryValueSleepAnalysis.asleepCore.rawValue
+    func iv(_ stage: Int, _ h1: Int, _ m1: Int, _ h2: Int, _ m2: Int, day: Int)
+        -> HealthHistory.SleepSampleInput {
+        .init(stage: stage,
+              start: cal.date(from: DateComponents(year: 2026, month: 8, day: day, hour: h1, minute: m1))!,
+              end:   cal.date(from: DateComponents(year: 2026, month: 8, day: day, hour: h2, minute: m2))!)
+    }
+    XCTAssertFalse(HealthHistory.isStagedBlock([iv(unspecified, 14, 39, 15, 52, day: 9)]))
+    XCTAssertTrue(HealthHistory.isStagedBlock([iv(core, 23, 17, 23, 59, day: 9)]))
+}
+
+/// The 2026-07-01 case the gap rule alone gets wrong: a 47-minute gap, so a
+/// 120-minute split merges the morning doze into the night — but the doze is
+/// unstaged and the stage marker separates it.
+func testUnstagedMorningDozeSeparatesDespiteAShortGap() {
+    let cal = Calendar.current
+    let unspecified = HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+    let core = HKCategoryValueSleepAnalysis.asleepCore.rawValue
+    func iv(_ stage: Int, _ h1: Int, _ m1: Int, _ h2: Int, _ m2: Int)
+        -> HealthHistory.SleepSampleInput {
+        .init(stage: stage,
+              start: cal.date(from: DateComponents(year: 2026, month: 7, day: 1, hour: h1, minute: m1))!,
+              end:   cal.date(from: DateComponents(year: 2026, month: 7, day: 1, hour: h2, minute: m2))!)
+    }
+    let night = iv(core, 0, 57, 4, 28)
+    let doze  = iv(unspecified, 5, 15, 7, 16)
+    let blocks = HealthHistory.splitSleepBlocks([night, doze], gapMin: 120)
+    XCTAssertEqual(blocks.count, 1, "47-minute gap keeps them in one block")
+    let staged = HealthHistory.splitStagedRuns(blocks[0])
+    XCTAssertEqual(staged.night.count, 1)
+    XCTAssertEqual(staged.outside.count, 1)
 }
 
 func testOneContinuousNightStaysOneBlock() {
@@ -3592,11 +3673,48 @@ Expected: FAIL to compile — `splitSleepBlocks` and `blockMinutes` do not exist
         block.filter { asleepStages.contains($0.stage) }
              .reduce(0) { $0 + $1.end.timeIntervalSince($1.start) / 60 }
     }
+
+    /// Stages the watch only assigns inside a tracked sleep session. Sleep it
+    /// picks up outside one arrives as asleepUnspecified — which is why stage
+    /// presence, not clock time or gap width, is the primary night/nap marker.
+    private static let stagedStages: Set<Int> = [
+        HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+        HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+        HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+    ]
+
+    /// True when at least half a block's asleep minutes carry a real stage.
+    /// Half rather than all: a staged night can contain a stray unspecified
+    /// fragment, and one such fragment must not disqualify the night.
+    static func isStagedBlock(_ block: [SleepSampleInput]) -> Bool {
+        let asleep = block.filter { asleepStages.contains($0.stage) }
+        let total = asleep.reduce(0.0) { $0 + $1.end.timeIntervalSince($1.start) }
+        guard total > 0 else { return false }
+        let staged = asleep.filter { stagedStages.contains($0.stage) }
+            .reduce(0.0) { $0 + $1.end.timeIntervalSince($1.start) }
+        return staged / total >= 0.5
+    }
+
+    /// Within one gap-joined block, separate the staged run (the night) from any
+    /// unstaged sleep riding along with it. Catches the 2026-07-01 morning doze,
+    /// which sits only 47 minutes after the night and so survives the gap split.
+    static func splitStagedRuns(
+        _ block: [SleepSampleInput]
+    ) -> (night: [SleepSampleInput], outside: [SleepSampleInput]) {
+        let sorted = block.sorted { $0.start < $1.start }
+        var night: [SleepSampleInput] = [], outside: [SleepSampleInput] = []
+        for s in sorted {
+            if stagedStages.contains(s.stage) { night.append(s) }
+            else if asleepStages.contains(s.stage) { outside.append(s) }
+            else { night.append(s) }   // awake intervals belong to whatever surrounds them
+        }
+        return (night, outside)
+    }
 ```
 
-Where `asleepStages` is the existing set the phase-minute code already uses for core/deep/REM — reuse it rather than defining a second one.
+Where `asleepStages` is the existing set the phase-minute code already uses — reuse it rather than defining a second one.
 
-At the call site: split, take the longest block as the night, compute `sleepOnsetMin` / `sleepHours` / phase minutes from it alone, and sum the rest into `napMin` / `napCount`.
+At the call site: gap-split, keep the longest **staged** block as the night, run `splitStagedRuns` on it to shed any unstaged sleep travelling with it, compute `sleepOnsetMin` / `sleepHours` / phase minutes from what remains, and sum everything else into `napMin` / `napCount`.
 
 Add both fields to the Zod contract and to `SCALARS`, and add `"napMin"` to `METRICS` and `CONCERN_UP` in `analyze.js` — an unusual daytime nap is worth flagging in its own right.
 
