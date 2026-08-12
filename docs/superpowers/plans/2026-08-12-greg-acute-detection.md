@@ -65,6 +65,8 @@ First true alarm lands on 08-10 — the same day as the plain 2-of-5 rule — pl
 
 **2. There is no pre-onset signal at daily-aggregate resolution.** The only deviation in the two days before onset is morning HRV: −42% on 08-08, −23% on 08-09. Both are single-signal days, and this person's healthy weeks contain the same dips (−22% on 08-05). Lowering the rule to 1-of-5 to catch them costs 43% alarm days — which is roughly Oura's own 37% false-positive rate. Their earliness is bought at exactly the price this dataset says it costs; it is a product decision, not a smarter algorithm, and for one person receiving direct messages it is the wrong trade.
 
+Task 19's weighting makes this verdict sharper rather than softer. Morning HRV turns out to be the *noisiest* of the five signals for this person — it clears its threshold on 27% of healthy days — so once signals are weighted by how quiet they are when healthy, the apparent 08-08 bump collapses from 3.64 to 1.84 against an onset-day 4.65. The better detector says explicitly that the 08-08 "prodrome" was HRV noise. That is the right answer, and it is not one a vote-counting rule can give.
+
 **3. What Oura has that no rewrite of `analyze.js` can supply.** In descending order of impact:
 
 - ~~**Wear time.**~~ **Struck — measured and false for this user.** An earlier draft claimed wrist temperature was present on only 35 of 61 days and named wear time the primary limiter. That was a misread column. The real coverage over 2026-06-13…08-12: sleep tracked **61/61 nights**, `respiratoryRate` **61/61**, `hrvMorning` **61/61**, `spo2Avg` **61/61**, `wristTempDeviation` **55/61 (90%)**. Сергей sleeps in the watch and the data says so. Wear time is not the gap.
@@ -2603,6 +2605,232 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 19: Weight signals by how quiet they are when healthy
+
+> **Execute immediately after Task 4.** This depends only on Task 1 and supersedes its fire threshold. It is numbered last purely to avoid renumbering the rest of an approved plan.
+
+Counting five signals as equal votes assumes they are equally trustworthy. Measured over the 74 pre-onset days in `health.db`, they are not — by a factor of nine:
+
+| signal | fires on healthy days | value on onset day 08-10 |
+|---|---|---|
+| `rhr` | 2/74 — **3%** | 0.23 |
+| `rr` | 3/62 — **5%** | 0.95 (just under) |
+| `awake` | 7/57 — 12% | 1.65 — fires |
+| `temp` | 9/57 — 16% | 2.50 — fires |
+| `hrv` | 20/74 — **27%** | −2.22 (HRV was *high* that day) |
+
+Morning HRV clears its threshold on more than a quarter of healthy days and contributes most of the plan's 11% false-alarm rate, while resting heart rate is almost silent when healthy. A vote-counting rule cannot express that. A weighted sum can, and the improvement is large:
+
+| rule | false alarms | fires on onset |
+|---|---|---|
+| 2-of-5 vote (Task 1) | 8/74 — 11% | yes, 08-10 |
+| weighted, T=3.0 | 4/74 — 5% | yes, 08-10 |
+| weighted, T=3.5 | 1/74 — 1% | yes, 08-10 |
+| **weighted, T=4.5** | **0/74 — 0%** | **yes, 08-10** |
+
+Same-day detection at zero measured false alarms, against eleven percent. Note what is and is not supported by sample size: the weights and the false-alarm rates come from 74 healthy days and are reasonably solid; "fires on onset" rests on **one** episode. So set the threshold from a false-alarm budget, never by tuning until it hits 08-10 — that way round is overfitting to n=1.
+
+**Files:**
+- Modify: `groups/greg/scripts/analyze.js` (`SICK_DAY_THRESHOLDS`, `sickDayDetect`)
+- Modify: `src/modules/health-trigger/sick-day.ts` (`SICK_DAY_THRESHOLDS`, `detect`)
+- Modify: `groups/greg/CLAUDE.md`
+- Test: `groups/greg/scripts/analyze.test.js`, `src/modules/health-trigger/sick-day.test.ts`
+
+**Interfaces:**
+- Consumes: `fires` / `unavailable` from Tasks 1 and 16.
+- Produces: both detectors gain `score` (number, 2 decimals) and `score_threshold` (number). `matched` and `fires` stay exactly as they are — they remain the human-readable evidence list, and Greg still quotes them. The fire decision moves from `matched >= 2` to `score >= score_threshold`.
+- Produces: `SIGNAL_WEIGHTS = { rhr: 1.76, hrv: 0.42, temp: 0.65, rr: 1.38, awake: 0.79 }` and `SICK_DAY_SCORE_T = 3.0`, exported from both files.
+- Produces: `rrAbs` drops from `1.0` to `0.9`.
+
+- [ ] **Step 1: Take the free respiratory-rate fix first**
+
+Respiratory rate scored 0.95 against a 1.0 threshold on onset day — it missed by five percent. Measured across the pre-onset days, tightening the threshold costs nothing:
+
+| threshold | false alarms | onset day |
+|---|---|---|
+| +1.0 br/min | 3/62 — 5% | 0.95, silent |
+| **+0.9 br/min** | **3/62 — 5%** | **1.06, fires** |
+| +0.8 br/min | 4/62 — 6% | 1.19, fires |
+
+Change `rrAbs: 1.0` to `rrAbs: 0.9` in both `SICK_DAY_THRESHOLDS` copies, and update the two doc lines in `groups/greg/CLAUDE.md` that quote "+1.0 вдоха/мин".
+
+- [ ] **Step 2: Write the failing test**
+
+```javascript
+import { sickDayDetect, SIGNAL_WEIGHTS, SICK_DAY_SCORE_T } from "./analyze.js";
+
+describe("weighted sick-day score", () => {
+  it("weights resting heart rate far above morning HRV", () => {
+    // Measured on 74 healthy days: rhr clears threshold on 3% of them, hrv on 27%.
+    expect(SIGNAL_WEIGHTS.rhr).toBeGreaterThan(SIGNAL_WEIGHTS.hrv * 3);
+    expect(SICK_DAY_SCORE_T).toBe(3.0);
+  });
+
+  it("a lone noisy-signal day scores below threshold", () => {
+    // hrv -40% and nothing else: weight 0.42 x exceedance 2.67 = 1.12, well under 3.0.
+    const rows = quietDays(14);
+    rows.push({
+      date: "2026-07-15",
+      restingHeartRate: 61, hrv: 46, hrvMorning: 28,
+      wristTempDeviation: 35.2, respiratoryRate: 15.9, awakeMin: 18,
+    });
+    const d = sickDayDetect(rows);
+    expect(d).toBeNull();
+  });
+
+  it("a quiet-signal day clears threshold on less deviation", () => {
+    // rhr +21% alone: weight 1.76 x exceedance 3.0 (clipped) = 5.28.
+    const rows = quietDays(14);
+    rows.push({
+      date: "2026-07-15",
+      restingHeartRate: 74, hrv: 46, hrvMorning: 47,
+      wristTempDeviation: 35.2, respiratoryRate: 15.9, awakeMin: 18,
+    });
+    const d = sickDayDetect(rows);
+    expect(d).not.toBeNull();
+    expect(d.score).toBeGreaterThanOrEqual(SICK_DAY_SCORE_T);
+    expect(d.fires.rhr).toBe(true);
+  });
+
+  it("normalises the threshold when a signal is unavailable", () => {
+    // With temp absent, only 4.34 of the 5.00 total weight can contribute, so
+    // demanding the full 3.0 would make a blind night quietly harder to flag.
+    const rows = quietDays(14).map(({ wristTempDeviation, ...r }) => r);
+    rows.push({
+      date: "2026-07-15",
+      restingHeartRate: 74, hrv: 46, hrvMorning: 47,
+      respiratoryRate: 15.9, awakeMin: 18,
+    });
+    const d = sickDayDetect(rows);
+    expect(d).not.toBeNull();
+    expect(d.unavailable).toEqual(["temp"]);
+    expect(d.score_threshold).toBeCloseTo(3.0 * (5.00 - 0.65) / 5.00, 2);
+  });
+});
+```
+
+- [ ] **Step 3: Run to verify it fails**
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Expected: FAIL — `SIGNAL_WEIGHTS` is not exported.
+
+- [ ] **Step 4: Implement**
+
+```javascript
+// Weight each signal by how quiet it is on this person's healthy days, measured
+// over the 74 pre-onset days in health.db (2026-06 .. 2026-08-09):
+//   rhr 3% | rr 5% | awake 12% | temp 16% | hrv 27%
+// Weight = 1/(false_alarm_rate + 0.05), normalised to mean 1.0. Morning HRV
+// clears its threshold on more than a quarter of healthy days and is worth a
+// quarter of resting heart rate, which is nearly silent when healthy. Counting
+// them as equal votes is what produced an 11% false-alarm rate.
+//
+// RECALIBRATE these against real data as episodes accumulate — they describe one
+// person over ten weeks, not a population. The recipe is in Task 19 of the plan.
+export const SIGNAL_WEIGHTS = { rhr: 1.76, hrv: 0.42, temp: 0.65, rr: 1.38, awake: 0.79 };
+const TOTAL_WEIGHT = Object.values(SIGNAL_WEIGHTS).reduce((a, b) => a + b, 0);
+
+// Chosen from a false-alarm budget, NOT by tuning until it hits a known episode:
+// 3.0 costs 4 alarms across 74 healthy days (~5%, roughly one a month). Raising it
+// to 3.5 gives 1%. Lead time is whatever falls out — do not tune it the other way,
+// there is only one labelled episode and that way is overfitting.
+export const SICK_DAY_SCORE_T = 3.0;
+
+// Per-signal exceedance: 1.0 means exactly at threshold. Clipped at 3 so one
+// extreme reading cannot carry the whole score on its own.
+function exceedances(deltas, thresholds) {
+  return {
+    rhr:   deltas.rhr   === null ? null : Math.max(0, deltas.rhr / thresholds.rhrPct),
+    hrv:   deltas.hrv   === null ? null : Math.max(0, -deltas.hrv / thresholds.hrvPct),
+    temp:  deltas.temp  === null ? null : Math.max(0, deltas.temp / thresholds.tempC),
+    rr:    deltas.rr    === null ? null : Math.max(0, deltas.rr / thresholds.rrAbs),
+    awake: deltas.awake === null ? null : Math.max(0, deltas.awake / thresholds.awakeRatio),
+  };
+}
+```
+
+Inside `sickDayDetect`, after building `fires` and `unavailable`, replace the `if (matched < 2) return null;` gate:
+
+```javascript
+  const ex = exceedances(
+    { rhr: rhrDelta, hrv: hrvDelta, temp: tempDelta, rr: rrDelta, awake: awakeRatio },
+    thresholds,
+  );
+  let score = 0, availableWeight = 0;
+  for (const k of Object.keys(SIGNAL_WEIGHTS)) {
+    if (ex[k] === null) continue;
+    availableWeight += SIGNAL_WEIGHTS[k];
+    score += SIGNAL_WEIGHTS[k] * Math.min(3, ex[k]);
+  }
+  // Scale the bar to the weight actually on the table. Without this, a night
+  // missing wrist temperature silently needs more evidence than a complete one —
+  // the detector would get quieter exactly when it is already partly blind.
+  const scoreThreshold = availableWeight > 0
+    ? Math.round(SICK_DAY_SCORE_T * (availableWeight / TOTAL_WEIGHT) * 100) / 100
+    : SICK_DAY_SCORE_T;
+  score = Math.round(score * 100) / 100;
+  if (score < scoreThreshold) return null;
+```
+
+Return `score` and `score_threshold` alongside `matched`, `fires`, `signal` and `unavailable`. Note the `awakeRatio` delta enters `exceedances` as a ratio, not a difference — it is already normalised against its own threshold of 2.0 in the same way.
+
+Mirror the whole block into the TypeScript `detect`, widening `Detection` with `score: number` and `score_threshold: number`.
+
+- [ ] **Step 5: Run both suites**
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Run: `pnpm test src/modules/health-trigger/`
+Expected: PASS. Task 1's own cases still pass — `matched` and `fires` are unchanged; only the gate moved.
+
+- [ ] **Step 6: Re-measure both numbers on real data**
+
+Run: `bun /tmp/greg-bt/fp.js`
+Expected: `pre-onset days 74, fired 4 (5%)` — down from 8 (11%).
+
+Run: `bun /tmp/greg-bt/backtest.js`
+Expected: still first fires on `2026-08-10`. If it now fires later, the threshold is too high for the budget chosen — lower it and re-run `fp.js`, in that order.
+
+- [ ] **Step 7: Give Greg the vocabulary**
+
+In `groups/greg/CLAUDE.md`:
+
+```markdown
+- **Сигналы sick-day не равнозначны — у каждого свой вес**, измеренный по тому, насколько он тих в здоровые дни этого человека: пульс покоя 1.76, частота дыхания 1.38, ночное бодрствование 0.79, температура запястья 0.65, утренняя вариабельность 0.42. Утренняя HRV срабатывает вхолостую больше чем в четверти здоровых дней — **не строй на ней вывод в одиночку**. Пульс покоя почти не шумит: если он выбился, это весомо.
+- **`score` и `score_threshold`** — решение принимает скрипт по ним, а не по `matched`. `matched` и `fires` остаются перечнем улик для человека: называй, что именно сработало, но не пересчитывай порог в уме.
+- Порог подстраивается под доступные сигналы: если температуры нет, `score_threshold` пропорционально ниже. Слепая ночь не должна требовать больше улик, чем полная.
+```
+
+- [ ] **Step 8: Write down the recalibration recipe**
+
+Add to the end of this task in the plan, so the weights do not silently rot:
+
+> Re-derive the weights whenever `episodes.jsonl` (Task 15) gains a labelled episode. For each signal, compute the share of days *outside* any episode window on which it clears its own threshold; weight = 1/(rate + 0.05), normalised to mean 1.0. Then pick the threshold from the alarm budget, not from the episodes. Record the previous weights and the date in a comment above `SIGNAL_WEIGHTS` so drift is visible.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/modules/health-trigger/
+git commit -m "feat(greg/sick-day): weight signals by their healthy-day false-alarm rate
+
+Five signals were counted as equal votes. Measured over 74 pre-onset days they
+differ ninefold: resting heart rate clears its threshold on 3% of healthy days,
+morning HRV on 27%. HRV supplied most of the rule's false alarms while being the
+least informative signal this person has.
+
+Weight = 1/(false-alarm rate + 0.05), normalised to mean 1.0, score clipped at
+3x threshold per signal, bar scaled to the weight actually available so a night
+missing wrist temperature does not silently need more evidence. Threshold picked
+from an alarm budget rather than tuned to the one labelled episode: 5% of days
+at T=3.0, against 11% for the vote rule, with the same onset-day detection.
+
+Respiratory rate threshold 1.0 -> 0.9 br/min: it scored 0.95 on onset day and
+the tightening costs no additional false alarms (3/62 either way).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
 # Phase 5 — Diagnostician (separate spec required)
 
 **Not planned here, and deliberately so.** Phases 1–4 change what Greg can *see*. Turning that into cause-level hypotheses with a stated confidence, plus calibration against outcomes and ingestion of lab documents, is a different piece of work with its own design questions — several of them still open from the half-finished brainstorm (confidence banding, where hypotheses are stored, how outcomes get captured).
@@ -2613,6 +2841,7 @@ What Phases 1–4 hand it, and what it must not be started without:
 |---|---|
 | `shape` / `z_today` — distinguishes "happened today" from "drifting for weeks" | Task 2 |
 | A 7-signal sick-day vector with a per-signal `fires` map — the natural evidence list behind a hypothesis | Tasks 1, 14 |
+| Per-signal trust weights measured on healthy days — the first honest ingredient of a confidence number | Task 19 |
 | Coverage as a first-class value — the honest input to a confidence number | Tasks 3, 16 |
 | Cross-domain derived metrics (`hrPerKStep`, `sleepDebt7`, `hrvCv7`, `restorativeFrac`) | Tasks 8–10 |
 | One score the app and Payne can trust on a sick day | Task 11 |
@@ -2634,6 +2863,7 @@ The second thing that spec must inherit is a constraint, not a capability: **Gre
 | 1 | `pnpm test src/modules/health-trigger/` | all green |
 | 1 | `bun /tmp/greg-bt/backtest.js` | first FIRE **on** 2026-08-10 = onset day, silent 08-03…08-09 |
 | 1 | `bun /tmp/greg-bt/fp.js` | `pre-onset days 74, fired 8 (11%)` — the ceiling, must not grow |
+| 1 (after Task 19) | `bun /tmp/greg-bt/fp.js` | `fired 4 (5%)`, still first firing on 2026-08-10 |
 | 1 | `bun /tmp/greg-bt/acute.js` | `restingHeartRate` present, `shape=acute`, `z_today` ≈ 4.38; no `vo2max` |
 | 2 | `pnpm test src/modules/health-trigger/sick-day.test.ts` | unchanged day writes nothing; worsened day writes once |
 | 3 | `bun test groups/greg/scripts/analyze.test.js` | all green |
