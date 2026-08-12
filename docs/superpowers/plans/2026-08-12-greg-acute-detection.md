@@ -665,9 +665,11 @@ for (let i = rows.length - 10; i < rows.length; i++) {
 ```
 
 Run: `bun /tmp/greg-bt/backtest.js`
-Expected: silent through `2026-08-09`; `2026-08-10 FIRE 2/5 temp,awake`; `2026-08-11 FIRE 4/5 hrv,temp,rr,awake`; `2026-08-12 FIRE 4/5 rhr,hrv,rr,awake`.
+Expected: silent through `2026-08-10`; `2026-08-11 FIRE 4/5 hrv,temp,rr,awake`; `2026-08-12 FIRE 4/5 hrv,temp,rr,awake`.
 
-Onset was 08-10, so the first fire must land **on** 08-10. A fire on 08-11 means the rule regressed to one-day-late; a fire before 08-09 means a threshold is too loose — check it against the 11% ceiling in Step 5b before accepting it.
+**Corrected 2026-08-12 after Phase A ran** — this step originally expected `2026-08-10 FIRE 2/5 temp,awake`, measured before Task 20 re-keyed the temperature. On 08-10 the wrist temperature is −0.14 °C against baseline, not +1.00: the +1.00 belongs to 08-11 and Task 20 moved it there. The other four signals reproduce Task 19's table to two decimals (rhr 0.23, hrv −2.22, rr 0.95, awake 1.65 in threshold units), so only the temperature row moved.
+
+The consequence is exactly what Task 19 Step 1 predicts: at `rrAbs: 1.0` the onset day scores 1/5 and this task alone leaves the detector one day late. **Task 1 does not deliver onset-day detection on its own — Task 19 Step 1 does.** Do not chase 08-10 by loosening a threshold here; the fire on 08-11 at this point in the phase is correct, and the 11% ceiling in Step 5b is the thing to hold.
 
 - [ ] **Step 5b: Pin the false-alarm ceiling**
 
@@ -1003,7 +1005,10 @@ for (const a of analyze(rows, { recent: 3, baseline: 21, minN: 7, topK: 8 })) {
 ```
 
 Run: `bun /tmp/greg-bt/acute.js`
-Expected: `restingHeartRate` present with `shape=acute`, `z_today` ≈ 4.38, severity `warn`. Previously absent entirely.
+
+Expected: at least one finding with `shape` of `acute` whose `|mod_z|` is below the sustained gate's 2.0 — that combination is only reachable through the new path.
+
+**Corrected 2026-08-12 during execution** — this step originally expected `restingHeartRate` at `z_today ≈ 4.38`. That was measured while 08-12 was still in progress and its resting heart rate read 74; the finished day reads 65, giving `z_today` 1.35, and the metric correctly drops out. The observed acute-only finding is `fatMassKg` at `mod_z −1.01, z_today −3.04` — invisible to the window gate, which needs `|mod_z| ≥ 2`, and surfaced by the acute gate alone. Do not pin this verification to one metric: which day is anomalous changes as data arrives.
 
 - [ ] **Step 6: Document the new fields for Greg**
 
@@ -3260,11 +3265,18 @@ Morning HRV clears its threshold on more than a quarter of healthy days and cont
 | rule | false alarms | fires on onset |
 |---|---|---|
 | 2-of-5 vote (Task 1) | 8/74 — 11% | yes, 08-10 |
-| weighted, T=3.0 | 4/74 — 5% | yes, 08-10 |
-| weighted, T=3.5 | 1/74 — 1% | yes, 08-10 |
-| **weighted, T=4.5** | **0/74 — 0%** | **yes, 08-10** |
+| **weighted, T=3.0** | **5/74 — 7%** | **yes, 08-10** |
+| weighted, T=3.5 | 3/74 — 4% | no — 08-11, a day late |
+| weighted, T=4.0 | 1/74 — 1% | no |
+| weighted, T=5.0 | 0/74 — 0% | no |
 
-Same-day detection at zero measured false alarms, against eleven percent. Note what is and is not supported by sample size: the weights and the false-alarm rates come from 74 healthy days and are reasonably solid; "fires on onset" rests on **one** episode. So set the threshold from a false-alarm budget, never by tuning until it hits 08-10 — that way round is overfitting to n=1.
+**Re-measured 2026-08-12 after Phase A ran; the original table is struck.** It claimed 0% false alarms at T=4.5 *with* onset-day detection. That came entirely from the mis-filed wrist temperature: 08-10 was holding 36.19 °C, which belongs to 08-11 and which Task 20 moved there. With the temperature corrected, the onset day scores **3.16** — carried by respiratory rate (1.46) and awake minutes (1.29), with resting heart rate adding 0.41 and both temperature and HRV contributing nothing. There is no threshold on this data that buys both zero false alarms and same-day detection; the honest gain is **11% → 7% at the same detection day**.
+
+T stays at **3.0**, chosen the way the rule below requires — from the budget, accepting that it is at the loose end of it. Raising it to meet 5% exactly would trade away the entire deliverable of Phase B.
+
+Worth knowing before treating the remainder as noise: four of the five fire on **2026-07-03, 07-08, 07-11, 07-12, 07-13** — clustered on the Bali → Sri Lanka relocation (physical move 5 July). A travel week genuinely moves these signals, so the measured rate is an upper bound on how often the rule cries wolf during an ordinary week at home.
+
+Note what is and is not supported by sample size: the weights and the false-alarm rates come from 74 healthy days and are reasonably solid; "fires on onset" rests on **one** episode. So set the threshold from a false-alarm budget, never by tuning until it hits 08-10 — that way round is overfitting to n=1.
 
 **Files:**
 - Modify: `groups/greg/scripts/analyze.js` (`SICK_DAY_THRESHOLDS`, `sickDayDetect`)
@@ -3421,7 +3433,7 @@ Expected: PASS. Task 1's own cases still pass — `matched` and `fires` are unch
 - [ ] **Step 6: Re-measure both numbers on real data**
 
 Run: `bun /tmp/greg-bt/fp.js`
-Expected: `pre-onset days 74, fired 4 (5%)` — down from 8 (11%).
+Expected: `pre-onset days 74, fired 5 (7%)` — down from 8 (11%). (Corrected from 4/5% — see the struck table above.)
 
 Run: `bun /tmp/greg-bt/backtest.js`
 Expected: still first fires on `2026-08-10`. If it now fires later, the threshold is too high for the budget chosen — lower it and re-run `fp.js`, in that order.
