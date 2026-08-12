@@ -7,6 +7,18 @@ struct SettingsFormBody: View {
     var isInitialSetup: Bool = false
     @Environment(AppSettings.self) var settings
 
+    // Raw-sample export. Kept in the settings form because it is a one-off
+    // diagnostic tool, not part of any flow — see HealthSampleDump for why the
+    // Health app's own export is not usable for this.
+    @State private var dumpState: DumpState = .idle
+
+    private enum DumpState {
+        case idle
+        case running
+        case done(url: URL, summary: String)
+        case failed(String)
+    }
+
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
@@ -184,6 +196,12 @@ struct SettingsFormBody: View {
                         .padding(.vertical, Theme.scaled(8))
                     }
                 }
+                // Raw HealthKit sample export
+                if !isInitialSetup {
+                    settingsSection(title: "Диагностика") {
+                        healthDumpRow()
+                    }
+                }
                 // About
                 if !isInitialSetup {
                     settingsSection(title: "О приложении") {
@@ -210,6 +228,88 @@ struct SettingsFormBody: View {
             .padding(.top, isInitialSetup ? 0 : Theme.scaled(16))
             .padding(.bottom, Theme.scaled(32))
         }
+    }
+
+    // MARK: – Health sample dump
+
+    @ViewBuilder
+    private func healthDumpRow() -> some View {
+        VStack(alignment: .leading, spacing: Theme.scaled(8)) {
+            HStack(spacing: Theme.scaled(10)) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: Theme.fontCaption))
+                    .foregroundStyle(Theme.accentMedium)
+                    .frame(width: Theme.scaled(20))
+                VStack(alignment: .leading, spacing: Theme.scaled(2)) {
+                    Text("Выгрузить сэмплы Здоровья")
+                        .font(.system(size: Theme.fontSubhead))
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("Сырые данные за 60 дней: вариабельность, сон, температура, дыхание, кислород")
+                        .font(.system(size: Theme.fontSmall))
+                        .foregroundStyle(Theme.accentMedium)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                switch dumpState {
+                case .running:
+                    ProgressView().tint(Theme.accent)
+                case .done:
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: Theme.fontCaption))
+                        .foregroundStyle(Theme.online)
+                default:
+                    Button {
+                        dumpState = .running
+                        HealthSampleDump.run(daysBack: 60) { result in
+                            switch result {
+                            case .success(let r):
+                                let parts = r.counts.sorted { $0.key < $1.key }
+                                    .map { "\($0.key) \($0.value)" }
+                                    .joined(separator: " · ")
+                                dumpState = .done(url: r.url, summary: "\(r.total) записей — \(parts)")
+                            case .failure(let e):
+                                dumpState = .failed(e.localizedDescription)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: Theme.fontCaption))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: Theme.minTapSize, height: Theme.minTapSize)
+                    }
+                }
+            }
+
+            switch dumpState {
+            case .done(let url, let summary):
+                Text(summary)
+                    .font(.system(size: Theme.fontSmall))
+                    .foregroundStyle(Theme.accentMedium)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: Theme.scaled(12)) {
+                    ShareLink(item: url) {
+                        Text("Поделиться файлом")
+                            .font(.system(size: Theme.fontSubhead, weight: .medium))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    Button("Ещё раз") { dumpState = .idle }
+                        .font(.system(size: Theme.fontSmall))
+                        .foregroundStyle(Theme.accentMedium)
+                }
+            case .failed(let message):
+                Text(message)
+                    .font(.system(size: Theme.fontSmall))
+                    .foregroundStyle(Theme.offline)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Повторить") { dumpState = .idle }
+                    .font(.system(size: Theme.fontSmall))
+                    .foregroundStyle(Theme.accentMedium)
+            default:
+                EmptyView()
+            }
+        }
+        .padding(.horizontal, Theme.hPadding)
+        .padding(.vertical, Theme.scaled(10))
     }
 
     // MARK: – Components
