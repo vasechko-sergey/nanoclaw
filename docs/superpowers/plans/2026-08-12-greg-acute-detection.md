@@ -3781,6 +3781,22 @@ Two of the three are artifacts, and the third is miscalibrated severity. Note al
 - Modify: `groups/greg/CLAUDE.md`
 - Test: `groups/greg/scripts/analyze.test.js`
 
+**Why not just store everything in UTC.** It is the obvious alternative and it is wrong for this metric, measurably. Circadian behaviour is anchored to local time — he goes to bed at roughly the same *local* hour in both countries, which is a behavioural constant. Expressed in UTC that constant becomes a jump:
+
+| frame | median | MAD | step at the relocation |
+|---|---|---|---|
+| UTC | 17:52 | ±53 min | **218 min** |
+| local | 23:28 | ±39 min | **68 min** |
+
+Strict UTC makes the artifact 3.2× larger. So the answer is not a choice between the two frames but a separation of layers:
+
+> **Storage: the UTC instant plus the offset that applied.** Lossless — UTC alone cannot reconstruct local, local alone cannot reconstruct UTC.
+> **Interpretation: the metric picks its frame.** Circadian quantities (bedtime, wake time, regularity, phase shift) reason in local. Durations, deltas and aggregation boundaries do not care.
+
+Today we store *neither*: `sleepOnsetMin` is a local-derived scalar with the frame discarded, so it can be recomputed in no frame at all. One field fixes that.
+
+**Why `person_tz` does not already cover it.** The central DB has `person_tz(person_key, tz, updated_at)` — currently `owner | Asia/Colombo | 2026-07-05`. It answers "what time is it for him now", which is what it was built for (morning briefs). It cannot answer "what offset applied on 2026-06-20": one row, current value only, overwritten on change — and it recorded the 07-01 move on **07-05**, four days late. `tzOffsetMin` belongs to a different layer: a fact about a day of data, not about the person now. Do not merge them.
+
 **Interfaces:**
 - Produces: `HealthUploadDay.tzOffsetMin?: number` — the device's UTC offset in minutes for that day (330 for +5:30, 480 for +8:00), taken from `TimeZone.current.secondsFromGMT(for:)` at the day being reported, not at upload time.
 - Produces: `analyze.js` gains `tzShifted: boolean` on the `sleepRegularity` anomaly, and rebases its baseline at any offset change.
