@@ -72,9 +72,9 @@ Task 19's weighting makes this verdict sharper rather than softer. Morning HRV t
 - ~~**Wear time.**~~ **Struck — measured and false for this user.** An earlier draft claimed wrist temperature was present on only 35 of 61 days and named wear time the primary limiter. That was a misread column. The real coverage over 2026-06-13…08-12: sleep tracked **61/61 nights**, `respiratoryRate` **61/61**, `hrvMorning` **61/61**, `spo2Avg` **61/61**, `wristTempDeviation` **55/61 (90%)**. Сергей sleeps in the watch and the data says so. Wear time is not the gap.
 - **The six temperature gaps are not behavioural either.** 06-26, 07-03, 08-04, 08-05, 08-07, 08-12 — sleep 6.7–7.7 h, ordinary phases, ordinary onset, nothing short or fragmented. Every other overnight metric survived those same nights. So the loss is specific to `appleSleepingWristTemperature`, and Task 18 identifies one mechanism inside our own pipeline that can produce exactly this pattern.
 - **Continuous temperature** versus one `appleSleepingWristTemperature` average per night. This one stands: Oura samples temperature continuously; Apple emits a single nightly figure, and when it does not emit one there is nothing to fall back on.
-- **Intra-night resolution.** HealthKit stores every heart-rate sample; the iOS reader collapses them into one daily `discreteAverage` plus Apple's own resting estimate. Nocturnal heart rate follows a cosine-like trajectory with a nadir mid-night, and a shallower or later dip is precisely what a daily mean erases. **This is the one genuinely new signal available without new hardware** — Task 17 collects it. Whether it separates the 08-08/08-09 HRV dips from ordinary noise is unknown and cannot be known until the data exists.
+- **Sub-daily resolution — the one that is actually ours to fix.** Oura reasons over the night; we reason over one scalar per metric per day. HealthKit holds every sample and the iOS reader throws the resolution away before anything downstream can look. This is not a hardware gap, it is an aggregation decision, and Task 17 reverses it by storing 30-minute interval buckets tagged with sleep stage. Note also that the published algorithms this comparison keeps invoking — RHR-Diff, CuSum, NightSignal — all consume **hourly** data. We have been feeding daily data to daily-resolution reasoning and comparing ourselves to hourly-resolution results.
 
-The honest position: same-day detection is achievable and this plan delivers it. Pre-onset may simply not be reachable from one aggregate row per night, whatever the wear time — and discovering that cleanly is an acceptable outcome, which is why Task 17 is framed as an experiment with a measurement rather than a feature with a promised result. What is *not* an acceptable outcome is losing the resolution we already have, which is what Task 18 is about.
+The honest position: same-day detection is achievable and this plan delivers it. Pre-onset may simply not be reachable from one aggregate row per night, whatever the wear time — and discovering that cleanly is an acceptable outcome, which is why Task 17 is framed as an experiment with a measurement rather than a feature with a promised result. Because HealthKit does not prune and `HealthHistory.fetch(from:to:)` already takes an arbitrary range, that experiment can be **backfilled onto the 2026-08-10 episode** rather than waiting for the next illness. What is *not* an acceptable outcome is losing resolution we already had, which is what Task 18 is about.
 
 ## File Structure
 
@@ -83,7 +83,7 @@ The honest position: same-day detection is achievable and this plan delivers it.
 | `groups/greg/scripts/analyze.js` | All numeric work: anomaly detection, sick-day rule, recovery/readiness/levels, coverage | 1, 2, 3, 4 |
 | `groups/greg/scripts/analyze.test.js` | Bun test suite for the above | 1, 2, 3, 4 |
 | `src/modules/health-trigger/sick-day.ts` | Host-side duplicate of the sick-day rule + per-day fire guard | 1, 2 |
-| `src/channels/ios-app/v2/health-db.ts` | `health_days` schema, column migration, non-destructive upsert | 4 |
+| `src/channels/ios-app/v2/health-db.ts` | `health_days` schema, column migration, non-destructive upsert, `health_intervals` store | 4 |
 | `src/modules/health-trigger/sick-day.test.ts` | vitest suite for the host copy | 1, 2 |
 | `groups/greg/CLAUDE.md` | Data dictionary Greg reads; must describe every new field | 1, 3, 4 |
 | `groups/greg/skills/daily-cycle/SKILL.md` | Run loop; where findings get collapsed | 2 |
@@ -2288,193 +2288,429 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 17: Overnight heart-rate trajectory — the pre-onset experiment
+### Task 17: Store interval series instead of one number per night
 
-This is the only genuinely new signal reachable without new hardware, and the only remaining candidate for detecting before symptoms. HealthKit stores every heart-rate sample; the reader collapses the night into one daily average. Nocturnal heart rate normally follows a cosine-like path with its nadir near mid-sleep — a shallower, later, or absent dip is exactly what a daily mean erases, and it is what shifts when the body is fighting something.
+The pipeline's deepest limitation is not which metrics it collects — coverage is 90–100% — but that it flattens each of them to **one scalar per day** before anything downstream can look. HealthKit holds every sample; `HealthHistory` reduces a whole day of heart rate to a single `discreteAverage`.
 
-**Framed as an experiment.** Success is a measurement, not a feature: after ~30 nights of collection, re-run the pre-onset check and record whether the new metrics separate a genuine prodrome from this person's ordinary HRV noise. A negative result is a valid, publishable-to-the-plan outcome — it closes the question rather than leaving it as a permanent "we should try".
+That flattening already produces wrong readings today. On 2026-08-12 `heartRate` was 64 and the detector reported it as *down, info* — read as cardio-adaptation. The man was in bed. A whole-day mean over sleeping, sitting and (absent) exercise heart rate is not a quantity anything can interpret, and no weighting scheme fixes a number that means several different things at once.
+
+**Derive late, not early.** The version of this task in the first draft computed four scalars on-device (`nightHrMin`, `nightHrNadirFrac`, …) and discarded the curve. That repeats the original mistake one level down: every derivation baked into the iOS reader is irreversible, and a question asked in three months — "what was HRV during deep sleep only?" — would need a new field and another month of waiting. Storing the series makes every such question answerable retroactively, over all history, from the script side where it is cheap to change.
+
+**Buckets, not raw samples.** Raw heart rate runs about one sample every five seconds during a workout — hundreds of thousands of rows a day, for no analytic gain. 30-minute buckets preserve exactly the resolution the published algorithms consume (RHR-Diff, CuSum and NightSignal all operate at hourly resolution or coarser) at roughly 1/1000 the volume: ~192 rows per day across four metrics, ~70k rows a year. Nadir position lands within ±15 minutes of an 8-hour night, which is 3% — ample.
+
+**This can be answered now, not in a month.** `HealthHistory.fetch(from:to:)` already accepts an arbitrary date range and the refetch mechanism already drives it (`{"from":"2026-07-29","to":"2026-08-12"}`), and HealthKit does not prune samples. So the intervals for the 2026-08-10 episode can be **backfilled** — the pre-onset question gets tested against the one labelled episode we have, this week, instead of waiting for the next illness.
+
+Still framed as an experiment: a negative result closes the question and gets written down, rather than leaving "we should try sub-daily" open forever.
 
 **Files:**
 - Modify: `shared/ios-app-protocol/v2.ts` (`HealthUploadDay`)
-- Modify: `src/channels/ios-app/v2/health-db.ts` (`SCALARS`)
+- Modify: `src/channels/ios-app/v2/health-db.ts` (new `health_intervals` table + writer + prune)
 - Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift`
 - Modify: `ios/JarvisApp/Sources/JarvisApp/Protocol/V2.swift`
-- Modify: `groups/greg/scripts/analyze.js` (`METRICS`, `CONCERN_UP`/`CONCERN_DOWN`)
-- Create: `ios/JarvisApp/Sources/JarvisAppTests/NightHeartRateTests.swift`
+- Modify: `groups/greg/scripts/analyze.js` (`loadIntervals`, derived night/day metrics)
+- Create: `ios/JarvisApp/Sources/JarvisAppTests/IntervalBucketTests.swift`
 
 **Interfaces:**
-- Consumes: the sleep-window helper `HealthHistory.overnightWindowStart` and `bucketOvernight`, both already used by the morning-HRV and SpO₂ readers.
-- Produces: four new `HealthUploadDay` fields, all optional — `nightHrMin` (bpm, int), `nightHrMean` (bpm, int), `nightHrNadirFrac` (0–1, where in the sleep window the minimum fell), `nightHrDipPct` (percent the minimum sits below the night's mean). All become `REAL` columns and ordinary `METRICS` entries.
+- Consumes: `HealthHistory.overnightWindowStart`, `sleepSamplesByWakeDay` (both already used by the morning-HRV and sleep-phase readers), and the non-destructive upsert from Task 18.
+- Produces: `HealthUploadDay.intervals?: Interval[]` where `Interval = { metric: string, start: number (epoch ms), min: number (bucket width), n: number, mean: number, lo?: number, hi?: number, stage?: string }`.
+- Produces: table `health_intervals(date, metric, bucket_start, bucket_min, n, mean, lo, hi, stage)` with primary key `(date, metric, bucket_start)`, in the same `health.db`.
+- Produces: `loadIntervals(dbPath, { from, to })` in `analyze.js` → `Map<date, Interval[]>`.
+- Produces: script-side derived metrics computed from the series, not from iOS — `sleepHr`, `wakeRestHr`, `nightHrMin`, `nightHrNadirFrac`, `nightHrDipPct`, `hrvDeep`. All become ordinary `METRICS` entries.
 
 - [ ] **Step 1: Extend the contract**
 
-In `shared/ios-app-protocol/v2.ts:HealthUploadDay`:
+In `shared/ios-app-protocol/v2.ts`, above `HealthUploadDay`:
 
 ```typescript
-  // New 2026-08-12. Intra-night heart-rate shape, not just its average. Nocturnal
-  // HR normally dips to a nadir near mid-sleep; a shallow or late nadir is a
-  // candidate prodrome signal that the daily discreteAverage destroys. Optional —
-  // absent on nights the watch was not worn.
-  nightHrMin: z.number().int().nonnegative().optional(),
-  nightHrMean: z.number().int().nonnegative().optional(),
-  nightHrNadirFrac: z.number().min(0).max(1).optional(),
-  nightHrDipPct: z.number().optional(),
+// New 2026-08-12. Sub-daily buckets, so downstream can ask questions the daily
+// scalars foreclose. 30-minute width matches what the published wearable
+// detection algorithms consume (RHR-Diff, CuSum, NightSignal all work at hourly
+// resolution or coarser) without the volume of raw samples. `stage` is the
+// dominant sleep stage over the bucket, or "awake" — it lets a consumer separate
+// sleeping heart rate from sitting-at-a-desk heart rate, which the daily
+// discreteAverage mixes into one uninterpretable number.
+export const HealthInterval = z.object({
+  metric: z.enum(['heartRate', 'hrv', 'respiratoryRate', 'spo2']),
+  start: z.number().int(),        // epoch ms, bucket start
+  min: z.number().int().positive(), // bucket width in minutes
+  n: z.number().int().positive(),   // samples aggregated
+  mean: z.number(),
+  lo: z.number().optional(),
+  hi: z.number().optional(),
+  stage: z.enum(['awake', 'core', 'deep', 'rem', 'inBed']).optional(),
+});
+export type HealthInterval = z.infer<typeof HealthInterval>;
 ```
 
-Add the four names to `SCALARS` in `src/channels/ios-app/v2/health-db.ts` — the `ALTER TABLE` probe added in Task 12 Step 5 picks them up automatically on the live DB.
+and inside `HealthUploadDay`, before `workouts`:
 
-- [ ] **Step 2: Write the failing iOS test**
+```typescript
+  // Attributed to the same wake day as hrvMorning and spo2 — see bucketOvernight.
+  intervals: z.array(HealthInterval).optional(),
+```
 
-Create `ios/JarvisApp/Sources/JarvisAppTests/NightHeartRateTests.swift`:
+- [ ] **Step 2: Write the failing contract test**
+
+Append to `shared/ios-app-protocol/v2.test.ts`:
+
+```typescript
+it('HealthUploadDay carries interval buckets', () => {
+  const parsed = HealthUploadDay.parse({
+    date: '2026-08-12',
+    intervals: [
+      { metric: 'heartRate', start: 1786500000000, min: 30, n: 42, mean: 58.3, lo: 54, hi: 63, stage: 'deep' },
+    ],
+  });
+  expect(parsed.intervals).toHaveLength(1);
+  expect(parsed.intervals![0].stage).toBe('deep');
+});
+
+it('rejects an unknown interval metric', () => {
+  expect(() => HealthUploadDay.parse({
+    date: '2026-08-12',
+    intervals: [{ metric: 'bloodPressure', start: 1, min: 30, n: 1, mean: 1 }],
+  })).toThrow();
+});
+```
+
+Run: `pnpm test shared/ios-app-protocol/`
+Expected: FAIL — `intervals` is stripped.
+
+- [ ] **Step 3: Implement the contract, then the store**
+
+Add the schema from Step 1. Then in `src/channels/ios-app/v2/health-db.ts`:
+
+```typescript
+export function openHealthDb(path: string): Database.Database {
+  // ...existing health_days create + ALTER probe unchanged...
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS health_intervals (
+       date         TEXT    NOT NULL,
+       metric       TEXT    NOT NULL,
+       bucket_start INTEGER NOT NULL,
+       bucket_min   INTEGER NOT NULL,
+       n            INTEGER NOT NULL,
+       mean         REAL    NOT NULL,
+       lo           REAL,
+       hi           REAL,
+       stage        TEXT,
+       PRIMARY KEY (date, metric, bucket_start)
+     )`,
+  );
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_intervals_date ON health_intervals(date)`);
+  return db;
+}
+
+/** Interval buckets for the given days. Replaces a day+metric wholesale — unlike
+ *  health_days these arrive complete or not at all, so there is nothing to
+ *  preserve and a re-upload should not leave orphaned buckets behind. */
+export function upsertHealthIntervals(db: Database.Database, days: HealthUploadDay[]): void {
+  const del = db.prepare(`DELETE FROM health_intervals WHERE date = ? AND metric = ?`);
+  const ins = db.prepare(
+    `INSERT INTO health_intervals (date, metric, bucket_start, bucket_min, n, mean, lo, hi, stage)
+     VALUES (@date, @metric, @bucket_start, @bucket_min, @n, @mean, @lo, @hi, @stage)`,
+  );
+  const tx = db.transaction((rows: HealthUploadDay[]) => {
+    for (const d of rows) {
+      if (!d.intervals?.length) continue;
+      for (const metric of new Set(d.intervals.map((i) => i.metric))) del.run(d.date, metric);
+      for (const iv of d.intervals) {
+        ins.run({
+          date: d.date, metric: iv.metric, bucket_start: iv.start, bucket_min: iv.min,
+          n: iv.n, mean: iv.mean, lo: iv.lo ?? null, hi: iv.hi ?? null, stage: iv.stage ?? null,
+        });
+      }
+    }
+  });
+  tx(days);
+}
+
+/** Keep half a year. ~192 rows/day across four metrics, so this caps the table
+ *  near 35k rows — small, but unbounded growth in a file the container reads on
+ *  every run is not worth the nothing it would buy. */
+export function pruneHealthIntervals(db: Database.Database, keepDays = 180): void {
+  db.prepare(
+    `DELETE FROM health_intervals
+     WHERE date < date('now', ?)`,
+  ).run(`-${keepDays} days`);
+}
+```
+
+Call `upsertHealthIntervals` next to `upsertHealthDays` at the upload handler, and `pruneHealthIntervals` once per upload.
+
+- [ ] **Step 4: Write the failing store test**
+
+In `src/channels/ios-app/v2/health-db.test.ts`:
+
+```typescript
+it('stores interval buckets and replaces a metric wholesale on re-upload', () => {
+  const db = openHealthDb(`${tmpdir()}/health-iv-${Date.now()}.db`);
+  upsertHealthIntervals(db, [{
+    date: '2026-08-12',
+    intervals: [
+      { metric: 'heartRate', start: 1000, min: 30, n: 10, mean: 60 },
+      { metric: 'heartRate', start: 2800000, min: 30, n: 12, mean: 58, stage: 'deep' },
+      { metric: 'hrv', start: 1000, min: 30, n: 3, mean: 44 },
+    ],
+  }]);
+  // A re-upload with one fewer heartRate bucket must not leave the old one behind.
+  upsertHealthIntervals(db, [{
+    date: '2026-08-12',
+    intervals: [{ metric: 'heartRate', start: 1000, min: 30, n: 11, mean: 61 }],
+  }]);
+
+  const hr = db.prepare(`SELECT * FROM health_intervals WHERE date=? AND metric='heartRate'`).all('2026-08-12');
+  expect(hr).toHaveLength(1);
+  expect(hr[0].mean).toBe(61);
+  // hrv was absent from the second payload, so its buckets stand untouched.
+  const hrv = db.prepare(`SELECT * FROM health_intervals WHERE date=? AND metric='hrv'`).all('2026-08-12');
+  expect(hrv).toHaveLength(1);
+});
+```
+
+Run: `pnpm test src/channels/ios-app/v2/`
+Expected: PASS after Step 3.
+
+- [ ] **Step 5: Write the failing iOS bucketing test**
+
+Create `ios/JarvisApp/Sources/JarvisAppTests/IntervalBucketTests.swift`:
 
 ```swift
 import XCTest
 @testable import Jarvis
 
-final class NightHeartRateTests: XCTestCase {
+final class IntervalBucketTests: XCTestCase {
 
-    /// (value, minutes from sleep onset)
-    private func samples(_ pairs: [(Double, Double)]) -> [(value: Double, offsetMin: Double)] {
-        pairs.map { (value: $0.0, offsetMin: $0.1) }
+    private func at(_ minutes: Double) -> Date { Date(timeIntervalSince1970: minutes * 60) }
+
+    func testSamplesGroupIntoThirtyMinuteBuckets() {
+        let samples = [
+            (value: 60.0, date: at(0)), (value: 62.0, date: at(10)), (value: 58.0, date: at(29)),
+            (value: 90.0, date: at(31)),
+        ]
+        let out = HealthHistory.bucketize(samples, metric: "heartRate", widthMin: 30, stageAt: { _ in nil })
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(out[0].n, 3)
+        XCTAssertEqual(out[0].mean, 60, accuracy: 0.01)
+        XCTAssertEqual(out[0].lo, 58)
+        XCTAssertEqual(out[0].hi, 62)
+        XCTAssertEqual(out[1].n, 1)
+        XCTAssertEqual(out[1].mean, 90, accuracy: 0.01)
     }
 
-    func testNadirNearMidSleepIsHalf() {
-        let s = samples([(64, 0), (58, 120), (52, 240), (57, 360), (63, 480)])
-        let m = HealthHistory.nightHrShape(s, windowMin: 480)
-        XCTAssertEqual(m?.min, 52)
-        XCTAssertEqual(m?.nadirFrac ?? 0, 0.5, accuracy: 0.01)
+    func testBucketStartIsAlignedToTheWidth() {
+        let out = HealthHistory.bucketize(
+            [(value: 60.0, date: at(47))], metric: "heartRate", widthMin: 30, stageAt: { _ in nil }
+        )
+        XCTAssertEqual(out[0].start, Int(at(30).timeIntervalSince1970 * 1000))
     }
 
-    func testDipPercentIsRelativeToTheNightMean() {
-        let s = samples([(60, 0), (50, 240), (70, 480)])
-        let m = HealthHistory.nightHrShape(s, windowMin: 480)
-        XCTAssertEqual(m?.mean, 60)
-        XCTAssertEqual(m?.dipPct ?? 0, 16.67, accuracy: 0.01)   // (60-50)/60
+    func testStageIsTakenFromTheBucketMidpoint() {
+        let out = HealthHistory.bucketize(
+            [(value: 55.0, date: at(5))], metric: "heartRate", widthMin: 30, stageAt: { _ in "deep" }
+        )
+        XCTAssertEqual(out[0].stage, "deep")
     }
 
-    func testTooFewSamplesYieldsNil() {
-        XCTAssertNil(HealthHistory.nightHrShape(samples([(60, 0), (61, 30)]), windowMin: 480))
+    func testEmptyInputYieldsNoBuckets() {
+        XCTAssertTrue(HealthHistory.bucketize([], metric: "hrv", widthMin: 30, stageAt: { _ in nil }).isEmpty)
     }
 }
 ```
-
-- [ ] **Step 3: Run to verify it fails**
 
 ```bash
 cd ios/JarvisApp && xcodegen generate
 ```
 
-Then run the test scheme.
-Expected: FAIL to compile — `nightHrShape` does not exist.
+Run the test scheme.
+Expected: FAIL to compile — `bucketize` does not exist.
 
-- [ ] **Step 4: Implement the shape function and the reader**
+- [ ] **Step 6: Implement bucketing and the four readers**
 
 In `HealthHistory.swift`:
 
 ```swift
-    struct NightHrShape {
-        let min: Int
-        let mean: Int
-        let nadirFrac: Double
-        let dipPct: Double
-    }
-
-    /// Shape of one night's heart-rate curve. `offsetMin` is minutes from sleep
-    /// onset; `windowMin` is the night's length. Needs a real curve, not two
-    /// stray readings — under 10 samples the nadir position is noise.
-    static func nightHrShape(
-        _ samples: [(value: Double, offsetMin: Double)],
-        windowMin: Double
-    ) -> NightHrShape? {
-        guard samples.count >= 10 || samples.count >= 3 && windowMin <= 480 else { return nil }
-        guard windowMin > 0, let nadir = samples.min(by: { $0.value < $1.value }) else { return nil }
-        let mean = samples.reduce(0.0) { $0 + $1.value } / Double(samples.count)
-        guard mean > 0 else { return nil }
-        return NightHrShape(
-            min: Int(nadir.value.rounded()),
-            mean: Int(mean.rounded()),
-            nadirFrac: Swift.max(0, Swift.min(1, nadir.offsetMin / windowMin)),
-            dipPct: ((mean - nadir.value) / mean * 100 * 100).rounded() / 100
-        )
-    }
-```
-
-The guard above is deliberately lenient for the unit tests' short fixtures; in the live reader, gate on `samples.count >= 10` before calling it.
-
-Then the reader, next to the existing morning-HRV `HKSampleQuery`:
-
-```swift
-        // Intra-night heart-rate curve. Uses raw samples, not a statistics
-        // collection — the whole point is the shape the daily average destroys.
-        group.enter()
-        let nightHrQ = HKSampleQuery(
-            sampleType: HKQuantityType(.heartRate),
-            predicate: HKQuery.predicateForSamples(withStart: sleepStart, end: end),
-            limit: HKObjectQueryNoLimit, sortDescriptors: nil
-        ) { _, samples, _ in
-            let bpm = HKUnit(from: "count/min")
-            let pairs = ((samples as? [HKQuantitySample]) ?? [])
-                .map { (value: $0.quantity.doubleValue(for: bpm), date: $0.endDate) }
-            for (k, group) in HealthHistory.bucketOvernightDated(pairs, calendar: cal) {
-                guard group.count >= 10,
-                      let first = group.map(\.date).min(),
-                      let last = group.map(\.date).max() else { continue }
-                let windowMin = last.timeIntervalSince(first) / 60
-                let offsets = group.map { (value: $0.value, offsetMin: $0.date.timeIntervalSince(first) / 60) }
-                guard let shape = HealthHistory.nightHrShape(offsets, windowMin: windowMin) else { continue }
-                mutate(k) {
-                    $0.nightHrMin = shape.min
-                    $0.nightHrMean = shape.mean
-                    $0.nightHrNadirFrac = shape.nadirFrac
-                    $0.nightHrDipPct = shape.dipPct
-                }
-            }
-            group.leave()
+    /// Fold timestamped samples into fixed-width buckets aligned to the epoch.
+    /// `stageAt` resolves the sleep stage covering a moment, or nil when awake or
+    /// unknown. Alignment is absolute rather than relative to the first sample so
+    /// buckets from different days and metrics line up.
+    static func bucketize(
+        _ samples: [(value: Double, date: Date)],
+        metric: String,
+        widthMin: Int,
+        stageAt: (Date) -> String?
+    ) -> [V2.HealthUpload.Interval] {
+        guard !samples.isEmpty, widthMin > 0 else { return [] }
+        let width = Double(widthMin) * 60
+        var groups: [Double: [Double]] = [:]
+        for s in samples {
+            let bucket = (s.date.timeIntervalSince1970 / width).rounded(.down) * width
+            groups[bucket, default: []].append(s.value)
         }
-        store.execute(nightHrQ)
+        return groups.keys.sorted().map { start in
+            let vals = groups[start]!
+            let mid = Date(timeIntervalSince1970: start + width / 2)
+            return V2.HealthUpload.Interval(
+                metric: metric,
+                start: Int(start * 1000),
+                min: widthMin,
+                n: vals.count,
+                mean: (vals.reduce(0, +) / Double(vals.count) * 100).rounded() / 100,
+                lo: vals.min(),
+                hi: vals.max(),
+                stage: stageAt(mid)
+            )
+        }
+    }
 ```
 
-`bucketOvernight` currently returns values only. Add a sibling `bucketOvernightDated` that keeps the timestamps, implemented from the same windowing logic — do not change the existing function, three readers depend on it.
+Then one sample query per metric over the same `sleepStart…end` range already used by the morning-HRV reader, each feeding `bucketize` and appending to the day's `intervals`. Build `stageAt` from the sleep intervals `sleepSamplesByWakeDay` already returns — it yields `SleepSampleInput { stage, start, end }`, so a linear scan for the interval containing a moment is enough at this volume.
 
-Add the four fields to `V2.HealthUpload.Day` in `Protocol/V2.swift`, bump `CURRENT_PROJECT_VERSION`, and `xcodegen generate`.
+The four metrics and their units: `.heartRate` (count/min), `.heartRateVariabilitySDNN` (ms), `.respiratoryRate` (count/min), `.oxygenSaturation` (percent × 100).
 
-- [ ] **Step 5: Run the iOS tests and a clean build**
+Attribute each bucket to the same wake day the existing overnight readers use, so `intervals` and `hrvMorning` never disagree about which night a row belongs to.
 
+Add `Interval` to `V2.HealthUpload` in `Protocol/V2.swift`, mirroring the Zod shape field for field. Bump `CURRENT_PROJECT_VERSION`, `xcodegen generate`.
+
+Run the test scheme.
 Expected: PASS.
 
-- [ ] **Step 6: Add the metrics to the detector**
+- [ ] **Step 7: Derive the metrics script-side, where they stay changeable**
 
-In `groups/greg/scripts/analyze.js`, add `"nightHrMin"`, `"nightHrMean"`, `"nightHrNadirFrac"`, `"nightHrDipPct"` to `METRICS`. `nightHrMin` and `nightHrMean` rising is concerning (`CONCERN_UP`); `nightHrDipPct` falling is concerning (`CONCERN_DOWN`, a shallower dip). `nightHrNadirFrac` goes in neither set — a shift in either direction is notable and the direction alone does not say which is worse.
-
-Run: `bun test groups/greg/scripts/analyze.test.js`
-Expected: PASS — the new metrics are simply absent from existing fixtures.
-
-- [ ] **Step 7: Ship and let it accumulate**
-
-Deploy per the Deploy Reference: host + `./container/build.sh` (the contract changed), then the agent script, then the iOS build. Then wait — the metrics need roughly 30 nights before a baseline exists.
-
-- [ ] **Step 8: Run the experiment and write down the answer**
-
-Once `nightHrDipPct` has ≥30 non-null nights **and** `episodes.jsonl` (Task 15) holds at least one onset with data on both sides of it:
+In `groups/greg/scripts/analyze.js`:
 
 ```javascript
-// /tmp/greg-bt/prodrome.js — did the intra-night shape move before onset?
-import { loadRows, loadEpisodes } from "/Users/serg/git/nanoclaw/groups/greg/scripts/analyze.js";
-const rows = loadRows("/tmp/greg-bt/health.db");
-const eps = [...loadEpisodes("/tmp/greg-bt/episodes.jsonl").keys()];
-const M = ["nightHrMin", "nightHrMean", "nightHrNadirFrac", "nightHrDipPct", "hrvMorning"];
-for (const onset of eps) {
+// Interval buckets, read from the same health.db. Everything below is derived
+// HERE and not on the phone: a derivation baked into the iOS reader is permanent
+// and answers only the question we thought to ask, while these can be rewritten
+// and re-run over all stored history in an afternoon.
+export function loadIntervals(path) {
+  let db;
+  try { db = new Database(path, { readonly: true }); } catch { return new Map(); }
+  let rows;
+  try {
+    rows = db.query(
+      `SELECT date, metric, bucket_start, bucket_min, n, mean, lo, hi, stage
+       FROM health_intervals ORDER BY date, bucket_start`,
+    ).all();
+  } catch { db.close(); return new Map(); }
+  db.close();
+  const byDate = new Map();
+  for (const r of rows) {
+    if (!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date).push(r);
+  }
+  return byDate;
+}
+
+const ASLEEP = new Set(["core", "deep", "rem"]);
+
+// Split the day's heart rate by what the body was actually doing. The daily
+// discreteAverage mixes sleeping, sitting and exercising heart rate into one
+// figure: on 2026-08-12 it read 64 and was flagged "down, info" as cardio
+// adaptation while the person was in bed with a 21% elevated resting pulse.
+export function deriveFromIntervals(rows, byDate) {
+  for (const r of rows) {
+    const ivs = byDate.get(r.date);
+    if (!ivs) continue;
+    const hr = ivs.filter((i) => i.metric === "heartRate");
+    const asleep = hr.filter((i) => ASLEEP.has(i.stage));
+    const awake = hr.filter((i) => i.stage === "awake" || i.stage == null);
+
+    if (asleep.length >= 4) {
+      const means = asleep.map((i) => i.mean);
+      const nightMean = means.reduce((a, b) => a + b, 0) / means.length;
+      const nadir = asleep.reduce((a, b) => (b.mean < a.mean ? b : a));
+      const t0 = asleep[0].bucket_start;
+      const span = asleep[asleep.length - 1].bucket_start - t0;
+      r.sleepHr = Math.round(nightMean);
+      r.nightHrMin = Math.round(nadir.mean);
+      r.nightHrNadirFrac = span > 0
+        ? Math.round(((nadir.bucket_start - t0) / span) * 100) / 100 : null;
+      r.nightHrDipPct = nightMean > 0
+        ? Math.round(((nightMean - nadir.mean) / nightMean) * 1000) / 10 : null;
+    }
+    // Awake resting pulse: the 20th percentile of awake buckets, which lands on
+    // quiet moments and ignores walking and training without needing step data.
+    if (awake.length >= 6) {
+      const s = awake.map((i) => i.mean).sort((a, b) => a - b);
+      r.wakeRestHr = Math.round(s[Math.floor(s.length * 0.2)]);
+    }
+    // HRV restricted to deep sleep — the cleanest autonomic window there is, and
+    // a question the daily SDNN average cannot be asked at all.
+    const deepHrv = ivs.filter((i) => i.metric === "hrv" && i.stage === "deep");
+    if (deepHrv.length >= 2) {
+      r.hrvDeep = Math.round(deepHrv.reduce((a, b) => a + b.mean, 0) / deepHrv.length);
+    }
+  }
+  return rows;
+}
+```
+
+Call `deriveFromIntervals(rows, loadIntervals(opts.raw))` immediately before `buildDerived`. Add `sleepHr`, `wakeRestHr`, `nightHrMin`, `nightHrNadirFrac`, `nightHrDipPct`, `hrvDeep` to `METRICS`; `sleepHr`, `wakeRestHr`, `nightHrMin` to `CONCERN_UP`; `nightHrDipPct` and `hrvDeep` to `CONCERN_DOWN`. `nightHrNadirFrac` belongs to neither — a shift either way is notable and the direction alone does not say which is worse.
+
+Run: `bun test groups/greg/scripts/analyze.test.js`
+Expected: PASS — existing fixtures carry no intervals, so every new metric is simply absent.
+
+- [ ] **Step 8: Ship, then backfill 90 days**
+
+Deploy per the Deploy Reference — host plus `./container/build.sh` (the contract changed), then the agent script, then the iOS build.
+
+Then drive the existing refetch mechanism over history, in the 15-day windows it already uses:
+
+```bash
+ssh root@148.253.211.164 'sudo -u nanoclaw bash -c '"'"'
+cd /home/nanoclaw/nanoclaw/data/user-memory/owner/greg/health/requests
+for r in 2026-05-15:2026-05-29 2026-05-30:2026-06-13 2026-06-14:2026-06-28 \
+         2026-06-29:2026-07-13 2026-07-14:2026-07-28 2026-07-29:2026-08-12; do
+  f=${r%%:*}; t=${r##*:}
+  echo "{ \"from\": \"$f\", \"to\": \"$t\" }" > "backfill_${f}.json"
+done
+ls -la
+'"'"''
+```
+
+The phone services one request per foreground sync. Verify the buckets land:
+
+```bash
+ssh root@148.253.211.164 '/usr/bin/node /tmp/q.cjs /home/nanoclaw/nanoclaw/data/user-memory/owner/greg/health/health.db "SELECT date, metric, count(*) n FROM health_intervals GROUP BY date, metric ORDER BY date DESC LIMIT 20"'
+```
+
+Expected: roughly 16–48 `heartRate` buckets per day, fewer for `hrv` and `spo2` (sparser samplers). If a day shows one or two buckets, the sleep-window attribution is wrong — check it against that day's `hrvMorning`, which must belong to the same night.
+
+- [ ] **Step 9: Run the experiment on the episode we already have**
+
+This is why the backfill matters: the answer does not wait for the next illness.
+
+```javascript
+// /tmp/greg-bt/prodrome.js — did sub-daily resolution move before onset (08-10)
+// on days where every daily aggregate stayed flat?
+import { loadRows, loadIntervals, deriveFromIntervals, loadEpisodes }
+  from "/Users/serg/git/nanoclaw/groups/greg/scripts/analyze.js";
+const rows = deriveFromIntervals(loadRows("/tmp/greg-bt/health.db"), loadIntervals("/tmp/greg-bt/health.db"));
+const M = ["sleepHr", "wakeRestHr", "nightHrMin", "nightHrNadirFrac", "nightHrDipPct", "hrvDeep",
+           "restingHeartRate", "hrvMorning"];   // last two = the daily aggregates, for contrast
+for (const onset of loadEpisodes("/tmp/greg-bt/episodes.jsonl").keys()) {
   const i = rows.findIndex((r) => r.date === onset);
-  if (i < 5) continue;
+  if (i < 6) continue;
   console.log(`--- onset ${onset}`);
   for (const m of M) {
-    const window = rows.slice(i - 3, i + 1).map((r) => `${r.date}:${r[m] ?? "-"}`);
-    console.log(`  ${m.padEnd(18)} ${window.join("  ")}`);
+    console.log(`  ${m.padEnd(18)} ` +
+      rows.slice(i - 4, i + 2).map((r) => `${r.date.slice(5)}:${r[m] ?? "-"}`).join("  "));
   }
 }
 ```
 
-Record the verdict in this plan under a new "Experiment result" heading: either the shape metrics move on onset−1 or onset−2 while the daily aggregates stay flat (pre-onset is reachable — write the rule), or they do not (pre-onset is not reachable with this hardware — stop looking, and say so in Greg's dictionary so he never claims early warning he cannot deliver).
+Run: `bun /tmp/greg-bt/prodrome.js`
+
+Read it against the known shape of the episode: on 08-08 and 08-09 every daily aggregate was flat except morning HRV, which is this person's noisiest signal. The question is whether any interval-derived metric moved on those two days and stayed quiet across the healthy weeks.
+
+- [ ] **Step 10: Write the verdict into this plan**
+
+Add an `## Experiment result` section under Task 17 with one of two outcomes, and the numbers behind it:
+
+- **Reachable** — an interval-derived metric separates 08-08/08-09 from the healthy baseline. Then run it through the same discipline as Task 19: measure its false-alarm rate across the pre-onset days, weight it accordingly, and only then let it into the rule. A metric that moves before onset *and* fires on a third of healthy days has bought nothing.
+- **Not reachable** — nothing moves earlier than the daily aggregates already did. Then say so plainly here, and add a line to `groups/greg/CLAUDE.md` telling Greg he detects illness at onset and never before it, so he does not narrate a foresight he does not have. The intervals stay regardless: they fix the whole-day `heartRate` conflation, which was wrong on its own merits.
 
 ---
 
@@ -2842,6 +3078,7 @@ What Phases 1–4 hand it, and what it must not be started without:
 | `shape` / `z_today` — distinguishes "happened today" from "drifting for weeks" | Task 2 |
 | A 7-signal sick-day vector with a per-signal `fires` map — the natural evidence list behind a hypothesis | Tasks 1, 14 |
 | Per-signal trust weights measured on healthy days — the first honest ingredient of a confidence number | Task 19 |
+| Sub-daily interval series, so a future question can be asked of past data instead of waiting a month for a new field | Task 17 |
 | Coverage as a first-class value — the honest input to a confidence number | Tasks 3, 16 |
 | Cross-domain derived metrics (`hrPerKStep`, `sleepDebt7`, `hrvCv7`, `restorativeFrac`) | Tasks 8–10 |
 | One score the app and Payne can trust on a sick day | Task 11 |
@@ -2872,7 +3109,8 @@ The second thing that spec must inherit is a constraint, not a capability: **Gre
 | 4 | `pnpm test` | full host suite green |
 | 4 | iOS test scheme + clean build | green |
 | 4 | temp coverage over 14 days, two weeks after Task 18 | `temp` = `days`, or the cause recorded as upstream |
-| 4 | `bun /tmp/greg-bt/prodrome.js` (after ~30 nights) | verdict recorded in the plan, either way |
+| 4 | interval count per day after the backfill | ~16–48 `heartRate` buckets/day; fewer for `hrv`/`spo2` |
+| 4 | `bun /tmp/greg-bt/prodrome.js` (after backfill, not after 30 nights) | verdict recorded in the plan, either way |
 
 ## Measured Coverage (2026-06-13 … 08-12, 61 days)
 
