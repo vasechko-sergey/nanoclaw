@@ -25,7 +25,7 @@ vi.mock('../../config.js', () => ({
 }));
 
 // Import AFTER mocks so module-level imports inside sick-day.ts pick up the mocks.
-const { sickDayCheck, detect, SICK_DAY_THRESHOLDS } = await import('./sick-day.js');
+const { sickDayCheck, detect, SICK_DAY_THRESHOLDS, SIGNAL_WEIGHTS, SICK_DAY_SCORE_T } = await import('./sick-day.js');
 
 function stableDay(date: string, overrides: Partial<HealthUploadDay> = {}): HealthUploadDay {
   return {
@@ -59,11 +59,15 @@ describe('sickDayCheck', () => {
     expect(wakeContainer).not.toHaveBeenCalled();
   });
 
-  it('1 of 3 signal → no write', async () => {
+  // Superseded 2026-08-12: under the old 2-of-3 vote a lone RHR rise wrote
+  // nothing. The weighted score lets the quietest signal carry a day on its own
+  // — resting heart rate clears its threshold on 3% of this person's healthy
+  // days. A lone NOISY signal still cannot; see 'a lone noisy-signal day'.
+  it('RHR alone → writes, because RHR is the quietest signal', async () => {
     const rows = fourteenDays();
     rows[13] = stableDay(rows[13].date, { restingHeartRate: 66 });
     await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
-    expect(writeSessionMessage).not.toHaveBeenCalled();
+    expect(writeSessionMessage).toHaveBeenCalledOnce();
   });
 
   it('2 of 3 signals → writes sick_day_check message and wakes container', async () => {
@@ -183,7 +187,7 @@ function quiet(n: number): HealthUploadDay[] {
 
 describe('detect — 5 signals', () => {
   it('exposes the two new thresholds', () => {
-    expect(SICK_DAY_THRESHOLDS.rrAbs).toBe(1.0);
+    expect(SICK_DAY_THRESHOLDS.rrAbs).toBe(0.9);
     expect(SICK_DAY_THRESHOLDS.awakeRatio).toBe(2.0);
   });
 
@@ -208,7 +212,9 @@ describe('detect — 5 signals', () => {
     const rows = quiet(14);
     rows.push({
       date: '2026-07-15',
-      restingHeartRate: 61,
+      // RHR raised only so the day clears the weighted gate — morning HRV
+      // carries a weight of 0.42 by design and cannot fire a day alone.
+      restingHeartRate: 68,
       hrv: 46,
       hrvMorning: 30,
       wristTempDeviation: 35.9,
@@ -218,5 +224,42 @@ describe('detect — 5 signals', () => {
     const d = detect(rows);
     expect(d!.fires.hrv).toBe(true);
     expect(d!.fires.temp).toBe(true);
+  });
+});
+
+describe('detect — weighted score', () => {
+  it('weights resting heart rate far above morning HRV', () => {
+    expect(SIGNAL_WEIGHTS.rhr).toBeGreaterThan(SIGNAL_WEIGHTS.hrv * 3);
+    expect(SICK_DAY_SCORE_T).toBe(3.0);
+  });
+
+  it('a lone noisy-signal day scores below threshold', () => {
+    const rows = quiet(14);
+    rows.push({
+      date: '2026-07-15',
+      restingHeartRate: 61,
+      hrv: 46,
+      hrvMorning: 28,
+      wristTempDeviation: 35.2,
+      respiratoryRate: 15.9,
+      awakeMin: 18,
+    });
+    expect(detect(rows)).toBeNull();
+  });
+
+  it('normalises the threshold when a signal is unavailable', () => {
+    const rows = quiet(14).map(({ wristTempDeviation, ...r }) => r);
+    rows.push({
+      date: '2026-07-15',
+      restingHeartRate: 74,
+      hrv: 46,
+      hrvMorning: 47,
+      respiratoryRate: 15.9,
+      awakeMin: 18,
+    });
+    const d = detect(rows);
+    expect(d).not.toBeNull();
+    expect(d!.unavailable).toEqual(['temp']);
+    expect(d!.score_threshold).toBeCloseTo((3.0 * (5.0 - 0.65)) / 5.0, 2);
   });
 });

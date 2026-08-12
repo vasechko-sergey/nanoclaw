@@ -24,9 +24,23 @@ export const SICK_DAY_THRESHOLDS = {
   rhrPct: 7,
   tempC: 0.4,
   hrvPct: 15,
-  rrAbs: 1.0,
+  rrAbs: 0.9,
   awakeRatio: 2.0,
 };
+
+// Mirror of analyze.js:SIGNAL_WEIGHTS. Each signal weighted by how quiet it is
+// on this person's healthy days, measured over the 74 pre-onset days in
+// health.db (2026-06 .. 2026-08-09): rhr 3% | rr 5% | awake 12% | temp 16% |
+// hrv 27%. Weight = 1/(rate + 0.05), normalised to mean 1.0. Counting these as
+// equal votes is what produced an 11% false-alarm rate; morning HRV supplied
+// most of it while being the least informative signal this person has.
+export const SIGNAL_WEIGHTS = { rhr: 1.76, hrv: 0.42, temp: 0.65, rr: 1.38, awake: 0.79 };
+const TOTAL_WEIGHT = Object.values(SIGNAL_WEIGHTS).reduce((a, b) => a + b, 0);
+
+// Picked from a false-alarm budget, not by tuning to the one labelled episode:
+// 5 alarms across 74 healthy days (7%), four of them clustered on a relocation
+// week. Raising it to 3.5 costs the onset-day detection this rule exists for.
+export const SICK_DAY_SCORE_T = 3.0;
 
 function median(xs: number[]): number {
   if (!xs.length) return 0;
@@ -38,6 +52,13 @@ function median(xs: number[]): number {
 interface Detection {
   date: string;
   matched: number;
+  /** Weighted evidence total. This, not `matched`, is the fire decision. */
+  score: number;
+  /** `SICK_DAY_SCORE_T` scaled to the weight actually available tonight. */
+  score_threshold: number;
+  /** Signals with no baseline or no reading today — evidence that is missing,
+   *  not evidence that is absent. */
+  unavailable: string[];
   signal: {
     rhr_delta_pct: number | null;
     hrv_delta_pct: number | null;
@@ -94,11 +115,47 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
     awake: awakeRatio !== null && awakeRatio >= thresholds.awakeRatio,
   };
   const matched = Object.values(fires).filter(Boolean).length;
-  if (matched < 2) return null;
+
+  // The fire decision is the weighted score, not the vote count. `matched` and
+  // `fires` survive as the human-readable evidence list — Greg quotes them.
+  // Exceedance is 1.0 at threshold, clipped at 3 so one extreme reading cannot
+  // carry the whole score. `awakeRatio` is already a ratio against its own 2.0
+  // threshold, so it normalises the same way as the differences.
+  const ex: Record<string, number | null> = {
+    rhr: rhrDelta === null ? null : Math.max(0, rhrDelta / thresholds.rhrPct),
+    hrv: hrvDelta === null ? null : Math.max(0, -hrvDelta / thresholds.hrvPct),
+    temp: tempDelta === null ? null : Math.max(0, tempDelta / thresholds.tempC),
+    rr: rrDelta === null ? null : Math.max(0, rrDelta / thresholds.rrAbs),
+    awake: awakeRatio === null ? null : Math.max(0, awakeRatio / thresholds.awakeRatio),
+  };
+  const unavailable: string[] = [];
+  let score = 0;
+  let availableWeight = 0;
+  for (const [k, w] of Object.entries(SIGNAL_WEIGHTS)) {
+    const e = ex[k];
+    if (e === null || e === undefined) {
+      unavailable.push(k);
+      continue;
+    }
+    availableWeight += w;
+    score += w * Math.min(3, e);
+  }
+  // Scale the bar to the weight actually on the table. Without this, a night
+  // missing wrist temperature silently needs more evidence than a complete one —
+  // the detector would get quieter exactly when it is already partly blind.
+  const scoreThreshold =
+    availableWeight > 0
+      ? Math.round(SICK_DAY_SCORE_T * (availableWeight / TOTAL_WEIGHT) * 100) / 100
+      : SICK_DAY_SCORE_T;
+  score = Math.round(score * 100) / 100;
+  if (score < scoreThreshold) return null;
 
   return {
     date: today.date,
     matched,
+    score,
+    score_threshold: scoreThreshold,
+    unavailable,
     signal: {
       rhr_delta_pct: rhrDelta !== null ? r1(rhrDelta) : null,
       hrv_delta_pct: hrvDelta !== null ? r1(hrvDelta) : null,
@@ -154,7 +211,14 @@ export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayC
     threadId: null,
     content: JSON.stringify({
       kind: 'sick_day_check',
-      detection: { date: detection.date, matched: detection.matched, fires: detection.fires },
+      detection: {
+        date: detection.date,
+        matched: detection.matched,
+        score: detection.score,
+        score_threshold: detection.score_threshold,
+        fires: detection.fires,
+        unavailable: detection.unavailable,
+      },
       signal: detection.signal,
     }),
     sourceSessionId: null,
