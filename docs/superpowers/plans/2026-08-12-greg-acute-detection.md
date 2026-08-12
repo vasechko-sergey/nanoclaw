@@ -318,7 +318,76 @@ Nothing reaches 1.2σ anywhere — not on the two pre-onset days, and **not on o
 
 **A defect found on the way.** `sleepOnsetMin = −560` with `sleepHours = 8.0` for 2026-08-10: our pipeline accepted an afternoon sleep block as that night's sleep, and `sleepRegularity` then produced mod_z 19.53 and a `critical` finding out of it. Either Apple merged a long nap with the night, or he genuinely went to bed at 14:40 on 08-09 — which would itself be a symptom worth naming rather than laundering into a regularity statistic. Neither reading is served by silently treating it as one night. Not yet a task; needs the `SleepAnalysis` intervals from a complete export to tell the two apart.
 
-**Still open, needs a complete export.** Whether *HRV* trajectory within the night behaves better than daily HRV does — daily morning HRV is this person's noisiest signal at 27% false alarms, and intra-night HRV is a genuinely different question. Also whether the six wrist-temperature gaps are ours or Apple's (question 2, untouched by the partial file). Both need a re-sent, complete `export.zip`.
+**Still open at that point:** intra-night HRV, and the wrist-temperature gaps. Both were closed by the second pass below.
+
+## Pre-verification, second pass — targeted dump, 2026-08-12
+
+Rather than re-attempt the multi-gigabyte Health export, the app grew a diagnostic that dumps only the sparse metrics over a chosen window (`HealthSampleDump`, Settings → Диагностика). Result: **759 KB** of JSONL covering 2026-06-13…08-12 — HRV SDNN 619, sleep intervals 1,734, respiratory rate 2,791, SpO₂ 677, resting HR 61, sleeping wrist temperature 58. Everything the truncated export had lost.
+
+### Finding A — wrist temperature is filed one day early. Confirmed.
+
+Attribution test over all 58 samples: **52/58 match the day sleep BEGAN, 2/58 match the wake day.** Every other overnight metric (`hrvMorning`, `spo2Avg/Min`, sleep phases) is filed on the **wake** day via `bucketOvernight`. Wrist temperature goes through `collection(.appleSleepingWristTemperature, …)` and is keyed on the statistics-interval start instead, so it sits one row above where it belongs.
+
+This is worse than the gaps it explains:
+
+| night measured | value | filed as | belongs to |
+|---|---|---|---|
+| 08-09 23:14 → 08-10 07:32 | 35.07 | 08-09 | 08-10 |
+| 08-10 23:20 → 08-11 06:56 | **36.19** | 08-10 | **08-11** |
+| 08-11 23:20 → 08-12 07:20 | **35.98** | 08-11 | **08-12** |
+
+The fever peak was reported a day before it happened, and 08-12 — the worst day of the episode, the day the sick-day rule ran — was left null and scored `temp: false`. The value existed: +0.76 °C over baseline, comfortably past the 0.4 threshold.
+
+The correction needs no timezone: `sleepOnsetMin` is already filed on the wake day, so `onset < 0` (bed before midnight) means the temperature landed on `wake_day − 1`, and `onset >= 0` means it landed correctly. Re-keying on that basis moves 44 values and lifts coverage from 55/61 to **58/61**.
+
+**Task 18 is exonerated as the cause.** The six gaps were never destroyed data — they are days on which no sleep *started*. The `COALESCE` fix stays correct on its own merits, but it explains nothing here and its priority drops.
+
+### Finding B — same-day detection survives the correction, narrowly, on different evidence
+
+Re-run of the backtest against the corrected series:
+
+| date | 2-of-5 votes | weighted / threshold |
+|---|---|---|
+| 08-08 | 1/5 hrv | 1.84 / 3.01 |
+| 08-09 | 1/5 hrv | 0.88 / 3.01 |
+| **08-10 onset** | **FIRE 2/5** rr, awake | **3.18 / 3.01** |
+| 08-11 | FIRE 4/5 hrv, temp, rr, awake | 8.87 / 3.01 |
+| 08-12 | **FIRE 5/5** all five | 9.93 / 3.01 |
+
+False alarms unchanged: 8/74 for votes, 5/74 weighted.
+
+Two things worth recording. Onset-day detection no longer rests on temperature at all — it rests on respiratory rate and awake minutes, and the margin is thin (3.18 against 3.01). And the "free" respiratory-rate tightening in Task 19 Step 1 turns out to be **load-bearing**: at the old +1.0 br/min threshold, 08-10 scores 0.95, drops to 1/5, and the whole thing becomes one-day-late. It is no longer an optional polish item.
+
+On the day it mattered most, 08-12 goes from the 2-of-3 the live system actually reported to a full 5-of-5.
+
+### Finding C — intra-night HRV is a dead end, and `hrvDeep` is stillborn
+
+**3 to 5 HRV samples per night.** Not per hour — per night. Deep-sleep-restricted HRV gets 0–2 samples on a typical night, so `hrvDeep` would be null or meaningless almost always. **Cut it from Task 17.**
+
+The trajectory question, against 51 baseline nights:
+
+| feature | baseline | 08-08 | 08-09 | 08-10 onset |
+|---|---|---|---|---|
+| night mean | 61.5 | −1.6σ | −1.0σ | **+1.4σ** |
+| night min | 35.5 | −0.4σ | −0.3σ | +1.0σ |
+| first half | 44.5 | −1.0σ | −0.3σ | **+3.0σ** |
+| second half | 71.4 | −1.1σ | −0.7σ | +0.4σ |
+
+Nothing distinguishes the pre-onset days, and on onset day HRV is *high*, not low. Combined with the heart-rate trajectory result from the first pass, sub-daily resolution does not deliver pre-onset warning here by any route tested.
+
+### Finding D — a 73-minute nap became a `critical` finding
+
+The 2026-08-10 `sleepOnsetMin = −560` mystery, resolved from the real intervals. Three separate sleep blocks, all from the watch:
+
+```
+08-09 00:05 .. 08-09 06:58   night        15 intervals
+08-09 14:39 .. 08-09 15:52   nap          2 intervals
+08-09 23:17 .. 08-10 07:32   night        20 intervals
+```
+
+`sleepSamplesByWakeDay` groups everything on a wake day and takes `min(start)` / `max(end)`, so the afternoon nap and the following night merged into one eight-hour "sleep" beginning at 14:39. `sleepOnsetMin` took its value from the nap, `sleepRegularity` produced mod_z **19.53** out of it, and Greg sent Jarvis a `critical` finding about a circadian collapse that never happened.
+
+The nap is plausibly the real signal — an unusual daytime sleep on the day before he reports the illness starting. The pipeline laundered it into a spurious alarm instead of naming it. New task below.
 
 ---
 
@@ -2521,8 +2590,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 > - **Keep** the interval store, the 30-minute bucketing (confirmed as the right width — ~120 heart-rate samples a night, ~7 per bucket), and the `sleepHr` / `wakeRestHr` split. That split fixes a defect that is wrong on its own merits: whole-day `heartRate` read 64 on 2026-08-12 and was flagged as cardio adaptation while the person was in bed.
 > - **Drop** the experiment framing, Step 9's `prodrome.js`, and Step 10's verdict section — the verdict is already in, recorded under Task 0.
 > - **Keep the backfill**, but as history for the new metrics rather than as an experiment. Lower priority; the store earns its place going forward either way.
-> - **`hrvDeep` stays unverified.** No HRV samples survived the truncated export. Build it only after a complete export shows several HRV samples landing in deep sleep on a typical night — otherwise it will be null on most nights.
-> - **Priority drops** below Tasks 15, 16 and 18, which all deliver something certain.
+> - **`hrvDeep` is cut.** The targeted dump settled it: 3–5 HRV samples per *night*, 0–2 of them inside deep sleep. The metric would be null or meaningless almost always. Do not build it.
+> - **Priority drops** below Tasks 15, 16, 20 and 21, which all deliver something certain.
 
 The pipeline's deepest limitation is not which metrics it collects — coverage is 90–100% — but that it flattens each of them to **one scalar per day** before anything downstream can look. HealthKit holds every sample; `HealthHistory` reduces a whole day of heart rate to a single `discreteAverage`.
 
@@ -2950,6 +3019,8 @@ Add an `## Experiment result` section under Task 17 with one of two outcomes, an
 
 ### Task 18: Stop partial re-uploads from erasing stored measurements
 
+> **Exonerated as the cause of the temperature gaps, priority lowered.** Task 0 Finding A showed those six nights were never destroyed — they are days on which no sleep started, an artifact of the attribution bug Task 20 fixes. The `COALESCE` change below is still correct: the destructive overwrite is real and a partial re-upload can still erase a genuine value. It is now a hardening item, not an explanation. Read the evidence table below as motivation, not as diagnosis.
+
 `upsertHealthDays` rebuilds every column on every write:
 
 ```typescript
@@ -3112,9 +3183,9 @@ Same-day detection at zero measured false alarms, against eleven percent. Note w
 - Produces: `SIGNAL_WEIGHTS = { rhr: 1.76, hrv: 0.42, temp: 0.65, rr: 1.38, awake: 0.79 }` and `SICK_DAY_SCORE_T = 3.0`, exported from both files.
 - Produces: `rrAbs` drops from `1.0` to `0.9`.
 
-- [ ] **Step 1: Take the free respiratory-rate fix first**
+- [ ] **Step 1: Take the respiratory-rate fix first — it is load-bearing, not free polish**
 
-Respiratory rate scored 0.95 against a 1.0 threshold on onset day — it missed by five percent. Measured across the pre-onset days, tightening the threshold costs nothing:
+Respiratory rate scored 0.95 against a 1.0 threshold on onset day — it missed by five percent. Once Task 20 corrects the temperature attribution, onset-day detection rests entirely on respiratory rate plus awake minutes: at +1.0 the day scores 1/5 and the detector is a day late, at +0.9 it scores 2/5 and fires on the day symptoms started. Measured across the pre-onset days, the tightening costs nothing:
 
 | threshold | false alarms | onset day |
 |---|---|---|
@@ -3301,6 +3372,233 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 20: File wrist temperature on the wake day, like every other overnight metric
+
+> **Highest priority in Phase 4.** Found by Task 0 Finding A. This is not a refinement — it is a signal arriving on the wrong day, and it silently cost the detector its temperature vote on the worst day of a real illness.
+
+`HealthHistory.swift:242` reads `.appleSleepingWristTemperature` through `collection(…)` and keys the result on `bucketKey(s.startDate)` — the calendar day the sleep interval began. `hrvMorning`, `spo2Avg/Min` and the sleep phases all go through `bucketOvernight`, which keys on the **wake** day. Temperature is the only overnight metric filed a day early, and 52 of 58 samples confirm it.
+
+**Files:**
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift:239-252`
+- Modify: `groups/greg/CLAUDE.md`
+- Create: `ios/JarvisApp/Sources/JarvisAppTests/WristTempAttributionTests.swift`
+
+**Interfaces:**
+- Consumes: `HealthHistory.sleepWakeDay` / `bucketOvernight`, already used by three other readers.
+- Produces: `wristTempDeviation` keyed on the wake day. No contract change — the field and its type are unchanged, only which row it lands in.
+
+- [ ] **Step 1: Write the failing test**
+
+```swift
+import XCTest
+@testable import Jarvis
+
+final class WristTempAttributionTests: XCTestCase {
+    /// A sleep interval beginning 23:20 on the 11th and ending 07:20 on the 12th
+    /// describes the night of the 12th, and must be filed there — that is where
+    /// hrvMorning, spo2 and the sleep phases for the same night already go.
+    func testOvernightIntervalIsFiledOnTheWakeDay() {
+        let cal = Calendar.current
+        let start = cal.date(from: DateComponents(year: 2026, month: 8, day: 11, hour: 23, minute: 20))!
+        XCTAssertEqual(
+            HealthHistory.sleepWakeDay(start: start, calendar: cal),
+            cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: start)!)
+        )
+    }
+
+    /// Bed after midnight: start day and wake day are already the same, so the
+    /// correction must be a no-op rather than pushing it a further day out.
+    func testAfterMidnightIntervalStaysOnItsOwnDay() {
+        let cal = Calendar.current
+        let start = cal.date(from: DateComponents(year: 2026, month: 8, day: 6, hour: 1, minute: 20))!
+        XCTAssertEqual(
+            HealthHistory.sleepWakeDay(start: start, calendar: cal),
+            cal.startOfDay(for: start)
+        )
+    }
+}
+```
+
+Run the test scheme.
+Expected: check `sleepWakeDay`'s existing cutoff first (`HealthHistory.swift:419`) — if it already implements exactly this, these pass immediately and the bug is purely that the temperature reader does not call it.
+
+- [ ] **Step 2: Route the temperature reader through the same bucketing**
+
+Replace the `bucketKey(s.startDate)` line in the `.appleSleepingWristTemperature` block:
+
+```swift
+        // Wake-day attribution, matching hrvMorning / spo2 / sleep phases. Keying
+        // on the interval's start files a 23:20 -> 07:20 night under the previous
+        // date: measured 52 of 58 samples landing one day early, which cost the
+        // sick-day rule its temperature vote on 2026-08-12 (the value was 35.98,
+        // +0.76 C over baseline, and the row was null).
+        let k = bucketKey(HealthHistory.sleepWakeDay(start: s.startDate, calendar: cal))
+```
+
+- [ ] **Step 3: Run the tests and a clean build**
+
+Expected: PASS. Bump `CURRENT_PROJECT_VERSION`, `xcodegen generate`.
+
+- [ ] **Step 4: Repair the stored history**
+
+The fix only corrects new uploads. Re-key the 61 existing rows using `sleepOnsetMin`, which is already filed on the wake day — no timezone needed:
+
+```javascript
+// onset < 0 means bed before midnight, so that night's temperature was filed on
+// wake_day - 1. onset >= 0 means bed after midnight and the row is already right.
+const prev = (d) => new Date(Date.parse(d + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+const rows = db.prepare('SELECT date, sleepOnsetMin, wristTempDeviation FROM health_days ORDER BY date').all();
+const by = new Map(rows.map((r) => [r.date, r]));
+const fixed = new Map();
+for (const r of rows) {
+  if (r.sleepOnsetMin == null) continue;
+  const src = r.sleepOnsetMin < 0 ? prev(r.date) : r.date;
+  const v = by.get(src)?.wristTempDeviation;
+  if (v != null) fixed.set(r.date, v);
+}
+```
+
+Then write `fixed` back in one transaction, nulling any date not in it. Verified locally on a copy of the live DB: moves 44 values, coverage 55/61 → 58/61.
+
+Take a copy of `health.db` before running this, and diff the two afterwards.
+
+- [ ] **Step 5: Tell Greg the series changed under him**
+
+In `groups/greg/CLAUDE.md`:
+
+```markdown
+- **Температура запястья до 2026-08-12 была сдвинута на сутки назад** (писалась в день засыпания, а не пробуждения — все остальные ночные метрики в день пробуждения). Исправлено, история перепривязана. Если в своих старых записях в `memories/` видишь температурную аномалию до этой даты — дата в ней на день раньше реальной.
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add ios/JarvisApp/
+git commit -m "fix(ios/health): file sleeping wrist temperature on the wake day
+
+Every overnight metric goes through bucketOvernight and lands on the wake day —
+except wrist temperature, which was keyed on the statistics-interval start.
+Measured against a raw HealthKit dump: 52 of 58 samples filed one day early.
+
+The consequences were not cosmetic. On the reference illness the fever peak
+(36.19 C, night of 08-10 to 08-11) was reported under 08-10, and 08-12 — the
+worst day, the day the sick-day rule ran — was left null and scored temp:false
+when the real value was 35.98, +0.76 C over baseline. Six apparent coverage
+gaps were simply days on which no sleep started; nothing was ever lost.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 21: Stop merging naps into the night
+
+> Found by Task 0 Finding D. This one already fired a false `critical` at the human.
+
+`sleepSamplesByWakeDay` collects every sleep interval attributed to a wake day and the callers take `min(start)` / `max(end)`. On 2026-08-09 the watch recorded three separate blocks — a night, a 73-minute afternoon nap at 14:39, and the following night from 23:17. They merged into one eight-hour "sleep" beginning at 14:39, `sleepOnsetMin` became **−560**, `sleepRegularity` scored mod_z **19.53**, and Greg sent Jarvis a `critical` finding about a circadian collapse that did not occur.
+
+The nap is probably the real signal — an unusual daytime sleep the day before the illness started. It deserves its own field, not silent absorption into a regularity statistic.
+
+**Files:**
+- Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift` (sleep aggregation)
+- Modify: `shared/ios-app-protocol/v2.ts` (`HealthUploadDay`)
+- Modify: `src/channels/ios-app/v2/health-db.ts` (`SCALARS`)
+- Modify: `groups/greg/scripts/analyze.js` (`METRICS`, `CONCERN_UP`)
+- Create: `ios/JarvisApp/Sources/JarvisAppTests/SleepBlockSplitTests.swift`
+
+**Interfaces:**
+- Produces: `HealthHistory.splitSleepBlocks(_:gapMin:)` → `[[SleepSampleInput]]`, splitting on any gap of `gapMin` minutes or more (default 120). The **main block** is the longest; everything else is a nap.
+- Produces: two new optional `HealthUploadDay` fields — `napMin` (int, minutes asleep outside the main block) and `napCount` (int). `sleepOnsetMin`, `sleepHours` and the phase minutes are computed from the **main block only**.
+
+- [ ] **Step 1: Write the failing test**
+
+```swift
+func testAfternoonNapDoesNotBecomeTheNightsOnset() {
+    let cal = Calendar.current
+    func iv(_ h1: Int, _ m1: Int, _ h2: Int, _ m2: Int, day: Int) -> HealthHistory.SleepSampleInput {
+        .init(stage: 3,
+              start: cal.date(from: DateComponents(year: 2026, month: 8, day: day, hour: h1, minute: m1))!,
+              end:   cal.date(from: DateComponents(year: 2026, month: 8, day: day, hour: h2, minute: m2))!)
+    }
+    // The real 2026-08-09: a 73-minute nap at 14:39, then the night from 23:17.
+    let blocks = HealthHistory.splitSleepBlocks(
+        [iv(14, 39, 15, 52, day: 9), iv(23, 17, 23, 59, day: 9)], gapMin: 120)
+    XCTAssertEqual(blocks.count, 2)
+    let main = blocks.max(by: { HealthHistory.blockMinutes($0) < HealthHistory.blockMinutes($1) })!
+    XCTAssertEqual(cal.component(.hour, from: main.first!.start), 23)
+}
+
+func testOneContinuousNightStaysOneBlock() {
+    let cal = Calendar.current
+    let a = cal.date(from: DateComponents(year: 2026, month: 8, day: 11, hour: 23, minute: 20))!
+    let b = cal.date(byAdding: .minute, value: 90, to: a)!
+    let c = cal.date(byAdding: .minute, value: 100, to: a)!   // 10-minute gap, same night
+    let d = cal.date(byAdding: .minute, value: 300, to: a)!
+    let blocks = HealthHistory.splitSleepBlocks(
+        [.init(stage: 3, start: a, end: b), .init(stage: 5, start: c, end: d)], gapMin: 120)
+    XCTAssertEqual(blocks.count, 1)
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run the test scheme.
+Expected: FAIL to compile — `splitSleepBlocks` and `blockMinutes` do not exist.
+
+- [ ] **Step 3: Implement**
+
+```swift
+    /// Split a wake day's sleep intervals into contiguous blocks, breaking on any
+    /// gap of `gapMin` or more. A nap and the night that follows it are different
+    /// events: merged, they produced a sleepOnsetMin of -560 and a critical
+    /// circadian finding out of a 73-minute afternoon nap.
+    static func splitSleepBlocks(
+        _ samples: [SleepSampleInput], gapMin: Int = 120
+    ) -> [[SleepSampleInput]] {
+        let sorted = samples.sorted { $0.start < $1.start }
+        guard var last = sorted.first?.end else { return [] }
+        var blocks: [[SleepSampleInput]] = []
+        var cur: [SleepSampleInput] = []
+        for s in sorted {
+            if !cur.isEmpty, s.start.timeIntervalSince(last) >= Double(gapMin) * 60 {
+                blocks.append(cur); cur = []
+            }
+            cur.append(s)
+            last = max(last, s.end)
+        }
+        if !cur.isEmpty { blocks.append(cur) }
+        return blocks
+    }
+
+    /// Minutes actually asleep in a block — awake intervals inside it do not count.
+    static func blockMinutes(_ block: [SleepSampleInput]) -> Double {
+        block.filter { asleepStages.contains($0.stage) }
+             .reduce(0) { $0 + $1.end.timeIntervalSince($1.start) / 60 }
+    }
+```
+
+Where `asleepStages` is the existing set the phase-minute code already uses for core/deep/REM — reuse it rather than defining a second one.
+
+At the call site: split, take the longest block as the night, compute `sleepOnsetMin` / `sleepHours` / phase minutes from it alone, and sum the rest into `napMin` / `napCount`.
+
+Add both fields to the Zod contract and to `SCALARS`, and add `"napMin"` to `METRICS` and `CONCERN_UP` in `analyze.js` — an unusual daytime nap is worth flagging in its own right.
+
+- [ ] **Step 4: Run the tests and a clean build**
+
+Expected: PASS. Bump the build number, `xcodegen generate`. The contract changed, so this deploy needs `./container/build.sh`.
+
+- [ ] **Step 5: Tell Greg what the new field means**
+
+```markdown
+- **`napMin` / `napCount`** — дневной сон вне основного ночного блока. Раньше он приклеивался к ночи: 73-минутный сон днём 9 августа склеился со следующей ночью, `sleepOnsetMin` стал −560, а `sleepRegularity` выдал mod_z 19.5 и critical на ровном месте. Теперь ночь и дневной сон разделены. Внезапный дневной сон у человека, который обычно не спит днём, — сам по себе сигнал: назови его, не прячь в статистику режима.
+```
+
+- [ ] **Step 6: Re-examine the July `sleepRegularity` history**
+
+`sleepRegularity` ran `critical` for most of June and July. Some of that may be the same nap-merge artifact rather than a drifting schedule. Once `napMin` has a few weeks of data, re-read those findings — and if they were artifacts, say so in `memories/state.md` so Greg stops treating a month of false criticals as an established pattern.
+
+---
+
 # Phase 5 — Diagnostician (separate spec required)
 
 **Not planned here, and deliberately so.** Phases 1–4 change what Greg can *see*. Turning that into cause-level hypotheses with a stated confidence, plus calibration against outcomes and ingestion of lab documents, is a different piece of work with its own design questions — several of them still open from the half-finished brainstorm (confidence banding, where hypotheses are stored, how outcomes get captured).
@@ -3333,7 +3631,9 @@ The second thing that spec must inherit is a constraint, not a capability: **Gre
 | 0 | `python3 /tmp/greg-bt/parse_export.py …/export.xml` | five- to six-figure sample count |
 | 0 | `python3 /tmp/greg-bt/density.py` | night-time samples per metric — decides bucket width and whether `hrvDeep` exists |
 | 0 | `python3 /tmp/greg-bt/prodrome_export.py` | sigma deviation on 08-08/08-09 — the verdict Task 17 was written to get |
-| 0 | `grep -c AppleSleepingWristTemperature …/export.xml` | whether the six gaps are ours or Apple's |
+| 0 | attribution test over the dumped temperature samples | 52/58 on start-day = the bug Task 20 fixes |
+| 0 | `bun rerun.js` on original vs re-keyed DB | onset still fires after the correction, on rr+awake |
+| 4 | `bun /tmp/greg-bt/fp.js` after Task 20's backfill | 8/74 or lower; a jump means the re-key went wrong |
 | 1 | `bun test groups/greg/scripts/analyze.test.js` | all green |
 | 1 | `pnpm test src/modules/health-trigger/` | all green |
 | 1 | `bun /tmp/greg-bt/backtest.js` | first FIRE **on** 2026-08-10 = onset day, silent 08-03…08-09 |
