@@ -137,7 +137,7 @@ describe('buildSystemPromptAddendum — legal kinds, generated from the descript
 
     const prompt = buildSystemPromptAddendum();
 
-    expect(prompt).toContain('`payne` — kind: set_log, ack');
+    expect(prompt).toContain('`payne` — агент, kind: set_log, ack');
   });
 
   it('puts the kind list after the display-name label', () => {
@@ -146,7 +146,7 @@ describe('buildSystemPromptAddendum — legal kinds, generated from the descript
 
     const prompt = buildSystemPromptAddendum();
 
-    expect(prompt).toContain('`payne` (Майор Пейн) — kind: set_log');
+    expect(prompt).toContain('`payne` (Майор Пейн) — агент, kind: set_log');
   });
 
   it('says nothing about kinds for an agent destination with no descriptor', () => {
@@ -159,21 +159,21 @@ describe('buildSystemPromptAddendum — legal kinds, generated from the descript
 
     const prompt = buildSystemPromptAddendum();
 
-    expect(prompt).toContain('`described` — kind: set_log');
-    expect(prompt).not.toContain('`undescribed` — kind:');
-    expect(prompt).toMatch(/^- `undescribed`$/m);
+    expect(prompt).toContain('`described` — агент, kind: set_log');
+    expect(prompt).not.toContain('`undescribed` — агент, kind:');
+    expect(prompt).toMatch(/^- `undescribed` — агент$/m);
   });
 
   it('says nothing about kinds for an agent destination that declares none', () => {
     // [] = has a descriptor, declares no kinds = gate ARMED text-only. There is
-    // no list to print; an empty ` — kind: ` would be worse than silence.
+    // no list to print; an empty `, kind: ` would be worse than silence.
     seedAgentDestination('described', 'ag-1', '["set_log"]');
     seedAgentDestination('textonly', 'ag-2', '[]');
 
     const prompt = buildSystemPromptAddendum();
 
-    expect(prompt).not.toContain('`textonly` — kind:');
-    expect(prompt).toMatch(/^- `textonly`$/m);
+    expect(prompt).not.toContain('`textonly` — агент, kind:');
+    expect(prompt).toMatch(/^- `textonly` — агент$/m);
   });
 
   it('says nothing about kinds for channel destinations', () => {
@@ -193,7 +193,7 @@ describe('buildSystemPromptAddendum — legal kinds, generated from the descript
     const prompt = buildSystemPromptAddendum();
 
     expect(prompt).not.toMatch(/`family`[^\n]*kind:/);
-    expect(prompt).toMatch(/^- `family` \(Family\)$/m);
+    expect(prompt).toMatch(/^- `family` \(Family\) — человек$/m);
   });
 
   it('documents the kind= attribute when any destination declares kinds', () => {
@@ -213,7 +213,7 @@ describe('buildSystemPromptAddendum — legal kinds, generated from the descript
 
     const prompt = buildSystemPromptAddendum();
 
-    expect(prompt).toContain('Your destination is `payne` — kind: set_log, ack.');
+    expect(prompt).toContain('Your destination is `payne` — агент, kind: set_log, ack.');
     expect(prompt).toContain('kind=');
   });
 
@@ -316,5 +316,40 @@ describe('resolveDefaultRouting', () => {
     seedDestination('casa', 'Casa', 'whatsapp', 'group-1@g.us');
 
     expect(resolveDefaultRouting()).toMatchObject({ ok: true, via: 'sole-destination' });
+  });
+});
+
+describe('buildSystemPromptAddendum — human channels are named as such', () => {
+  it('marks channel destinations as people and agent destinations as teammates', () => {
+    // Without this the list is a set of opaque names. An agent reading
+    // `sergei-iphone` and `jarvis` side by side has nothing telling it which one
+    // is the person it serves, and the prose in its own CLAUDE.md ("шли finding
+    // Джарвису, он гейтит человеку") reads as the only route out.
+    seedDestination('sergei-iphone', 'Сергей', 'ios-app-v2', 'device-1');
+    seedAgentDestination('jarvis', 'ag-jarvis', '["finding"]', 'Jarvis');
+
+    const prompt = buildSystemPromptAddendum('Greg');
+
+    expect(prompt).toMatch(/`sergei-iphone`.*— человек/);
+    expect(prompt).toMatch(/`jarvis`.*— агент/);
+  });
+
+  it('says a direct channel may be opened unprompted, and points at the budget', () => {
+    seedDestination('sergei-iphone', 'Сергей', 'ios-app-v2', 'device-1');
+    seedAgentDestination('jarvis', 'ag-jarvis', '["finding"]', 'Jarvis');
+
+    const prompt = buildSystemPromptAddendum('Greg');
+
+    expect(prompt).toContain('первым');
+    expect(prompt).toContain('не нужно передавать через другого агента');
+  });
+
+  it('stays silent about people when every destination is an agent', () => {
+    // A headless worker with no human channel must not be told it has one.
+    seedAgentDestination('jarvis', 'ag-jarvis', '["finding"]', 'Jarvis');
+
+    const prompt = buildSystemPromptAddendum('Greg');
+
+    expect(prompt).not.toContain('не нужно передавать через другого агента');
   });
 });

@@ -204,7 +204,16 @@ export function buildSystemPromptAddendum(assistantName?: string): string {
  */
 function kindSuffix(d: DestinationEntry): string {
   if (d.type !== 'agent' || !d.a2aKinds || d.a2aKinds.length === 0) return '';
-  return ` — kind: ${d.a2aKinds.join(', ')}`;
+  return `, kind: ${d.a2aKinds.join(', ')}`;
+}
+
+// Say what each name IS, not just what it is called. A bare list of
+// `sergei-iphone` and `jarvis` tells an agent nothing about which one is the
+// person it serves — and its own CLAUDE.md, describing a2a in detail, then
+// reads as the only way out. Greg has had a direct channel since June and his
+// instructions still implied every word to the owner went through Jarvis.
+function whatSuffix(d: DestinationEntry): string {
+  return d.type === 'agent' ? ' — агент' : ' — человек';
 }
 
 function buildDestinationsSection(): string {
@@ -222,15 +231,24 @@ function buildDestinationsSection(): string {
   if (all.length === 1) {
     const d = all[0];
     const label = d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
-    lines.push(`Your destination is \`${d.name}\`${label}${kindSuffix(d)}.`);
+    lines.push(`Your destination is \`${d.name}\`${label}${whatSuffix(d)}${kindSuffix(d)}.`);
   } else {
     lines.push('You can send messages to the following destinations:', '');
     for (const d of all) {
       const label = d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
-      lines.push(`- \`${d.name}\`${label}${kindSuffix(d)}`);
+      lines.push(`- \`${d.name}\`${label}${whatSuffix(d)}${kindSuffix(d)}`);
     }
   }
   lines.push('');
+  if (all.some((d) => d.type === 'channel')) {
+    lines.push(
+      'Человеческий канал двусторонний: ты можешь написать туда **первым**, не дожидаясь вопроса — ' +
+        'не нужно передавать через другого агента и не нужно ничьё разрешение. Действует бюджет ' +
+        'проактивных сообщений и тихие часы (см. INSTRUCTIONS §Behavior defaults). ' +
+        'a2a — для чужого домена и координации, а не для доставки твоих же слов человеку.',
+    );
+    lines.push('');
+  }
   lines.push(
     'Wrap each delivered message in a `<message to="name">…</message>` block; include several blocks in one response to address several destinations. `<internal>…</internal>` marks thinking you don\'t want sent.',
   );
