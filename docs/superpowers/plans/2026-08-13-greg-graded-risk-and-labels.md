@@ -86,7 +86,9 @@ describe("--state", () => {
     const e = buildEntry({ date: "2026-08-14", symptoms: null, state: "great", scope: "morning", note: null, temp: null });
     expect(e.state).toBe("great");
     expect(e.scope).toBe("morning");
-    expect(e.symptoms).toEqual([]);
+    // null, not []: the morning card never asks about symptoms, and an empty
+    // array here would read downstream as "asked, nothing reported".
+    expect(e.symptoms).toBeNull();
   });
 
   it("rejects a state outside the scale", () => {
