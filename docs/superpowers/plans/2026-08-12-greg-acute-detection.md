@@ -3092,6 +3092,66 @@ they bought: a question that would otherwise have needed a new iOS field, a
 release and a month of waiting was answered in ten minutes against stored
 history. That is the whole "derive late, not early" bet, paying out.
 
+#### Is the *algorithm* the limit? Separability probe — 2026-08-13
+
+Fair challenge, raised by the owner: every negative result above was produced by
+one detector, and that detector is the weakest family available. It is
+memoryless (each day scored alone, so two consecutive 0.6-of-bar days and one
+isolated 0.6 day are identical), its baseline is the trailing 14 days (so a slow
+ramp into illness contaminates the very median it is measured against), and it
+thresholds each signal independently before summing (so a small *joint* shift
+across all five, with nothing crossing its own bar, is invisible). The published
+methods this plan keeps citing are all sequential; ours is not.
+
+So the question was put in a form that does not require choosing a detector:
+**across the whole daily feature vector, how unusual are the two pre-onset days
+compared with the healthy days?** Reported as a rank, because a rank cannot be
+tuned to fire on the one episode we have. Ten features carrying a direction of
+concern, robust z against the reference frame (median, MAD×1.4826), aggregated
+two ways, over two reference frames, with and without memory:
+
+| Frame | Aggregate | Memory | 08-08 | 08-09 |
+|---|---|---|---|---|
+| trailing 14 | two-sided | point | 36/84 | 72/84 |
+| trailing 14 | directional | point | 23/84 | 41/84 |
+| trailing 14 | directional | 3-day | 29/84 | 52/84 |
+| lagged (t−35..t−8) | two-sided | 3-day | 17/77 | 40/77 |
+| lagged (t−35..t−8) | directional | point | **15/77** | 50/77 |
+
+`lagged` skips the week before the scored day, so a gradual entry cannot eat its
+own baseline; the 3-day mean is the direct test of whether the trajectory
+carries what the point does not; the whole-vector aggregate drops the
+independence assumption. **All three structural weaknesses repaired at once, and
+the pre-onset days do not separate.** 08-08 reaches 15th of 77 at best — the
+81st percentile, which is a normal Tuesday. 08-09, the day *before* onset, sits
+mid-pack and sometimes below the median, and is consistently *less* unusual than
+08-08. There is no ramp: a body entering illness would rank 40 → 20 → 5, and
+these go the other way.
+
+The same probe scores onset day itself at 5.41 against that healthy spread, so
+the instrument works. And the most unusual healthy days it finds cluster on
+05-25..05-27 and 06-05..06-07 — every variant agrees, and both pre-onset days
+look more ordinary than an average week in May.
+
+**Verdict: the detector family is genuinely weak, and repairing it does not
+recover a pre-onset signal on this episode.** What binds is not the algorithm.
+Two honest limits on that claim: it is still one episode, and it tests only the
+features we compute — an outlier framing can miss a direction that a supervised
+discriminator trained on many episodes would find. Both roads lead back to the
+episode log. **Re-run this probe when there are three or four episodes**; it is
+the cheapest question in the plan and it is the one that decides whether
+detector work is worth doing at all.
+
+The probe is kept at `docs/superpowers/plans/probes/separability-probe.js` — it
+decides nothing and ships nowhere, so it lives beside the plan rather than in
+`groups/greg/scripts/`. Edit `PRE` and `EPISODE_FROM` to the new episode and run
+it against a copy of `health.db` in the agent image:
+
+```bash
+docker run --rm --entrypoint bun -v <repo>/docs/superpowers/plans/probes:/p:ro -v /tmp:/w \
+  -v <install>/agents/greg/scripts:/s:ro nanoclaw-agent-v2-16111809:latest /p/separability-probe.js
+```
+
 > **RE-SCOPED by Task 0's result, 2026-08-12.** The pre-check ran on a real Health export and the early-warning premise did not survive: over 100 nights, no intra-night heart-rate feature moves more than 1.2σ on either pre-onset day, or on onset day itself, in an assumption-free 01:00–06:00 window. So:
 >
 > - **Keep** the interval store, the 30-minute bucketing (confirmed as the right width — ~120 heart-rate samples a night, ~7 per bucket), and the `sleepHr` / `wakeRestHr` split. That split fixes a defect that is wrong on its own merits: whole-day `heartRate` read 64 on 2026-08-12 and was flagged as cardio adaptation while the person was in bed.
