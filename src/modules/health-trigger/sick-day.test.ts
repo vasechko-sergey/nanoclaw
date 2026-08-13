@@ -27,7 +27,15 @@ vi.mock('../../config.js', () => ({
 }));
 
 // Import AFTER mocks so module-level imports inside sick-day.ts pick up the mocks.
-const { sickDayCheck, detect, SICK_DAY_THRESHOLDS, SIGNAL_WEIGHTS, SICK_DAY_SCORE_T } = await import('./sick-day.js');
+const {
+  sickDayCheck,
+  detect,
+  SICK_DAY_THRESHOLDS,
+  SIGNAL_WEIGHTS,
+  SICK_DAY_SCORE_T,
+  SUBJECTIVE_WEIGHTS,
+  FEVER_NORMAL_C,
+} = await import('./sick-day.js');
 
 function stableDay(date: string, overrides: Partial<HealthUploadDay> = {}): HealthUploadDay {
   return {
@@ -285,7 +293,15 @@ describe('detect — 5 signals', () => {
     const d = detect(rows);
     expect(d).not.toBeNull();
     expect(d!.matched).toBe(2);
-    expect(d!.fires).toEqual({ rhr: false, hrv: false, temp: false, rr: true, awake: true });
+    expect(d!.fires).toEqual({
+      rhr: false,
+      hrv: false,
+      temp: false,
+      rr: true,
+      awake: true,
+      symptom: false,
+      fever: false,
+    });
   });
 
   it('prefers hrvMorning over whole-day hrv', () => {
@@ -341,5 +357,68 @@ describe('detect — weighted score', () => {
     expect(d).not.toBeNull();
     expect(d!.unavailable).toEqual(['temp']);
     expect(d!.score_threshold).toBeCloseTo((3.0 * (5.0 - 0.65)) / 5.0, 2);
+  });
+});
+
+describe('detect — the subjective channel', () => {
+  const withToday = (extra: Partial<HealthUploadDay>) => {
+    const rows = quiet(14);
+    rows.push({
+      date: '2026-07-15',
+      restingHeartRate: 61,
+      hrv: 46,
+      hrvMorning: 47,
+      wristTempDeviation: 35.2,
+      respiratoryRate: 15.9,
+      awakeMin: 18,
+      ...extra,
+    });
+    return detect(rows);
+  };
+
+  it('a logged symptom cannot fire a day on its own', () => {
+    expect(withToday({ symptoms: ['soreThroat'] })).toBeNull();
+  });
+
+  it('a symptom plus one hardware signal fires where the signal alone would not', () => {
+    expect(withToday({ respiratoryRate: 17.4 })).toBeNull();
+    const d = withToday({ respiratoryRate: 17.4, symptoms: ['soreThroat'] });
+    expect(d).not.toBeNull();
+    expect(d!.fires.symptom).toBe(true);
+    expect(d!.signal.symptoms).toEqual(['soreThroat']);
+  });
+
+  it('a measured fever fires on its own, wrist sensor silent', () => {
+    const d = withToday({ bodyTemperature: 38.1 });
+    expect(d).not.toBeNull();
+    expect(d!.fires.fever).toBe(true);
+    expect(d!.fires.temp).toBe(false);
+    expect(d!.signal.body_temp_c).toBe(38.1);
+  });
+
+  it('a normal thermometer reading is not a fever signal', () => {
+    expect(withToday({ bodyTemperature: 36.8 })).toBeNull();
+  });
+
+  it('an empty symptoms array does not lower the bar for the hardware signals', () => {
+    // Guards the reason these live outside SIGNAL_WEIGHTS: bodyTemperature is
+    // absent on nearly every day, so pool membership would permanently shrink
+    // availableWeight/TOTAL_WEIGHT and loosen a measured threshold.
+    const bare = withToday({ restingHeartRate: 74 });
+    const logged = withToday({ restingHeartRate: 74, symptoms: [] });
+    expect(logged!.score_threshold).toBe(bare!.score_threshold);
+    expect(logged!.score).toBe(bare!.score);
+    expect(logged!.fires.symptom).toBe(false);
+    expect(logged!.signal.symptoms).toBeNull();
+  });
+
+  it('clips a very high fever like every other exceedance', () => {
+    expect(withToday({ bodyTemperature: 42.0 })!.score).toBe(withToday({ bodyTemperature: 39.3 })!.score);
+  });
+
+  it('mirrors the container-side constants exactly', () => {
+    expect(SICK_DAY_THRESHOLDS.feverC).toBe(37.5);
+    expect(FEVER_NORMAL_C).toBe(36.6);
+    expect(SUBJECTIVE_WEIGHTS).toEqual({ symptom: 1.5, fever: 3.0 });
   });
 });

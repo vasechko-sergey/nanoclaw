@@ -26,7 +26,28 @@ export const SICK_DAY_THRESHOLDS = {
   hrvPct: 15,
   rrAbs: 0.9,
   awakeRatio: 2.0,
+  feverC: 37.5,
 };
+
+// Fever is measured against a population normal, not this person's median: the
+// median would be biased by construction, since nobody reaches for a
+// thermometer on a day they feel fine.
+export const FEVER_NORMAL_C = 36.6;
+
+// Mirror of analyze.js:SUBJECTIVE_WEIGHTS. These sit OUTSIDE the weighted pool
+// and are added on top of the hardware score, for two structural reasons:
+// they must only ever ADD (an absent `symptoms` array means "nothing logged",
+// never "nothing wrong", and iOS emits [] for a day it queried and found empty
+// — which it cannot fully prove, since HealthKit hides read authorization); and
+// pool membership would loosen the hardware bar, because `bodyTemperature` is
+// absent on nearly every day and would permanently shrink
+// availableWeight/TOTAL_WEIGHT.
+//
+// ASSUMED, not measured — neither column existed before 2026-08-13. 1.5 clears
+// the 3.0 bar only alongside a clear hardware signal; 3.0 makes a thermometer
+// reading at or above 37.5 sufficient on its own, it being the only direct
+// measurement in a system otherwise built from proxies.
+export const SUBJECTIVE_WEIGHTS = { symptom: 1.5, fever: 3.0 };
 
 // Mirror of analyze.js:SIGNAL_WEIGHTS. Each signal weighted by how quiet it is
 // on this person's healthy days, measured over the 74 pre-onset days in
@@ -65,8 +86,20 @@ interface Detection {
     temp_delta_c: number | null;
     rr_delta_abs: number | null;
     awake_ratio: number | null;
+    /** The day's logged symptoms, or null for both "not logged" and "logged
+     *  nothing" — neither is a finding. */
+    symptoms: string[] | null;
+    body_temp_c: number | null;
   };
-  fires: { rhr: boolean; hrv: boolean; temp: boolean; rr: boolean; awake: boolean };
+  fires: {
+    rhr: boolean;
+    hrv: boolean;
+    temp: boolean;
+    rr: boolean;
+    awake: boolean;
+    symptom: boolean;
+    fever: boolean;
+  };
 }
 
 export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS): Detection | null {
@@ -113,6 +146,10 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
     temp: tempDelta !== null && tempDelta >= thresholds.tempC,
     rr: rrDelta !== null && rrDelta >= thresholds.rrAbs,
     awake: awakeRatio !== null && awakeRatio >= thresholds.awakeRatio,
+    // Subjective and measured. Both stand on their own — a fever is not a
+    // deviation from a median, it is a reading.
+    symptom: Array.isArray(today.symptoms) && today.symptoms.length > 0,
+    fever: typeof today.bodyTemperature === 'number' && today.bodyTemperature >= thresholds.feverC,
   };
   const matched = Object.values(fires).filter(Boolean).length;
 
@@ -147,6 +184,14 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
     availableWeight > 0
       ? Math.round(SICK_DAY_SCORE_T * (availableWeight / TOTAL_WEIGHT) * 100) / 100
       : SICK_DAY_SCORE_T;
+  // Bonuses land after the threshold is fixed, so they add evidence without
+  // touching the bar. Symptom count is deliberately not scaled — three logged
+  // symptoms may be three times the evidence or one person's logging habit.
+  if (fires.symptom) score += SUBJECTIVE_WEIGHTS.symptom;
+  if (fires.fever) {
+    const ex = (today.bodyTemperature! - FEVER_NORMAL_C) / (thresholds.feverC - FEVER_NORMAL_C);
+    score += SUBJECTIVE_WEIGHTS.fever * Math.min(3, ex);
+  }
   score = Math.round(score * 100) / 100;
   if (score < scoreThreshold) return null;
 
@@ -162,6 +207,8 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
       temp_delta_c: tempDelta !== null ? r2(tempDelta) : null,
       rr_delta_abs: rrDelta !== null ? r2(rrDelta) : null,
       awake_ratio: awakeRatio !== null ? r2(awakeRatio) : null,
+      symptoms: Array.isArray(today.symptoms) && today.symptoms.length ? today.symptoms : null,
+      body_temp_c: typeof today.bodyTemperature === 'number' ? today.bodyTemperature : null,
     },
     fires,
   };
