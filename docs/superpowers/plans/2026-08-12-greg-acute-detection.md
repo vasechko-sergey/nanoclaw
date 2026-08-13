@@ -153,12 +153,48 @@ The reference episode's lead time is now a computed value rather than a claim in
 
 ### Phase E — Derived metrics from data already present
 
+**SHIPPED and live 2026-08-13** (scp + rebirth). One deviation, recorded at Task 8.
+
 | # | Task | Delivers |
 |---|---|---|
 | **8** | `hrPerKStep` | High pulse at zero activity — neither term is anomalous alone |
 | **9** | `sleepPhaseShift` | The per-night event, distinct from the dispersion measure |
 | **10** | `sleepDebt7`, `restorativeFrac`, `hrvCv7` | Leading indicators that cost nothing to compute |
 | **11** | Sick-day verdict reaches `readiness` and `levels` | Stops the app publishing "stress 26" on a day with a fever |
+
+Five metrics entering `METRICS` means five more candidates for the same MAD
+detector that once held `sleepRegularity` at `critical` for three weeks, so the
+whole phase was gated on a rolling backtest — walk the 98-row series day by day,
+run the detector as of that day only, count `warn`+ fires per metric. Measured
+over 68 evaluable days (60 with no sick-day verdict):
+
+| Metric | warn+ | on healthy days | Read |
+|---|---|---|---|
+| `sleepPhaseShift` | 7/68 | 6/60 (10%) | Every fire ≥112 min of bedtime movement, against a p50 of 27. Not noise |
+| `hrvCv7` | 7/68 | 7/60 (12%) | **One** contiguous late-June run reported seven days running, not seven events |
+| `hrPerKStep` | 2/68 | 1/60 (2%) | Best of the five. On 08-11 it read 30.5 against a 9.7 baseline |
+| `restorativeFrac` | 1/68 | 1/60 (2%) | Quiet |
+| `sleepDebt7` | 0/68 | 0/60 | Never fires; the rolling sum is too smooth to deviate from its own MAD |
+
+For scale, the incumbents on the same run: `sleepRegularity` 11/68, `awakeMin`
+8/68, `fatMassKg` 6/68. Nothing new is noisier than what was already there.
+
+**A floor for `sleepPhaseShift` was drafted and then thrown away, because the
+measurement refuted it.** Its fires looked marginal by `recent_median` (20, 40,
+46 min — one of them a `warn` while the window median had *fallen*), which is
+exactly the pattern that earned `sleepRegularity` its 60-minute floor. Pulling
+the day's own value instead showed all seven fires at 112, 126, 130, 140, 157,
+176 and 326 minutes. The 3-day median was hiding the event, not revealing it.
+
+`hrvCv7` ships **without** the plan's claim that it leads `hrvMorning`. On the
+one labelled episode it never exceeded `info`, and one episode cannot measure a
+lead — the same rule this plan applies to every other threshold. Greg's data
+dictionary says so explicitly, and says that its seven-day run is one event.
+
+Value side, measured on the reference illness: on 08-11 the two newcomers took 2
+of the 8 top-K slots — `sleepPhaseShift` `critical` (bed 2h15m early) and
+`hrPerKStep` `warn` (30.5). On 08-09, the day before onset, nothing new fired
+above `info`. No pre-onset gain, consistent with the ban at the top of this plan.
 
 ### Phase F — New inputs, in value order
 
@@ -1532,6 +1568,26 @@ Derived metrics only. No new source, no contract change, no iOS work.
 
 Illness shows as a high pulse doing nothing. Today's row: heart rate 64 at 1847 steps, against a normal 78 at ~8000. Neither number is anomalous alone; the ratio is. This is the HROS-AD feature (median 4 days to symptom onset in the published evaluation).
 
+> **Shipped 2026-08-13 with one deviation: the step floor is 2000, not 500.**
+> The 500 was written as a rounding guard, and as a rounding guard it is fine.
+> What it does not guard against is the day that has not finished yet. The live
+> run at 08:33 local on 2026-08-13 read 1149 steps against a full-day average
+> pulse of 63 and scored `hrPerKStep` **54.8** against a baseline of 9.8 —
+> `critical`, first line of the anomaly list, and it would have been there every
+> morning for as long as the metric existed. The rolling backtest could not see
+> this because it replays completed days only.
+>
+> The floor is measured, not guessed: across 97 completed days the minimum is
+> **2164** steps, and that minimum *is* the reference illness's worst day, the
+> one carrying the 30.5 this metric was added to catch. 2000 sits between the
+> two with both margins known. The cost is stated in the code: a genuinely
+> bedridden sub-2000-step day gets no ratio, and the temperature / resting-pulse
+> / respiratory signals carry it instead.
+>
+> Note for whoever reads the morning output: `activeEnergy` and `exerciseMinutes`
+> have the same partial-day artifact and predate this phase. They were left alone
+> — fixing them changes the incumbent detector's behaviour and is not Phase E.
+
 **Files:**
 - Modify: `groups/greg/scripts/analyze.js` — add `hrPerKStep` to the derived-metric pass and to `METRICS` + `CONCERN_UP`
 - Test: `groups/greg/scripts/analyze.test.js`
@@ -1826,6 +1882,15 @@ Expected: a count of at least 8 (each name appears in `buildDerived` and in `MET
 ### Task 11: Let the sick-day verdict reach readiness and levels
 
 On 2026-08-12 — wrist temperature +0.97 °C, resting pulse +21%, 1847 steps — the script published `readiness: 60 yellow` and `levels.stress: 26`. Low stress. `sickDayDetect` runs in a different code path and nothing downstream consults it, so the two numbers the app shows and Payne gates training on both said "moderate day". Payne received `red` only because Greg's LLM layer overrode the script by hand.
+
+> **Shipped 2026-08-13, no deviations.** Re-measured on 08-12 after Phases A–B
+> corrected the series, the pre-change numbers are **65 yellow / stress 17**, not
+> the 60/26 above — same defect, slightly different arithmetic. With the cap:
+> `{"score":45,"band":"red","sick_capped":true}` and `stress: 60`. On 08-13, with
+> no sick verdict, both paths return identical values, so the healthy path is
+> untouched. The call site now scores the verdict **once** and threads the same
+> object into the episode lookup, `computeReadiness` and `computeLevels` — Task 15
+> had left a second `sickDayDetect(rows)` inside the `episode` expression.
 
 **Files:**
 - Modify: `groups/greg/scripts/analyze.js` (`computeReadiness`, `computeLevels`, and their call site)
