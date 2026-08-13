@@ -198,11 +198,49 @@ above `info`. No pre-onset gain, consistent with the ban at the top of this plan
 
 ### Phase F — New inputs, in value order
 
+**Tasks 12–14 SHIPPED and live 2026-08-13** (`4d26f633`, `c61a646a`, `ff31700b` + scp).
+**Task 18 SHIPPED earlier the same day** in `40b9af08`, alongside two other
+pipeline defects found while chasing a wrong number on the dashboard card.
+Task 17 remains open.
+
 | # | Task | Delivers |
 |---|---|---|
 | **12–14** | HealthKit symptom types + `bodyTemperature` | The subjective channel. Highest value of what remains — Phase 5 needs it |
 | **17** | Interval store, cut down | Keeps the `sleepHr` / `wakeRestHr` split, which fixes the whole-day `heartRate` conflation. Early-warning framing dropped, `hrvDeep` cut |
 | **18** | Non-destructive upsert | Hardening. Exonerated as the cause of the temperature gaps, so no longer urgent |
+
+**Four deviations from the body below, each recorded at its task.** The
+substantive one is Task 14's: the two subjective signals do NOT join
+`SIGNAL_WEIGHTS`. They are additive bonuses on top of the hardware score,
+because pool membership would have loosened a threshold chosen from a measured
+false-alarm budget — `score_threshold` scales by `availableWeight/TOTAL_WEIGHT`,
+and `bodyTemperature` is absent on nearly every day, so as a pool member it
+would permanently shrink that ratio. A test in both trees pins it: an empty
+`symptoms` array must leave `score_threshold` byte-identical.
+
+That choice also carries the property Task 13 depends on. iOS emits `[]` for a
+day whose symptom queries ran and found nothing — a claim it cannot fully
+prove, since HealthKit deliberately hides read authorization, so a denied
+permission is indistinguishable from an honest zero. As an additive bonus the
+uncertainty is harmless: a false `[]` can hide evidence, but can never
+manufacture a healthy verdict. Were symptoms ever to subtract, that
+degradation would become a silent false negative.
+
+The weights themselves are **assumed, not measured** — neither column existed
+before 2026-08-13, so there is no healthy-day rate to invert the way the other
+five were derived. `symptom: 1.5` clears the 3.0 bar only alongside a clear
+hardware signal; `fever: 3.0` makes a reading at or above 37.5 sufficient on
+its own, it being the only direct measurement in a system otherwise built from
+proxies. Fever exceedance is taken against a population normal of 36.6 rather
+than this person's own median, because nobody reaches for a thermometer on a
+day they feel fine — a "baseline" built from their readings is a baseline of
+days they already suspected something.
+
+Not yet observable on real data: build 1.34.0 (110) is committed but not
+installed, so both columns read `null` on every live row and the detector
+behaves exactly as it did yesterday. The host adds the two columns on the next
+upload (`openHealthDb` runs per ingest and closes), and the first honest test
+of the channel is the first day Сергей logs a symptom.
 
 ### Phase G — Diagnostician
 
@@ -2026,6 +2064,24 @@ Everything above squeezes the existing data. This phase widens it. The single hi
 
 ### Task 12: Wire contract and storage for symptoms and body temperature
 
+**SHIPPED 2026-08-13 — `4d26f633`. Two deviations.**
+
+*The empty array is storable.* The body below serializes `symptoms` with
+`d.symptoms?.length ? JSON.stringify(...) : null`, collapsing `[]` into `null`.
+Under the COALESCE upsert that shipped in `40b9af08`, `null` means "this upload
+is silent, keep what is stored" — so the collapse would make a symptom list
+unclearable: delete a mis-logged fever in Health.app and the stored one
+outlives it forever. Array columns now serialize `[]` as `'[]'`, a real value
+that wins the COALESCE. `JSON_COLS` was introduced alongside so the schema, the
+ALTER probe and the read path cannot drift apart the way `workouts` and the
+`SCALARS` block once could.
+
+*No image rebuild.* Step 6 says a `shared/` change needs one. Nothing in
+`container/agent-runner/src/` references `HealthUploadDay` — Greg reads
+`health.db` through `bun:sqlite` and bypasses the contract entirely — so the
+rebuild would have changed no behaviour. `request_context.ts` does import the
+module, but for `ContextFieldEnum`, which this task did not touch.
+
 **Files:**
 - Modify: `shared/ios-app-protocol/v2.ts:436-473` (`HealthUploadDay`)
 - Modify: the `health_days` `CREATE TABLE` / migration in the host's health-history writer
@@ -2196,6 +2252,28 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 13: Read symptoms and body temperature on iOS
 
+**SHIPPED 2026-08-13 — `c61a646a`, build 1.34.0 (110). Two deviations.**
+
+*`bodyTemperature` is the day's max, not its average.* The body specifies
+`.discreteAverage`. A fever's peak is the signal, and averaging 38.5 against a
+normal morning reading produces a number that describes neither. The contract
+comment in both `v2.ts` and `V2.swift` now states the semantic, because a
+consumer that assumes "mean" would read the same field wrongly.
+
+*Days with no symptoms are emitted as `[]`, not left `nil`.* The body is
+presence-only, which leaves the deleted-symptom case unfixable — see Task 12's
+first deviation. The backfill runs in `group.notify`, after every symptom query
+has completed, and only fills days the queries did not touch. Its honest limit
+is recorded in the source: read authorization is unknowable in HealthKit, so a
+denied permission also produces `[]`. Safe only because Task 14 makes symptoms
+purely additive.
+
+One compile note worth keeping: `[...].union(...)` on the type-annotated set
+literal makes it infer `[HKSampleType]` and drops the `Set<HKObjectType>`
+annotation. Build the set, then `formUnion` in a separate statement.
+
+456 iOS tests pass, 6 of them new.
+
 **Files:**
 - Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthManager.swift` (authorization set)
 - Modify: `ios/JarvisApp/Sources/JarvisApp/Services/HealthHistory.swift` (readers)
@@ -2353,6 +2431,28 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ---
 
 ### Task 14: Feed symptoms into the sick-day rule and Greg's dictionary
+
+**SHIPPED and live 2026-08-13 — `ff31700b` + scp. One substantive deviation,
+written up in the Phase F header above: the subjective signals are additive
+bonuses, not members of `SIGNAL_WEIGHTS`.**
+
+The body's tests were written before Task 19 replaced the vote count with a
+weighted score, so their `matched` arithmetic no longer describes the fire
+decision. The shipped tests assert the property instead of the count: a symptom
+alone does not fire (1.5 against a 3.0 bar), a symptom plus one hardware signal
+fires where that signal alone does not, a measured fever fires alone with the
+wrist sensor silent, and an empty `symptoms` array leaves both `score` and
+`score_threshold` unchanged.
+
+Two things the body did not call for and the shipped code has. `latest` carries
+`symptoms` and `bodyTemperature` even on a day the rule does not fire — a
+logged symptom is worth mentioning on its own, and it is the only field in the
+whole set the person said rather than a sensor measured. And the `sick-day`
+skill now states that `fires.fever` and `fires.temp` are different claims
+(thermometer vs. passive wrist sensor) that must not be merged into one
+sentence about temperature being up.
+
+95 container-side tests, 988 host.
 
 **Files:**
 - Modify: `groups/greg/scripts/analyze.js` (`sickDayDetect`, `latest` block)
@@ -3208,6 +3308,14 @@ Add an `## Experiment result` section under Task 17 with one of two outcomes, an
 ---
 
 ### Task 18: Stop partial re-uploads from erasing stored measurements
+
+**SHIPPED 2026-08-13 — `40b9af08`**, ahead of the rest of Phase F, because the
+owner spotted a wrong number on the dashboard card and three separate pipeline
+defects fell out of chasing it. The `COALESCE` change landed as written, with
+`ingested_at` exempted so the write stamp still advances. It remained a latent
+hazard to the end: no incident was ever traced to it. Task 12 later leaned on
+its semantics — `null` means "this upload is silent" — which is why array
+columns must serialize `[]` as a real value rather than collapsing it.
 
 > **Exonerated as the cause of the temperature gaps, priority lowered.** Task 0 Finding A showed those six nights were never destroyed — they are days on which no sleep started, an artifact of the attribution bug Task 20 fixes. The `COALESCE` change below is still correct: the destructive overwrite is real and a partial re-upload can still erase a genuine value. It is now a hardening item, not an explanation. Read the evidence table below as motivation, not as diagnosis.
 
