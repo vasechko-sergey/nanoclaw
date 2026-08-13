@@ -20,6 +20,19 @@ import HealthKit
     @ObservationIgnored private var lastFetch: Date?
     private static let fetchThrottle: TimeInterval = 90
 
+    /// HealthKit's symptom category types — the subjective channel. Each is a
+    /// separate HKCategoryType the user logs in Health.app or on the watch;
+    /// there is no aggregate type, so reading them means twenty queries.
+    /// Kept here rather than in HealthHistory because authorization and reading
+    /// must ask for exactly the same set — a type read without being requested
+    /// silently returns nothing, which is indistinguishable from "none logged".
+    static let symptomTypes: [HKCategoryTypeIdentifier] = [
+        .fever, .chills, .coughing, .soreThroat, .runnyNose, .sinusCongestion,
+        .shortnessOfBreath, .wheezing, .headache, .fatigue, .generalizedBodyAche,
+        .nausea, .diarrhea, .lossOfSmell, .lossOfTaste, .dizziness, .nightSweats,
+        .moodChanges, .sleepChanges, .appetiteChanges,
+    ]
+
     func requestAndFetch() {
         guard isAvailable else { return }
         if let lastFetch, Date().timeIntervalSince(lastFetch) < Self.fetchThrottle { return }
@@ -27,7 +40,7 @@ import HealthKit
             fetchToday()
             return
         }
-        let types: Set<HKObjectType> = [
+        var types: Set<HKObjectType> = [
             HKQuantityType(.stepCount),
             HKQuantityType(.heartRate),
             HKQuantityType(.activeEnergyBurned),
@@ -46,7 +59,12 @@ import HealthKit
             HKQuantityType(.height),
             HKQuantityType(.bodyFatPercentage),
             HKQuantityType(.leanBodyMass),
+            // New 2026-08-13: manual thermometer + the symptom category types.
+            HKQuantityType(.bodyTemperature),
         ]
+        // Separate statement, not `.union` on the literal: chaining makes the
+        // literal infer [HKSampleType] and the Set annotation stops applying.
+        types.formUnion(Self.symptomTypes.map { HKCategoryType($0) })
         didRequestAuth = true
         store.requestAuthorization(toShare: nil, read: types) { [weak self] ok, _ in
             guard ok else { return }

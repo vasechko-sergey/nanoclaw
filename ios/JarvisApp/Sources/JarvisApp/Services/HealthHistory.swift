@@ -492,6 +492,46 @@ enum HealthHistory {
             group.leave()
         }
 
+        // Manual thermometer readings. Max, not average: see the contract note
+        // on Day.bodyTemperature — a fever peak averaged against a normal
+        // morning reading is a number that describes neither.
+        group.enter()
+        collection(.bodyTemperature, start: start, end: end, options: .discreteMax) { stats in
+            let degC = HKUnit.degreeCelsius()
+            for s in stats {
+                if let q = s.maximumQuantity() {
+                    let k = bucketKey(s.startDate)
+                    let v = (q.doubleValue(for: degC) * 100).rounded() / 100
+                    mutate(k) { $0.bodyTemperature = v }
+                }
+            }
+            group.leave()
+        }
+
+        // Symptoms — presence per day, one query per type (HealthKit has no
+        // aggregate symptom type). Bucketed by the sample's own calendar day,
+        // not by wake-day: a symptom is a statement about the day it was
+        // logged, unlike sleep which belongs to the night before its wake.
+        for id in HealthManager.symptomTypes {
+            group.enter()
+            let key = HealthHistory.symptomKey(id)
+            let q = HKSampleQuery(
+                sampleType: HKCategoryType(id),
+                predicate: HKQuery.predicateForSamples(withStart: start, end: end),
+                limit: HKObjectQueryNoLimit, sortDescriptors: nil
+            ) { _, samples, _ in
+                for s in (samples as? [HKCategorySample]) ?? [] {
+                    mutate(bucketKey(s.startDate)) { day in
+                        var list = day.symptoms ?? []
+                        if !list.contains(key) { list.append(key) }
+                        day.symptoms = list
+                    }
+                }
+                group.leave()
+            }
+            store.execute(q)
+        }
+
         // Workouts — array per day. Differential mode uses accumulated load as evidence.
         group.enter()
         let workoutQuery = HKSampleQuery(
@@ -538,6 +578,19 @@ enum HealthHistory {
             for k in byDay.keys {
                 guard let dayStart = fmt.date(from: k) else { continue }
                 byDay[k]?.tzOffsetMin = TimeZone.current.secondsFromGMT(for: dayStart) / 60
+                // A day the symptom queries covered and found nothing in gets []
+                // rather than nil. nil has to keep meaning "this upload said
+                // nothing about symptoms" — it is what lets the server's COALESCE
+                // upsert defer instead of overwrite — so without this, deleting a
+                // mis-logged fever in Health.app could never clear the stored one.
+                //
+                // The claim is slightly stronger than what HealthKit can prove:
+                // read authorization is deliberately unknowable, so a denied
+                // permission also looks like "found nothing". That is safe here
+                // only because symptoms exclusively ADD to the sick-day score and
+                // never subtract — a false [] can hide a signal that was never
+                // available, but it can never invent a healthy verdict.
+                if byDay[k]?.symptoms == nil { byDay[k]?.symptoms = [] }
             }
             lock.unlock()
 
@@ -571,6 +624,18 @@ enum HealthHistory {
             cb(out)
         }
         store.execute(q)
+    }
+
+    /// HealthKit identifier -> the short key the wire contract uses.
+    /// `HKCategoryTypeIdentifierFever` -> `fever`. The suffix is the whole
+    /// contract: the server stores these strings verbatim and Greg matches on
+    /// them, so the mapping must stay a pure function of the identifier.
+    static func symptomKey(_ id: HKCategoryTypeIdentifier) -> String {
+        var s = id.rawValue
+        if s.hasPrefix("HKCategoryTypeIdentifier") {
+            s.removeFirst("HKCategoryTypeIdentifier".count)
+        }
+        return s.prefix(1).lowercased() + s.dropFirst()
     }
 
     /// Wake-day for a sleep sample, by a noon cutoff on its START time: from

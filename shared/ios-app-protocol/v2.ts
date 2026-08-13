@@ -511,9 +511,11 @@ export const HealthUploadDay = z.object({
   // stronger claim, "checked, nothing logged", and only the reader that
   // actually ran the queries may send it.
   //
-  // `bodyTemperature` is a manual thermometer reading in °C. Distinct from
-  // `wristTempDeviation`, which is a passive overnight sensor reporting a
-  // signed deviation from the wearer's own baseline, not an absolute.
+  // `bodyTemperature` is the day's HIGHEST manual thermometer reading in °C —
+  // max, not mean: a fever's peak is the signal, and averaging it against a
+  // normal morning reading dilutes exactly what is being detected. Distinct
+  // from `wristTempDeviation`, a passive overnight sensor reporting a signed
+  // deviation from the wearer's own baseline rather than an absolute.
   bodyTemperature: z.number().positive().optional(),
   symptoms: z.array(z.string()).optional(),
   workouts: z.array(Workout).optional(),

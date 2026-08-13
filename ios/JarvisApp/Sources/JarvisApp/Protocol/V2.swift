@@ -809,6 +809,21 @@ extension V2 {
             var height: Double?                 // m
             var bodyFatPercentage: Double?      // percent number, e.g. 18.5
             var leanBodyMass: Double?           // kg
+            // New 2026-08-13: the subjective channel. Everything above is a
+            // sensor; these say what the day felt like, which is what separates
+            // a fever from a hard training week when both lift resting pulse.
+            //
+            // bodyTemperature is the day's HIGHEST manual thermometer reading,
+            // not its mean — a fever's peak is the signal, and averaging it
+            // against a normal morning reading dilutes exactly what is being
+            // detected. Distinct from wristTempDeviation, a passive overnight
+            // sensor reporting a signed deviation from the wearer's baseline.
+            var bodyTemperature: Double?        // °C, day max
+            // Symptom identifier suffixes (HKCategoryTypeIdentifierFever ->
+            // "fever"). nil means this upload did not cover symptoms; [] is the
+            // stronger claim — the queries ran and found nothing. See the
+            // backfill in HealthHistory.fetch for why [] is safe to send.
+            var symptoms: [String]?
             var workouts: [Workout]?
         }
 
