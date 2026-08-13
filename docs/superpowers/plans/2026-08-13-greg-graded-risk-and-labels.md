@@ -521,14 +521,16 @@ Ask Greg, in a normal message, to schedule it. He calls `schedule_task` with:
 - `recurrence`: `0 21 * * *`
 
 Cron is evaluated in the owner's timezone, so no offset arithmetic is needed.
-Confirm it exists:
+
+Scheduled tasks are **not** in the central DB — they are rows in the session's
+own `inbound.db` (`messages_in`, with `process_after` and `recurrence` columns),
+which the host sweep fans out. Confirm across Greg's sessions:
 
 ```bash
-ssh root@148.253.211.164 "cd /home/nanoclaw/nanoclaw && sudo -u nanoclaw pnpm exec tsx scripts/q.ts data/v2.db \"SELECT id, recurrence, process_after FROM scheduled_messages WHERE prompt LIKE '%evening-check%'\""
+ssh root@148.253.211.164 "cd /home/nanoclaw/nanoclaw && for d in data/v2-sessions/greg/*/; do sudo -u nanoclaw pnpm exec tsx scripts/q.ts \$d/inbound.db \"SELECT recurrence || '  ' || process_after || '  ' || substr(content,1,60) FROM messages_in WHERE recurrence IS NOT NULL AND content LIKE '%evening-check%'\"; done"
 ```
 
-If that table name is wrong for this install, find it with `ncl` instead:
-`ssh root@148.253.211.164 "cd /home/nanoclaw/nanoclaw && ./bin/ncl sessions list"` and read the task list through Greg with `list_tasks`.
+Expected: one row, `0 21 * * *`, with the first run at 21:00 owner-local.
 
 - [ ] **Step 6: Require a label on every episode in `sick-day/SKILL.md`**
 
