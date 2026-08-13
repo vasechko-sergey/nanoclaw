@@ -3020,6 +3020,49 @@ What the intervals do buy is the de-conflation, which was always the honest
 justification: on 08-12 the one number was 70, while the sleeping pulse was 58
 and the awake resting pulse 68. Three different quantities that used to be one.
 
+#### Healthy-day false-alarm rates — measured, and the admission verdict
+
+Run by the recipe recorded above `SIGNAL_WEIGHTS`: for each candidate take the
+share of days OUTSIDE the labelled episode on which it clears its own threshold,
+using the same 14-day-prior baseline `sickDayScore` uses. Healthy pool = 76–79
+evaluable days (2026-05-22 .. 2026-08-09). The recipe reproduces the incumbents:
+`restingHeartRate` measures 4/79 healthy fires here against the 3% recorded over
+the older 74-day pool, and the stored weights fall out unchanged to two decimals.
+
+| Candidate | Threshold | Healthy fires | Also fires `rhr` | Onset-day exceedance |
+|---|---|---|---|---|
+| `sleepHr` | +7% | 9/76 (12%) | 1/9 | **−1.9%** |
+| `wakeRestHr` | +5% | 8/79 (10%) | 4/8 | **−1.5%** |
+| `nightHrMin` | +7% | 9/76 (12%) | 1/9 | +3.0% |
+| `nightHrDipPct` | −35% | 9/76 (12%) | 0/9 | **+62.5%** |
+
+**Three of the four are dead on arrival.** On onset day the sleeping pulse and
+the awake resting pulse both sit *below* their own medians — the opposite of the
+direction illness predicts. No threshold cheap enough to afford makes them fire,
+and no weighting rescues a signal that moves the wrong way.
+
+**`nightHrDipPct` is the one interesting result, and it is still not enough.**
+The overnight dip collapsed to 3.3% on onset day against a 14-day median near
+8.8%, it fires at a threshold picked from the alarm budget rather than from the
+episode, and it is *not* a copy of resting heart rate — none of its nine healthy
+fires coincide with an `rhr` fire, where `wakeRestHr` shares half of its own.
+Checked for the obvious artifact: onset night carries 14 asleep buckets, the
+same as its neighbours (p50 is 14 across the series), so the flat night is a
+measurement and not a thin sample.
+
+**Verdict: admit nothing to the sick-day rule.** A signal that fires on 12% of
+healthy days has a 12% chance of landing on the one labelled onset day by
+coincidence, and one episode cannot tell those apart — the same standard that
+stripped `hrvCv7` of its claimed lead in Phase E. Admitting it would also mean
+re-picking `SICK_DAY_SCORE_T`, which was chosen from a false-alarm budget over
+five signals, so the cost of being wrong is not confined to the new weight.
+
+All four stay in `METRICS` and in `CONCERN_UP`/`CONCERN_DOWN`, where the ordinary
+MAD detector already surfaces them as findings without any of them getting a
+vote on whether he is ill. **Re-run this measurement at the next episode.** If
+the dip collapses again, that is two out of two at a 12% base rate and it earns
+its weight; if it does not, this section is why it never got one.
+
 > **RE-SCOPED by Task 0's result, 2026-08-12.** The pre-check ran on a real Health export and the early-warning premise did not survive: over 100 nights, no intra-night heart-rate feature moves more than 1.2σ on either pre-onset day, or on onset day itself, in an assumption-free 01:00–06:00 window. So:
 >
 > - **Keep** the interval store, the 30-minute bucketing (confirmed as the right width — ~120 heart-rate samples a night, ~7 per bucket), and the `sleepHr` / `wakeRestHr` split. That split fixes a defect that is wrong on its own merits: whole-day `heartRate` read 64 on 2026-08-12 and was flagged as cardio adaptation while the person was in bed.
