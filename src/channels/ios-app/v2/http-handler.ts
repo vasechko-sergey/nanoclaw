@@ -25,7 +25,7 @@
 // vars + a live ws server).
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, createReadStream } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, createReadStream, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ChannelSetup } from '../../adapter.js';
@@ -37,6 +37,7 @@ import { noteDeviceTz } from '../../../modules/person-tz/index.js';
 import { readEnvFile } from '../../../env.js';
 import { userMemoryRoot, userGlobalRoot } from '../../../user-memory.js';
 import { appendHealthHistory } from './health-ingest.js';
+import { healthRequestsDir, isSafeRequestId, scanHealthRequestFiles } from './health-requests-scan.js';
 import { openHealthDb, readHealthDays } from './health-db.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
 import type { OutboundQueueRow } from './types.js';
@@ -151,13 +152,22 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
         res.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
         return;
       }
+      // Drain the health agent's drop directory first: the agent writes
+      // `health/requests/<id>.json` on every daily run, and this poll is the
+      // only thing that turns those files into queue rows.
+      const requestsDir = healthRequestsDir(userMemoryRoot(id.person_key, healthAgentFolder));
+      for (const r of scanHealthRequestFiles(requestsDir)) {
+        healthRequestsStore.enqueueWindow(id.platform_id, r.requestId, r.from, r.to);
+      }
       // Device is identified by the token, not the query param. Ignore any
       // ?platformId= the client sends — the token's platform_id is canonical.
-      const rows = healthRequestsStore.listForDevice(id.platform_id).map((r) => ({
-        requestId: r.request_id,
-        days: r.days,
-      }));
-      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(rows));
+      // Shape is pinned by the client's decoder: an envelope with `from`/`to`
+      // per request (`HealthRequests.swift`), not a bare array.
+      const requests = healthRequestsStore
+        .listForDevice(id.platform_id)
+        .filter((r) => r.from_date && r.to_date)
+        .map((r) => ({ requestId: r.request_id, from: r.from_date, to: r.to_date }));
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ requests }));
       return;
     }
 
@@ -226,7 +236,20 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
           //   data/user-memory/<person>/<healthAgent>
           const memHealthRoot = userMemoryRoot(id.person_key, healthAgentFolder);
           appendHealthHistory(memHealthRoot, days);
-          if (requestId) healthRequestsStore.clear(requestId);
+          if (requestId) {
+            healthRequestsStore.clear(requestId);
+            // `requestId` is the drop-file basename, echoed back by the client
+            // — untrusted input on its way into a path. Only ids that could
+            // have come from the scanner get near the filesystem.
+            if (isSafeRequestId(requestId)) {
+              try {
+                unlinkSync(join(healthRequestsDir(memHealthRoot), `${requestId}.json`));
+              } catch {
+                // Already gone, or never a drop file (a future MCP-tool
+                // producer would have no file at all). Nothing to undo.
+              }
+            }
+          }
           log('health_history (http)', {
             personKey: id.person_key,
             platformId: id.platform_id,

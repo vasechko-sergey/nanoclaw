@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { DATA_DIR } from '../../../config.js';
@@ -176,20 +176,24 @@ describe('Bearer auth gate', () => {
   });
 });
 
+// The client decodes `{ requests: [{ requestId, from, to }] }`
+// (`HealthRequests.swift`). Until 2026-08-13 this route answered with a bare
+// array of `{ requestId, days }` — a shape the app's decoder rejects outright,
+// so even a populated queue was invisible to it.
 describe('GET /ios/health/requests', () => {
-  it('returns empty list initially for the token-derived device', async () => {
+  it('returns an empty envelope initially for the token-derived device', async () => {
     const r = await fetchJson(`${h.url}/ios/health/requests`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
     expect(r.status).toBe(200);
-    expect(r.json()).toEqual([]);
+    expect(r.json()).toEqual({ requests: [] });
   });
 
   it('scopes entries to the device derived from the token, ignoring any query param', async () => {
-    h.store.enqueue(PLATFORM_ID, 'req-a', 7);
-    h.store.enqueue(PLATFORM_ID, 'req-b', 14);
-    h.store.enqueue('ios-app-v2:someone-else', 'req-c', 30); // different device
+    h.store.enqueueWindow(PLATFORM_ID, 'req-a', '2026-08-07', '2026-08-13');
+    h.store.enqueueWindow(PLATFORM_ID, 'req-b', '2026-07-31', '2026-08-13');
+    h.store.enqueueWindow('ios-app-v2:someone-else', 'req-c', '2026-07-15', '2026-08-13');
 
     // Even with a misleading ?platformId= for another device, the token's
     // platform_id is authoritative — we still get p2's two rows.
@@ -198,16 +202,36 @@ describe('GET /ios/health/requests', () => {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
     expect(r.status).toBe(200);
-    const rows = r.json() as Array<{ requestId: string; days: number }>;
-    expect(rows).toHaveLength(2);
-    expect(rows.map((x) => x.requestId).sort()).toEqual(['req-a', 'req-b']);
-    expect(rows.find((x) => x.requestId === 'req-a')?.days).toBe(7);
+    const { requests } = r.json() as { requests: Array<{ requestId: string; from: string; to: string }> };
+    expect(requests).toHaveLength(2);
+    expect(requests.map((x) => x.requestId).sort()).toEqual(['req-a', 'req-b']);
+    expect(requests.find((x) => x.requestId === 'req-a')).toMatchObject({
+      from: '2026-08-07',
+      to: '2026-08-13',
+    });
+  });
+
+  it("drains the health agent's drop directory on poll", async () => {
+    // Greg writes one of these on every daily run. This poll is the only thing
+    // that turns them into queue rows.
+    const dir = join(userMemoryRoot(PERSON, HEALTH_AGENT), 'health', 'requests');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'refresh_20260813.json'), JSON.stringify({ from: '2026-07-30', to: '2026-08-13' }));
+
+    const r = await fetchJson(`${h.url}/ios/health/requests`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(r.status).toBe(200);
+    expect(r.json()).toEqual({
+      requests: [{ requestId: 'refresh_20260813', from: '2026-07-30', to: '2026-08-13' }],
+    });
   });
 });
 
 describe('POST /ios/health/upload', () => {
   it("writes rows into the token-person's health agent health.db and clears the request", async () => {
-    h.store.enqueue(PLATFORM_ID, 'req-1', 3);
+    h.store.enqueueWindow(PLATFORM_ID, 'req-1', '2026-05-28', '2026-05-30');
 
     // body.platformId is deliberately a DIFFERENT id than the token's — it
     // must be ignored for routing (token identity wins).
@@ -239,6 +263,42 @@ describe('POST /ios/health/upload', () => {
 
     // Request cleared.
     expect(h.store.listForDevice(PLATFORM_ID)).toHaveLength(0);
+  });
+
+  it('deletes the drop file that produced the serviced request', async () => {
+    const dir = join(userMemoryRoot(PERSON, HEALTH_AGENT), 'health', 'requests');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, 'refresh_20260813.json');
+    writeFileSync(file, JSON.stringify({ from: '2026-08-12', to: '2026-08-13' }));
+    h.store.enqueueWindow(PLATFORM_ID, 'refresh_20260813', '2026-08-12', '2026-08-13');
+
+    await fetchJson(`${h.url}/ios/health/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId: 'refresh_20260813',
+        days: [{ date: '2026-08-13', steps: 1149 }],
+      }),
+    });
+    expect(existsSync(file)).toBe(false);
+    expect(h.store.listForDevice(PLATFORM_ID)).toHaveLength(0);
+  });
+
+  it('does not let a client-supplied requestId reach outside the drop directory', async () => {
+    const outside = join(personRoot, 'do-not-delete.json');
+    mkdirSync(personRoot, { recursive: true });
+    writeFileSync(outside, 'x');
+
+    const r = await fetchJson(`${h.url}/ios/health/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId: '../../do-not-delete',
+        days: [{ date: '2026-08-13', steps: 1 }],
+      }),
+    });
+    expect(r.status).toBe(200); // the upload itself still succeeds
+    expect(existsSync(outside)).toBe(true);
   });
 
   it('accepts an upload with no body platformId (routing is by token)', async () => {

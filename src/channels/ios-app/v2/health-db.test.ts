@@ -72,3 +72,32 @@ describe('health-db — additive column migration', () => {
     expect(readHealthDays(db).map((r) => r.tzOffsetMin)).toEqual([480, 330, -300]);
   });
 });
+
+describe('health-db — a partial upload does not erase what is already stored', () => {
+  it('keeps fields the new payload omits', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-partial-'));
+    const db = openHealthDb(join(dir, 'health.db'));
+    upsertHealthDays(db, [
+      { date: '2026-08-13', sleepHours: 6.3, deepMin: 30, remMin: 123, steps: 730 } as HealthUploadDay,
+    ]);
+    // A later sync that ran before the watch wrote the night: activity only.
+    upsertHealthDays(db, [{ date: '2026-08-13', steps: 1149 } as HealthUploadDay]);
+    const row = readHealthDays(db)[0];
+    expect(row.steps).toBe(1149); // a real value still wins
+    expect(row.sleepHours).toBe(6.3); // the night survives
+    expect(row.deepMin).toBe(30);
+    expect(row.remMin).toBe(123);
+  });
+
+  it('still advances ingested_at on every write', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-stamp-'));
+    const path = join(dir, 'health.db');
+    const db = openHealthDb(path);
+    upsertHealthDays(db, [{ date: '2026-08-13', steps: 730 } as HealthUploadDay]);
+    const first = (db.prepare('SELECT ingested_at AS t FROM health_days').get() as { t: number }).t;
+    db.prepare('UPDATE health_days SET ingested_at = ?').run(first - 10_000);
+    upsertHealthDays(db, [{ date: '2026-08-13', steps: 1149 } as HealthUploadDay]);
+    const second = (db.prepare('SELECT ingested_at AS t FROM health_days').get() as { t: number }).t;
+    expect(second).toBeGreaterThan(first - 10_000);
+  });
+});

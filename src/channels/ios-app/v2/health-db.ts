@@ -70,9 +70,18 @@ export function openHealthDb(path: string): Database.Database {
 export function upsertHealthDays(db: Database.Database, days: HealthUploadDay[]): void {
   const cols = ['date', ...SCALARS, 'workouts', 'ingested_at'];
   const placeholders = cols.map((c) => `@${c}`).join(', ');
+  // COALESCE, not a plain overwrite: an upload carrying a subset of the fields
+  // would otherwise null out everything it omits. HealthKit answers per metric,
+  // and a sync that runs before the watch has written the night's sleep sends a
+  // day with no sleep fields at all — under a plain overwrite that erases a
+  // night already on disk. A real value always wins; only nulls defer.
+  //
+  // The cost is that a value can never be un-set, which is the right trade for
+  // this data: HealthKit does not retract a day it has already reported.
+  // `ingested_at` is exempt — it is a write stamp and must always advance.
   const updates = cols
     .filter((c) => c !== 'date')
-    .map((c) => `${c}=excluded.${c}`)
+    .map((c) => (c === 'ingested_at' ? `${c}=excluded.${c}` : `${c}=COALESCE(excluded.${c}, health_days.${c})`))
     .join(', ');
   const stmt = db.prepare(
     `INSERT INTO health_days (${cols.join(', ')}) VALUES (${placeholders})
