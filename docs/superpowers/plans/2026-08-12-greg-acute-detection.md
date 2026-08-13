@@ -3063,6 +3063,35 @@ vote on whether he is ill. **Re-run this measurement at the next episode.** If
 the dip collapses again, that is two out of two at a 12% base rate and it earns
 its weight; if it does not, this section is why it never got one.
 
+#### Do NOT "clean" respiratory rate with the buckets — measured, it breaks onset day
+
+Only the `heartRate` buckets have a consumer. `hrv`, `respiratoryRate` and
+`spo2` are stored and read by nothing, and the obvious next step is to give
+`respiratoryRate` the same treatment `heartRate` got, since it is the
+load-bearing sick-day signal and 81% of its buckets are asleep anyway. **That
+change is harmful, and the numbers say so plainly.**
+
+An asleep-only respiratory rate is indeed quieter when healthy — 5/77 days
+against 7/79 stored, 6% versus 9%. It also loses the episode. Exceedance on
+onset day: stored **1.06**, asleep-only **0.00**. Run through the real rule:
+
+```
+2026-08-10  stored: 3.16 / bar 3.0 -> FIRE    asleep-only rr: 1.70 / bar 3.0 -> quiet
+2026-08-11  stored: 8.87 / bar 3.0 -> FIRE    asleep-only rr: 9.71 / bar 3.0 -> FIRE
+```
+
+Onset-day detection rests on respiratory rate plus awake minutes at a margin of
+3.16 against 3.0, so removing rr's 1.46 puts the day back under the bar and the
+detector back to one day late — undoing Phase B. The elevation on 2026-08-10
+came from *daytime* breathing, not from sleep. If anything here is worth
+building it is `rrAwake`, not `rrAsleep`, and that is a one-episode observation
+which by this plan's own standard earns nothing yet.
+
+The idle buckets stay. They cost ~70k rows a year, and this section is what
+they bought: a question that would otherwise have needed a new iOS field, a
+release and a month of waiting was answered in ten minutes against stored
+history. That is the whole "derive late, not early" bet, paying out.
+
 > **RE-SCOPED by Task 0's result, 2026-08-12.** The pre-check ran on a real Health export and the early-warning premise did not survive: over 100 nights, no intra-night heart-rate feature moves more than 1.2σ on either pre-onset day, or on onset day itself, in an assumption-free 01:00–06:00 window. So:
 >
 > - **Keep** the interval store, the 30-minute bucketing (confirmed as the right width — ~120 heart-rate samples a night, ~7 per bucket), and the `sleepHr` / `wakeRestHr` split. That split fixes a defect that is wrong on its own merits: whole-day `heartRate` read 64 on 2026-08-12 and was flagged as cardio adaptation while the person was in bed.
