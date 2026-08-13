@@ -42,6 +42,12 @@ async function handleInteractiveResponse(payload: ResponsePayload): Promise<bool
       questionId: payload.questionId,
       selectedOption: payload.value,
       userId: payload.userId ?? '',
+      // The agent's /clear-bounded memory won't span from ask to a late
+      // answer (see container-side awaiting-questions.ts) — carry the
+      // card's own title so it can tell which question this answers
+      // instead of guessing. findQuestionResponse's LIKE match is on
+      // `"questionId":"..."` only, so adding a field here is safe.
+      title: pq.title,
     }),
   });
 

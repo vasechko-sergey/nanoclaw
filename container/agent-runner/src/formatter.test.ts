@@ -295,6 +295,59 @@ describe('workout_event system rows', () => {
   });
 });
 
+// task-3b: once a late question_response row reaches the agent (see
+// poll-loop.ts's isUnclaimedQuestionResponse), it must render legibly. The
+// generic <system_response> branch prints action="unknown" status="unknown"
+// and JSON.stringify(content.result || null) — this row carries none of
+// those fields, so without a dedicated branch the agent would see
+// <system_response action="unknown" status="unknown">null</system_response>,
+// telling it nothing about which question was answered or how.
+describe('question_response system rows', () => {
+  const base = {
+    id: 'qr1',
+    seq: 9,
+    kind: 'system',
+    timestamp: '2026-06-26T03:34:00Z',
+    status: 'pending',
+    process_after: null,
+    recurrence: null,
+    tries: 0,
+    trigger: 1,
+    platform_id: null,
+    channel_type: null,
+    thread_id: null,
+    source_session_id: null,
+  };
+
+  it('renders a typed <question_response> tag carrying title + answer, not <system_response>', () => {
+    const row = {
+      ...base,
+      content: JSON.stringify({
+        type: 'question_response',
+        questionId: 'q-1',
+        selectedOption: 'ok',
+        userId: 'u1',
+        title: 'Как проснулся?',
+      }),
+    };
+    const result = formatMessages([row as Parameters<typeof formatMessages>[0][number]]);
+    expect(result).toContain('<question_response');
+    expect(result).toContain('title="Как проснулся?"');
+    expect(result).toContain('answer="ok"');
+    expect(result).not.toContain('<system_response');
+  });
+
+  it('still renders non-question system rows as <system_response>', () => {
+    const row = {
+      ...base,
+      content: JSON.stringify({ action: 'schedule', status: 'ok', result: null }),
+    };
+    const result = formatMessages([row as Parameters<typeof formatMessages>[0][number]]);
+    expect(result).toContain('<system_response');
+    expect(result).not.toContain('<question_response');
+  });
+});
+
 describe('a2a sender identity', () => {
   function insertA2a(id: string, content: object) {
     getInboundDb()

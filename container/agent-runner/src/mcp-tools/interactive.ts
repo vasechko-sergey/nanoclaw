@@ -7,6 +7,7 @@
 import { findQuestionResponse, markCompleted } from '../db/messages-in.js';
 import { writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
+import { awaitingQuestionIds } from './awaiting-questions.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -107,25 +108,45 @@ export const askUserQuestion: McpToolDefinition = {
 
     log(`ask_user_question: ${questionId} → "${question}" [${options.join(', ')}]`);
 
-    // Poll for response in inbound.db (host writes the response there)
-    const deadline = Date.now() + timeout;
-    while (Date.now() < deadline) {
-      const response = findQuestionResponse(questionId);
+    // Claim this questionId for the duration of the poll below. poll-loop.ts's
+    // isUnclaimedQuestionResponse() checks this set to decide whether a
+    // question_response row belongs to us (skip it, we'll find it via
+    // findQuestionResponse ourselves) or is agent-facing (nobody's waiting,
+    // e.g. the answer arrived after we already timed out). Without this, the
+    // mid-turn drain (poll-loop.ts) could hand our own response row to the
+    // agent's turn before we see it — the row gets consumed there, our poll
+    // below never finds it, and we hang for the full timeout despite the
+    // answer having arrived on time.
+    //
+    // Added right before the loop and removed in `finally` so every exit path
+    // (found, timeout, or a thrown error from findQuestionResponse) releases
+    // the claim — a stale entry left behind would silently suppress every
+    // future answer to this questionId forever (it can never time out; the
+    // set holds it until process exit).
+    awaitingQuestionIds.add(questionId);
+    try {
+      // Poll for response in inbound.db (host writes the response there)
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        const response = findQuestionResponse(questionId);
 
-      if (response) {
-        const parsed = JSON.parse(response.content);
-        // Mark the response as completed via processing_ack (outbound.db)
-        markCompleted([response.id]);
+        if (response) {
+          const parsed = JSON.parse(response.content);
+          // Mark the response as completed via processing_ack (outbound.db)
+          markCompleted([response.id]);
 
-        log(`ask_user_question response: ${questionId} → ${parsed.selectedOption}`);
-        return ok(parsed.selectedOption);
+          log(`ask_user_question response: ${questionId} → ${parsed.selectedOption}`);
+          return ok(parsed.selectedOption);
+        }
+
+        await sleep(1000);
       }
 
-      await sleep(1000);
+      log(`ask_user_question timeout: ${questionId}`);
+      return err(`Question timed out after ${timeout / 1000}s`);
+    } finally {
+      awaitingQuestionIds.delete(questionId);
     }
-
-    log(`ask_user_question timeout: ${questionId}`);
-    return err(`Question timed out after ${timeout / 1000}s`);
   },
 };
 
