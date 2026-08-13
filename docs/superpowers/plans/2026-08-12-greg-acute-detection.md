@@ -239,8 +239,64 @@ days they already suspected something.
 Not yet observable on real data: build 1.34.0 (110) is committed but not
 installed, so both columns read `null` on every live row and the detector
 behaves exactly as it did yesterday. The host adds the two columns on the next
-upload (`openHealthDb` runs per ingest and closes), and the first honest test
-of the channel is the first day Сергей logs a symptom.
+upload (`openHealthDb` runs per ingest and closes).
+
+**Task 23 was added the same day, because the premise of 12–14 was wrong.**
+Сергей's reaction to the shipped work: *«симптомы фиг кто будет заполнять в
+приложении»*. He is right, and it invalidates the delivery mechanism without
+invalidating the channel — every line of 12–14 stands, it just needed a source
+that is not a form.
+
+### Task 23: Greg asks, instead of waiting for a form
+
+**SHIPPED and live 2026-08-13** (scp; `groups/` is not tracked).
+
+HealthKit's symptom types will stay empty forever — nobody opens Health.app to
+log a sore throat. But the person answers a question. Greg has had a direct
+channel to him since 2026-06-08 (`greg|sergei-iphone`), so the whole loop fits
+inside Greg with no relay: he asks in plain text, the answer wakes his session,
+he maps it and appends a line.
+
+*Free text, not an options card.* That was Сергей's second correction and it
+settles a design question rather than just an ergonomic one: **whoever maps the
+words owns the vocabulary.** Greg asks and Greg maps, against a closed
+`SYMPTOM_KEYS` list mirroring `HealthManager.symptomTypes`. If Jarvis relayed
+canonical keys instead of the raw sentence, `throat` and `soreThroat` would
+never accumulate into one signal — the same drift that broke Payne's plan cards
+twice. `health-relay` now carries the sentence verbatim in `sick_day_ack.note`.
+
+*Storage.* `health/subjective.jsonl`, merged onto the rows by `analyze.js`
+before anything is derived. Not `health.db`: the host is that file's only
+writer, and two writers across a bind mount is the one thing this architecture
+does not do. Symptoms union across both channels; temperature takes the higher,
+matching the day-max semantics. The raw sentence is stored beside the mapped
+keys — the mapping is the only LLM step in the pipeline, and when the list has
+no word for what he said («ломит спину») the note is the only record that
+survives. `log-subjective.js` **rejects** an off-list key rather than dropping
+it, so a bad mapping fails loudly at write time instead of evaporating at read.
+
+*When to ask — measured, not chosen.* `sickDayDetect` was split into
+`sickDayScore` (always returns) and the verdict, because a day that almost
+fired is invisible through a null. Over 84 evaluable days of real history:
+
+| score / threshold | days |
+|---|---|
+| ≥ 1.0, fired | 11 |
+| 0.85–1.0 | 6 |
+| 0.7–0.85 | 4 |
+
+Fired days ask for free — a message is already going out. `SUBJECTIVE_ASK_FRAC
+= 0.85` therefore costs 6 new interruptions in 84 days, one a fortnight. 0.7
+would roughly double that, which is how a question stops being answered at all
+and the channel dies the same death as the form. (11/84 is not a false-alarm
+rate — different denominator from the 5% budget elsewhere in this plan; it
+includes the real August episode.)
+
+*Verified end to end* against a copy of the live `health.db`: on 2026-08-13,
+a day where **not one** of the five hardware signals fires, a logged
+`soreThroat,chills` + 37.9 produced `score 8.24` against a threshold of 3.0 and
+fired the rule. That is precisely the gap the channel exists to close.
+`ncl groups lint`: 0 errors. 115 container-side tests.
 
 ### Phase G — Diagnostician
 
