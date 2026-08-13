@@ -377,3 +377,32 @@ describe('HealthUploadDay — timezone', () => {
     expect(() => HealthUploadDay.parse({ date: '2026-06-20', tzOffsetMin: 330.5 })).toThrow();
   });
 });
+
+describe('HealthUploadDay — subjective channel', () => {
+  it('accepts bodyTemperature and symptoms', () => {
+    const parsed = HealthUploadDay.parse({
+      date: '2026-08-12',
+      bodyTemperature: 37.8,
+      symptoms: ['fever', 'coughing'],
+    });
+    expect(parsed.bodyTemperature).toBe(37.8);
+    expect(parsed.symptoms).toEqual(['fever', 'coughing']);
+  });
+
+  it('rejects a non-array symptoms value', () => {
+    expect(() => HealthUploadDay.parse({ date: '2026-08-12', symptoms: 'fever' })).toThrow();
+  });
+
+  // Absent is "not logged", never "none" — the two are different claims and the
+  // detector must not read one as the other. Keeping the field optional rather
+  // than defaulting to [] is what preserves the distinction on the wire.
+  it('leaves both undefined when the day logged nothing', () => {
+    const parsed = HealthUploadDay.parse({ date: '2026-08-12', steps: 1847 });
+    expect(parsed.symptoms).toBeUndefined();
+    expect(parsed.bodyTemperature).toBeUndefined();
+  });
+
+  it('rejects a non-positive body temperature', () => {
+    expect(() => HealthUploadDay.parse({ date: '2026-08-12', bodyTemperature: 0 })).toThrow();
+  });
+});

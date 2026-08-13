@@ -39,7 +39,13 @@ const SCALARS = [
   'height',
   'bodyFatPercentage',
   'leanBodyMass',
+  'bodyTemperature',
 ] as const;
+
+// Upload fields that are JSON arrays, not scalars: stored as TEXT, parsed back
+// on read. Kept as a list so the schema, the migration probe and the read path
+// cannot drift apart the way `workouts` and the SCALARS block once could.
+const JSON_COLS = ['symptoms', 'workouts'] as const;
 
 export function openHealthDb(path: string): Database.Database {
   mkdirSync(dirname(path), { recursive: true });
@@ -49,7 +55,7 @@ export function openHealthDb(path: string): Database.Database {
     `CREATE TABLE IF NOT EXISTS health_days (
        date TEXT PRIMARY KEY,
        ${SCALARS.map((c) => `${c} REAL`).join(', ')},
-       workouts TEXT,
+       ${JSON_COLS.map((c) => `${c} TEXT`).join(', ')},
        ingested_at INTEGER
      )`,
   );
@@ -61,14 +67,18 @@ export function openHealthDb(path: string): Database.Database {
   const existing = new Set(
     (db.prepare(`PRAGMA table_info(health_days)`).all() as { name: string }[]).map((c) => c.name),
   );
-  for (const col of SCALARS) {
-    if (!existing.has(col)) db.exec(`ALTER TABLE health_days ADD COLUMN ${col} REAL`);
+  const added: [string, string][] = [
+    ...SCALARS.map((c) => [c, 'REAL'] as [string, string]),
+    ...JSON_COLS.map((c) => [c, 'TEXT'] as [string, string]),
+  ];
+  for (const [col, type] of added) {
+    if (!existing.has(col)) db.exec(`ALTER TABLE health_days ADD COLUMN ${col} ${type}`);
   }
   return db;
 }
 
 export function upsertHealthDays(db: Database.Database, days: HealthUploadDay[]): void {
-  const cols = ['date', ...SCALARS, 'workouts', 'ingested_at'];
+  const cols = ['date', ...SCALARS, ...JSON_COLS, 'ingested_at'];
   const placeholders = cols.map((c) => `@${c}`).join(', ');
   // COALESCE, not a plain overwrite: an upload carrying a subset of the fields
   // would otherwise null out everything it omits. HealthKit answers per metric,
@@ -92,7 +102,15 @@ export function upsertHealthDays(db: Database.Database, days: HealthUploadDay[])
     for (const d of rows) {
       const rec: Record<string, unknown> = { date: d.date, ingested_at: now };
       for (const c of SCALARS) rec[c] = (d as Record<string, unknown>)[c] ?? null;
-      rec.workouts = d.workouts ? JSON.stringify(d.workouts) : null;
+      // Serialize an empty array as '[]', not as null. Under COALESCE null means
+      // "this upload says nothing about the field", so collapsing [] into it
+      // would make a symptom list unclearable: delete a mis-logged fever in
+      // Health.app and the stored one would outlive it forever. '[]' is a real
+      // value and wins the COALESCE, which is what "checked, nothing" needs.
+      for (const c of JSON_COLS) {
+        const v = (d as Record<string, unknown>)[c];
+        rec[c] = Array.isArray(v) ? JSON.stringify(v) : null;
+      }
       stmt.run(rec);
     }
   });
@@ -104,8 +122,9 @@ export function readHealthDays(db: Database.Database): HealthUploadDay[] {
   return rows.map((r) => {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(r)) {
-      if (k === 'workouts') out.workouts = typeof v === 'string' ? JSON.parse(v) : undefined;
-      else if (v !== null) out[k] = v;
+      if ((JSON_COLS as readonly string[]).includes(k)) {
+        if (typeof v === 'string') out[k] = JSON.parse(v);
+      } else if (v !== null) out[k] = v;
     }
     return out as unknown as HealthUploadDay;
   });

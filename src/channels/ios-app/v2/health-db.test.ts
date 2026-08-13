@@ -61,6 +61,38 @@ describe('health-db — additive column migration', () => {
     expect(readHealthDays(db)[0].tzOffsetMin).toBe(480);
   });
 
+  it('adds the subjective-channel columns to a pre-existing table', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-symp-mig-'));
+    const path = join(dir, 'health.db');
+    const old = new Database(path);
+    old.exec(`CREATE TABLE health_days (date TEXT PRIMARY KEY, steps REAL, workouts TEXT, ingested_at INTEGER)`);
+    old.close();
+
+    const db = openHealthDb(path);
+    const names = new Set(
+      (db.prepare('PRAGMA table_info(health_days)').all() as { name: string }[]).map((c) => c.name),
+    );
+    expect(names.has('bodyTemperature')).toBe(true);
+    expect(names.has('symptoms')).toBe(true);
+
+    upsertHealthDays(db, [{ date: '2026-08-12', bodyTemperature: 37.8, symptoms: ['fever'] } as HealthUploadDay]);
+    const row = readHealthDays(db)[0];
+    expect(row.bodyTemperature).toBe(37.8);
+    expect(row.symptoms).toEqual(['fever']);
+  });
+
+  it('keeps symptoms an array through the JSON round-trip, and absent when unlogged', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-symp-'));
+    const db = openHealthDb(join(dir, 'health.db'));
+    upsertHealthDays(db, [
+      { date: '2026-08-12', symptoms: ['fever', 'coughing', 'fatigue'] },
+      { date: '2026-08-13', steps: 1847 },
+    ] as HealthUploadDay[]);
+    const rows = readHealthDays(db);
+    expect(rows[0].symptoms).toEqual(['fever', 'coughing', 'fatigue']);
+    expect(rows[1].symptoms).toBeUndefined();
+  });
+
   it('round-trips the timezone offset, including a negative one', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hdb-tz-'));
     const db = openHealthDb(join(dir, 'health.db'));
@@ -87,6 +119,18 @@ describe('health-db — a partial upload does not erase what is already stored',
     expect(row.sleepHours).toBe(6.3); // the night survives
     expect(row.deepMin).toBe(30);
     expect(row.remMin).toBe(123);
+  });
+
+  it('does not resurrect a symptom list the newer upload dropped', () => {
+    // COALESCE defers to the stored value on null, which is right for scalars —
+    // HealthKit does not retract a measurement. Symptoms it CAN retract: the
+    // user deletes a mis-logged fever in Health.app and the re-upload carries an
+    // empty day. Treat the array as an overwrite once the day carries the field.
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-symp-clear-'));
+    const db = openHealthDb(join(dir, 'health.db'));
+    upsertHealthDays(db, [{ date: '2026-08-12', symptoms: ['fever'] } as HealthUploadDay]);
+    upsertHealthDays(db, [{ date: '2026-08-12', symptoms: [] } as HealthUploadDay]);
+    expect(readHealthDays(db)[0].symptoms).toEqual([]);
   });
 
   it('still advances ingested_at on every write', () => {

@@ -501,6 +501,21 @@ export const HealthUploadDay = z.object({
   height: z.number().nonnegative().optional(),
   bodyFatPercentage: z.number().nonnegative().optional(),
   leanBodyMass: z.number().nonnegative().optional(),
+  // New 2026-08-13. The subjective channel. Every field above is a sensor
+  // saying "something moved"; these say what it felt like, which is what
+  // separates a fever from a hard training week when both raise resting pulse.
+  //
+  // `symptoms` holds HealthKit symptom identifier suffixes
+  // (`HKCategoryTypeIdentifierFever` -> `fever`). Absent means the upload did
+  // not cover symptoms — NOT that the day had none. An empty array is the
+  // stronger claim, "checked, nothing logged", and only the reader that
+  // actually ran the queries may send it.
+  //
+  // `bodyTemperature` is a manual thermometer reading in °C. Distinct from
+  // `wristTempDeviation`, which is a passive overnight sensor reporting a
+  // signed deviation from the wearer's own baseline, not an absolute.
+  bodyTemperature: z.number().positive().optional(),
+  symptoms: z.array(z.string()).optional(),
   workouts: z.array(Workout).optional(),
 });
 export type HealthUploadDay = z.infer<typeof HealthUploadDay>;
