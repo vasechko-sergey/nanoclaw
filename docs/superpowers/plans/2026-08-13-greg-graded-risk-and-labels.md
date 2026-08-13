@@ -237,7 +237,7 @@ scp groups/greg/scripts/log-subjective.js groups/greg/scripts/log-subjective.tes
 
 **Interfaces:**
 - Consumes: `loadSubjective(path)` returning a `Map<date, entry>`, `mergeSubjective(rows, byDate)`.
-- Produces: entries gain `morningState` / `dayState`; rows gain `morningState` / `dayState`; `stateLoggedOn(rows, date, scope): boolean` exported; normal-mode output gains `subjective_state: {date: string, morning: boolean, day: boolean}` keyed on the owner's calendar date.
+- Produces: entries gain `morningState` / `dayState`; rows gain `morningState` / `dayState`; `stateLoggedOn(byDate, date, scope): boolean` exported — reads the subjective log, not the rows; normal-mode output gains `subjective_state: {date: string, morning: boolean, day: boolean}` keyed on the owner's calendar date.
 
 **The load is now field-wise, not record-wise.** `loadSubjective` currently does
 `byDate.set(r.date, {...})` — last line per date replaces the whole record. That
@@ -300,10 +300,12 @@ describe("daily state label", () => {
   });
 
   it("reports per scope whether an answer already exists", () => {
-    const rows = [{ date: "2026-08-14", morningState: "ok" }];
-    expect(stateLoggedOn(rows, "2026-08-14", "morning")).toBe(true);
-    expect(stateLoggedOn(rows, "2026-08-14", "day")).toBe(false);
-    expect(stateLoggedOn(rows, "2026-01-01", "morning")).toBe(false);
+    // Deliberately no health_days row anywhere in sight: on the morning path
+    // the phone has often not uploaded yet, and the answer must still count.
+    const logged = new Map([["2026-08-14", { morningState: "ok", dayState: null }]]);
+    expect(stateLoggedOn(logged, "2026-08-14", "morning")).toBe(true);
+    expect(stateLoggedOn(logged, "2026-08-14", "day")).toBe(false);
+    expect(stateLoggedOn(logged, "2026-01-01", "morning")).toBe(false);
   });
 });
 ```
@@ -358,10 +360,16 @@ Add below `mergeSubjective`:
 ```javascript
 // Whether that scope already carries an answer for the date. A one-tap card is
 // cheap to send and therefore easy to send twice.
-export function stateLoggedOn(rows, date, scope) {
-  const r = rows.find((x) => x.date === date);
-  if (!r) return false;
-  return Boolean(scope === "morning" ? r.morningState : r.dayState);
+//
+// Reads the subjective log, NOT the rows. The answer lands in subjective.jsonl
+// the moment he taps, while a `health_days` row for today exists only after the
+// phone has uploaded. On the morning path — the one this whole feature is built
+// around — the row is routinely absent, and a row-anchored check would report
+// "never asked" about a question just answered and ask it again.
+export function stateLoggedOn(byDate, date, scope) {
+  const e = byDate.get(date);
+  if (!e) return false;
+  return Boolean(scope === "morning" ? e.morningState : e.dayState);
 }
 ```
 
@@ -372,14 +380,19 @@ In the normal-mode `result` object in the CLI block, beside `ask_subjective`:
       // on the newest row. Those differ whenever the phone has not uploaded yet,
       // and keying on the row would have the morning card asking "already
       // answered?" about yesterday and then skipping itself.
-      subjective_state: {
-        date: ownerToday(),
-        morning: stateLoggedOn(rows, ownerToday(), "morning"),
-        day: stateLoggedOn(rows, ownerToday(), "day"),
-      },
+      subjective_state: (() => {
+        const today = ownerToday();
+        return {
+          date: today,
+          morning: stateLoggedOn(subjective, today, "morning"),
+          day: stateLoggedOn(subjective, today, "day"),
+        };
+      })(),
 ```
 
-Both fields are booleans, and the skill reads them as booleans. `ownerToday()` is already used elsewhere in the CLI block and reads `OWNER_TZ`.
+Both fields are booleans, and the skill reads them as booleans. `subjective` is
+the map already in hand from `loadSubjective(opts.subjectiveLog)` earlier in the
+block; `ownerToday()` reads `OWNER_TZ` and is used elsewhere in the same block.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
