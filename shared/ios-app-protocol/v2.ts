@@ -433,6 +433,35 @@ export const Workout = z.object({
 });
 export type Workout = z.infer<typeof Workout>;
 
+// New 2026-08-13. Sub-daily buckets, so downstream can ask questions the daily
+// scalars foreclose. 30-minute width matches what the published wearable
+// detection algorithms consume (RHR-Diff, CuSum, NightSignal all work at hourly
+// resolution or coarser) without the volume of raw samples — ~192 rows a day
+// across four metrics against hundreds of thousands of samples.
+//
+// `stage` is the sleep stage covering the bucket's midpoint, or absent when the
+// moment falls outside any recorded sleep interval. It is what lets a consumer
+// separate sleeping heart rate from sitting-at-a-desk heart rate, which the
+// daily `discreteAverage` mixes into one uninterpretable number: on 2026-08-12
+// whole-day `heartRate` read 64 and was reported as cardio adaptation while the
+// person was in bed with a 21% elevated resting pulse.
+//
+// Nothing is derived here. Every metric computed from these buckets lives in
+// analyze.js, where it can be rewritten and re-run over all stored history —
+// a derivation baked into the iOS reader is permanent and answers only the
+// question we thought to ask.
+export const HealthInterval = z.object({
+  metric: z.enum(['heartRate', 'hrv', 'respiratoryRate', 'spo2']),
+  start: z.number().int(),           // epoch ms, bucket start (aligned to the width)
+  min: z.number().int().positive(),  // bucket width in minutes
+  n: z.number().int().positive(),    // samples aggregated
+  mean: z.number(),
+  lo: z.number().optional(),
+  hi: z.number().optional(),
+  stage: z.enum(['awake', 'core', 'deep', 'rem', 'inBed']).optional(),
+});
+export type HealthInterval = z.infer<typeof HealthInterval>;
+
 export const HealthUploadDay = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   steps: z.number().int().nonnegative().optional(),
@@ -518,6 +547,12 @@ export const HealthUploadDay = z.object({
   // deviation from the wearer's own baseline rather than an absolute.
   bodyTemperature: z.number().positive().optional(),
   symptoms: z.array(z.string()).optional(),
+  // Attributed to the same day the overnight readers use: a bucket from 20:00
+  // onward belongs to the NEXT day, so a night's buckets and that night's
+  // `hrvMorning` never disagree about which row they describe. Daytime buckets
+  // stay on their own day — unlike `bucketOvernight`, which drops them, because
+  // the awake resting pulse is exactly what the daily average was hiding.
+  intervals: z.array(HealthInterval).optional(),
   workouts: z.array(Workout).optional(),
 });
 export type HealthUploadDay = z.infer<typeof HealthUploadDay>;

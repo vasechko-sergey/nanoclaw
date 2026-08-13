@@ -764,6 +764,22 @@ extension V2 {
             var maxHR: Int?
         }
 
+        /// One sub-daily bucket. Mirrors `HealthInterval` in the Zod schema field
+        /// for field. Deliberately dumb: no metric is derived here, because a
+        /// derivation baked into the phone is permanent and answers only the
+        /// question we thought to ask, while a script-side one can be rewritten
+        /// and re-run over all stored history.
+        struct Interval: Codable, Equatable {
+            let metric: String              // heartRate | hrv | respiratoryRate | spo2
+            let start: Int                  // epoch ms, aligned to `min`
+            let min: Int                    // bucket width in minutes
+            let n: Int                      // samples aggregated
+            let mean: Double
+            var lo: Double?
+            var hi: Double?
+            var stage: String?              // awake | core | deep | rem | inBed
+        }
+
         struct Day: Codable, Equatable {
             let date: String
             var steps: Int?
@@ -824,6 +840,13 @@ extension V2 {
             // stronger claim — the queries ran and found nothing. See the
             // backfill in HealthHistory.fetch for why [] is safe to send.
             var symptoms: [String]?
+            // Sub-daily buckets. Attributed on the same rule the overnight
+            // readers use — a bucket from 20:00 onward belongs to the NEXT day —
+            // so a night's buckets and that night's hrvMorning never disagree
+            // about which row they describe. Daytime buckets stay on their own
+            // day rather than being dropped: the awake resting pulse is exactly
+            // what the whole-day heartRate average was hiding.
+            var intervals: [Interval]?
             var workouts: [Workout]?
         }
 

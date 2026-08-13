@@ -406,3 +406,49 @@ describe('HealthUploadDay — subjective channel', () => {
     expect(() => HealthUploadDay.parse({ date: '2026-08-12', bodyTemperature: 0 })).toThrow();
   });
 });
+
+describe('HealthUploadDay — interval buckets', () => {
+  it('carries interval buckets', () => {
+    const parsed = HealthUploadDay.parse({
+      date: '2026-08-12',
+      intervals: [
+        { metric: 'heartRate', start: 1786500000000, min: 30, n: 42, mean: 58.3, lo: 54, hi: 63, stage: 'deep' },
+      ],
+    });
+    expect(parsed.intervals).toHaveLength(1);
+    expect(parsed.intervals![0].stage).toBe('deep');
+  });
+
+  it('rejects an unknown interval metric', () => {
+    expect(() =>
+      HealthUploadDay.parse({
+        date: '2026-08-12',
+        intervals: [{ metric: 'bloodPressure', start: 1, min: 30, n: 1, mean: 1 }],
+      }),
+    ).toThrow();
+  });
+
+  // lo/hi/stage are optional because the sparse metrics legitimately lack them:
+  // an hrv bucket can hold a single sample, and a bucket outside any recorded
+  // sleep interval has no stage to report.
+  it('accepts a bucket with no range and no stage', () => {
+    const parsed = HealthUploadDay.parse({
+      date: '2026-08-12',
+      intervals: [{ metric: 'hrv', start: 1786500000000, min: 30, n: 1, mean: 44 }],
+    });
+    expect(parsed.intervals![0].lo).toBeUndefined();
+    expect(parsed.intervals![0].stage).toBeUndefined();
+  });
+
+  // An empty bucket is a contradiction, not a quiet half-hour: `bucketize` only
+  // emits a bucket when at least one sample landed in it, so n=0 on the wire
+  // means something upstream fabricated a row.
+  it('rejects a bucket that aggregated no samples', () => {
+    expect(() =>
+      HealthUploadDay.parse({
+        date: '2026-08-12',
+        intervals: [{ metric: 'heartRate', start: 1, min: 30, n: 0, mean: 60 }],
+      }),
+    ).toThrow();
+  });
+});

@@ -3,7 +3,13 @@ import { mkdtempSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openHealthDb, upsertHealthDays, readHealthDays } from './health-db.js';
+import {
+  openHealthDb,
+  upsertHealthDays,
+  readHealthDays,
+  upsertHealthIntervals,
+  pruneHealthIntervals,
+} from './health-db.js';
 import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
 
 function day(date: string, deepMin: number): HealthUploadDay {
@@ -143,5 +149,90 @@ describe('health-db — a partial upload does not erase what is already stored',
     upsertHealthDays(db, [{ date: '2026-08-13', steps: 1149 } as HealthUploadDay]);
     const second = (db.prepare('SELECT ingested_at AS t FROM health_days').get() as { t: number }).t;
     expect(second).toBeGreaterThan(first - 10_000);
+  });
+});
+
+describe('health-db — interval buckets', () => {
+  const iv = (metric: string, start: number, mean: number, extra: Record<string, unknown> = {}) =>
+    ({ metric, start, min: 30, n: 10, mean, ...extra }) as never;
+
+  it('stores buckets and replaces a metric wholesale on re-upload', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-iv-'));
+    const db = openHealthDb(join(dir, 'health.db'));
+    upsertHealthIntervals(db, [
+      {
+        date: '2026-08-12',
+        intervals: [iv('heartRate', 1000, 60), iv('heartRate', 2_800_000, 58, { stage: 'deep' }), iv('hrv', 1000, 44)],
+      },
+    ] as HealthUploadDay[]);
+    // A re-upload carrying one fewer heartRate bucket must not leave the old one
+    // behind: buckets arrive as a complete set for the day, so a survivor is a
+    // reading nothing measured.
+    upsertHealthIntervals(db, [
+      { date: '2026-08-12', intervals: [iv('heartRate', 1000, 61, { n: 11 })] },
+    ] as HealthUploadDay[]);
+
+    const hr = db.prepare(`SELECT * FROM health_intervals WHERE date=? AND metric='heartRate'`).all('2026-08-12') as {
+      mean: number;
+    }[];
+    expect(hr).toHaveLength(1);
+    expect(hr[0].mean).toBe(61);
+    // hrv was absent from the second payload, so its buckets stand untouched.
+    expect(db.prepare(`SELECT * FROM health_intervals WHERE date=? AND metric='hrv'`).all('2026-08-12')).toHaveLength(
+      1,
+    );
+  });
+
+  it('keeps lo/hi/stage nullable and round-trips them', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-iv-null-'));
+    const db = openHealthDb(join(dir, 'health.db'));
+    upsertHealthIntervals(db, [
+      {
+        date: '2026-08-12',
+        intervals: [iv('heartRate', 0, 60, { lo: 54, hi: 63, stage: 'rem' }), iv('hrv', 0, 44)],
+      },
+    ] as HealthUploadDay[]);
+    const rows = db.prepare(`SELECT metric, lo, hi, stage FROM health_intervals ORDER BY metric`).all() as {
+      metric: string;
+      lo: number | null;
+      hi: number | null;
+      stage: string | null;
+    }[];
+    expect(rows[0]).toEqual({ metric: 'heartRate', lo: 54, hi: 63, stage: 'rem' });
+    expect(rows[1]).toEqual({ metric: 'hrv', lo: null, hi: null, stage: null });
+  });
+
+  it('is a no-op for a day carrying no intervals', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-iv-none-'));
+    const db = openHealthDb(join(dir, 'health.db'));
+    upsertHealthIntervals(db, [{ date: '2026-08-12', intervals: [iv('heartRate', 0, 60)] }] as HealthUploadDay[]);
+    // Every day before this feature — and every day whose payload predates it —
+    // arrives without the field. It must leave the stored buckets alone rather
+    // than reading as "this day has none".
+    upsertHealthIntervals(db, [{ date: '2026-08-12', steps: 900 }] as HealthUploadDay[]);
+    expect(db.prepare(`SELECT count(*) AS n FROM health_intervals`).get()).toEqual({ n: 1 });
+  });
+
+  it('opens a health.db created before the interval table existed', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-iv-mig-'));
+    const path = join(dir, 'health.db');
+    const old = new Database(path);
+    old.exec(`CREATE TABLE health_days (date TEXT PRIMARY KEY, steps REAL, ingested_at INTEGER)`);
+    old.close();
+    const db = openHealthDb(path);
+    upsertHealthIntervals(db, [{ date: '2026-08-12', intervals: [iv('heartRate', 0, 60)] }] as HealthUploadDay[]);
+    expect(db.prepare(`SELECT count(*) AS n FROM health_intervals`).get()).toEqual({ n: 1 });
+  });
+
+  it('prunes buckets older than the retention window and keeps the rest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hdb-iv-prune-'));
+    const db = openHealthDb(join(dir, 'health.db'));
+    const today = new Date().toISOString().slice(0, 10);
+    upsertHealthIntervals(db, [
+      { date: '2020-01-01', intervals: [iv('heartRate', 0, 60)] },
+      { date: today, intervals: [iv('heartRate', 0, 62)] },
+    ] as HealthUploadDay[]);
+    pruneHealthIntervals(db);
+    expect(db.prepare(`SELECT date FROM health_intervals`).all()).toEqual([{ date: today }]);
   });
 });

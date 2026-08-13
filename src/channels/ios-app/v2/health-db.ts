@@ -74,7 +74,78 @@ export function openHealthDb(path: string): Database.Database {
   for (const [col, type] of added) {
     if (!existing.has(col)) db.exec(`ALTER TABLE health_days ADD COLUMN ${col} ${type}`);
   }
+  // Sub-daily buckets, in the same file so the container reads both through one
+  // mount. A separate table rather than a JSON column on health_days: the rows
+  // are queried by (date, metric) range, and burying ~192 objects a day inside a
+  // TEXT blob would mean parsing every day to answer a question about one.
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS health_intervals (
+       date         TEXT    NOT NULL,
+       metric       TEXT    NOT NULL,
+       bucket_start INTEGER NOT NULL,
+       bucket_min   INTEGER NOT NULL,
+       n            INTEGER NOT NULL,
+       mean         REAL    NOT NULL,
+       lo           REAL,
+       hi           REAL,
+       stage        TEXT,
+       PRIMARY KEY (date, metric, bucket_start)
+     )`,
+  );
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_intervals_date ON health_intervals(date)`);
   return db;
+}
+
+/**
+ * Interval buckets for the given days. Replaces a day+metric WHOLESALE, which is
+ * the opposite of `upsertHealthDays`'s COALESCE — and deliberately so. A daily
+ * scalar arrives per metric and a partial upload must not erase the ones it is
+ * silent about; a metric's buckets arrive as a complete set for the day or not
+ * at all, so a re-upload that yields fewer of them has genuinely superseded the
+ * old set and leaving the surplus behind would invent readings.
+ *
+ * The delete is per (date, metric), never per date: an upload carrying only
+ * heartRate must not take the night's hrv buckets down with it.
+ */
+export function upsertHealthIntervals(db: Database.Database, days: HealthUploadDay[]): void {
+  const del = db.prepare(`DELETE FROM health_intervals WHERE date = ? AND metric = ?`);
+  const ins = db.prepare(
+    `INSERT INTO health_intervals (date, metric, bucket_start, bucket_min, n, mean, lo, hi, stage)
+     VALUES (@date, @metric, @bucket_start, @bucket_min, @n, @mean, @lo, @hi, @stage)`,
+  );
+  const tx = db.transaction((rows: HealthUploadDay[]) => {
+    for (const d of rows) {
+      if (!d.intervals?.length) continue;
+      for (const metric of new Set(d.intervals.map((i) => i.metric))) del.run(d.date, metric);
+      for (const iv of d.intervals) {
+        ins.run({
+          date: d.date,
+          metric: iv.metric,
+          bucket_start: iv.start,
+          bucket_min: iv.min,
+          n: iv.n,
+          mean: iv.mean,
+          lo: iv.lo ?? null,
+          hi: iv.hi ?? null,
+          stage: iv.stage ?? null,
+        });
+      }
+    }
+  });
+  tx(days);
+}
+
+/**
+ * Keep half a year. ~192 rows a day across four metrics caps the table near 35k
+ * rows — small, but unbounded growth in a file the container opens on every run
+ * is not worth the nothing it would buy.
+ *
+ * Compares the stored local-day string against SQLite's UTC `date('now')`. The
+ * two can disagree by a day at the boundary, which at a 180-day horizon is
+ * noise.
+ */
+export function pruneHealthIntervals(db: Database.Database, keepDays = 180): void {
+  db.prepare(`DELETE FROM health_intervals WHERE date < date('now', ?)`).run(`-${keepDays} days`);
 }
 
 export function upsertHealthDays(db: Database.Database, days: HealthUploadDay[]): void {

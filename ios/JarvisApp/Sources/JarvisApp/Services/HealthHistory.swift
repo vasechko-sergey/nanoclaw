@@ -210,6 +210,98 @@ enum HealthHistory {
         return out
     }
 
+    /// Pure: fold time-stamped samples into fixed-width buckets aligned to the
+    /// epoch. `stageAt` resolves the sleep stage covering a moment, or nil.
+    ///
+    /// Alignment is absolute rather than relative to the first sample, so buckets
+    /// from different days and different metrics line up and can be compared.
+    /// With a 30-minute width that also lands on local :00/:30 under every UTC
+    /// offset that is a multiple of 30 minutes — every timezone this person has
+    /// lived in. A :45 offset (Nepal, Chatham) would sit 15 minutes off; harmless
+    /// for a metric read as a shape rather than a clock time.
+    ///
+    /// Nothing is derived: mean/lo/hi are the bucket, not a conclusion about it.
+    static func bucketize(
+        _ samples: [(value: Double, date: Date)],
+        metric: String,
+        widthMin: Int,
+        stageAt: (Date) -> String?
+    ) -> [V2.HealthUpload.Interval] {
+        guard !samples.isEmpty, widthMin > 0 else { return [] }
+        let width = Double(widthMin) * 60
+        var groups: [Double: [Double]] = [:]
+        for s in samples {
+            let bucket = (s.date.timeIntervalSince1970 / width).rounded(.down) * width
+            groups[bucket, default: []].append(s.value)
+        }
+        return groups.keys.sorted().map { start in
+            let vals = groups[start]!
+            let mid = Date(timeIntervalSince1970: start + width / 2)
+            return V2.HealthUpload.Interval(
+                metric: metric,
+                start: Int(start * 1000),
+                min: widthMin,
+                n: vals.count,
+                mean: (vals.reduce(0, +) / Double(vals.count) * 100).rounded() / 100,
+                lo: vals.min(),
+                hi: vals.max(),
+                stage: stageAt(mid)
+            )
+        }
+    }
+
+    /// Sleep-stage rawValue -> the label the wire contract uses, or nil for a
+    /// value HealthKit has not defined.
+    ///
+    /// `inBed` and `asleepUnspecified` share the neutral label deliberately. The
+    /// derived metrics count `core|deep|rem` as asleep and `awake|absent` as
+    /// awake, so anything labelled `inBed` is excluded from BOTH — which is the
+    /// honest answer for time in bed that is not sleep, and for a nap the watch
+    /// could not stage (measured: every unstaged interval in 1,734 was sleep
+    /// outside the night). A nap must not join the night's mean, and it is
+    /// plainly not an awake resting pulse either.
+    static func stageName(_ raw: Int) -> String? {
+        switch SleepStage(rawValue: raw) {
+        case .awake: return "awake"
+        case .asleepCore: return "core"
+        case .asleepDeep: return "deep"
+        case .asleepREM: return "rem"
+        case .inBed, .asleepUnspecified: return "inBed"
+        case .none: return nil
+        }
+    }
+
+    /// Pure: the stage covering `moment`, or nil when no recorded interval does.
+    ///
+    /// HealthKit emits an `inBed` interval spanning the whole night alongside the
+    /// staged intervals inside it, so overlap is the normal case rather than a
+    /// data defect. A staged interval always wins; `inBed` is only the answer
+    /// when it is the only thing covering the moment.
+    static func stageFor(_ moment: Date, in sleep: [SleepSampleInput]) -> String? {
+        var fallback: String?
+        for s in sleep where s.start <= moment && moment < s.end {
+            guard let name = stageName(s.stage) else { continue }
+            if name != "inBed" { return name }
+            fallback = name
+        }
+        return fallback
+    }
+
+    /// Which day's row a bucket belongs to.
+    ///
+    /// From `eveningStart` onward a bucket belongs to the day you wake up on —
+    /// the same edge `bucketOvernight` uses, so a night's buckets and that
+    /// night's `hrvMorning` never disagree about which row they describe. Unlike
+    /// `bucketOvernight` this keeps the 11:00–20:00 hours instead of dropping
+    /// them: the awake resting pulse is exactly the signal the whole-day
+    /// `heartRate` average was burying.
+    static func intervalDay(_ moment: Date, calendar: Calendar, eveningStart: Int = 20) -> Date {
+        let day0 = calendar.startOfDay(for: moment)
+        return calendar.component(.hour, from: moment) >= eveningStart
+            ? calendar.date(byAdding: .day, value: 1, to: day0)!
+            : day0
+    }
+
     /// `from`/`to` are "yyyy-MM-dd" (local). Returns one `V2.HealthUpload.Day`
     /// per day — wire shape pinned by shared/ios-app-protocol fixtures.
     static func fetch(from: String, to: String, completion: @escaping ([V2.HealthUpload.Day]) -> Void) {
@@ -340,6 +432,25 @@ enum HealthHistory {
         }
         store.execute(spo2Q)
 
+        // Interval buckets. Four raw sample queries, fanned out AFTER the sleep
+        // query returns so every bucket can carry the stage covering it — the
+        // stage is the whole point, since it is what separates sleeping heart
+        // rate from sitting-at-a-desk heart rate.
+        //
+        // Entered here rather than inside the sleep callback: the group must
+        // already be holding these counts when the sleep query completes, or
+        // `notify` could fire before the interval queries are even issued.
+        //
+        // `scale` converts to the unit the daily columns already use, so a bucket
+        // and its day agree (HK reports SpO2 as a 0..1 fraction).
+        let intervalMetrics: [(id: HKQuantityTypeIdentifier, name: String, unit: HKUnit, scale: Double)] = [
+            (.heartRate, "heartRate", HKUnit(from: "count/min"), 1),
+            (.heartRateVariabilitySDNN, "hrv", HKUnit.secondUnit(with: .milli), 1),
+            (.respiratoryRate, "respiratoryRate", HKUnit(from: "count/min"), 1),
+            (.oxygenSaturation, "spo2", HKUnit.percent(), 100),
+        ]
+        for _ in intervalMetrics { group.enter() }
+
         // Sleep: split into stages + onset, bucketed by wake day (sample end day).
         group.enter()
         sleepSamplesByWakeDay(start: sleepStart, end: end, bucket: bucketKey) { byWakeDay in
@@ -356,6 +467,43 @@ enum HealthHistory {
                     $0.napMin = d.napMin
                     $0.napCount = d.napCount
                 }
+            }
+
+            // Flat, because a bucket is resolved against whichever interval
+            // covers its midpoint — wake-day grouping is the wrong index for that
+            // question and would need the answer before it could be asked.
+            let allSleep = byWakeDay.values.flatMap { $0 }
+            for m in intervalMetrics {
+                // Raw samples, not an HKStatisticsCollectionQuery at 30-minute
+                // intervals: statistics report no sample count, and `n` is what
+                // separates a bucket built from seven readings from one built
+                // from a single stray. Heart rate is the only dense metric here
+                // (~1 sample per 5 min at rest, bursts during a workout), so a
+                // 16-day window is tens of thousands of samples, not millions.
+                let q = HKSampleQuery(
+                    sampleType: HKQuantityType(m.id),
+                    predicate: HKQuery.predicateForSamples(withStart: sleepStart, end: end),
+                    limit: HKObjectQueryNoLimit, sortDescriptors: nil
+                ) { _, samples, _ in
+                    // endDate, matching hrvMorning: an SDNN sample spans a
+                    // measurement window and belongs to where it finished.
+                    let pairs = ((samples as? [HKQuantitySample]) ?? [])
+                        .map { (value: $0.quantity.doubleValue(for: m.unit) * m.scale, date: $0.endDate) }
+                    let buckets = HealthHistory.bucketize(
+                        pairs, metric: m.name, widthMin: 30,
+                        stageAt: { HealthHistory.stageFor($0, in: allSleep) }
+                    )
+                    for b in buckets {
+                        let at = Date(timeIntervalSince1970: Double(b.start) / 1000)
+                        mutate(bucketKey(HealthHistory.intervalDay(at, calendar: cal))) {
+                            var list = $0.intervals ?? []
+                            list.append(b)
+                            $0.intervals = list
+                        }
+                    }
+                    group.leave()
+                }
+                store.execute(q)
             }
             group.leave()
         }
@@ -591,6 +739,14 @@ enum HealthHistory {
                 // never subtract — a false [] can hide a signal that was never
                 // available, but it can never invent a healthy verdict.
                 if byDay[k]?.symptoms == nil { byDay[k]?.symptoms = [] }
+                // Four queries append concurrently, so arrival order is whichever
+                // one HealthKit answered first. Sort so the payload is a function
+                // of the data and not of the race — fixtures compare bytes.
+                if byDay[k]?.intervals != nil {
+                    byDay[k]?.intervals?.sort {
+                        $0.metric == $1.metric ? $0.start < $1.start : $0.metric < $1.metric
+                    }
+                }
             }
             lock.unlock()
 

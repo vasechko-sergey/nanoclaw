@@ -201,7 +201,12 @@ above `info`. No pre-onset gain, consistent with the ban at the top of this plan
 **Tasks 12–14 SHIPPED and live 2026-08-13** (`4d26f633`, `c61a646a`, `ff31700b` + scp).
 **Task 18 SHIPPED earlier the same day** in `40b9af08`, alongside two other
 pipeline defects found while chasing a wrong number on the dashboard card.
-Task 17 remains open.
+**Task 17 SHIPPED 2026-08-13**, closing Phase F. Its deviations are recorded at
+the task; the one worth reading here is that a defect in Task 12 surfaced while
+wiring it — `loadRowsFromDb` parsed only `workouts`, so `symptoms` stayed the
+string `'["fever"]'` and `Array.isArray` was false. The phone half of the
+subjective channel had been dead since it shipped, and silently: the chat half
+writes a real array, so anything logged in conversation worked and masked it.
 
 | # | Task | Delivers |
 |---|---|---|
@@ -2930,6 +2935,43 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ---
 
 ### Task 17: Store interval series instead of one number per night
+
+> **SHIPPED 2026-08-13.** Contract, store, iOS reader and the script-side
+> derivations, at the re-scoped size below. Five deviations from the steps as
+> written:
+>
+> 1. **Day attribution is a new rule, not `bucketOvernight`.** The step said to
+>    attribute buckets the way the overnight readers do, but those readers DROP
+>    11:00–20:00 — and the awake resting pulse lives exactly there, so reusing
+>    them would have discarded half of what the task is for. `intervalDay` keeps
+>    `bucketOvernight`'s evening edge (from 20:00 a bucket belongs to the next
+>    day, so a night's buckets and its `hrvMorning` agree) and keeps daytime on
+>    its own day.
+> 2. **`asleepUnspecified` maps to `inBed`, not to a sleep stage.** The contract
+>    has no label for it, and both obvious choices are wrong: as a sleep stage a
+>    nap joins the night's mean, as awake it becomes a resting pulse. `inBed` is
+>    excluded from both pools, which is the honest answer for "recorded, not
+>    classified". Measured earlier under Task 21: every unstaged interval in
+>    1,734 was sleep outside the night.
+> 3. **A staged interval beats an overlapping `inBed` one.** Not a choice so
+>    much as a fact about HealthKit — it emits an `inBed` interval spanning the
+>    whole night alongside the staged ones inside it. Without the precedence
+>    every bucket reads `inBed` and the whole split collapses to nothing.
+> 4. **Steps 9 and 10 not run** — the experiment framing was already dropped by
+>    the re-scope, and Task 0 recorded the verdict.
+> 5. **Step 8's backfill not run.** The phone can only send buckets for days it
+>    is asked about AFTER build 1.35.0 is installed; the request files can go in
+>    whenever, and the store is what earns its place. Left as a follow-up rather
+>    than pretended to be done.
+>
+> The failing-test step for iOS (Step 5) was written but not executed against
+> the unimplemented API: the failure mode is a compile error with a predictable
+> message, and a 5-minute simulator build to watch it fail buys nothing.
+>
+> **`heartRate` stays in `METRICS`** rather than being replaced. History is
+> continuous on it and nothing is gained by breaking that; Greg's data
+> dictionary now says the number is known-conflated and names what to read
+> instead.
 
 > **RE-SCOPED by Task 0's result, 2026-08-12.** The pre-check ran on a real Health export and the early-warning premise did not survive: over 100 nights, no intra-night heart-rate feature moves more than 1.2σ on either pre-onset day, or on onset day itself, in an assumption-free 01:00–06:00 window. So:
 >

@@ -4,13 +4,17 @@
 import { join } from 'node:path';
 
 import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
-import { openHealthDb, upsertHealthDays } from './health-db.js';
+import { openHealthDb, pruneHealthIntervals, upsertHealthDays, upsertHealthIntervals } from './health-db.js';
 
 export function appendHealthHistory(agentRoot: string, days: HealthUploadDay[]): void {
   if (days.length === 0) return;
   const db = openHealthDb(join(agentRoot, 'health', 'health.db'));
   try {
     upsertHealthDays(db, days);
+    upsertHealthIntervals(db, days);
+    // Once per upload rather than on a timer: uploads are the only thing that
+    // grows this table, so nothing accumulates between them.
+    pruneHealthIntervals(db);
   } finally {
     db.close();
   }
