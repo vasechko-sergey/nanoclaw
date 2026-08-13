@@ -618,6 +618,51 @@ git commit --allow-empty -m "feat(greg): ask twice a day about what is already k
 
 ---
 
+### Task 3b: a late answer must reach the agent, and must say what it answers
+
+**Added mid-execution, 2026-08-13.** Not in the original plan — Task 3's review
+traced a runtime defect that made Task 3's own central instruction false. Brief
+and report at `.superpowers/sdd/2026-08-13-greg-graded-risk-and-labels/`.
+Shipped in `39bc62f2`, reviewed clean.
+
+`ask_user_question` is a blocking tool with a timeout. The host handled a late
+tap correctly — it wrote the answer into the session's `inbound.db` and woke the
+container. The container then threw it away: `poll-loop.ts` drops every
+`kind: 'system'` row that is not a workout event, at both the initial-batch and
+the mid-turn filter. The row was discarded on every poll, **never marked
+completed, and stayed pending forever**. Nothing errored, nothing logged. The
+container woke, did nothing, exited.
+
+For these two cards that is not an edge case. The morning card is sent by a
+headless 09:00 job with a 90-second timeout; the person is usually not holding
+the phone in that window, so **the common path was the broken one** and the
+labelling this phase exists for would have collected almost nothing.
+
+Two changes, both reviewed:
+
+- **The container lets an unclaimed question response through.** A registry of
+  in-flight questionIds (`mcp-tools/awaiting-questions.ts`, a standalone module
+  so no import cycle forms) decides ownership: whoever is awaiting a questionId
+  owns it, and only rows nobody awaits become agent-facing. A time-based
+  heuristic was rejected — it reintroduces the same race with a fuzzier edge.
+  The predicate treats unparseable content as "not a question response" rather
+  than throwing, because a bad row killing the poll loop would be worse than the
+  bug being fixed.
+- **The row now carries the card's `title`.** `questionId` is
+  `msg-<epoch>-<random>` and encodes nothing, and Greg's daily cycle ends with
+  `/clear`, so an agent receiving a late answer had no way to tell which question
+  it answered — and both cards can be outstanding at once. `pending_questions`
+  already stored the title; it simply was not passed on. The formatter renders
+  the row readably instead of as raw JSON, without which the answer reached the
+  agent as `<system_response action="unknown">null</system_response>` — arriving
+  and still saying nothing.
+
+`title` is appended as a trailing key on purpose: the in-flight poll finds its
+row with a SQL `LIKE` on `%"questionId":"<id>"%`, so anything inserted before
+that key would break the normal in-time path while fixing the late one.
+
+---
+
 ## Phase 2 — The graded number
 
 What can be built honestly today is not a probability. It is: how far today's physiology sits from this person's own recent normal, counting only movement in the direction illness goes, expressed as a percentile of his own past. That needs zero positive examples — it is calibrated entirely on his healthy history, of which there are 79 days.
