@@ -2963,6 +2963,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 >    is asked about AFTER build 1.35.0 is installed; the request files can go in
 >    whenever, and the store is what earns its place. Left as a follow-up rather
 >    than pretended to be done.
+>    **Done later the same day**, once 1.35.0 was installed — see below.
 >
 > The failing-test step for iOS (Step 5) was written but not executed against
 > the unimplemented API: the failure mode is a compile error with a predictable
@@ -2972,6 +2973,52 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 > continuous on it and nothing is gained by breaking that; Greg's data
 > dictionary now says the number is known-conflated and names what to read
 > instead.
+
+#### Backfill complete — 2026-08-13, and what the baseline says
+
+Build 1.35.0 (111) was installed and the whole history was backfilled in seven
+contiguous 14-day windows (`backfill_<yyyymmdd>.json` in the drop directory,
+drained in two batches). **98 of 98 days now carry buckets**, 2026-05-08 to
+2026-08-13, at 44.6 heart-rate buckets per day on average and never fewer than
+33. `hrv` averages 10.1 a day, which is the same 3–5-samples-a-night finding
+that killed `hrvDeep`, seen from the other side.
+
+Windows were made contiguous rather than overlapping on purpose. The reader
+drops days outside `[from, to]` before uploading (`HealthHistory.swift:756`) and
+starts its interval query a day early (`overnightWindowStart`), so each window
+fills its own first day completely and never writes a partial row over a
+neighbour's complete one — which matters because `health_intervals` replaces
+wholesale per `(date, metric)` rather than merging.
+
+**A defect surfaced during verification, and is fixed.** The metrics were
+stored, derived and scored, but `latest` in normal mode is an explicit
+whitelist and did not include them — and `formatLatestLine` printed
+`ЧСС {heartRate}`, the whole-day mean this task exists to stop reporting. Greg
+would have kept quoting the conflated number in every daily brief while the
+split sat unread one layer down. The line now prefers the sleeping pulse and
+names the awake resting pulse beside it, falling back to `heartRate` only on
+days with no buckets; three tests pin all three cases.
+
+**The 93-day baseline confirms Task 0's verdict, now against real history
+rather than a four-day sample.** `sleepHr` n=93, p50 56, range 51–70;
+`wakeRestHr` n=97, p50 68, range 57–76. Across the reference episode:
+
+| Day | `sleepHr` | `wakeRestHr` | `nightHrDipPct` | whole-day `heartRate` |
+|---|---|---|---|---|
+| 08-08 | 59 | 68 | 9.6 | 85 |
+| 08-09 | 57 | 65 | 11.5 | 73 |
+| **08-10 (onset)** | **53** | 64 | 3.3 | 64 |
+| 08-11 | 61 | 66 | 10.9 | 66 |
+| 08-12 | 58 | 68 | 7.4 | 70 |
+
+On onset day the sleeping pulse is 53 against a median of 56 — *below* it, the
+opposite of the direction illness predicts, and within ordinary spread either
+way. Nothing here detects. That is the same answer Task 0 gave from the Health
+export, and it is now measured on the deployed pipeline over three months.
+
+What the intervals do buy is the de-conflation, which was always the honest
+justification: on 08-12 the one number was 70, while the sleeping pulse was 58
+and the awake resting pulse 68. Three different quantities that used to be one.
 
 > **RE-SCOPED by Task 0's result, 2026-08-12.** The pre-check ran on a real Health export and the early-warning premise did not survive: over 100 nights, no intra-night heart-rate feature moves more than 1.2σ on either pre-onset day, or on onset day itself, in an assumption-free 01:00–06:00 window. So:
 >
