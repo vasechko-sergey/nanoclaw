@@ -13,6 +13,7 @@ import {
   partitionMessagesBySource,
   isAuthError,
   isWorkoutEventRow,
+  isUnclaimedQuestionResponse,
   serveImageRequests,
   dispatchResultText,
   dispatchCompleteBlocks,
@@ -23,6 +24,7 @@ import {
 import { MockProvider } from './providers/mock.js';
 import type { AgentQuery, ProviderEvent } from './providers/types.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
+import { awaitingQuestionIds } from './mcp-tools/awaiting-questions.js';
 
 beforeEach(() => {
   initTestSessionDb();
@@ -561,6 +563,131 @@ describe('isWorkoutEventRow (workout events reach the agent)', () => {
     expect(ids).toContain('wk1');
     expect(ids).toContain('c1');
     expect(ids).not.toContain('ctx1');
+  });
+});
+
+// task-3b: a late ask_user_question answer (a tap after the tool's own
+// timeout) used to be dropped forever — it matched neither isWorkoutEventRow
+// nor dispatchSystemReplies's context_response case, so it fell out of every
+// batch, was never marked completed, and the row sat `pending` permanently.
+// See .superpowers/sdd/2026-08-13-greg-graded-risk-and-labels/task-3b-brief.md.
+describe('isUnclaimedQuestionResponse (late ask_user_question answers reach the agent)', () => {
+  const base = {
+    id: 'x',
+    seq: 1,
+    timestamp: '2026-06-26T03:34:00Z',
+    status: 'pending',
+    process_after: null,
+    recurrence: null,
+    tries: 0,
+    trigger: 1,
+    platform_id: null,
+    channel_type: null,
+    thread_id: null,
+    source_session_id: null,
+  };
+
+  // Defensive: awaitingQuestionIds is a module-level singleton shared by
+  // every test in this process (mirrors the real container: one poll loop,
+  // one Set, for its whole lifetime). A test that adds an id without this
+  // cleanup would leak a claim into whichever test runs next.
+  afterEach(() => {
+    awaitingQuestionIds.clear();
+  });
+
+  it('true for a question_response row nobody is polling for', () => {
+    const row = {
+      ...base,
+      kind: 'system',
+      content: JSON.stringify({ type: 'question_response', questionId: 'q1', selectedOption: 'ok', title: 'T' }),
+    };
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(true);
+  });
+
+  it('false for the same row while its questionId is claimed (ask_user_question is still polling)', () => {
+    awaitingQuestionIds.add('q1');
+    const row = {
+      ...base,
+      kind: 'system',
+      content: JSON.stringify({ type: 'question_response', questionId: 'q1', selectedOption: 'ok', title: 'T' }),
+    };
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(false);
+  });
+
+  it('releasing the claim un-suppresses the row — a claim cannot leak permanently', () => {
+    const row = {
+      ...base,
+      kind: 'system',
+      content: JSON.stringify({ type: 'question_response', questionId: 'q1', selectedOption: 'ok', title: 'T' }),
+    };
+    awaitingQuestionIds.add('q1');
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(false);
+    awaitingQuestionIds.delete('q1'); // what interactive.ts's `finally` does on every exit path
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(true);
+  });
+
+  it('false for a workout_event system row (regression check: not a question_response)', () => {
+    const row = {
+      ...base,
+      kind: 'system',
+      content: JSON.stringify({ subtype: 'workout_event', event: 'workout_complete', payload: {} }),
+    };
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(false);
+  });
+
+  it('false for an ios-app context_response system row (regression check)', () => {
+    const row = { ...base, kind: 'system', content: JSON.stringify({ subtype: 'context_response', request_id: 'r' }) };
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(false);
+  });
+
+  it('false for a chat row', () => {
+    const row = { ...base, kind: 'chat', content: JSON.stringify({ text: 'hi' }) };
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(false);
+  });
+
+  it('false for malformed system content — must not throw', () => {
+    const row = { ...base, kind: 'system', content: 'not json' };
+    expect(isUnclaimedQuestionResponse(row as MessageInRow)).toBe(false);
+  });
+
+  it('the poll-loop system filter: unclaimed question_response passes, workout_event still passes, context_response still dropped', () => {
+    const qr = {
+      ...base,
+      id: 'qr1',
+      kind: 'system',
+      content: JSON.stringify({ type: 'question_response', questionId: 'q-late', selectedOption: 'ok', title: 'Как проснулся?' }),
+    };
+    const wk = { ...base, id: 'wk1', kind: 'system', content: JSON.stringify({ subtype: 'workout_event', event: 'workout_complete', payload: { workout_id: '2026-06-26' } }) };
+    const ctx = { ...base, id: 'ctx1', kind: 'system', content: JSON.stringify({ subtype: 'context_response', request_id: 'never', data: {} }) };
+    const chat = { ...base, id: 'c1', kind: 'chat', content: JSON.stringify({ text: 'hi' }) };
+    const survivors = dispatchSystemReplies([qr, wk, ctx, chat] as MessageInRow[]);
+    // Mirror the exact filter expression the poll loop uses post-dispatch.
+    const messages = survivors.filter(
+      (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
+    );
+    const ids = messages.map((m) => m.id);
+    expect(ids).toContain('qr1');
+    expect(ids).toContain('wk1');
+    expect(ids).toContain('c1');
+    expect(ids).not.toContain('ctx1');
+  });
+
+  it('the same filter drops a question_response row while ask_user_question is still polling for it', () => {
+    awaitingQuestionIds.add('q-inflight');
+    const qr = {
+      ...base,
+      id: 'qr2',
+      kind: 'system',
+      content: JSON.stringify({ type: 'question_response', questionId: 'q-inflight', selectedOption: 'ok', title: 'T' }),
+    };
+    const chat = { ...base, id: 'c2', kind: 'chat', content: JSON.stringify({ text: 'hi' }) };
+    const survivors = dispatchSystemReplies([qr, chat] as MessageInRow[]);
+    const messages = survivors.filter(
+      (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
+    );
+    const ids = messages.map((m) => m.id);
+    expect(ids).not.toContain('qr2');
+    expect(ids).toContain('c2');
   });
 });
 

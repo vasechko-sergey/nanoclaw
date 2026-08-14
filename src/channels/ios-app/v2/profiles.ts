@@ -7,6 +7,7 @@ export interface Levels {
   stress: number | null;
   recovery: number | null;
   readiness: number | null;
+  illness: number | null;
 }
 export interface Metric {
   v: string;
@@ -32,9 +33,10 @@ function parseInlineLevels(s: string): Levels | null {
   const energy = num('energy'),
     stress = num('stress'),
     recovery = num('recovery'),
-    readiness = num('readiness');
-  if (energy === null && stress === null && recovery === null && readiness === null) return null;
-  return { energy, stress, recovery, readiness };
+    readiness = num('readiness'),
+    illness = num('illness');
+  if (energy === null && stress === null && recovery === null && readiness === null && illness === null) return null;
+  return { energy, stress, recovery, readiness, illness };
 }
 
 function parseMetrics(raw: string): Metric[] | null {

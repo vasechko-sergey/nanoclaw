@@ -86,7 +86,9 @@ describe("--state", () => {
     const e = buildEntry({ date: "2026-08-14", symptoms: null, state: "great", scope: "morning", note: null, temp: null });
     expect(e.state).toBe("great");
     expect(e.scope).toBe("morning");
-    expect(e.symptoms).toEqual([]);
+    // null, not []: the morning card never asks about symptoms, and an empty
+    // array here would read downstream as "asked, nothing reported".
+    expect(e.symptoms).toBeNull();
   });
 
   it("rejects a state outside the scale", () => {
@@ -235,7 +237,7 @@ scp groups/greg/scripts/log-subjective.js groups/greg/scripts/log-subjective.tes
 
 **Interfaces:**
 - Consumes: `loadSubjective(path)` returning a `Map<date, entry>`, `mergeSubjective(rows, byDate)`.
-- Produces: entries gain `morningState` / `dayState`; rows gain `morningState` / `dayState`; `stateLoggedOn(rows, date, scope): boolean` exported; normal-mode output gains `subjective_state: {date: string, morning: boolean, day: boolean}` keyed on the owner's calendar date.
+- Produces: entries gain `morningState` / `dayState`; rows gain `morningState` / `dayState`; `stateLoggedOn(byDate, date, scope): boolean` exported — reads the subjective log, not the rows; normal-mode output gains `subjective_state: {date: string, morning: boolean, day: boolean}` keyed on the owner's calendar date.
 
 **The load is now field-wise, not record-wise.** `loadSubjective` currently does
 `byDate.set(r.date, {...})` — last line per date replaces the whole record. That
@@ -298,10 +300,12 @@ describe("daily state label", () => {
   });
 
   it("reports per scope whether an answer already exists", () => {
-    const rows = [{ date: "2026-08-14", morningState: "ok" }];
-    expect(stateLoggedOn(rows, "2026-08-14", "morning")).toBe(true);
-    expect(stateLoggedOn(rows, "2026-08-14", "day")).toBe(false);
-    expect(stateLoggedOn(rows, "2026-01-01", "morning")).toBe(false);
+    // Deliberately no health_days row anywhere in sight: on the morning path
+    // the phone has often not uploaded yet, and the answer must still count.
+    const logged = new Map([["2026-08-14", { morningState: "ok", dayState: null }]]);
+    expect(stateLoggedOn(logged, "2026-08-14", "morning")).toBe(true);
+    expect(stateLoggedOn(logged, "2026-08-14", "day")).toBe(false);
+    expect(stateLoggedOn(logged, "2026-01-01", "morning")).toBe(false);
   });
 });
 ```
@@ -356,10 +360,16 @@ Add below `mergeSubjective`:
 ```javascript
 // Whether that scope already carries an answer for the date. A one-tap card is
 // cheap to send and therefore easy to send twice.
-export function stateLoggedOn(rows, date, scope) {
-  const r = rows.find((x) => x.date === date);
-  if (!r) return false;
-  return Boolean(scope === "morning" ? r.morningState : r.dayState);
+//
+// Reads the subjective log, NOT the rows. The answer lands in subjective.jsonl
+// the moment he taps, while a `health_days` row for today exists only after the
+// phone has uploaded. On the morning path — the one this whole feature is built
+// around — the row is routinely absent, and a row-anchored check would report
+// "never asked" about a question just answered and ask it again.
+export function stateLoggedOn(byDate, date, scope) {
+  const e = byDate.get(date);
+  if (!e) return false;
+  return Boolean(scope === "morning" ? e.morningState : e.dayState);
 }
 ```
 
@@ -370,14 +380,19 @@ In the normal-mode `result` object in the CLI block, beside `ask_subjective`:
       // on the newest row. Those differ whenever the phone has not uploaded yet,
       // and keying on the row would have the morning card asking "already
       // answered?" about yesterday and then skipping itself.
-      subjective_state: {
-        date: ownerToday(),
-        morning: stateLoggedOn(rows, ownerToday(), "morning"),
-        day: stateLoggedOn(rows, ownerToday(), "day"),
-      },
+      subjective_state: (() => {
+        const today = ownerToday();
+        return {
+          date: today,
+          morning: stateLoggedOn(subjective, today, "morning"),
+          day: stateLoggedOn(subjective, today, "day"),
+        };
+      })(),
 ```
 
-Both fields are booleans, and the skill reads them as booleans. `ownerToday()` is already used elsewhere in the CLI block and reads `OWNER_TZ`.
+Both fields are booleans, and the skill reads them as booleans. `subjective` is
+the map already in hand from `loadSubjective(opts.subjectiveLog)` earlier in the
+block; `ownerToday()` reads `OWNER_TZ` and is used elsewhere in the same block.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -521,14 +536,16 @@ Ask Greg, in a normal message, to schedule it. He calls `schedule_task` with:
 - `recurrence`: `0 21 * * *`
 
 Cron is evaluated in the owner's timezone, so no offset arithmetic is needed.
-Confirm it exists:
+
+Scheduled tasks are **not** in the central DB — they are rows in the session's
+own `inbound.db` (`messages_in`, with `process_after` and `recurrence` columns),
+which the host sweep fans out. Confirm across Greg's sessions:
 
 ```bash
-ssh root@148.253.211.164 "cd /home/nanoclaw/nanoclaw && sudo -u nanoclaw pnpm exec tsx scripts/q.ts data/v2.db \"SELECT id, recurrence, process_after FROM scheduled_messages WHERE prompt LIKE '%evening-check%'\""
+ssh root@148.253.211.164 "cd /home/nanoclaw/nanoclaw && for d in data/v2-sessions/greg/*/; do sudo -u nanoclaw pnpm exec tsx scripts/q.ts \$d/inbound.db \"SELECT recurrence || '  ' || process_after || '  ' || substr(content,1,60) FROM messages_in WHERE recurrence IS NOT NULL AND content LIKE '%evening-check%'\"; done"
 ```
 
-If that table name is wrong for this install, find it with `ncl` instead:
-`ssh root@148.253.211.164 "cd /home/nanoclaw/nanoclaw && ./bin/ncl sessions list"` and read the task list through Greg with `list_tasks`.
+Expected: one row, `0 21 * * *`, with the first run at 21:00 owner-local.
 
 - [ ] **Step 6: Require a label on every episode in `sick-day/SKILL.md`**
 
@@ -598,6 +615,51 @@ Expected: the newest date carries **both** `morningState` and `dayState`. If eit
 ```bash
 git commit --allow-empty -m "feat(greg): ask twice a day about what is already known, label every episode"
 ```
+
+---
+
+### Task 3b: a late answer must reach the agent, and must say what it answers
+
+**Added mid-execution, 2026-08-13.** Not in the original plan — Task 3's review
+traced a runtime defect that made Task 3's own central instruction false. Brief
+and report at `.superpowers/sdd/2026-08-13-greg-graded-risk-and-labels/`.
+Shipped in `39bc62f2`, reviewed clean.
+
+`ask_user_question` is a blocking tool with a timeout. The host handled a late
+tap correctly — it wrote the answer into the session's `inbound.db` and woke the
+container. The container then threw it away: `poll-loop.ts` drops every
+`kind: 'system'` row that is not a workout event, at both the initial-batch and
+the mid-turn filter. The row was discarded on every poll, **never marked
+completed, and stayed pending forever**. Nothing errored, nothing logged. The
+container woke, did nothing, exited.
+
+For these two cards that is not an edge case. The morning card is sent by a
+headless 09:00 job with a 90-second timeout; the person is usually not holding
+the phone in that window, so **the common path was the broken one** and the
+labelling this phase exists for would have collected almost nothing.
+
+Two changes, both reviewed:
+
+- **The container lets an unclaimed question response through.** A registry of
+  in-flight questionIds (`mcp-tools/awaiting-questions.ts`, a standalone module
+  so no import cycle forms) decides ownership: whoever is awaiting a questionId
+  owns it, and only rows nobody awaits become agent-facing. A time-based
+  heuristic was rejected — it reintroduces the same race with a fuzzier edge.
+  The predicate treats unparseable content as "not a question response" rather
+  than throwing, because a bad row killing the poll loop would be worse than the
+  bug being fixed.
+- **The row now carries the card's `title`.** `questionId` is
+  `msg-<epoch>-<random>` and encodes nothing, and Greg's daily cycle ends with
+  `/clear`, so an agent receiving a late answer had no way to tell which question
+  it answered — and both cards can be outstanding at once. `pending_questions`
+  already stored the title; it simply was not passed on. The formatter renders
+  the row readably instead of as raw JSON, without which the answer reached the
+  agent as `<system_response action="unknown">null</system_response>` — arriving
+  and still saying nothing.
+
+`title` is appended as a trailing key on purpose: the in-flight poll finds its
+row with a SQL `LIKE` on `%"questionId":"<id>"%`, so anything inserted before
+that key would break the normal in-time path while fixing the late one.
 
 ---
 
@@ -721,6 +783,19 @@ const ILLNESS_MIN_BASE = 8;         // per-feature: fewer readings than this and
 const ILLNESS_MIN_FEATURES = 5;     // half the list; below that the mean is one sensor's opinion
 const ILLNESS_PCT_WINDOW = 60;      // days of his own history to rank today against
 const ILLNESS_MIN_HISTORY = 20;     // fewer scored days than this and a percentile is theatre
+// Too few days in the trailing window for ANY per-feature baseline to mean
+// something, however many features happen to be present that day. Distinct from
+// both neighbours above: 14 is the window we ask for, 8 is the per-feature count
+// inside it, this is the floor on the window we actually got.
+const ILLNESS_MIN_WINDOW = 10;
+// Numerical, not calibrated. A feature whose 14-day baseline happens to be
+// perfectly flat gives MAD 0 — `spo2Min` is an integer percentage and often is —
+// and the 1e-9 floor that keeps the division finite leaves the magnitude
+// unbounded: one unit off a flat baseline scores ~1e17 and buries every other
+// signal, so the percentile ends up ranking the flat-baseline days above the
+// genuinely unusual ones. `sickDayScore` clips its exceedances at 3 for exactly
+// this reason; this is the same guard on a different scale.
+const ILLNESS_Z_CAP = 5;
 
 function robustZ(today, base) {
   const vals = base.filter((v) => typeof v === "number" && Number.isFinite(v));
@@ -733,7 +808,7 @@ function robustZ(today, base) {
 
 export function illnessSignalScore(rows, i) {
   const base = rows.slice(Math.max(0, i - ILLNESS_BASELINE_DAYS), i);
-  if (base.length < 10) return null;
+  if (base.length < ILLNESS_MIN_WINDOW) return null;
   const zs = [];
   for (const [f, dir] of ILLNESS_FEATURES) {
     const z = robustZ(rows[i][f], base.map((r) => r[f]));
@@ -743,7 +818,7 @@ export function illnessSignalScore(rows, i) {
   // Squared so one large move outweighs several small ones; only the concerning
   // side counts; averaged so a night missing wrist temperature is not scored
   // lower for missing it.
-  const sum = zs.reduce((a, z) => a + Math.max(0, z) ** 2, 0);
+  const sum = zs.reduce((a, z) => a + Math.min(ILLNESS_Z_CAP, Math.max(0, z)) ** 2, 0);
   return Math.round((sum / zs.length) * 100) / 100;
 }
 
@@ -761,9 +836,10 @@ export function illnessSignal(rows) {
   if (history.length < ILLNESS_MIN_HISTORY) return { score: today, pct: null, band: null, n: history.length };
 
   const pct = Math.round((history.filter((s) => s < today).length / history.length) * 100);
-  // Bands come from his own distribution and nothing else: by construction
-  // "elevated" happens one day in four and "high" one in ten, whatever his
-  // physiology does. No episode was consulted.
+  // Bands come from his own distribution and nothing else. The frequencies are
+  // a property of the construction, not of his physiology: the bands are
+  // exclusive, so "high" is ~one day in ten, "elevated" ([75,90)) ~one in seven,
+  // and "at least elevated" ~one in four. No episode was consulted.
   const band = pct >= 90 ? "high" : pct >= 75 ? "elevated" : "calm";
   return { score: today, pct, band, n: history.length };
 }
@@ -789,6 +865,23 @@ for (const d of ['2026-08-08','2026-08-09','2026-08-10','2026-08-11']) {
 ```
 
 Expected: onset day 2026-08-10 scores clearly above 08-08 and 08-09. Record the four numbers in the plan under this task. **If onset day does NOT come out highest of the four, stop and report** — the aggregate is wrong, not the data.
+
+**Run 2026-08-14 against a copy of the live `health.db` (98 days), inside the
+agent image. The gate passes:**
+
+| Day | `illnessSignalScore` |
+|---|---|
+| 2026-08-08 | 1.12 |
+| 2026-08-09 | 0.51 |
+| **2026-08-10 (onset)** | **2.08** |
+| 2026-08-11 (worst day) | 6.84 |
+
+Onset outranks both pre-onset days and the series rises monotonically into the
+illness. Note what this does and does not say: the aggregate is not broken, and
+the number does climb once the illness is underway. It is still not early
+warning — 08-09, the day before onset, is the *quietest* of the four, which is
+the same answer three earlier measurements gave. Today's live reading came out
+`{score: 2.33, pct: 87, band: "elevated", n: 60}`, which is the intended shape.
 
 - [ ] **Step 6: Commit**
 
@@ -875,8 +968,10 @@ Add to `groups/greg/CLAUDE.md`, in the data dictionary:
   вероятностью, шансом или риском в процентах — запрещено: калибровать
   вероятность не на чем, размеченный эпизод один. Говори «выше обычного»,
   «спокойно», или называй процентиль вслух как процентиль. `band`: `calm` /
-  `elevated` / `high` — по построению `elevated` выпадает раз в четыре дня,
-  а `high` раз в десять, поэтому сам по себе он ничего не доказывает.
+  `elevated` / `high` — бэнды исключающие, и частоты у них по построению, а не
+  по твоей физиологии: `high` выпадает примерно раз в десять дней, `elevated`
+  раз в семь, «хотя бы elevated» — раз в четыре. Поэтому сам бэнд ничего не
+  доказывает.
 ```
 
 - [ ] **Step 6: Deploy, rebirth, verify**

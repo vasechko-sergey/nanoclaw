@@ -16,6 +16,7 @@ import {
   type RoutingContext,
 } from './formatter.js';
 import { onContextResponse } from './mcp-tools/request_context.js';
+import { awaitingQuestionIds } from './mcp-tools/awaiting-questions.js';
 // Single source of truth for the exercise-image dir + extension priority, shared
 // with workout.start_plan's image_manifest auto-derive (exercise-images.ts).
 import { DEFAULT_EXERCISES_DIR, IMAGE_EXTS } from './exercise-images.js';
@@ -91,6 +92,36 @@ export function isWorkoutEventRow(m: MessageInRow): boolean {
   if (m.kind !== 'system') return false;
   try {
     return (JSON.parse(m.content) as { subtype?: string }).subtype === 'workout_event';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True for a `question_response` system row (src/modules/interactive writes
+ * these host-side on an ask_user_question button click) whose questionId
+ * nobody is currently polling for.
+ *
+ * ask_user_question (mcp-tools/interactive.ts) blocks on findQuestionResponse
+ * while the questionId sits in awaitingQuestionIds — that row belongs to the
+ * tool's own poll, not the agent's turn, and must NOT pass here: if it did,
+ * this filter would hand the row to the agent turn instead, the tool's own
+ * poll would never see it, and the tool would hang to its full timeout even
+ * though the answer arrived on time (see awaiting-questions.ts). Only once
+ * the tool stops waiting — response found, or timeout — does the id leave
+ * the set, and a late-arriving row for that questionId becomes agent-facing:
+ * this is what lets a tap-after-timeout answer reach the agent at all,
+ * instead of being dropped like every other unrecognized system row.
+ *
+ * Non-JSON, non-object, or missing-questionId content is treated as
+ * not-a-question-response rather than thrown — a bad row must not kill the
+ * poll loop.
+ */
+export function isUnclaimedQuestionResponse(m: MessageInRow): boolean {
+  if (m.kind !== 'system') return false;
+  try {
+    const content = JSON.parse(m.content) as { type?: string; questionId?: string };
+    return content.type === 'question_response' && !awaitingQuestionIds.has(content.questionId as string);
   } catch {
     return false;
   }
@@ -269,9 +300,14 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // them completed in the same tick so the host sweep doesn't see stale
     // claims. Returns the rows that survived dispatch. Workout-event system
     // rows are agent-facing (Payne's workout-mode skill consumes them), so
-    // they ride through the `kind !== 'system'` filter alongside chat.
+    // they ride through the `kind !== 'system'` filter alongside chat — as
+    // do question_response rows nobody is polling for anymore (a tap that
+    // landed after ask_user_question's own timeout; see
+    // isUnclaimedQuestionResponse). Without that second clause a late answer
+    // matched neither branch, never reached the agent, and the row sat
+    // `pending` forever — this was the bug task-3b-brief.md traces.
     const messages = serveImageRequests(dispatchSystemReplies(allPending)).filter(
-      (m) => m.kind !== 'system' || isWorkoutEventRow(m),
+      (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
     );
     isFirstPoll = false;
     pollCount++;
@@ -684,8 +720,16 @@ export async function processQuery(
         // device reply arriving mid-turn unblocks the awaiting tool.
         // Workout-event system rows are agent-facing — keep them (a set logged
         // or a workout finished mid-turn should reach Payne this turn).
+        // question_response rows are the reason isUnclaimedQuestionResponse
+        // exists rather than "let all question_response rows through": THIS
+        // drain runs concurrently with an in-flight ask_user_question's own
+        // poll (both live inside one agent turn). If a response still being
+        // awaited by that tool were let through here, the tool's own poll
+        // would never see it — consumed into this turn instead — and it
+        // would hang to its full timeout despite the answer having arrived on
+        // time. awaitingQuestionIds is what tells the two cases apart.
         const newMessages = serveImageRequests(dispatchSystemReplies(pending)).filter(
-          (m) => m.kind !== 'system' || isWorkoutEventRow(m),
+          (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
         );
         if (newMessages.length === 0) return;
 

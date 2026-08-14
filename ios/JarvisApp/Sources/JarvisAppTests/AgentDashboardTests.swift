@@ -74,4 +74,24 @@ final class AgentDashboardTests: XCTestCase {
         XCTAssertEqual(SummaryEntryView.plural(21), "дело")
         XCTAssertEqual(SummaryEntryView.plural(0), "дел")
     }
+
+    func testSummaryTilesShowStressIllnessRecovery() {
+        let l = StateModel.Levels(energy: 70, stress: 34, recovery: 81, readiness: 68, illness: 55, updated: nil)
+        let tiles = SummaryEntryView.tiles(l)
+        XCTAssertEqual(tiles.map(\.1), ["стресс", "необычность", "восстановление"])
+        XCTAssertEqual(tiles.map(\.0), ["34", "55", "81"])
+    }
+
+    func testSummaryTilesRenderMissingNumbersAsDash() {
+        let l = StateModel.Levels(energy: nil, stress: nil, recovery: 81, readiness: nil, illness: nil, updated: nil)
+        XCTAssertEqual(SummaryEntryView.tiles(l).map(\.0), ["—", "—", "81"])
+    }
+
+    func testLevelsDecodeWithoutIllness() throws {
+        // A payload from a host that has not shipped Task 6 yet must still decode.
+        let json = #"{"energy":70,"stress":34,"recovery":81,"readiness":68}"#.data(using: .utf8)!
+        let l = try JSONDecoder().decode(StateModel.Levels.self, from: json)
+        XCTAssertNil(l.illness)
+        XCTAssertEqual(l.stress, 34)
+    }
 }

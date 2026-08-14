@@ -311,6 +311,19 @@ function formatSystemMessage(msg: MessageInRow): string {
     });
     return `<workout_event${from} event="${escapeXml(String(content.event || 'unknown'))}" time="${escapeXml(time)}">${envelope}</workout_event>`;
   }
+  // A late ask_user_question button click (src/modules/interactive routes it
+  // here once nobody's poll is waiting on it anymore — see poll-loop.ts's
+  // isUnclaimedQuestionResponse). `title` is the only way the agent can tell
+  // WHICH question this answers: by the time a late tap arrives its own
+  // memory of asking may be gone (e.g. Greg's daily cycle runs /clear between
+  // the morning and evening cards), and more than one card can be
+  // outstanding at once. Rendered as readable attributes instead of falling
+  // into the generic <system_response> below, which would print
+  // action="unknown" status="unknown" — this row carries neither field.
+  if (content.type === 'question_response') {
+    const time = formatLocalTime(msg.timestamp, TIMEZONE);
+    return `<question_response${from} title="${escapeXml(String(content.title || 'unknown'))}" answer="${escapeXml(String(content.selectedOption || 'unknown'))}" time="${escapeXml(time)}" />`;
+  }
   return `<system_response${from} action="${escapeXml(content.action || 'unknown')}" status="${escapeXml(content.status || 'unknown')}">${JSON.stringify(content.result || null)}</system_response>`;
 }
 

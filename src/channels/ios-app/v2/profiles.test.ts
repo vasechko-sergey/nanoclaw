@@ -6,7 +6,7 @@ updated: 2026-06-12
 summary: Сон 6.2ч, пульс покоя 66, вариабельность ровная. Флагов нет.
 action: Лёгкий день — нагрузку не грузи
 metrics: [{"v":"68","l":"готовность","t":"warn"},{"v":"↓","l":"восст."},{"v":"6.2ч","l":"сон"}]
-levels: {energy: 72, stress: 34, recovery: 81, readiness: 68}
+levels: {energy: 72, stress: 34, recovery: 81, readiness: 68, illness: 55}
 recovery7d: [74, 77, 72, 80, 79, 85, 81]
 ---
 - Пульс покоя: 66 (норма)
@@ -18,7 +18,7 @@ describe('parseProfile', () => {
     const p = parseProfile('greg', greg);
     expect(p.updated).toBe('2026-06-12');
     expect(p.summary).toContain('Сон 6.2ч');
-    expect(p.levels).toEqual({ energy: 72, stress: 34, recovery: 81, readiness: 68 });
+    expect(p.levels).toEqual({ energy: 72, stress: 34, recovery: 81, readiness: 68, illness: 55 });
     expect(p.recovery7d).toEqual([74, 77, 72, 80, 79, 85, 81]);
     expect(p.detail.trim().startsWith('- Пульс покоя')).toBe(true);
   });
@@ -37,6 +37,28 @@ describe('parseProfile', () => {
       { v: '↓', l: 'восст.' },
       { v: '6.2ч', l: 'сон' },
     ]);
+  });
+
+  it('parses the illness percentile and defaults it to null when absent', () => {
+    const p = parseProfile(
+      'greg',
+      `---\nlevels: {energy: 72, stress: 34, recovery: 81, readiness: 68, illness: 55}\n---\n`,
+    );
+    expect(p.levels).toEqual({ energy: 72, stress: 34, recovery: 81, readiness: 68, illness: 55 });
+
+    const old = parseProfile('greg', `---\nlevels: {energy: 72, stress: 34, recovery: 81, readiness: 68}\n---\n`);
+    expect(old.levels).toEqual({ energy: 72, stress: 34, recovery: 81, readiness: 68, illness: null });
+  });
+
+  it('pins the whole-object-null condition in both directions', () => {
+    // illness alone must keep the levels object — NOT collapse it to null —
+    // with the other four keys coming out null.
+    const onlyIllness = parseProfile('greg', `---\nlevels: {illness: 42}\n---\n`);
+    expect(onlyIllness.levels).toEqual({ energy: null, stress: null, recovery: null, readiness: null, illness: 42 });
+
+    // no recognized key at all must still collapse the whole object to null.
+    const noKnownKeys = parseProfile('greg', `---\nlevels: {}\n---\n`);
+    expect(noKnownKeys.levels).toBeNull();
   });
 
   it('returns null metrics on malformed JSON, without throwing', () => {

@@ -385,6 +385,7 @@ export function createIosHttpHandler(deps: HttpHandlerDeps) {
         stress: greg?.levels?.stress ?? null,
         recovery: greg?.levels?.recovery ?? null,
         readiness: greg?.levels?.readiness ?? null,
+        illness: greg?.levels?.illness ?? null,
         recovery7d: greg?.recovery7d ?? null,
         updated: greg?.updated ?? null,
       };
