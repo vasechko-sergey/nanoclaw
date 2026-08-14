@@ -1323,3 +1323,22 @@ It does not predict illness. Three independent measurements say a pre-onset sign
 What it does is make the system able to answer the question later. Phase 1 turns "healthy day" from an assumption into an observation and starts the only series that could lead the sensors. Phase 2 makes the output graded, which is the shape a load decision needs. Phase 3 makes it read.
 
 The measurement to run in three months, once labels have accumulated: re-run `docs/superpowers/plans/probes/separability-probe.js` against the confirmed-healthy days rather than the assumed-healthy ones, and check whether a `morningState` of `off`/`bad` leads the hardware score. `morningState` is the one to test first — it is contemporaneous with the overnight signals the detector is built from, so if a human reading beats the sensors on the same night's evidence, that is the early-warning channel and it was never in the hardware. If it does not, the honest conclusion is written down and the question stops being reopened.
+
+## Follow-up 2026-08-14 — the percentile came off the card
+
+Task 8 shipped the percentile to the card face. One day of looking at it was enough to see it does not work, and the owner said so: *«непонятное число выходит которое не особо влияет на решение»*. He is right, and the failure is structural, not cosmetic. On 2026-08-14 the card read `necessity 88` beside `восстановление 46`, and the day's advice — «Лёгкий день — нагрузку не грузи» — came entirely from recovery. The percentile changed no decision, and by construction it cannot: it is a rank, so one day in eight lands above the 88th whatever the body is doing. Rewording it would not have helped; calibrating it needs episodes that do not exist.
+
+What replaced it: `illnessTopDriver` — the most-deviant feature toward illness, with that day's own reading. `SpO₂ ↓ 85%` instead of `88`. A fact about the day rather than a position in a queue, and it lines up with the flags already in the card body one tap away. The percentile keeps computing and stays in `levels` and in `illness.pct`; `illnessSignalScore` can reconstruct any past day from `health.db`, so nothing is lost for a later calibrated number — it will take the same slot when there is something to calibrate against.
+
+Two measurements decided the constants, both against his own 87 scoreable days:
+
+| `ILLNESS_DRIVER_MIN_Z` | days named | of scoreable | 2026-08-10 (onset) |
+|---|---|---|---|
+| 2 | 37 | 43% | named |
+| 3 | 19 | 22% | named |
+| **3.5** | **15** | **17%** | **named (z 3.98)** |
+| 4 | 12 | 14% | **silent** |
+
+43% is as ignorable as the percentile was. 4 is a readable rate but goes quiet on the day the fever started, which is the one day this must never miss. 3.5 keeps the whole episode (08-10 3.98, 08-11 8.51, 08-12 4.77) and speaks about one day in six. `ILLNESS_DRIVER_BAD_Z = 5` tags 6% of days red; at 4 it tags 14%, too often for a red to carry weight. Neither floor is calibrated against episodes — they are frequency choices on healthy days, which is the only thing there is enough data to choose on.
+
+One implementation trap worth keeping: a feature with a flat 14-day baseline has MAD 0, and `robustZ`'s `1e-9` divisor floor turns a single integer step into ~1e16. The aggregate score survives this by capping at `ILLNESS_Z_CAP`, but *selection* cannot — the capped meaningless feature still wins. `spo2Min` is an integer percentage and flat often enough that the chip would have read `SpO₂ ↓` most days. Features with `dev === 0` are excluded from being the driver at all; there is a test for exactly this.
