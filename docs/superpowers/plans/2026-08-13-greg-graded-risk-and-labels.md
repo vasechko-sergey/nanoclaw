@@ -783,6 +783,14 @@ const ILLNESS_MIN_BASE = 8;         // per-feature: fewer readings than this and
 const ILLNESS_MIN_FEATURES = 5;     // half the list; below that the mean is one sensor's opinion
 const ILLNESS_PCT_WINDOW = 60;      // days of his own history to rank today against
 const ILLNESS_MIN_HISTORY = 20;     // fewer scored days than this and a percentile is theatre
+// Numerical, not calibrated. A feature whose 14-day baseline happens to be
+// perfectly flat gives MAD 0 — `spo2Min` is an integer percentage and often is —
+// and the 1e-9 floor that keeps the division finite leaves the magnitude
+// unbounded: one unit off a flat baseline scores ~1e17 and buries every other
+// signal, so the percentile ends up ranking the flat-baseline days above the
+// genuinely unusual ones. `sickDayScore` clips its exceedances at 3 for exactly
+// this reason; this is the same guard on a different scale.
+const ILLNESS_Z_CAP = 5;
 
 function robustZ(today, base) {
   const vals = base.filter((v) => typeof v === "number" && Number.isFinite(v));
@@ -805,7 +813,7 @@ export function illnessSignalScore(rows, i) {
   // Squared so one large move outweighs several small ones; only the concerning
   // side counts; averaged so a night missing wrist temperature is not scored
   // lower for missing it.
-  const sum = zs.reduce((a, z) => a + Math.max(0, z) ** 2, 0);
+  const sum = zs.reduce((a, z) => a + Math.min(ILLNESS_Z_CAP, Math.max(0, z)) ** 2, 0);
   return Math.round((sum / zs.length) * 100) / 100;
 }
 
