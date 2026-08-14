@@ -836,9 +836,10 @@ export function illnessSignal(rows) {
   if (history.length < ILLNESS_MIN_HISTORY) return { score: today, pct: null, band: null, n: history.length };
 
   const pct = Math.round((history.filter((s) => s < today).length / history.length) * 100);
-  // Bands come from his own distribution and nothing else: by construction
-  // "elevated" happens one day in four and "high" one in ten, whatever his
-  // physiology does. No episode was consulted.
+  // Bands come from his own distribution and nothing else. The frequencies are
+  // a property of the construction, not of his physiology: the bands are
+  // exclusive, so "high" is ~one day in ten, "elevated" ([75,90)) ~one in seven,
+  // and "at least elevated" ~one in four. No episode was consulted.
   const band = pct >= 90 ? "high" : pct >= 75 ? "elevated" : "calm";
   return { score: today, pct, band, n: history.length };
 }
