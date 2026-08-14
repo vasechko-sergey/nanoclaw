@@ -59,6 +59,25 @@ function resolveContainerTimezone(): string {
 export const TIMEZONE = resolveContainerTimezone();
 
 /**
+ * The zone the OWNER is currently living in — not the container's.
+ *
+ * `TZ` (and therefore `TIMEZONE`) is the global host zone; the owner's device
+ * zone is passed separately as `OWNER_TZ` at spawn time, resolved per session
+ * owner via person-tz (see src/container-runner.ts). Anything that interprets
+ * or renders the user's wall clock — "9pm" in a scheduled task — must use this,
+ * because the host's recurrence sweep evaluates cron in the same owner zone
+ * (src/modules/scheduling/recurrence.ts). Using TIMEZONE there makes the first
+ * run and every repeat disagree.
+ *
+ * Read at call time rather than frozen at module load so tests can vary it;
+ * in production the host sets it once per container.
+ */
+export function ownerTimezone(): string {
+  const tz = process.env.OWNER_TZ;
+  return tz && isValidTimezone(tz) ? tz : TIMEZONE;
+}
+
+/**
  * Interpret a naive ISO-like timestamp (no trailing `Z`, no offset) as wall-clock
  * time in `tz` and return the corresponding UTC Date. Strings that already carry
  * offset info (`Z` or `±HH:MM`) are passed through to the Date constructor

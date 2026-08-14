@@ -10,7 +10,7 @@ import type { Database } from 'bun:sqlite';
 import { getInboundDb, openHeadlessInboundDb } from '../db/connection.js';
 import { writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
-import { TIMEZONE, parseZonedToUtc } from '../timezone.js';
+import { ownerTimezone, parseZonedToUtc } from '../timezone.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -104,7 +104,7 @@ export const scheduleTask: McpToolDefinition = {
 
     let processAfter: string;
     try {
-      const d = parseZonedToUtc(processAfterIn, TIMEZONE);
+      const d = parseZonedToUtc(processAfterIn, ownerTimezone());
       if (Number.isNaN(d.getTime())) return err(`invalid processAfter: ${processAfterIn}`);
       processAfter = d.toISOString();
     } catch {
@@ -305,7 +305,7 @@ export const updateTask: McpToolDefinition = {
     if (typeof args.prompt === 'string') update.prompt = args.prompt;
     if (typeof args.processAfter === 'string') {
       try {
-        const d = parseZonedToUtc(args.processAfter, TIMEZONE);
+        const d = parseZonedToUtc(args.processAfter, ownerTimezone());
         if (Number.isNaN(d.getTime())) return err(`invalid processAfter: ${args.processAfter}`);
         update.processAfter = d.toISOString();
       } catch {

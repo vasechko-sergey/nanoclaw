@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 
 import { closeSessionDb, initTestHeadlessInboundDb, initTestSessionDb } from '../db/connection.js';
-import { listTasks } from './scheduling.js';
+import { TIMEZONE, parseZonedToUtc } from '../timezone.js';
+import { listTasks, scheduleTask, updateTask } from './scheduling.js';
 
 function insertTask(
   db: Database,
@@ -67,5 +68,75 @@ describe('list_tasks unions the headless session', () => {
     const text = (res.content[0] as { text: string }).text;
 
     expect(text).toContain('No tasks found.');
+  });
+});
+
+/**
+ * A naive `processAfter` means the OWNER's wall clock, not the container's.
+ * The container's own TZ is the global host zone; the owner's device zone
+ * arrives separately as OWNER_TZ, and that is the zone the host's recurrence
+ * sweep uses (src/modules/scheduling/recurrence.ts). Converting the first run
+ * against TZ while every repeat fires on OWNER_TZ puts the first run in the
+ * wrong place — observed 2026-08-14, a 21:00 Asia/Colombo task landing at
+ * 13:00Z (21:00 at UTC+8) instead of 15:30Z.
+ */
+describe('processAfter is interpreted in OWNER_TZ', () => {
+  const savedOwnerTz = process.env.OWNER_TZ;
+
+  afterEach(() => {
+    if (savedOwnerTz === undefined) delete process.env.OWNER_TZ;
+    else process.env.OWNER_TZ = savedOwnerTz;
+    closeSessionDb();
+  });
+
+  /** Run one tool call under `ownerTz` and return the processAfter it emitted. */
+  async function emittedProcessAfter(
+    tool: typeof scheduleTask,
+    args: Record<string, unknown>,
+    ownerTz: string | undefined,
+  ): Promise<string> {
+    if (ownerTz === undefined) delete process.env.OWNER_TZ;
+    else process.env.OWNER_TZ = ownerTz;
+    const { outbound } = initTestSessionDb();
+    try {
+      await tool.handler(args);
+      const row = outbound
+        .prepare(`SELECT content FROM messages_out WHERE kind = 'system' ORDER BY seq DESC LIMIT 1`)
+        .get() as { content: string };
+      return JSON.parse(row.content).processAfter as string;
+    } finally {
+      closeSessionDb();
+    }
+  }
+
+  it('schedule_task converts against OWNER_TZ, not the container TZ', async () => {
+    const args = { prompt: 'evening check-in', processAfter: '2026-08-14T21:00:00' };
+
+    // 21:00 in Colombo (UTC+5:30) is 15:30Z; the same wall clock in Kiritimati
+    // (UTC+14) is 07:00Z. Two zones, so the assertion holds whatever the test
+    // machine's own TZ happens to be.
+    expect(await emittedProcessAfter(scheduleTask, args, 'Asia/Colombo')).toBe('2026-08-14T15:30:00.000Z');
+    expect(await emittedProcessAfter(scheduleTask, args, 'Pacific/Kiritimati')).toBe('2026-08-14T07:00:00.000Z');
+  });
+
+  it('update_task converts against OWNER_TZ, not the container TZ', async () => {
+    const args = { taskId: 'task-1', processAfter: '2026-08-14T21:00:00' };
+
+    expect(await emittedProcessAfter(updateTask, args, 'Asia/Colombo')).toBe('2026-08-14T15:30:00.000Z');
+    expect(await emittedProcessAfter(updateTask, args, 'Pacific/Kiritimati')).toBe('2026-08-14T07:00:00.000Z');
+  });
+
+  it('falls back to the container TZ when OWNER_TZ is unset', async () => {
+    const naive = '2026-08-14T21:00:00';
+    const emitted = await emittedProcessAfter(scheduleTask, { prompt: 'p', processAfter: naive }, undefined);
+
+    expect(emitted).toBe(parseZonedToUtc(naive, TIMEZONE).toISOString());
+  });
+
+  it('ignores a garbage OWNER_TZ and falls back to the container TZ', async () => {
+    const naive = '2026-08-14T21:00:00';
+    const emitted = await emittedProcessAfter(scheduleTask, { prompt: 'p', processAfter: naive }, 'NotATimezone');
+
+    expect(emitted).toBe(parseZonedToUtc(naive, TIMEZONE).toISOString());
   });
 });
