@@ -3,6 +3,7 @@ import Foundation
 struct StateModel: Codable, Equatable {
     struct Levels: Codable, Equatable {
         var energy: Int?; var stress: Int?; var recovery: Int?; var readiness: Int?
+        var illness: Int?
         var updated: String?
     }
     struct Metric: Codable, Equatable {
