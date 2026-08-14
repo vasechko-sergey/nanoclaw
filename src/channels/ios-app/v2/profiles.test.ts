@@ -50,6 +50,17 @@ describe('parseProfile', () => {
     expect(old.levels).toEqual({ energy: 72, stress: 34, recovery: 81, readiness: 68, illness: null });
   });
 
+  it('pins the whole-object-null condition in both directions', () => {
+    // illness alone must keep the levels object — NOT collapse it to null —
+    // with the other four keys coming out null.
+    const onlyIllness = parseProfile('greg', `---\nlevels: {illness: 42}\n---\n`);
+    expect(onlyIllness.levels).toEqual({ energy: null, stress: null, recovery: null, readiness: null, illness: 42 });
+
+    // no recognized key at all must still collapse the whole object to null.
+    const noKnownKeys = parseProfile('greg', `---\nlevels: {}\n---\n`);
+    expect(noKnownKeys.levels).toBeNull();
+  });
+
   it('returns null metrics on malformed JSON, without throwing', () => {
     const text = `---\nsummary: x\nmetrics: [not json\n---\nbody`;
     const p = parseProfile('x', text);
