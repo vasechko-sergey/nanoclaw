@@ -111,10 +111,7 @@ struct OrbHomeView: View {
 
                     Spacer()
 
-                    SummaryEntryView(
-                        agents: stateService.state?.agents ?? [],
-                        levels: stateService.state?.levels ?? StateModel.Levels(
-                            energy: nil, stress: nil, recovery: nil, readiness: nil, illness: nil, updated: nil))
+                    SummaryEntryView(agents: stateService.state?.agents ?? [])
                         .onTapGesture { showStateBoard = true }
                         .padding(.horizontal, Theme.hPadding)
                         .padding(.bottom, Theme.scaled(8))
