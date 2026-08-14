@@ -783,6 +783,11 @@ const ILLNESS_MIN_BASE = 8;         // per-feature: fewer readings than this and
 const ILLNESS_MIN_FEATURES = 5;     // half the list; below that the mean is one sensor's opinion
 const ILLNESS_PCT_WINDOW = 60;      // days of his own history to rank today against
 const ILLNESS_MIN_HISTORY = 20;     // fewer scored days than this and a percentile is theatre
+// Too few days in the trailing window for ANY per-feature baseline to mean
+// something, however many features happen to be present that day. Distinct from
+// both neighbours above: 14 is the window we ask for, 8 is the per-feature count
+// inside it, this is the floor on the window we actually got.
+const ILLNESS_MIN_WINDOW = 10;
 // Numerical, not calibrated. A feature whose 14-day baseline happens to be
 // perfectly flat gives MAD 0 — `spo2Min` is an integer percentage and often is —
 // and the 1e-9 floor that keeps the division finite leaves the magnitude
@@ -803,7 +808,7 @@ function robustZ(today, base) {
 
 export function illnessSignalScore(rows, i) {
   const base = rows.slice(Math.max(0, i - ILLNESS_BASELINE_DAYS), i);
-  if (base.length < 10) return null;
+  if (base.length < ILLNESS_MIN_WINDOW) return null;
   const zs = [];
   for (const [f, dir] of ILLNESS_FEATURES) {
     const z = robustZ(rows[i][f], base.map((r) => r[f]));
