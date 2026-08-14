@@ -866,6 +866,23 @@ for (const d of ['2026-08-08','2026-08-09','2026-08-10','2026-08-11']) {
 
 Expected: onset day 2026-08-10 scores clearly above 08-08 and 08-09. Record the four numbers in the plan under this task. **If onset day does NOT come out highest of the four, stop and report** — the aggregate is wrong, not the data.
 
+**Run 2026-08-14 against a copy of the live `health.db` (98 days), inside the
+agent image. The gate passes:**
+
+| Day | `illnessSignalScore` |
+|---|---|
+| 2026-08-08 | 1.12 |
+| 2026-08-09 | 0.51 |
+| **2026-08-10 (onset)** | **2.08** |
+| 2026-08-11 (worst day) | 6.84 |
+
+Onset outranks both pre-onset days and the series rises monotonically into the
+illness. Note what this does and does not say: the aggregate is not broken, and
+the number does climb once the illness is underway. It is still not early
+warning — 08-09, the day before onset, is the *quietest* of the four, which is
+the same answer three earlier measurements gave. Today's live reading came out
+`{score: 2.33, pct: 87, band: "elevated", n: 60}`, which is the intended shape.
+
 - [ ] **Step 6: Commit**
 
 ```bash
