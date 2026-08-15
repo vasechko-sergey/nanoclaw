@@ -23,7 +23,9 @@ import { AGENTS_DIR } from '../../config.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getMessagingGroup } from '../../db/messaging-groups.js';
 import { replaceDestinations, type DestinationRow } from '../../db/session-db.js';
+import { getSession } from '../../db/sessions.js';
 import { log } from '../../log.js';
+import { OWNER_PERSON_KEY, personKeyForChannel } from '../../person-key.js';
 import { inboundDbPath, openInboundDb } from '../../session-manager.js';
 import { getDestinations } from './db/agent-destinations.js';
 
@@ -31,6 +33,13 @@ export function writeDestinations(agentGroupId: string, sessionId: string): void
   const dbPath = inboundDbPath(agentGroupId, sessionId);
   if (!fs.existsSync(dbPath)) return;
 
+  // Channel destinations are scoped to the session's owner. The agent GROUP is
+  // wired to every person it serves; a SESSION serves exactly one of them, and
+  // an agent that can name a second human will eventually address them —
+  // 2026-08-15, Payne answered the owner with `to="iphone"` and the reply went
+  // to the other person's phone. Agent destinations are NOT filtered: a2a keeps
+  // its own per-person routing (agent-route.ts stays within one owner_key).
+  const ownerKey = getSession(sessionId)?.owner_key || OWNER_PERSON_KEY;
   const rows = getDestinations(agentGroupId);
   const resolved: DestinationRow[] = [];
 
@@ -38,6 +47,7 @@ export function writeDestinations(agentGroupId: string, sessionId: string): void
     if (row.target_type === 'channel') {
       const mg = getMessagingGroup(row.target_id);
       if (!mg) continue;
+      if (personKeyForChannel(mg.channel_type, mg.platform_id) !== ownerKey) continue;
       resolved.push({
         name: row.local_name,
         display_name: mg.name ?? row.local_name,

@@ -145,6 +145,21 @@ export function resolveDefaultRouting(): DefaultRouting {
 }
 
 /**
+ * The session's only human channel, or null when there is none or several.
+ *
+ * Narrower than `resolveDefaultRouting` on purpose, and used only by the card
+ * tools. A card renders as buttons on a phone and no agent can tap one, so
+ * "the only CHANNEL" is an unambiguous answer for a card even where the
+ * general chain must refuse — a headless wake whose destination list also
+ * holds peer agents. Since the host scopes channel destinations to the
+ * session's owner (`write-destinations.ts`), one channel means one person.
+ */
+export function soleChannelDestination(): DestinationEntry | null {
+  const channels = getAllDestinations().filter((d) => d.type === 'channel' && d.channelType && d.platformId);
+  return channels.length === 1 ? channels[0] : null;
+}
+
+/**
  * Reverse lookup: given routing fields from an inbound message, find
  * which destination they correspond to (what does this agent call the sender?).
  */

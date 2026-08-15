@@ -6,7 +6,7 @@
  */
 import { findQuestionResponse, markCompleted } from '../db/messages-in.js';
 import { writeMessageOut } from '../db/messages-out.js';
-import { getSessionRouting } from '../db/session-routing.js';
+import { findByName, getAllDestinations, resolveDefaultRouting, soleChannelDestination } from '../destinations.js';
 import { awaitingQuestionIds } from './awaiting-questions.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
@@ -19,8 +19,55 @@ function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function routing() {
-  return getSessionRouting();
+interface CardRouting {
+  channel_type: string;
+  platform_id: string;
+  thread_id: string | null;
+}
+
+/**
+ * Where does a card go?
+ *
+ * Both tools used to read `session_routing` directly, which is empty on every
+ * headless/cron session by construction — so a scheduled card was written with
+ * NULL routing and the host dropped it at delivery ("Message missing routing
+ * fields"). Greg's morning and evening check-ins were written that way for two
+ * days and never reached the phone; nothing in the container ever saw an error,
+ * because the tool call itself succeeded.
+ *
+ * Now: the named destination if the caller gave one, else this session's own
+ * conversation, else its only human channel. A card is never routed to an
+ * agent — buttons need a human to tap them. Failure is returned to the AGENT
+ * rather than written to the DB: an unaddressed card is undeliverable, and
+ * silently persisting one only moves the failure somewhere nobody reads.
+ */
+function resolveCardRouting(to: string | undefined): CardRouting | { error: string } {
+  if (to) {
+    const dest = findByName(to);
+    if (!dest) return { error: `unknown destination "${to}"` };
+    if (dest.type !== 'channel' || !dest.channelType || !dest.platformId) {
+      return { error: `destination "${to}" is an agent — cards can only go to a human channel` };
+    }
+    return { channel_type: dest.channelType, platform_id: dest.platformId, thread_id: null };
+  }
+
+  const session = resolveDefaultRouting();
+  if (session.ok && session.via === 'session') {
+    return { channel_type: session.channel_type, platform_id: session.platform_id, thread_id: session.thread_id };
+  }
+
+  const only = soleChannelDestination();
+  if (only) return { channel_type: only.channelType!, platform_id: only.platformId!, thread_id: null };
+
+  const names = getAllDestinations()
+    .filter((d) => d.type === 'channel')
+    .map((d) => d.name);
+  return {
+    error:
+      names.length === 0
+        ? 'no human channel is configured for this session'
+        : `several human channels are possible (${names.join(', ')}) — pass "to" to pick one`,
+  };
 }
 
 function ok(text: string) {
@@ -64,6 +111,11 @@ export const askUserQuestion: McpToolDefinition = {
           description: 'Options for the user to choose from (string or {label, selectedLabel?, value?})',
         },
         timeout: { type: 'number', description: 'Timeout in seconds (default: 300)' },
+        to: {
+          type: 'string',
+          description:
+            'Destination name to ask (see your destination list). Optional — defaults to the current conversation, or to your only human channel on a scheduled wake.',
+        },
       },
       required: ['title', 'question', 'options'],
     },
@@ -87,8 +139,9 @@ export const askUserQuestion: McpToolDefinition = {
       };
     });
 
+    const r = resolveCardRouting(args.to as string | undefined);
+    if ('error' in r) return err(`cannot ask — ${r.error}`);
     const questionId = generateId();
-    const r = routing();
 
     // Write question card to outbound.db
     writeMessageOut({
@@ -162,6 +215,11 @@ export const sendCard: McpToolDefinition = {
           description: 'Card structure with title, description, and optional children/actions',
         },
         fallbackText: { type: 'string', description: 'Text fallback for platforms without card support' },
+        to: {
+          type: 'string',
+          description:
+            'Destination name to send to (see your destination list). Optional — defaults to the current conversation, or to your only human channel on a scheduled wake.',
+        },
       },
       required: ['card'],
     },
@@ -170,8 +228,9 @@ export const sendCard: McpToolDefinition = {
     const card = args.card as Record<string, unknown>;
     if (!card) return err('card is required');
 
+    const r = resolveCardRouting(args.to as string | undefined);
+    if ('error' in r) return err(`cannot send card — ${r.error}`);
     const id = generateId();
-    const r = routing();
 
     writeMessageOut({
       id,

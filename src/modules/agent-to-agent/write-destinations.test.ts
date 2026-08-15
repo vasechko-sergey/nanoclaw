@@ -15,6 +15,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
 import { createDestination } from './db/agent-destinations.js';
 import { writeDestinations } from './write-destinations.js';
+import { getDb } from '../../db/connection.js';
 import { initTestDb, closeDb, runMigrations, createAgentGroup } from '../../db/index.js';
 import { createMessagingGroup } from '../../db/messaging-groups.js';
 import { createSession } from '../../db/sessions.js';
@@ -235,5 +236,130 @@ describe('writeDestinations — a2a_kinds projection', () => {
       { name: 'greg', type: 'agent', a2a_kinds: '["health_query"]' },
       { name: 'payne', type: 'agent', a2a_kinds: '["set_log"]' },
     ]);
+  });
+});
+
+/**
+ * A session serves exactly ONE person, so it may only ever see that person's
+ * channels — even though the agent GROUP is wired to every person it serves.
+ *
+ * On 2026-08-15 Payne answered the owner with `<message to="iphone">` and the
+ * reply was delivered to another household member's phone: both people's
+ * devices sat in every session's destination list, and one of them was named
+ * plainly enough to read as "the user's phone".
+ */
+describe('writeDestinations — channels are scoped to the session owner', () => {
+  function seedDevice(mgId: string, platformId: string, personKey: string, name: string): void {
+    createMessagingGroup({
+      id: mgId,
+      channel_type: 'ios-app-v2',
+      platform_id: platformId,
+      name,
+      is_group: 0,
+      unknown_sender_policy: 'strict',
+      created_at: now(),
+    });
+    getDb()
+      .prepare('INSERT INTO ios_tokens (token_hash, platform_id, person_key, label, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(`hash-${platformId}`, platformId, personKey, name, now());
+    createDestination({
+      agent_group_id: SOURCE_AG,
+      local_name: name,
+      target_type: 'channel',
+      target_id: mgId,
+      created_at: now(),
+    });
+  }
+
+  function seedSession(id: string, ownerKey: string | null): void {
+    createSession({
+      id,
+      agent_group_id: SOURCE_AG,
+      messaging_group_id: null,
+      thread_id: null,
+      owner_key: ownerKey,
+      agent_provider: null,
+      status: 'active',
+      container_status: 'stopped',
+      last_active: null,
+      created_at: now(),
+    });
+    initSessionFolder(SOURCE_AG, id);
+  }
+
+  function readNames(sessionId: string): string[] {
+    const db = new Database(inboundDbPath(SOURCE_AG, sessionId), { readonly: true });
+    const rows = db.prepare('SELECT name FROM destinations ORDER BY name').all() as Array<{ name: string }>;
+    db.close();
+    return rows.map((r) => r.name);
+  }
+
+  beforeEach(() => {
+    seedDevice('mg-owner', 'ios-app-v2:default', 'owner', 'sergei-iphone');
+    seedDevice('mg-lena', 'ios-app-v2:lena', 'lena', 'lena-iphone');
+  });
+
+  it("hides another person's device from the owner's session", () => {
+    // SESSION_ID carries owner_key null — pre-multiuser sessions are the
+    // owner's, which is exactly the case that leaked in production.
+    writeDestinations(SOURCE_AG, SESSION_ID);
+
+    expect(readNames(SESSION_ID)).toEqual(['sergei-iphone']);
+  });
+
+  it("hides the owner's device from the other person's session", () => {
+    seedSession('sess-lena', 'lena');
+
+    writeDestinations(SOURCE_AG, 'sess-lena');
+
+    expect(readNames('sess-lena')).toEqual(['lena-iphone']);
+  });
+
+  it('keeps peer agents visible to both — a2a does its own per-person routing', () => {
+    seedAgent('ag-payne', 'payne', 'Майор Пейн');
+    createDestination({
+      agent_group_id: SOURCE_AG,
+      local_name: 'payne',
+      target_type: 'agent',
+      target_id: 'ag-payne',
+      created_at: now(),
+    });
+    seedSession('sess-lena2', 'lena');
+
+    writeDestinations(SOURCE_AG, SESSION_ID);
+    writeDestinations(SOURCE_AG, 'sess-lena2');
+
+    expect(readNames(SESSION_ID)).toEqual(['payne', 'sergei-iphone']);
+    expect(readNames('sess-lena2')).toEqual(['lena-iphone', 'payne']);
+  });
+
+  it("treats a channel no token or user claims as the owner's", () => {
+    // Telegram, CLI, and every pre-multiuser channel land here. Defaulting to
+    // the owner can only over-share the owner's own channels back to the
+    // owner; defaulting to anyone else would hand one person's agent a route
+    // to a different person.
+    createMessagingGroup({
+      id: 'mg-tg',
+      channel_type: 'telegram',
+      platform_id: 'telegram:179311028',
+      name: null,
+      is_group: 0,
+      unknown_sender_policy: 'strict',
+      created_at: now(),
+    });
+    createDestination({
+      agent_group_id: SOURCE_AG,
+      local_name: 'sergei-telegram',
+      target_type: 'channel',
+      target_id: 'mg-tg',
+      created_at: now(),
+    });
+    seedSession('sess-lena3', 'lena');
+
+    writeDestinations(SOURCE_AG, SESSION_ID);
+    writeDestinations(SOURCE_AG, 'sess-lena3');
+
+    expect(readNames(SESSION_ID)).toEqual(['sergei-iphone', 'sergei-telegram']);
+    expect(readNames('sess-lena3')).toEqual(['lena-iphone']);
   });
 });
