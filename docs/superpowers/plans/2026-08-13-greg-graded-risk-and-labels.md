@@ -1401,3 +1401,63 @@ Verified against the live database after deploy: 08-14's chip now stays silent,
 both fever days keep theirs (`бодрств. ↑ 85м` warn, `141м` bad), and today's chip
 surfaces `пульс ↑ 67` at z 4.05 — a real signal that was sitting underneath the
 false one. 181 tests green.
+
+### Same day — whole-day `heartRate` left the feature set
+
+The owner asked whether respiratory rate should be added as an illness marker.
+It was already there and had done well (z 4.1 at the fever's peak, loud on only
+2% of non-episode days). Measuring to answer that question turned up something
+else: `heartRate` — the whole-day mean — was in the set and had been pointing the
+wrong way.
+
+Per-feature directed z across the labelled episode:
+
+```
+                  08-10 08-11 08-12 08-13
+awakeMin            4.0   8.5   4.8   1.0
+wristTempDeviation -0.5   4.2   3.3   1.5
+respiratoryRate     1.8   4.1   2.2   0.1
+restingHeartRate    0.4   1.3   1.8  -0.3
+spo2Avg             1.5  -0.6  -1.3  -0.3
+heartRate          -2.9  -2.5  -1.1  -1.8
+```
+
+What `heartRate` actually measures, over 99 days: r=0.90 against active energy,
+0.68 steps, 0.64 exercise minutes — and 0.31 against resting pulse. It is an
+activity meter. Against 7-day training load it is the one feature here with a
+*positive* coupling (r=+0.35), so illness, which stops him moving, drags it down.
+`Math.max(0, z)` means a negative contributes 0 to the numerator while still
+counting in the denominator, so it diluted the score ~10% on every day of the
+episode; on a hard training day it would have pushed the other way and read as
+illness. Removing it moved today's score 2.11 → 2.34.
+
+`sleepHr` was considered as the replacement and rejected: it fell to 53 on the
+first day of the fever. Nothing replaces it — `restingHeartRate` already covers
+the pulse axis, and its coupling to load is weak and in the opposite direction.
+
+**The owner's hypothesis, tested.** He suggested the drop might be real: illness
+forces rest, rest improves the pulse. For whole-day `heartRate` that is exactly
+right (r=+0.35 with 7-day load), which is what makes it unusable here — the
+mechanism is real and it runs counter to illness. For *resting* pulse the sign is
+the opposite: r=−0.15 against 7-day load, and hrvMorning r=+0.23. More training,
+lower resting pulse, higher HRV. Rest makes his resting pulse worse, not better.
+Visible directly: 7-day load 841 → 342 across the week while resting pulse rose
+61 → 67. So part of today's z=4.0 is a week without training rather than
+infection — written into `CLAUDE.md` so Greg names both causes.
+
+Two things were considered and NOT done. Weighting `ILLNESS_FEATURES` by the
+`SIGNAL_WEIGHTS` recipe degenerates at this threshold: half the features never
+clear z 3.5 in 81–84 days, so `1/(rate+0.05)` measures sample size rather than
+specificity and ranks `deepMin`/`remMin` — silent through the whole episode —
+above respiratory rate. Normalised weights span 0.64–1.25 and would change almost
+nothing. And feeding `heartRate` into the load or recovery calculation adds no
+information: `dailyLoad` already tracks his training, zero-load days average 329
+kcal of active energy against 640–1150 on training days, and r=0.90 with active
+energy means it is the same variable under another name. Recovery is a *state*
+composite; load enters readiness separately, and merging them would destroy the
+distinction the load decision rests on.
+
+`PARTIAL_DAY_UNSAFE` is kept as an empty set. Every remaining feature is an
+overnight reading finished by the morning wake — which is what makes same-day
+detection work — but the hazard returns with the next whole-day metric anyone
+adds, and the partial-day scoring behaviour is now pinned by its own test.
