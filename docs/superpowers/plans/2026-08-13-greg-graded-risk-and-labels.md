@@ -1342,3 +1342,62 @@ Two measurements decided the constants, both against his own 87 scoreable days:
 43% is as ignorable as the percentile was. 4 is a readable rate but goes quiet on the day the fever started, which is the one day this must never miss. 3.5 keeps the whole episode (08-10 3.98, 08-11 8.51, 08-12 4.77) and speaks about one day in six. `ILLNESS_DRIVER_BAD_Z = 5` tags 6% of days red; at 4 it tags 14%, too often for a red to carry weight. Neither floor is calibrated against episodes — they are frequency choices on healthy days, which is the only thing there is enough data to choose on.
 
 One implementation trap worth keeping: a feature with a flat 14-day baseline has MAD 0, and `robustZ`'s `1e-9` divisor floor turns a single integer step into ~1e16. The aggregate score survives this by capping at `ILLNESS_Z_CAP`, but *selection* cannot — the capped meaningless feature still wins. `spo2Min` is an integer percentage and flat often enough that the chip would have read `SpO₂ ↓` most days. Features with `dev === 0` are excluded from being the driver at all; there is a test for exactly this.
+
+## Follow-up 2026-08-15 — the oxygen number was measuring the wrist, not the blood
+
+The driver chip shipped on 2026-08-14 read `SpO₂ ↓ 85%`, and Payne, reading the
+same figure in `latest_line` as "SpO₂ мин 85%", answered the owner with *"85% —
+это клинически низко. При таком насыщении надо к врачу сегодня, не завтра."*
+The owner's question was the right one: does the detector take the single lowest
+reading of the night and treat the whole night as if it were that low? It did.
+
+The watch samples oxygen **8–20 times a night**, one reading per 30-minute
+bucket. `spo2Min` is therefore the lowest of a scattered handful, not the floor
+of a curve. Measured over his own 60 nights:
+
+| | median | range |
+|---|---|---|
+| `spo2Avg` | 95 | 90.9 – 98.5 |
+| `spo2Min` | 92 | **83 – 98** |
+
+On **19 of those 60 nights (32%)** the minimum sat ≥3 points below the
+*second-lowest* reading of the same night — an isolated point, always with a
+normal mean. Only **3 nights of 60** had two or more readings under 90. The two
+shapes are cleanly different:
+
+```
+2026-08-14  avg 94.6   85 / 93   gap 8   →  artefact: normal mean, isolated minimum
+2026-07-05  avg 90.9   87 / 88   gap 1   →  event: low mean, four readings under 90
+```
+
+The night of 08-14 in full: `85 93 93 93 93 94 95 95 95 …` — an eight-point
+cliff into dense normality. And 85 is routine for this sensor: 23 Jul 85, 11 Jul
+85, 17 Jun 84, every one of them beside a normal mean.
+
+**The finding that settles it.** Across the entire fever (10 → 15 Aug) SpO₂ never
+moved: means 94.4 / 95.4 / 95.6 / 95.2 / 94.6 / 95.8, nightly medians 94–96, and
+**zero readings under 90 on any day of the illness**. Respiratory rate carried
+that episode — 14.6 → 16.6 → **17.8** → 14.8. The metric that panicked is the one
+that was flat, in the middle of a real illness it failed to register.
+
+What changed:
+
+- `spo2Min` → `spo2Avg` everywhere it was scored: `FIELDS`, `CONCERN_DOWN`,
+  `ILLNESS_FEATURES`, the recovery composite, `RECOVERY_FAMILY`, and the driver
+  display map. The mean is stable, has a real MAD (so the flat-baseline trap
+  above stops applying to it), and is what a night's oxygenation was.
+- New per-night counts from the interval buckets: `spo2Samples`, `spo2Below90`,
+  `spo2MinGap`. Deliberately **not** scored — they are counts on a tiny sample
+  and a z-score over them would be arithmetic on noise.
+- `spo2Summary()` returns `{avg, min, samples, below90, minGap, concern, line}`.
+  `concern` is the measured rule (**≥2 readings under 90**), decided in code
+  rather than left to whoever reads the number: one reading under 90 happens on
+  28% of nights and means nothing; two happened three times in sixty.
+- `latest_line` never quotes a bare minimum again — `SpO₂ 94.6% в среднем (мин
+  85% — 1 замер из 20)`. The denominator is the fix: without it the minimum
+  reads as a duration, which is exactly how it was read.
+
+Verified against the live database after deploy: 08-14's chip now stays silent,
+both fever days keep theirs (`бодрств. ↑ 85м` warn, `141м` bad), and today's chip
+surfaces `пульс ↑ 67` at z 4.05 — a real signal that was sitting underneath the
+false one. 181 tests green.
