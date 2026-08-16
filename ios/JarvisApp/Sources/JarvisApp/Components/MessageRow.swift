@@ -3,6 +3,25 @@ import UIKit
 import Photos
 import AVFoundation
 
+/// Sender identity (label + accent) resolved from a row's `agent_id` slug.
+/// One source of truth for every row type — the text/image rows resolved this
+/// per-agent while the card rows (action / file / workout) hardcoded their
+/// sender, so a Greg question card announced itself as JARVIS.
+enum SenderIdentity {
+    /// Uppercased navbar name for the slug; falls back to JARVIS for an
+    /// unknown/absent slug (matches the store default).
+    static func label(_ agentId: String?) -> String {
+        guard let slug = agentId, let agent = AgentIdentity(rawValue: slug) else { return "JARVIS" }
+        return agent.displayName.uppercased()
+    }
+
+    /// Per-agent accent for the avatar dot and the meta label.
+    static func accent(_ agentId: String?) -> Color {
+        guard let slug = agentId, let agent = AgentIdentity(rawValue: slug) else { return Theme.accentMedium }
+        return agent.accentColor
+    }
+}
+
 /// Bubbleless message renderer. Replaces MessageBubble.
 struct MessageRow: View {
     let message: ChatMessage
@@ -36,17 +55,17 @@ struct MessageRow: View {
             case .image(let img, _):
                 imageRow(img)
             case .file(let info):
-                FileRow(info: info, isUser: isUser, isLast: isLast)
+                FileRow(info: info, isUser: isUser, isLast: isLast, agentId: message.agentId)
             case .audio(let info):
                 // Audio note from server — render as a small file-style row with
                 // an audio icon. Actual playback is driven by AppCoordinator /
                 // OrbVoiceView; the row is display-only.
-                FileRow(info: info, isUser: isUser, isLast: isLast)
+                FileRow(info: info, isUser: isUser, isLast: isLast, agentId: message.agentId)
             case .action(let info):
-                ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast)
+                ActionRow(messageId: message.id, info: info, onTap: onActionTap, isLast: isLast, agentId: message.agentId)
             case .workoutPlan(let info):
                 WorkoutPlanRow(messageId: message.id, info: info, onStart: onWorkoutStart, onCancel: onWorkoutCancel, isLast: isLast,
-                               isResuming: resumeMessageId == message.id)
+                               isResuming: resumeMessageId == message.id, agentId: message.agentId ?? "payne")
             case .status(let info):
                 StatusRow(info: info)
             }
@@ -165,19 +184,11 @@ struct MessageRow: View {
     }
 
     private var senderLabel: String {
-        if isUser { return "Я" }
-        if let slug = message.agentId,
-           let agent = AgentIdentity(rawValue: slug) {
-            return agent.displayName.uppercased()
-        }
-        return "JARVIS"
+        isUser ? "Я" : SenderIdentity.label(message.agentId)
     }
 
     private var senderAccentColor: Color {
-        guard !isUser,
-              let slug = message.agentId,
-              let agent = AgentIdentity(rawValue: slug) else { return Theme.accentMedium }
-        return agent.accentColor
+        isUser ? Theme.accentMedium : SenderIdentity.accent(message.agentId)
     }
 
     private var metaRow: some View {
@@ -470,21 +481,25 @@ struct FileRow: View {
     let info: FileInfo
     let isUser: Bool
     let isLast: Bool
+    /// Row's `agent_id` slug — names and colors the sender. nil → JARVIS.
+    var agentId: String? = nil
+
+    private var accent: Color { isUser ? Theme.avatarUserDot : SenderIdentity.accent(agentId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
                 Circle()
-                    .fill(isUser ? Theme.avatarUserDot : Theme.accent)
+                    .fill(accent)
                     .frame(width: Theme.avatarDotSize, height: Theme.avatarDotSize)
                     .padding(.top, 7)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(isUser ? "Я" : "JARVIS")
+                        Text(isUser ? "Я" : SenderIdentity.label(agentId))
                             .font(Theme.metaFont)
                             .tracking(0.5)
-                            .foregroundStyle(Theme.accentMedium)
+                            .foregroundStyle(isUser ? Theme.accentMedium : accent)
                         Spacer()
                     }
 
@@ -548,22 +563,28 @@ struct ActionRow: View {
     let info: ActionInfo
     var onTap: ((String, String, String) -> Void)?
     let isLast: Bool
+    /// Row's `agent_id` slug — names and colors the asker. A question card is
+    /// emitted by whichever agent called `ask_user_question` (Greg's daily
+    /// check-in, Jarvis, …), so this must not be hardcoded.
+    var agentId: String? = nil
+
+    private var accent: Color { SenderIdentity.accent(agentId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
                 Circle()
-                    .fill(Theme.accent)
+                    .fill(accent)
                     .frame(width: Theme.avatarDotSize, height: Theme.avatarDotSize)
-                    .shadow(color: Theme.accent.opacity(0.5), radius: 3)
+                    .shadow(color: accent.opacity(0.5), radius: 3)
                     .padding(.top, 7)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("JARVIS")
+                        Text(SenderIdentity.label(agentId))
                             .font(Theme.metaFont)
                             .tracking(0.5)
-                            .foregroundStyle(Theme.accentMedium)
+                            .foregroundStyle(accent)
                         Spacer()
                     }
 
@@ -656,21 +677,26 @@ struct WorkoutPlanRow: View {
     var onCancel: ((String) -> Void)?
     let isLast: Bool
     var isResuming: Bool = false
+    /// Row's `agent_id` slug. In practice always `payne`, but resolved the same
+    /// way as every other row so the label can never drift from the sender.
+    var agentId: String? = "payne"
+
+    private var accent: Color { SenderIdentity.accent(agentId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
                 Circle()
-                    .fill(Theme.accent)
+                    .fill(accent)
                     .frame(width: Theme.avatarDotSize, height: Theme.avatarDotSize)
-                    .shadow(color: Theme.accent.opacity(0.5), radius: 3)
+                    .shadow(color: accent.opacity(0.5), radius: 3)
                     .padding(.top, 7)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("PAYNE")
+                    Text(SenderIdentity.label(agentId))
                         .font(Theme.metaFont)
                         .tracking(0.5)
-                        .foregroundStyle(Theme.accentMedium)
+                        .foregroundStyle(accent)
 
                     HStack(spacing: 6) {
                         Image(systemName: "figure.strengthtraining.traditional")
