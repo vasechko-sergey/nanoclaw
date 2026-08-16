@@ -210,6 +210,21 @@ enum Schema {
                 CREATE INDEX idx_control_event_pending ON control_event_queue (delivered);
             """)
         }
+        m.registerMigration("v17-dedup-ws-at") { db in
+            // Separates "the WS delivered and stored this message" from "a row
+            // exists in inbound_dedup". The background pull path notifies first
+            // and `recordNotified` creates the dedup row; the WS drain then read
+            // that row as already-handled and returned before storing the full
+            // envelope — so a question card pulled while the phone slept stayed a
+            // text stub with no option buttons. NULL = not yet WS-processed.
+            // Existing rows are backfilled as WS-seen: they were already rendered
+            // (or already notified) under the old semantics, and re-processing
+            // them would re-raise stale notifications.
+            try db.execute(sql: """
+                ALTER TABLE inbound_dedup ADD COLUMN ws_at INTEGER;
+                UPDATE inbound_dedup SET ws_at = received_at;
+            """)
+        }
         try m.migrate(writer)
     }
 }

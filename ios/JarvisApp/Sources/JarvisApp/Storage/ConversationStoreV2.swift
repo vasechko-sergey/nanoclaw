@@ -186,18 +186,31 @@ final class ConversationStoreV2 {
         }
     }
 
+    /// True if the WS path has already STORED this inbound id. Deliberately not
+    /// "a dedup row exists": the background pull path notifies first, and
+    /// `recordNotified` creates a row with `ws_at` NULL. Reading mere existence
+    /// made the WS drain skip the real envelope, leaving the pull's text stub
+    /// without its actions/attachments (a question card with no buttons).
     func dedupSeen(id: String) throws -> Bool {
         try writer.read { db in
-            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM inbound_dedup WHERE id=?)",
+            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM inbound_dedup WHERE id=? AND ws_at IS NOT NULL)",
                               arguments: [id]) ?? false
         }
     }
 
+    /// Stamp an inbound id as WS-processed. Upserts rather than INSERT OR IGNORE:
+    /// the pull path may already have inserted the row (notified-only), and that
+    /// row must still be flipped to WS-seen once the envelope is stored.
     func recordDedup(id: String, seq: Int) throws {
         try writer.write { db in
             let now = Date()
-            try db.execute(sql: "INSERT OR IGNORE INTO inbound_dedup (id, seq, received_at) VALUES (?, ?, ?)",
-                           arguments: [id, seq, Int(now.timeIntervalSince1970 * 1000)])
+            let nowMs = Int(now.timeIntervalSince1970 * 1000)
+            try db.execute(sql: """
+                INSERT INTO inbound_dedup (id, seq, received_at, ws_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET ws_at = excluded.ws_at
+                """,
+                arguments: [id, seq, nowMs, nowMs])
             // Bound the table (Finding F28): sweep rows past the retention window
             // in the same transaction, so it costs no extra write lock.
             try Self.pruneDedup(db, retentionDays: 30, now: now)

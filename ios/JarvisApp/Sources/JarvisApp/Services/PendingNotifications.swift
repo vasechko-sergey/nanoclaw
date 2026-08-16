@@ -56,8 +56,11 @@ enum PendingNotifications {
                 } else {
                     LocalNotifier.shared.raise(id: m.id, agentId: m.agent_id ?? "jarvis", text: m.text, seq: m.seq)
                     // Render EVERY message as a text stub so a backgrounded message
-                    // can't be stranded (notified-but-not-rendered). If it carried
-                    // attachments, the WS delivery upserts the row to full content.
+                    // can't be stranded (notified-but-not-rendered). The pending
+                    // payload is text-only; if the message carried attachments or
+                    // action buttons, the WS delivery upserts the row to full
+                    // content — which is why `dedupSeen` keys on `ws_at`, not on
+                    // the dedup row `recordNotified` writes just above.
                     if let store = PendingNotifications.chatStore {
                         try? store.insertInboundFromPull(
                             id: m.id, seq: m.seq, text: m.text,

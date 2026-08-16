@@ -83,11 +83,13 @@ final class LocalStorageBoundsTests: XCTestCase {
         let dayMs = 24 * 60 * 60 * 1000
         let nowMs = Int(now.timeIntervalSince1970 * 1000)
         // Seed one 40-day-old row and one 1-day-old row via the real schema.
+        // `ws_at` is set on both: `dedupSeen` (the probe below) means
+        // "WS-processed", and these stand in for normally delivered messages.
         try store.writer.write { db in
-            try db.execute(sql: "INSERT INTO inbound_dedup (id, seq, received_at) VALUES (?, ?, ?)",
-                           arguments: ["old", 1, nowMs - 40 * dayMs])
-            try db.execute(sql: "INSERT INTO inbound_dedup (id, seq, received_at) VALUES (?, ?, ?)",
-                           arguments: ["new", 2, nowMs - 1 * dayMs])
+            try db.execute(sql: "INSERT INTO inbound_dedup (id, seq, received_at, ws_at) VALUES (?, ?, ?, ?)",
+                           arguments: ["old", 1, nowMs - 40 * dayMs, nowMs - 40 * dayMs])
+            try db.execute(sql: "INSERT INTO inbound_dedup (id, seq, received_at, ws_at) VALUES (?, ?, ?, ?)",
+                           arguments: ["new", 2, nowMs - 1 * dayMs, nowMs - 1 * dayMs])
         }
         try store.pruneDedup(retentionDays: 30, now: now)
         XCTAssertFalse(try store.dedupSeen(id: "old"), "row older than retention must be pruned")

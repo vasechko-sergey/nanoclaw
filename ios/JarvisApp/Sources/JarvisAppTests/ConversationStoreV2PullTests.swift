@@ -45,6 +45,31 @@ final class ConversationStoreV2PullTests: XCTestCase {
         XCTAssertNotNil(try col(store, "m1", "attachments_json"))    // upgraded with attachment
     }
 
+    /// Build 114 — the pull path notifies BEFORE the socket drains, and
+    /// `recordNotified` writes the dedup row. If `dedupSeen` reads mere row
+    /// existence, the WS drain skips the real envelope and the question card
+    /// stays a text stub with no buttons (Greg's morning check-in, 2026-08-16).
+    func testNotifiedFirstStillLetsWSStoreActions() throws {
+        let store = try makeStore()
+        try store.recordNotified(id: "q1", seq: 9)                  // pull: banner raised
+        try store.insertInboundFromPull(id: "q1", seq: 9, text: "Как проснулся?", agentId: "greg", ts: 1000)
+        XCTAssertNil(try col(store, "q1", "actions_json"))          // stub: no buttons yet
+
+        XCTAssertFalse(try store.dedupSeen(id: "q1"), "notified-only must not count as WS-processed")
+
+        let acts = [V2.Action(id: "great", label: "Отлично", style: "primary")]
+        let m = V2.Message(thread_id: "t", text: "Как проснулся?", agent_id: "greg", actions: acts)
+        let e = V2.Envelope(v: 2, kind: .data, type: .message, id: "q1", seq: 9,
+                            ts: "2026-08-16T03:01:39.000Z", payload: .message(m))
+        try store.insertInbound(envelope: e, message: m, agentId: "greg")
+        try store.recordDedup(id: "q1", seq: 9)
+
+        XCTAssertEqual(try store.countAllMessages(), 1)             // upgraded, not duplicated
+        XCTAssertNotNil(try col(store, "q1", "actions_json"))       // buttons restored
+        XCTAssertTrue(try store.dedupSeen(id: "q1"))                // now genuinely handled
+        XCTAssertTrue(try store.notifiedSeen(id: "q1"), "recordDedup must not clear notified_at")
+    }
+
     func testWSUpsertPreservesReadStatus() throws {
         let store = try makeStore()
         try store.insertInboundFromPull(id: "m2", seq: 6, text: "hi", agentId: "jarvis", ts: 1000)
