@@ -4,6 +4,7 @@ import { findByName, getAllDestinations, resolveDefaultRouting, type Destination
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
+import { shouldTouchHeartbeat } from './heartbeat-throttle.js';
 import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
 import { clearCurrentInReplyTo, setCurrentInReplyTo } from './current-batch.js';
 import {
@@ -56,6 +57,8 @@ const ACTIVE_POLL_INTERVAL_MS = 500;
  * turn (see the suppression in the abort branch below).
  */
 const STREAM_IDLE_TIMEOUT_MS = 240_000;
+// Cheapest cadence that still beats the host's minutes-long staleness sweep.
+const HEARTBEAT_TOUCH_INTERVAL_MS = 1_000;
 
 /**
  * Max times the factuality gate may bounce a turn back to the agent to
@@ -955,7 +958,10 @@ export async function processQuery(
       const event = next.value;
 
       handleEvent(event, routing);
-      touchHeartbeat();
+      // Partial-message streaming makes this loop run per token chunk; the
+      // host's staleness threshold is minutes, so one touch a second says
+      // everything a touch per chunk would (heartbeat-throttle.ts).
+      if (shouldTouchHeartbeat(HEARTBEAT_TOUCH_INTERVAL_MS, Date.now())) touchHeartbeat();
 
       if (event.type === 'tool_use_start') {
         inFlightTools.add(event.id);

@@ -454,6 +454,14 @@ export class ClaudeProvider implements AgentProvider {
           ...Object.keys(this.mcpServers).map(mcpAllowPattern),
         ],
         disallowedTools: SDK_DISALLOWED_TOOLS,
+        // Without this the SDK yields one message per COMPLETED assistant turn.
+        // The poll-loop's idle watchdog reads "no SDK message for 240s" as a
+        // dead stream — but a single long generation (writing a 230-line
+        // script) looks exactly the same, and got aborted mid-work while the
+        // agent kept writing files for another five minutes with nowhere to
+        // report. Partial messages tick `activity` as tokens arrive, so the
+        // watchdog measures liveness instead of guessing at it.
+        includePartialMessages: true,
         env: this.env,
         model: this.model,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
