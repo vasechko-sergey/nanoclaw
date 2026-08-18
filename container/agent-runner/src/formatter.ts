@@ -1,6 +1,6 @@
 import { findByRouting } from './destinations.js';
 import type { MessageInRow } from './db/messages-in.js';
-import { TIMEZONE, formatLocalTime } from './timezone.js';
+import { formatLocalTime, ownerTimezone } from './timezone.js';
 
 /**
  * Command categories for messages starting with '/'.
@@ -122,7 +122,7 @@ export function extractRouting(messages: MessageInRow[]): RoutingContext {
  * the agent sees in message bodies is the user's local time, and every time it
  * produces (schedules, suggests) should be interpreted as local time in that
  * same zone. The header always carries `timezone` (falling back to container
- * `TIMEZONE` env when no message supplies one); iOS-sourced messages also
+ * owner zone when no message supplies one); iOS-sourced messages also
  * contribute `ts`, `lat`, `lon`, `accuracy`, `locality` when present. Header
  * shape is v1 behavior (src/v1/router.ts:20-22) extended with iOS attrs in v2.
  *
@@ -162,8 +162,8 @@ export function formatMessages(messages: MessageInRow[]): string {
  * Always emits the tag. Walks the batch to find the first message with an
  * inline `ios_context` (the typical case is one message per turn) and lifts
  * its attributes — timezone, timestamp→`ts`, lat, lon, accuracy, locality —
- * onto the tag. Falls back to the container `TIMEZONE` env for the timezone
- * attribute when no iOS context is present (preserves non-iOS behavior).
+ * onto the tag. Falls back to the owner's zone (`OWNER_TZ`, itself falling
+ * back to the container `TIMEZONE`) when no iOS context is present.
  *
  * All values are XML-escaped.
  */
@@ -171,7 +171,7 @@ function buildContextHeader(messages: MessageInRow[]): string {
   const ctx = findFirstIosContext(messages);
   const attrs: string[] = [];
 
-  const tz = (ctx && typeof ctx.timezone === 'string' && ctx.timezone) || TIMEZONE;
+  const tz = (ctx && typeof ctx.timezone === 'string' && ctx.timezone) || ownerTimezone();
   attrs.push(`timezone="${escapeXml(tz)}"`);
 
   if (ctx) {
@@ -220,7 +220,7 @@ function formatChatMessages(messages: MessageInRow[]): string {
 function formatSingleChat(msg: MessageInRow): string {
   const content = parseContent(msg.content);
   const sender = content.sender || content.author?.fullName || content.author?.userName || 'Unknown';
-  const time = formatLocalTime(msg.timestamp, TIMEZONE);
+  const time = formatLocalTime(msg.timestamp, ownerTimezone());
   // iOS-app messages carry an inline `ios_context` (location, timezone,
   // locality) that is lifted into the per-turn <context> header by
   // buildContextHeader(). The message body itself is just the raw text.
@@ -277,7 +277,7 @@ function originAttr(msg: MessageInRow): string {
 function formatTaskMessage(msg: MessageInRow): string {
   const content = parseContent(msg.content);
   const from = originAttr(msg);
-  const time = formatLocalTime(msg.timestamp, TIMEZONE);
+  const time = formatLocalTime(msg.timestamp, ownerTimezone());
   const parts: string[] = [];
   if (content.scriptOutput) {
     parts.push('Script output:', JSON.stringify(content.scriptOutput, null, 2), '');
@@ -303,7 +303,7 @@ function formatSystemMessage(msg: MessageInRow): string {
   // and branch on `event` — the generic <system_response> shape below drops
   // both the event name and the payload.
   if (content.subtype === 'workout_event') {
-    const time = formatLocalTime(msg.timestamp, TIMEZONE);
+    const time = formatLocalTime(msg.timestamp, ownerTimezone());
     const envelope = JSON.stringify({
       subtype: 'workout_event',
       event: content.event,
@@ -321,7 +321,7 @@ function formatSystemMessage(msg: MessageInRow): string {
   // into the generic <system_response> below, which would print
   // action="unknown" status="unknown" — this row carries neither field.
   if (content.type === 'question_response') {
-    const time = formatLocalTime(msg.timestamp, TIMEZONE);
+    const time = formatLocalTime(msg.timestamp, ownerTimezone());
     return `<question_response${from} title="${escapeXml(String(content.title || 'unknown'))}" answer="${escapeXml(String(content.selectedOption || 'unknown'))}" time="${escapeXml(time)}" />`;
   }
   return `<system_response${from} action="${escapeXml(content.action || 'unknown')}" status="${escapeXml(content.status || 'unknown')}">${JSON.stringify(content.result || null)}</system_response>`;

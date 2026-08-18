@@ -31,12 +31,31 @@ export function resolveTimezone(tz: string): string {
 }
 
 /**
+ * Force a timestamp string to be read as UTC when it carries no zone of its own.
+ *
+ * `messages_in.timestamp` is not written in one format: the router stores
+ * `new Date().toISOString()` (ends in `Z`), while the scheduling path stores
+ * SQLite `datetime('now')` — UTC, but rendered `YYYY-MM-DD HH:MM:SS` with no
+ * `Z`. `new Date()` reads that second form as CONTAINER-local time, so an
+ * agent running with TZ=Asia/Makassar saw its 11:16 daily-cycle message
+ * stamped 3:16 AM. Eight hours is enough to slide the agent's sense of
+ * "today" onto the wrong date.
+ *
+ * Strings that already declare a zone (`Z` or `±HH:MM`) pass through untouched.
+ */
+function normalizeUtcIso(input: string): string {
+  const s = input.trim();
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return s;
+  return s.replace(' ', 'T') + 'Z';
+}
+
+/**
  * Convert a UTC ISO timestamp to a localized display string.
  * Uses the Intl API (no external dependencies).
  * Falls back to UTC if the timezone is invalid.
  */
 export function formatLocalTime(utcIso: string, timezone: string): string {
-  const date = new Date(utcIso);
+  const date = new Date(normalizeUtcIso(utcIso));
   return date.toLocaleString('en-US', {
     timeZone: resolveTimezone(timezone),
     year: 'numeric',

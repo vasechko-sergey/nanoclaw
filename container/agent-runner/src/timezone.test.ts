@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
 import { formatLocalTime, isValidTimezone, parseZonedToUtc, resolveTimezone } from './timezone.js';
 
@@ -89,5 +89,41 @@ describe('parseZonedToUtc', () => {
   it('treats invalid timezone as UTC', () => {
     const d = parseZonedToUtc('2026-01-15T09:00:00', 'NotATimezone');
     expect(d.toISOString()).toBe('2026-01-15T09:00:00.000Z');
+  });
+});
+
+// --- naive (no-Z) timestamps ---
+//
+// The host stamps scheduled-task rows with SQLite `datetime('now')`, which is
+// UTC but carries no trailing `Z`: "2026-08-18 03:16:44". Handed straight to
+// `new Date()` that string is read as CONTAINER-local time, so an agent in a
+// TZ=Asia/Makassar container saw its daily-cycle message stamped 3:16 AM when
+// the real instant was 11:16 AM there — eight hours out, enough to slide the
+// agent's idea of "today" onto the wrong date.
+//
+// NOTE: `bun test` runs with TZ unset (resolves to UTC), which hides this bug
+// entirely — under UTC both readings coincide. These tests set TZ explicitly.
+describe('formatLocalTime: naive timestamps are UTC, not container-local', () => {
+  const saved = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = 'Asia/Makassar'; // UTC+8, no DST
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env.TZ;
+    else process.env.TZ = saved;
+  });
+
+  it('reads "YYYY-MM-DD HH:MM:SS" as UTC', () => {
+    const naive = formatLocalTime('2026-08-18 03:16:44', 'Asia/Makassar');
+    expect(naive).toBe(formatLocalTime('2026-08-18T03:16:44Z', 'Asia/Makassar'));
+    expect(naive).toContain('11:16');
+  });
+
+  it('reads the "T"-separated naive form as UTC too', () => {
+    expect(formatLocalTime('2026-08-18T03:16:44', 'Asia/Makassar')).toContain('11:16');
+  });
+
+  it('leaves an explicit offset alone', () => {
+    expect(formatLocalTime('2026-08-18T03:16:44+05:30', 'Asia/Makassar')).toContain('5:46');
   });
 });

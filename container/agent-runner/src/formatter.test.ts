@@ -454,3 +454,45 @@ describe('a2a kind attribute', () => {
     expect(result).toContain('sender="Майор Пейн"');
   });
 });
+
+// The clock the agent reads must be the OWNER's, not the container's.
+//
+// Live bug: the container ran TZ=Asia/Makassar (+8) while the owner's phone
+// reported Asia/Colombo (+5:30). `buildContextHeader` lifted the iOS zone
+// correctly, but every message stamp was still rendered against the container
+// zone — one prompt carrying `<context timezone="Asia/Colombo">` next to a
+// message stamped 2.5h ahead of the owner's real wall clock. Past ~21:30
+// Colombo that gap rolls the stamped DATE onto tomorrow, and the agent starts
+// naming the wrong day.
+describe('message stamps follow the owner timezone', () => {
+  const savedOwner = process.env.OWNER_TZ;
+  const savedTz = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = 'Asia/Makassar'; // +8, what the host runs
+    process.env.OWNER_TZ = 'Asia/Colombo'; // +5:30, where the owner is
+  });
+  afterEach(() => {
+    if (savedOwner === undefined) delete process.env.OWNER_TZ;
+    else process.env.OWNER_TZ = savedOwner;
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
+  it('renders a chat stamp in OWNER_TZ, not the container TZ', () => {
+    insertMessage('m1', 'chat', { sender: 'Alice', text: 'hi' }, { timestamp: '2026-08-03T12:42:38Z' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('6:12 PM'); // Colombo
+    expect(result).not.toContain('8:42 PM'); // Makassar
+  });
+
+  it('falls back to OWNER_TZ in the context header when no ios_context', () => {
+    insertMessage('m1', 'chat', { sender: 'Alice', text: 'hi' });
+    expect(formatMessages(getPendingMessages())).toContain('timezone="Asia/Colombo"');
+  });
+
+  it('a naive host timestamp still lands on the owner clock', () => {
+    // SQLite datetime('now') form — UTC without the Z.
+    insertMessage('m1', 'task', { prompt: 'run' }, { timestamp: '2026-08-18 03:16:44' });
+    expect(formatMessages(getPendingMessages())).toContain('8:46 AM'); // Colombo
+  });
+});
