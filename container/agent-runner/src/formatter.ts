@@ -167,12 +167,28 @@ export function formatMessages(messages: MessageInRow[]): string {
  *
  * All values are XML-escaped.
  */
+/**
+ * The owner-local wall clock, spelled out with the weekday, for the `now`
+ * attribute on the per-turn context header.
+ *
+ * The agent used to receive a date and nothing else. Asked for "план на
+ * сегодня" on Monday 2026-08-17 it answered "сегодня отдых, с понедельника
+ * разгрузочная" — it had "Aug 17, 2026" in front of it and no way to know
+ * that WAS the Monday, and deriving a weekday from a date is arithmetic
+ * models get wrong episodically. Naming the day removes the arithmetic.
+ */
+export function buildNowAttr(nowIso: string, tz: string): string {
+  return formatLocalTime(nowIso, tz);
+}
+
 function buildContextHeader(messages: MessageInRow[]): string {
   const ctx = findFirstIosContext(messages);
   const attrs: string[] = [];
 
   const tz = (ctx && typeof ctx.timezone === 'string' && ctx.timezone) || ownerTimezone();
   attrs.push(`timezone="${escapeXml(tz)}"`);
+  // Absolute, unambiguous "it is now" in the owner's zone, weekday included.
+  attrs.push(`now="${escapeXml(buildNowAttr(new Date().toISOString(), tz))}"`);
 
   if (ctx) {
     if (typeof ctx.timestamp === 'string' && ctx.timestamp) {

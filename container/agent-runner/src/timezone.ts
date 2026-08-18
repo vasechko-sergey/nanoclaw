@@ -58,6 +58,9 @@ export function formatLocalTime(utcIso: string, timezone: string): string {
   const date = new Date(normalizeUtcIso(utcIso));
   return date.toLocaleString('en-US', {
     timeZone: resolveTimezone(timezone),
+    // Weekday included on purpose: the agent reasons about "is it Monday yet"
+    // far more reliably when told than when made to derive it from the date.
+    weekday: 'short',
     year: 'numeric',
     month: 'short',
     day: 'numeric',

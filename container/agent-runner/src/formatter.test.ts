@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb } from './db/connection.js';
 import { getPendingMessages } from './db/messages-in.js';
-import { formatMessages, stripInternalTags } from './formatter.js';
+import { buildNowAttr, formatMessages, stripInternalTags } from './formatter.js';
 import { TIMEZONE } from './timezone.js';
 
 beforeEach(() => {
@@ -494,5 +494,45 @@ describe('message stamps follow the owner timezone', () => {
     // SQLite datetime('now') form — UTC without the Z.
     insertMessage('m1', 'task', { prompt: 'run' }, { timestamp: '2026-08-18 03:16:44' });
     expect(formatMessages(getPendingMessages())).toContain('8:46 AM'); // Colombo
+  });
+});
+
+// The agent was never told what DAY it is — only a date.
+//
+// Live failure (payne, 2026-08-17, a Monday): owner asked "давай план на
+// сегодня", the agent answered 38 seconds later "Сегодня — отдых, с
+// понедельника разгрузочная" — from conversation memory, without running
+// cycle-status.js. It had "Aug 17, 2026" in front of it and no way to know
+// that was already the Monday it was waiting for; working the weekday out
+// from the date is arithmetic models get wrong episodically. Twelve minutes
+// later it said "мой косяк — перепутал день".
+describe('the prompt names the weekday', () => {
+  const savedOwner = process.env.OWNER_TZ;
+  beforeEach(() => {
+    process.env.OWNER_TZ = 'Asia/Colombo';
+  });
+  afterEach(() => {
+    if (savedOwner === undefined) delete process.env.OWNER_TZ;
+    else process.env.OWNER_TZ = savedOwner;
+  });
+
+  it('stamps a message with its weekday', () => {
+    // 2026-08-17T12:54:22Z — a Monday, 6:24 PM in Colombo.
+    insertMessage('m1', 'chat', { sender: 'S', text: 'план на сегодня' }, { timestamp: '2026-08-17T12:54:22Z' });
+    const result = formatMessages(getPendingMessages());
+    expect(result).toContain('Mon, Aug 17, 2026');
+  });
+
+  it('carries an owner-local now="..." on the context header', () => {
+    insertMessage('m1', 'chat', { sender: 'S', text: 'hi' });
+    expect(formatMessages(getPendingMessages())).toMatch(
+      /now="(Mon|Tue|Wed|Thu|Fri|Sat|Sun), [A-Z][a-z]{2} \d{1,2}, \d{4}/,
+    );
+  });
+
+  it('the header now= is the owner clock even when the container runs elsewhere', () => {
+    expect(buildNowAttr('2026-08-17T17:46:04Z', 'Asia/Colombo')).toContain('Mon, Aug 17, 2026');
+    // Same instant in the container's own zone is already Tuesday — the trap.
+    expect(buildNowAttr('2026-08-17T17:46:04Z', 'Asia/Makassar')).toContain('Tue, Aug 18, 2026');
   });
 });
