@@ -1733,3 +1733,78 @@ describe('processQuery — harness errors', () => {
     expect(pushes).toHaveLength(0);
   });
 });
+
+describe('a2a hop anchor (in_reply_to on agent destinations)', () => {
+  function seedAgentDest(name: string, agentGroupId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'agent', NULL, NULL, ?)`,
+      )
+      .run(name, name, agentGroupId);
+  }
+
+  function seedChannelDest(name: string, channelType: string, platformId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'channel', ?, ?, NULL)`,
+      )
+      .run(name, name, channelType, platformId);
+  }
+
+  /** An inbound row the host wrote earlier — the peer's newest, or a channel's. */
+  function seedInbound(id: string, seq: number, channelType: string, platformId: string, threadId: string | null): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO messages_in (id, seq, kind, timestamp, status, trigger, platform_id, channel_type, thread_id, content)
+         VALUES (?, ?, 'chat', datetime('now'), 'completed', 1, ?, ?, ?, ?)`,
+      )
+      .run(id, seq, platformId, channelType, threadId, JSON.stringify({ text: 'earlier' }));
+  }
+
+  function lastOut(): { in_reply_to: string | null; thread_id: string | null } {
+    const rows = getOutboundDb()
+      .prepare('SELECT in_reply_to, thread_id FROM messages_out ORDER BY seq')
+      .all() as Array<{ in_reply_to: string | null; thread_id: string | null }>;
+    return rows[rows.length - 1];
+  }
+
+  beforeEach(() => {
+    seedAgentDest('payne', 'payne');
+    seedChannelDest('family', 'telegram', 'tg-1');
+  });
+
+  // The wedge: a cron turn anchored on the peer's month-old row, whose
+  // a2a_hops the host reads as the chain's depth. Depth only ratcheted up
+  // until every reply blew MAX_A2A_HOPS and the pair went one-way.
+  it('anchors a fresh (task-woken) chain on the batch, not the peer last inbound', () => {
+    seedInbound('a2a-stale', 50, 'agent', 'payne', null);
+    const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: 'task-1' };
+
+    dispatchResultText('<message to="payne">сигнал</message>', routing, new Set());
+
+    expect(lastOut().in_reply_to).toBe('task-1');
+  });
+
+  it('anchors a reply on the a2a row that woke this turn', () => {
+    seedInbound('a2a-stale', 99, 'agent', 'payne', null); // newer by seq, wrong chain
+    const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: 'a2a-live' };
+
+    dispatchResultText('<message to="payne">ответ</message>', routing, new Set());
+
+    expect(lastOut().in_reply_to).toBe('a2a-live');
+  });
+
+  it('keeps the per-destination anchor for channel destinations', () => {
+    // Channels carry no hop count; the per-destination row is what supplies
+    // the thread, so that lookup must stay in place for them.
+    seedInbound('ch-1', 7, 'telegram', 'tg-1', 'thread-9');
+    const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: 'task-1' };
+
+    dispatchResultText('<message to="family">Ужин в 8</message>', routing, new Set());
+
+    expect(lastOut().in_reply_to).toBe('ch-1');
+    expect(lastOut().thread_id).toBe('thread-9');
+  });
+});

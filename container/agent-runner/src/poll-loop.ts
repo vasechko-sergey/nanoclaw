@@ -1714,6 +1714,20 @@ function sendToDestination(
   // different destinations have different thread contexts — using a single
   // routing.threadId would stamp one channel's thread onto another.
   const destRouting = resolveDestinationThread(channelType, platformId);
+  // `in_reply_to` on an AGENT destination is not a UI affordance — the host
+  // reads the referenced row's `a2a_hops` as this chain's depth and stamps
+  // depth+1 (src/modules/agent-to-agent/agent-route.ts). `destRouting` is
+  // "newest inbound from this peer", whatever chain it belonged to, so a turn
+  // that starts a FRESH chain (cron/headless task, or a channel message)
+  // inherited the depth of the last conversation with that peer. Depth then
+  // only ever ratcheted up: Greg's morning signal went out at hops=5 anchored
+  // on a month-old row, Payne's reply computed 6 > MAX_A2A_HOPS and was
+  // dropped — which kept the peer's newest inbound frozen at that same row,
+  // so the pair stayed wedged there indefinitely. Anchor on the CURRENT batch
+  // instead: a task row carries hops=0 (fresh chain → 1), an inbound a2a row
+  // carries the real depth (reply → depth+1). Channel destinations keep the
+  // per-destination anchor — hop counting doesn't apply to them.
+  const inReplyTo = dest.type === 'agent' ? routing.inReplyTo : (destRouting?.inReplyTo ?? routing.inReplyTo);
   // `kind` is an a2a concept only — channels never carry one, and a stray
   // kind= on a channel block is dropped rather than rendered to a human.
   // Agent messages always carry it explicitly (defaulting to 'text') so the
@@ -1736,7 +1750,7 @@ function sendToDestination(
   const content = dest.type === 'agent' ? { text: body, a2a_kind: kind || 'text' } : { text: body };
   writeMessageOut({
     id: generateId(),
-    in_reply_to: destRouting?.inReplyTo ?? routing.inReplyTo,
+    in_reply_to: inReplyTo,
     kind: 'chat',
     platform_id: platformId,
     channel_type: channelType,
