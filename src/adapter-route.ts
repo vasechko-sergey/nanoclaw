@@ -13,6 +13,7 @@ import { getSession } from './db/sessions.js';
 import { log } from './log.js';
 import { persistVoiceIntent } from './modules/voice/persist-intent.js';
 import { resolvePersonKey } from './person-key.js';
+import { primeSessionAfterReset } from './session-prime.js';
 import { getAccessGate, getSenderResolver } from './router.js';
 import { resolveSession, writeOutboundDirect, writeSessionMessage } from './session-manager.js';
 import { killContainer, wakeContainer, clearSessionContinuation, isContainerRunning } from './container-runner.js';
@@ -106,6 +107,9 @@ export async function adapterRouteToAgent(
       killContainer(target.id, '/new command', clearContinuation);
       if (!wasRunning) clearContinuation();
       log.info('Session reset by /new', { sessionId: target.id, agentGroupId: agentGroup.id });
+      // The thread is gone by design; the durable memory behind it is not. Put
+      // the re-read in front of whatever the owner types next (see session-prime).
+      primeSessionAfterReset(target.agent_group_id, target.id);
       writeOutboundDirect(target.agent_group_id, target.id, {
         id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',

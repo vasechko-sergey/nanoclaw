@@ -32,6 +32,7 @@ import { persistVoiceIntent } from './modules/voice/persist-intent.js';
 import { log } from './log.js';
 import { resolvePersonKey } from './person-key.js';
 import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
+import { primeSessionAfterReset } from './session-prime.js';
 import { killContainer, wakeContainer } from './container-runner.js';
 import { getSession } from './db/sessions.js';
 import type { AgentGroup, MessagingGroup, MessagingGroupAgent, Session } from './types.js';
@@ -459,6 +460,9 @@ async function deliverToAgent(
         killContainer(existing.id, '/new command');
         updateSession(existing.id, { status: 'closed' });
         log.info('Session reset by /new', { oldSessionId: existing.id, agentGroupId: agent.agent_group_id });
+        // Same as the adapter path: a reset conversation must not mean an agent
+        // that forgot who the owner is (see session-prime).
+        primeSessionAfterReset(existing.agent_group_id, existing.id);
       }
       const { session: newSession } = resolveSession(
         agent.agent_group_id,
