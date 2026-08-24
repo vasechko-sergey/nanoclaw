@@ -81,7 +81,11 @@ export interface AgentQuery {
 
 export type ProviderEvent =
   | { type: 'init'; continuation: string }
-  | { type: 'result'; text: string | null }
+  // `isError` mirrors the provider's own verdict on the turn: true when the
+  // result carries a failure, false when it carries the agent's answer,
+  // undefined for providers that don't report it. Callers must not infer a
+  // failure from the text alone (see isTransientApiError).
+  | { type: 'result'; text: string | null; isError?: boolean }
   | { type: 'error'; message: string; retryable: boolean; classification?: string }
   | { type: 'progress'; message: string }
   | { type: 'status_msg'; text: string; level: 'info' | 'warning' | 'error'; kind?: string }

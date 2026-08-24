@@ -127,7 +127,18 @@ export function translateSdkMessage(message: unknown): ProviderEvent[] {
 
   if (m.type === 'result') {
     const text = 'result' in (message as object) ? (message as { result?: string }).result ?? null : null;
-    return [{ type: 'result', text }];
+    // The SDK reports the turn's verdict on the result message itself
+    // (`is_error`, plus the non-success subtypes error_max_turns /
+    // error_during_execution). Pass it through so downstream code never has to
+    // guess "is this text an error?" from the text's own shape.
+    const raw = message as { is_error?: boolean; subtype?: string };
+    const isError =
+      typeof raw.is_error === 'boolean'
+        ? raw.is_error
+        : typeof raw.subtype === 'string'
+          ? raw.subtype !== 'success'
+          : undefined;
+    return [{ type: 'result', text, isError }];
   }
 
   if (m.type === 'system' && m.subtype === 'api_retry') {

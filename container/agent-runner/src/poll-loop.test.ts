@@ -12,6 +12,7 @@ import {
   dispatchSystemReplies,
   partitionMessagesBySource,
   isAuthError,
+  isTransientApiError,
   isWorkoutEventRow,
   isUnclaimedQuestionResponse,
   serveImageRequests,
@@ -1806,5 +1807,183 @@ describe('a2a hop anchor (in_reply_to on agent destinations)', () => {
 
     expect(lastOut().in_reply_to).toBe('ch-1');
     expect(lastOut().thread_id).toBe('thread-9');
+  });
+});
+
+/**
+ * The predicate runs over the turn's RESULT TEXT, not only over thrown errors —
+ * so a number in the agent's own prose must never be read as a status code.
+ * Incident 2026-08-24: Scrooge answered "Доход: **7 500 GBP/мес**", `\b50[0-9]\b`
+ * matched the "500" inside "7 500", the whole turn was discarded as a transient
+ * upstream failure, and the reply never reached the user.
+ */
+describe('isTransientApiError', () => {
+  it('does not read money in an answer as a 5xx/429', () => {
+    expect(isTransientApiError('Доход: **7 500 GBP/мес** (~$10 000)')).toBe(false);
+    expect(isTransientApiError('Остаток 502 GEL на счету')).toBe(false);
+    expect(isTransientApiError('Отложено 429 USD')).toBe(false);
+    expect(isTransientApiError('Порог 500 000 GEL не достигнут')).toBe(false);
+  });
+
+  it('still catches the upstream failures it exists for', () => {
+    expect(isTransientApiError('API Error: 500 {"type":"api_error"}')).toBe(true);
+    expect(isTransientApiError('Error: 529 {"type":"overloaded_error"}')).toBe(true);
+    expect(isTransientApiError('Request failed with status code 503')).toBe(true);
+    expect(isTransientApiError('429 Too Many Requests')).toBe(true);
+    expect(isTransientApiError('rate_limit_error')).toBe(true);
+    expect(isTransientApiError('Overloaded')).toBe(true);
+  });
+});
+
+describe('processQuery — a real answer is never mistaken for an upstream failure', () => {
+  const routing: RoutingContext = { platformId: 'tg-1', channelType: 'telegram', threadId: null, inReplyTo: null };
+
+  function seedDest(): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES ('family', 'family', 'channel', 'telegram', 'tg-1', NULL)`,
+      )
+      .run();
+  }
+
+  function fakeQuery(events: ProviderEvent[]): AgentQuery {
+    return {
+      push: () => {},
+      end: () => {},
+      abort: () => {},
+      events: {
+        async *[Symbol.asyncIterator]() {
+          for (const e of events) yield e;
+        },
+      },
+    };
+  }
+
+  const outRows = () =>
+    getOutboundDb().prepare('SELECT content FROM messages_out ORDER BY seq').all() as Array<{ content: string }>;
+
+  function ackStatus(id: string): string | undefined {
+    return (
+      getOutboundDb().prepare('SELECT status FROM processing_ack WHERE message_id = ?').get(id) as
+        | { status: string }
+        | undefined
+    )?.status;
+  }
+
+  it('delivers a gated answer whose figures look like status codes', async () => {
+    // Gate ON is the incident's configuration: blocks are held back for the
+    // gate verdict, so `getUserFacingDispatchCount()` is 0 at the result event
+    // and cannot act as the guard it was written to be.
+    const { markProcessing } = await import('./db/messages-in.js');
+    const { extractDataNumbers } = await import('./verification/numbers.js');
+    seedDest();
+    markProcessing(['m1']);
+    const answer = '<message to="family">Доход: 7 500 GBP/мес, аренда 502 GEL</message>';
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: answer },
+      { type: 'result', text: answer },
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock', true, extractDataNumbers(answer), 1, []);
+
+    expect(result.transientError).toBeFalsy();
+    expect(outRows()).toHaveLength(1);
+    expect(ackStatus('m1')).toBe('completed');
+  });
+
+  it('still retries when the provider flags the result as an error', async () => {
+    const { markProcessing } = await import('./db/messages-in.js');
+    seedDest();
+    markProcessing(['m1']);
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'result', text: 'API Error: 503 Service Unavailable', isError: true },
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock');
+
+    expect(result.transientError).toBe(true);
+    expect(ackStatus('m1')).toBe('processing');
+  });
+});
+
+/**
+ * A message that arrives mid-turn is pushed into the running query. Acking it
+ * at PUSH time (the old behaviour) declares it answered before the answer
+ * exists: if the turn then dies, the host sees nothing pending, never re-wakes,
+ * and the user gets silence. The follow-up must ride the turn's own ack.
+ */
+describe('follow-ups are acked with the turn, not on push', () => {
+  const routing: RoutingContext = { platformId: 'tg-1', channelType: 'telegram', threadId: null, inReplyTo: null };
+
+  function seedDest(): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES ('family', 'family', 'channel', 'telegram', 'tg-1', NULL)`,
+      )
+      .run();
+  }
+
+  function ackStatus(id: string): string | undefined {
+    return (
+      getOutboundDb().prepare('SELECT status FROM processing_ack WHERE message_id = ?').get(id) as
+        | { status: string }
+        | undefined
+    )?.status;
+  }
+
+  // Holds the stream open long enough for the 500ms follow-up poll to fire.
+  function slowQuery(head: ProviderEvent, tail: ProviderEvent[]): AgentQuery {
+    return {
+      push: () => {},
+      end: () => {},
+      abort: () => {},
+      events: {
+        async *[Symbol.asyncIterator]() {
+          yield head;
+          await new Promise((r) => setTimeout(r, 1200));
+          for (const e of tail) yield e;
+        },
+      },
+    };
+  }
+
+  it('leaves a mid-turn follow-up un-acked when the turn dies before answering it', async () => {
+    const { markProcessing } = await import('./db/messages-in.js');
+    seedDest();
+    markProcessing(['m1']);
+    insertMessage('f1', 'chat', { text: 'а доход мой ты знаешь' });
+
+    const query = slowQuery({ type: 'init', continuation: 'c1' }, [
+      { type: 'result', text: 'API Error: 529 overloaded' },
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock');
+
+    expect(result.transientError).toBe(true);
+    expect(ackStatus('m1')).toBe('processing');
+    expect(ackStatus('f1')).toBe('processing');
+  });
+
+  it('completes a mid-turn follow-up once the turn delivers', async () => {
+    const { markProcessing } = await import('./db/messages-in.js');
+    seedDest();
+    markProcessing(['m1']);
+    insertMessage('f1', 'chat', { text: 'ещё вопрос' });
+
+    const answer = '<message to="family">Отвечаю на оба</message>';
+    const query = slowQuery({ type: 'init', continuation: 'c1' }, [
+      { type: 'assistant_text', text: answer },
+      { type: 'result', text: answer },
+    ]);
+
+    const result = await processQuery(query, routing, ['m1'], 'mock');
+
+    expect(result.transientError).toBeFalsy();
+    expect(ackStatus('m1')).toBe('completed');
+    expect(ackStatus('f1')).toBe('completed');
   });
 });

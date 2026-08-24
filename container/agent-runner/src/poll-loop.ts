@@ -649,7 +649,7 @@ interface QueryResult {
 export async function processQuery(
   query: AgentQuery,
   routing: RoutingContext,
-  initialBatchIds: string[],
+  batchIds: string[],
   providerName: string,
   gateOn = false,
   grounding: Set<string> = new Set(),
@@ -778,7 +778,13 @@ export async function processQuery(
         if (gateOn) {
           for (const n of extractDataNumbers(prompt)) grounding.add(n);
         }
-        markCompleted(keptIds);
+        // Join the turn's batch instead of acking here. Acking on PUSH declared
+        // the message answered before the answer existed: when the turn then
+        // died (transient error, delivery failure, container kill) the host saw
+        // nothing pending, never re-woke, and the user got silence. Riding
+        // `batchIds` means these rows complete at the same delivery sites as the
+        // initial batch — and stay 'processing' for host retry when it dies.
+        batchIds.push(...keptIds);
       } catch (err) {
         // Without this catch the rejection escapes the void IIFE and Node
         // terminates the container on unhandled-rejection. The initial-batch
@@ -919,7 +925,7 @@ export async function processQuery(
           flushOpenBlock(remainder, routing, dispatchedKeys);
           streamBuffer = '';
         }
-        markCompleted(initialBatchIds);
+        markCompleted(batchIds);
         // Only surface the "[stream stalled]" error if the user got NOTHING
         // this turn. If real content already went out (streamed <message>
         // blocks, send_message / send_photo) — e.g. a forecast photo
@@ -1033,7 +1039,20 @@ export async function processQuery(
         // finishing a task that did no work (e.g. a daily publish that never
         // wrote its file). Gated on zero user-facing output this turn so a real
         // answer with an unlucky trailing blip isn't re-run wholesale.
-        if (event.text && isTransientApiError(event.text) && getUserFacingDispatchCount() === 0) {
+        // Three independent guards, because the dispatch-count one below is
+        // blind under the factuality gate: gated blocks are held for the gate
+        // verdict, so a real answer ALWAYS reads as "nothing delivered" here.
+        //   - `isError !== false`: the provider says whether this result is an
+        //     error surface at all (undefined for providers that don't report it).
+        //   - no `<message` block: text the agent wrapped for a human is an
+        //     answer, not an API failure.
+        if (
+          event.text &&
+          event.isError !== false &&
+          !/<message\b/i.test(event.text) &&
+          isTransientApiError(event.text) &&
+          getUserFacingDispatchCount() === 0
+        ) {
           log(`Transient API error in result — leaving batch for host retry: ${event.text.slice(0, 120)}`);
           transientError = true;
           resultReceived = true;
@@ -1075,7 +1094,7 @@ export async function processQuery(
           // reply is dropped (the scrooge field loss, sess-…-lnmvwi). Under the
           // gate, completion rides with the actual dispatch in the
           // `!proseBounced && !l3Bounced` block, guarded on real delivery.
-          if (!gateOn) markCompleted(initialBatchIds);
+          if (!gateOn) markCompleted(batchIds);
           // Stream buffer may still hold tail scratchpad. Reset it — the
           // result.text below covers the full turn and is the canonical
           // scratchpad source.
@@ -1199,7 +1218,7 @@ export async function processQuery(
                 // no <message>) delivered nothing and re-queries via the no-wrap
                 // nudge — completing it here would strand the same silent loss.
                 // A clean return still completes via the outer markCompleted.
-                if (getUserFacingDispatchCount() > 0) markCompleted(initialBatchIds);
+                if (getUserFacingDispatchCount() > 0) markCompleted(batchIds);
               }
             }
           } else {
@@ -1276,7 +1295,7 @@ export async function processQuery(
           }
           // Salvage delivered, or the turn legitimately produced nothing (an
           // a2a ack, a no-reply-needed message) — either way the turn is done.
-          markCompleted(initialBatchIds);
+          markCompleted(batchIds);
           if (turnRejects.length > 0) {
             // Dropped rather than nudged, deliberately: pushing a nudge would
             // re-arm the watchdog against a query that may already be dead,
@@ -1804,7 +1823,17 @@ export function isAuthError(message: string): boolean {
  * the task as if it succeeded? The Claude SDK retries these internally but
  * gives up after its own budget and surfaces the error as the turn's result;
  * leaving the message un-acked lets the host re-run it once the overload clears.
+ *
+ * This predicate is also run over the turn's RESULT TEXT — i.e. over the
+ * agent's own prose — so a bare number can never be the evidence. It was:
+ * `\b50[0-9]\b` matched the "500" inside "Доход: 7 500 GBP/мес" and threw a
+ * perfectly good answer away as an upstream failure. A status code now only
+ * counts next to error-shaped context.
  */
 export function isTransientApiError(message: string): boolean {
-  return /\b429\b|\b50[0-9]\b|\b529\b|overloaded|rate[_\s-]?limit|too many requests|api error:\s*5/i.test(message);
+  // Named upstream failures — unambiguous wherever they appear.
+  if (/overloaded|rate[_\s-]?limit|too many requests/i.test(message)) return true;
+  return /\b(?:api|https?|status|code|error|failed)\b[^\n]{0,24}?\b(?:429|5\d\d)\b|\b(?:429|5\d\d)\b[^\n]{0,24}?\b(?:error|unavailable|timeout|gateway|server)\b/i.test(
+    message,
+  );
 }
