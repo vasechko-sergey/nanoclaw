@@ -153,6 +153,20 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
   };
   const matched = Object.values(fires).filter(Boolean).length;
 
+  // No verdict while the heaviest signal is still missing. Resting heart rate
+  // carries 35% of the pool's weight and is the last reading of the day to
+  // settle — Apple recomputes it as the day accumulates — so an early upload
+  // hits this rule twice over: while rhr is absent the bar scales down by its
+  // whole weight, and once it appears the provisional, sleep-heavy value
+  // counts as evidence. On 2026-08-28 the four sleep signals totalled 2.70:
+  // silent against the full 3.00 bar, firing against the 1.94 bar left without
+  // rhr. That alarm reached the person, and by mid-afternoon the same rule on
+  // the same day was quiet. A day with no resting heart rate at all is a day
+  // this rule cannot judge, not a quiet one — say nothing rather than judge
+  // blind. A measured fever is exempt: it is a reading, not a proxy, and must
+  // not wait on a watch that may never report.
+  if (rhrDelta === null && !fires.fever) return null;
+
   // The fire decision is the weighted score, not the vote count. `matched` and
   // `fires` survive as the human-readable evidence list — Greg quotes them.
   // Exceedance is 1.0 at threshold, clipped at 3 so one extreme reading cannot
@@ -231,7 +245,7 @@ function readPriorSickDayCheck(
   agentGroupId: string,
   sessionId: string,
   date: string,
-): { matched: number; score: number | null; fires: Record<string, boolean> } | null {
+): { matched: number; score: number | null; fires: Record<string, boolean>; retracted: boolean } | null {
   const rows = readSessionMessagesByPlatform(agentGroupId, sessionId, 'host-sick-day');
   for (let i = rows.length - 1; i >= 0; i--) {
     try {
@@ -242,6 +256,7 @@ function readPriorSickDayCheck(
           // Rows written before the weighted score shipped have no `score`.
           score: typeof c.detection.score === 'number' ? c.detection.score : null,
           fires: c.detection.fires ?? {},
+          retracted: c.retracted === true,
         };
       }
     } catch {
@@ -258,10 +273,26 @@ function readPriorSickDayCheck(
  */
 const SCORE_WORSENED_BY = 1.0;
 
+/** One `sick_day_check` row into the session's inbound DB. */
+function writeCheck(agentGroupId: string, sessionId: string, payload: unknown): void {
+  writeSessionMessage(agentGroupId, sessionId, {
+    id: `sickday-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind: 'chat',
+    timestamp: new Date().toISOString(),
+    platformId: 'host-sick-day',
+    channelType: 'system',
+    threadId: null,
+    content: JSON.stringify(payload),
+    sourceSessionId: null,
+    a2aHops: 0,
+  });
+}
+
 export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayCheckArgs): Promise<void> {
   if (!agentGroupId) return; // not configured on this install
   const detection = detect(allRows);
-  if (!detection) return;
+  const today = allRows.length ? allRows[allRows.length - 1] : null;
+  if (!detection && !today) return;
 
   // Find an active session for agentGroupId that belongs to this person.
   // Mirror the owner-scoping in agent-route.ts resolveTargetSession.
@@ -270,6 +301,9 @@ export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayC
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 
   if (!fresh) {
+    // A quiet day stops here: with no session there is nothing to retract into,
+    // and no reason to spin a container up in order to say nothing.
+    if (!detection) return;
     // No active session for this person — create a fresh owner-stamped one.
     // Proactive sick-day must fire even when the health agent is idle.
     // 'per-thread' + null messagingGroupId skips all reuse branches and stamps owner_key.
@@ -280,12 +314,40 @@ export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayC
     fresh = resolveSession(agentGroupId, null, null, 'per-thread', ownerKey).session;
   }
 
+  const date = detection ? detection.date : today!.date;
+  const prior = readPriorSickDayCheck(agentGroupId, fresh.id, date);
+
+  if (!detection) {
+    // The day filled in and the rule went quiet. An alarm raised on the
+    // morning's provisional numbers has to be taken back — until 2026-08-28
+    // nothing ever did, so a verdict the rule itself no longer held stayed on
+    // the card, and in the person's head, for the rest of the day. Only the
+    // first silence retracts; after that the day is simply quiet.
+    if (!prior || prior.retracted) return;
+    writeCheck(agentGroupId, fresh.id, {
+      kind: 'sick_day_check',
+      retracted: true,
+      // Same shape the alarm used, so `readPriorSickDayCheck` finds this row by
+      // date on the next upload and does not retract the same day twice.
+      detection: { date, matched: 0, score: null, score_threshold: null, fires: {}, unavailable: [] },
+      prior: { matched: prior.matched, score: prior.score },
+    });
+    log.info('sick-day verdict retracted', {
+      agentGroupId,
+      sessionId: fresh.id,
+      date,
+      priorScore: prior.score,
+    });
+    await wakeContainer(fresh);
+    return;
+  }
+
   // The host fires on every health upload; iOS uploads several times a day.
   // Without a guard that is one container wake and one full LLM turn per upload
   // for the same detection — five on 2026-08-12. Re-fire only when the picture
   // actually worsens, so a deteriorating day still reaches Greg immediately.
-  const prior = readPriorSickDayCheck(agentGroupId, fresh.id, detection.date);
-  if (prior) {
+  // A retracted day is exempt: the picture coming back is news, not a repeat.
+  if (prior && !prior.retracted) {
     const keys = Object.keys(detection.fires) as (keyof typeof detection.fires)[];
     const newSignal = keys.some((k) => detection.fires[k] && !prior.fires[k]);
     // `matched` is no longer the fire decision — the weighted score is — so a
@@ -305,28 +367,17 @@ export async function sickDayCheck({ agentGroupId, ownerKey, allRows }: SickDayC
     }
   }
 
-  const msgId = `sickday-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  writeSessionMessage(agentGroupId, fresh.id, {
-    id: msgId,
-    kind: 'chat',
-    timestamp: new Date().toISOString(),
-    platformId: 'host-sick-day',
-    channelType: 'system',
-    threadId: null,
-    content: JSON.stringify({
-      kind: 'sick_day_check',
-      detection: {
-        date: detection.date,
-        matched: detection.matched,
-        score: detection.score,
-        score_threshold: detection.score_threshold,
-        fires: detection.fires,
-        unavailable: detection.unavailable,
-      },
-      signal: detection.signal,
-    }),
-    sourceSessionId: null,
-    a2aHops: 0,
+  writeCheck(agentGroupId, fresh.id, {
+    kind: 'sick_day_check',
+    detection: {
+      date: detection.date,
+      matched: detection.matched,
+      score: detection.score,
+      score_threshold: detection.score_threshold,
+      fires: detection.fires,
+      unavailable: detection.unavailable,
+    },
+    signal: detection.signal,
   });
 
   log.info('sick-day trigger fired', { agentGroupId, sessionId: fresh.id, detection });

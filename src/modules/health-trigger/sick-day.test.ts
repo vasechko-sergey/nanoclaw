@@ -255,6 +255,66 @@ describe('sickDayCheck', () => {
     // Score moves 3.33 → 3.49, under one median-weight signal's worth.
     expect(writeSessionMessage).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------------------------
+  // 2026-08-28: the morning's partial numbers fired, the finished day did not,
+  // and nothing ever took the verdict back — it sat on the card until someone
+  // asked about it by hand.
+  // -------------------------------------------------------------------------
+
+  function priorAlarm(date: string, opts: { retracted?: boolean } = {}) {
+    return [
+      {
+        id: 'sickday-prior',
+        content: JSON.stringify({
+          kind: 'sick_day_check',
+          ...(opts.retracted ? { retracted: true } : {}),
+          detection: { date, matched: 2, score: 3.75, fires: { hrv: true, awake: true } },
+          signal: {},
+        }),
+      },
+    ];
+  }
+
+  it('retracts the verdict when the finished day falls back under the bar', async () => {
+    const rows = fourteenDays();
+    readSessionMessagesByPlatform.mockReturnValue(priorAlarm(rows[13].date));
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    expect(writeSessionMessage).toHaveBeenCalledOnce();
+    const content = JSON.parse((writeSessionMessage.mock.calls[0] as [string, string, { content: string }])[2].content);
+    expect(content.kind).toBe('sick_day_check');
+    expect(content.retracted).toBe(true);
+    expect(content.detection.date).toBe(rows[13].date);
+    expect(content.prior).toEqual({ matched: 2, score: 3.75 });
+    expect(wakeContainer).toHaveBeenCalledOnce();
+  });
+
+  it('retracts a day once, not on every later upload', async () => {
+    const rows = fourteenDays();
+    readSessionMessagesByPlatform.mockReturnValue(priorAlarm(rows[13].date, { retracted: true }));
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    expect(writeSessionMessage).not.toHaveBeenCalled();
+    expect(wakeContainer).not.toHaveBeenCalled();
+  });
+
+  it('fires again after a retraction when the picture comes back', async () => {
+    const rows = fourteenDays();
+    rows[13] = stableDay(rows[13].date, { restingHeartRate: 66, wristTempDeviation: 0.5 });
+    readSessionMessagesByPlatform.mockReturnValue(priorAlarm(rows[13].date, { retracted: true }));
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: rows });
+    expect(writeSessionMessage).toHaveBeenCalledOnce();
+    const content = JSON.parse((writeSessionMessage.mock.calls[0] as [string, string, { content: string }])[2].content);
+    expect(content.retracted).toBeUndefined();
+    expect(content.detection.matched).toBe(2);
+  });
+
+  it('a quiet day with no session of its own creates nothing', async () => {
+    getSessionsByAgentGroup.mockReturnValue([]);
+    readSessionMessagesByPlatform.mockReturnValue([]);
+    await sickDayCheck({ agentGroupId: 'greg', ownerKey: 'owner', allRows: fourteenDays() });
+    expect(resolveSession).not.toHaveBeenCalled();
+    expect(writeSessionMessage).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -357,6 +417,57 @@ describe('detect — weighted score', () => {
     expect(d).not.toBeNull();
     expect(d!.unavailable).toEqual(['temp']);
     expect(d!.score_threshold).toBeCloseTo((3.0 * (5.0 - 0.65)) / 5.0, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The 2026-08-28 false alarm, kept as a fixture: a real morning where the four
+// sleep signals totalled 2.57 and resting heart rate had not arrived yet. The
+// scaled bar was 1.94 without it and 3.00 with it — the same evidence, opposite
+// verdicts — so the rule fired on exactly the reading it was missing.
+// ---------------------------------------------------------------------------
+describe('detect — no verdict without resting heart rate', () => {
+  // hrvMorning −27%, awake 3.2× baseline, respiratory rate at 39% of its bar,
+  // wrist temperature slightly BELOW baseline. Nothing here is a fever.
+  const restless = {
+    date: '2026-07-15',
+    hrv: 46,
+    hrvMorning: 34,
+    wristTempDeviation: 35.0,
+    respiratoryRate: 16.25,
+    awakeMin: 57,
+  };
+
+  it('stays silent while resting heart rate is missing', () => {
+    const rows = quiet(14);
+    rows.push({ ...restless });
+    expect(detect(rows)).toBeNull();
+  });
+
+  it('is silent on the same day once resting heart rate arrives at baseline', () => {
+    // The point of the gate: this day was never a sick day. Waiting for the
+    // signal does not defer the alarm, it dissolves it.
+    const rows = quiet(14);
+    rows.push({ ...restless, restingHeartRate: 61 });
+    const d = detect(rows);
+    expect(d).toBeNull();
+  });
+
+  it('still fires when resting heart rate arrives elevated', () => {
+    const rows = quiet(14);
+    rows.push({ ...restless, restingHeartRate: 66 });
+    const d = detect(rows);
+    expect(d).not.toBeNull();
+    expect(d!.fires.rhr).toBe(true);
+  });
+
+  it('a measured fever is not silenced by a missing resting heart rate', () => {
+    const rows = quiet(14);
+    rows.push({ ...restless, bodyTemperature: 38.1 });
+    const d = detect(rows);
+    expect(d).not.toBeNull();
+    expect(d!.fires.fever).toBe(true);
+    expect(d!.unavailable).toContain('rhr');
   });
 });
 
