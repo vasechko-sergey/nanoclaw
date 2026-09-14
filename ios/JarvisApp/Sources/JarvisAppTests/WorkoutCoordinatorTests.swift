@@ -285,6 +285,60 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.plan.exercises[2].exerciseSlug, "ex-2")
     }
 
+    /// A swap the user can SEE: the card must show the new exercise's name and
+    /// resolve its demo image. Before this, applySwap changed only the slug —
+    /// `nameRu` was copied from the replaced exercise (card kept the old name)
+    /// and the manifest was passed through untouched, so `resolveImageURL` found
+    /// no entry for the new slug and rendered a placeholder.
+    func test_applySwap_updatesNameAndImageManifest() throws {
+        let queue = try makeQueue()
+        var plan = makePlan(exerciseCount: 2)
+        plan = WorkoutPlan(
+            workoutId: plan.workoutId, dayName: plan.dayName, week: plan.week,
+            intensityLabel: plan.intensityLabel,
+            exercises: [
+                ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                             targetRir: 2, restSec: 120, nameRu: "Присед"),
+                ExercisePlan(exerciseSlug: "ex-1", targetSets: 4, targetReps: "8-10",
+                             targetRir: 2, restSec: 120, nameRu: "Жим лёжа"),
+            ],
+            imageManifest: [
+                .init(slug: "ex-0", sha256: "sha-0"),
+                .init(slug: "ex-1", sha256: "sha-1"),
+            ]
+        )
+        let coord = WorkoutCoordinator(plan: plan, queue: queue)
+        coord.applySwap(originalSlug: "ex-1", newSlug: "ex-1-alt",
+                        newName: "Жим гантелей", newSha: "sha-alt")
+
+        XCTAssertEqual(coord.plan.exercises[1].nameRu, "Жим гантелей")
+        XCTAssertEqual(coord.plan.exercises[1].displayName, "Жим гантелей")
+        // Replaced slug's manifest entry is gone; the new one is present.
+        XCTAssertNil(coord.plan.imageManifest.first(where: { $0.slug == "ex-1" }))
+        XCTAssertEqual(coord.plan.imageManifest.first(where: { $0.slug == "ex-1-alt" })?.sha256, "sha-alt")
+        // Untouched exercise keeps both name and image.
+        XCTAssertEqual(coord.plan.exercises[0].nameRu, "Присед")
+        XCTAssertEqual(coord.plan.imageManifest.first(where: { $0.slug == "ex-0" })?.sha256, "sha-0")
+    }
+
+    /// Older server (no name/sha): the stale name must be DROPPED, not kept —
+    /// `displayName` then prettifies the new slug, which at least names the
+    /// right exercise instead of confidently showing the wrong one.
+    func test_applySwap_withoutServerName_dropsStaleName() throws {
+        let queue = try makeQueue()
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "Верх A", week: 2, intensityLabel: "тяжёлая",
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                                     targetRir: 2, restSec: 120, nameRu: "Жим лёжа")],
+            imageManifest: [.init(slug: "ex-0", sha256: "sha-0")]
+        )
+        let coord = WorkoutCoordinator(plan: plan, queue: queue)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        XCTAssertNil(coord.plan.exercises[0].nameRu)
+        XCTAssertEqual(coord.plan.exercises[0].displayName, "Ex 0 alt")
+        XCTAssertTrue(coord.plan.imageManifest.isEmpty)
+    }
+
     /// applySwap preserves target sets / reps / rest / logged sets.
     func test_applySwap_preservesFieldsAndLoggedSets() throws {
         let queue = try makeQueue()

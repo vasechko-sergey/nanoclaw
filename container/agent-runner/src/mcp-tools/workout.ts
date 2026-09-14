@@ -255,6 +255,11 @@ export const workoutSwap: McpToolDefinition = {
             properties: {
               slug: { type: 'string' },
               reason: { type: 'string' },
+              name_ru: {
+                type: 'string',
+                description:
+                  "Russian display name (exercises/<slug>.json name_ru). Without it iOS shows the transliterated slug in the sheet AND keeps the OLD name after the swap.",
+              },
             },
             required: ['slug', 'reason'],
           },
@@ -275,14 +280,31 @@ export const workoutSwap: McpToolDefinition = {
     // envelope on decode (required original_slug/alternatives missing), so the
     // swap sheet never received its options.
     const options = Array.isArray(args.options)
-      ? (args.options as Array<{ slug: string; reason: string }>)
+      ? (args.options as Array<{ slug: string; reason: string; name_ru?: string }>)
       : [];
+    // Carry the image sha alongside each alternative so iOS can add a manifest
+    // entry when the user accepts one. Derived here from the same on-disk assets
+    // serveImageRequests serves, so the sha matches the cached blob and the
+    // runner resolves a real image instead of a placeholder. Payne never has to
+    // compute it.
+    const exercisesDir = process.env.WORKOUT_EXERCISES_DIR || DEFAULT_EXERCISES_DIR;
+    const shaBySlug = new Map(
+      buildImageManifest(
+        options.map((o) => o.slug),
+        exercisesDir,
+      ).map((e) => [e.slug, e.sha256]),
+    );
     writeWorkoutOut({
       type: 'exercise_swap_options',
       payload: {
         workout_id: args.workout_id,
         original_slug: args.from_exercise_slug,
-        alternatives: options.map((o) => ({ slug: o.slug, why: o.reason })),
+        alternatives: options.map((o) => ({
+          slug: o.slug,
+          why: o.reason,
+          ...(o.name_ru ? { name_ru: o.name_ru } : {}),
+          ...(shaBySlug.has(o.slug) ? { sha256: shaBySlug.get(o.slug) } : {}),
+        })),
       },
     });
     return ok(`swap options sent (${options.length})`);

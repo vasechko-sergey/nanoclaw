@@ -243,7 +243,14 @@ final class WorkoutCoordinator: ObservableObject {
     /// other fields so weights / target reps / logged sets survive the swap.
     /// No-op if the workout is finished or the slug isn't in the plan (e.g.
     /// swap arrived for an already-swapped exercise).
-    func applySwap(originalSlug: String, newSlug: String) {
+    /// `newName` / `newSha` come from the chosen swap alternative. They are what
+    /// make the swap VISIBLE: without a name the card keeps showing the replaced
+    /// exercise's `nameRu`, and without a manifest entry `resolveImageURL` finds
+    /// no entry for the new slug and renders a placeholder instead of the demo
+    /// (the bytes are already cached — the swap sheet fetched them). Both nil on
+    /// the accepted-own-proposal path and on older server builds, in which case
+    /// the old fallback behaviour stands.
+    func applySwap(originalSlug: String, newSlug: String, newName: String? = nil, newSha: String? = nil) {
         guard !isFinished else { return }
         guard let idx = plan.exercises.firstIndex(where: { $0.exerciseSlug == originalSlug }) else { return }
         guard originalSlug != newSlug else { return }
@@ -255,19 +262,28 @@ final class WorkoutCoordinator: ObservableObject {
             targetRir: old.targetRir,
             restSec: old.restSec,
             notes: old.notes,
-            nameRu: old.nameRu,
+            // No name from the server → drop the stale one rather than keep it;
+            // `displayName` then prettifies the new slug, which at least names
+            // the RIGHT exercise.
+            nameRu: newName ?? nil,
             durationSec: old.durationSec,
             weightKgTarget: old.weightKgTarget
         )
         var newExercises = plan.exercises
         newExercises[idx] = replaced
+        // Swap the manifest entry too: drop the replaced slug's (it's no longer
+        // in the plan) and add the new one's when we know its sha.
+        var newManifest = plan.imageManifest.filter { $0.slug != originalSlug && $0.slug != newSlug }
+        if let sha = newSha, !sha.isEmpty {
+            newManifest.append(WorkoutPlan.ImageManifestEntry(slug: newSlug, sha256: sha))
+        }
         plan = WorkoutPlan(
             workoutId: plan.workoutId,
             dayName: plan.dayName,
             week: plan.week,
             intensityLabel: plan.intensityLabel,
             exercises: newExercises,
-            imageManifest: plan.imageManifest
+            imageManifest: newManifest
         )
         let oldLogged = logged[idx]
         logged[idx] = LoggedExercise(exerciseSlug: newSlug, sets: oldLogged.sets, comment: oldLogged.comment)

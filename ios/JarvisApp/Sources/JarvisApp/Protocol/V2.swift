@@ -447,7 +447,19 @@ enum V2 {
 
     struct ExerciseSwapAccepted: Codable, Equatable { let slug: String }
     struct ExerciseSwapRejected: Codable, Equatable { let slug: String; let reason: String }
-    struct ExerciseSwapAlternative: Codable, Equatable { let slug: String; let why: String }
+    /// `name_ru` / `sha256` are optional for back-compat with Payne builds that
+    /// predate them. Without `name_ru` the sheet and the post-swap runner fall
+    /// back to the transliterated slug; without `sha256` the swapped-in exercise
+    /// gets no image-manifest entry and the runner shows a placeholder.
+    struct ExerciseSwapAlternative: Codable, Equatable {
+        let slug: String
+        let why: String
+        var name_ru: String?
+        var sha256: String?
+        init(slug: String, why: String, name_ru: String? = nil, sha256: String? = nil) {
+            self.slug = slug; self.why = why; self.name_ru = name_ru; self.sha256 = sha256
+        }
+    }
 
     struct ExerciseSwapOptions: Codable, Equatable {
         let workout_id: String

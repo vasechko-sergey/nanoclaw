@@ -325,6 +325,55 @@ describe('workout MCP tools', () => {
     expect(body.payload.options).toBeUndefined();
   });
 
+  // Regression: the payload used to carry only {slug, why}, so iOS had nothing
+  // to show but the transliterated slug ("Zhim ganteley sidya") in the sheet,
+  // AND `applySwap` kept the replaced exercise's name + left the image manifest
+  // without an entry for the new slug — the swapped-in exercise rendered under
+  // the OLD name with a placeholder image. name_ru comes from Payne; sha256 is
+  // derived here from the same on-disk assets serveImageRequests serves.
+  describe('swap alternatives carry name_ru + derived sha256', () => {
+    let exDir: string;
+    beforeEach(() => {
+      exDir = mkdtempSync(join(tmpdir(), 'workout-swap-'));
+      process.env.WORKOUT_EXERCISES_DIR = exDir;
+    });
+    afterEach(() => {
+      delete process.env.WORKOUT_EXERCISES_DIR;
+      rmSync(exDir, { recursive: true, force: true });
+    });
+
+    it('passes name_ru through and derives sha256 for slugs that have an image', async () => {
+      const bytes = Buffer.from('LEGPRESSGIF');
+      writeFileSync(join(exDir, 'leg_press.gif'), bytes);
+      const expectedSha = createHash('sha256').update(bytes).digest('hex');
+      await workoutSwap.handler({
+        workout_id: 'w1',
+        from_exercise_slug: 'squat',
+        options: [
+          { slug: 'leg_press', reason: 'knee', name_ru: 'Жим ногами' },
+          { slug: 'no_image_here', reason: 'fallback', name_ru: 'Без картинки' },
+        ],
+      });
+      const body = JSON.parse(getUndeliveredMessages()[0].content);
+      expect(body.payload.alternatives).toEqual([
+        { slug: 'leg_press', why: 'knee', name_ru: 'Жим ногами', sha256: expectedSha },
+        // No asset on disk → no sha key at all, rather than an empty string that
+        // iOS would turn into a manifest entry pointing at nothing.
+        { slug: 'no_image_here', why: 'fallback', name_ru: 'Без картинки' },
+      ]);
+    });
+
+    it('omits name_ru when Payne does not supply it (older-skill back-compat)', async () => {
+      await workoutSwap.handler({
+        workout_id: 'w1',
+        from_exercise_slug: 'squat',
+        options: [{ slug: 'leg_press', reason: 'knee' }],
+      });
+      const body = JSON.parse(getUndeliveredMessages()[0].content);
+      expect(body.payload.alternatives).toEqual([{ slug: 'leg_press', why: 'knee' }]);
+    });
+  });
+
   it('refuses when AGENT_GROUP_ID is not payne', async () => {
     process.env.AGENT_GROUP_ID = 'jarvis';
     const res = await workoutCoach.handler({ workout_id: 'w1', text: 'x' });

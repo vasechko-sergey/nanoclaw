@@ -560,7 +560,9 @@ final class AppCoordinator {
             let resp = SwapResponse(
                 accepted: s.accepted.map { .init(slug: $0.slug) },
                 rejected: s.rejected.map { .init(slug: $0.slug, reason: $0.reason) },
-                alternatives: s.alternatives.map { .init(slug: $0.slug, why: $0.why) }
+                alternatives: s.alternatives.map {
+                    .init(slug: $0.slug, why: $0.why, nameRu: $0.name_ru, sha256: $0.sha256)
+                }
             )
             workoutBus.events.send(
                 .swapOptions(resp, originalSlug: s.original_slug, workoutId: s.workout_id)

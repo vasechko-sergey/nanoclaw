@@ -22,7 +22,22 @@ struct SwapResponse: Equatable {
     struct Alternative: Equatable, Identifiable {
         let slug: String
         let why: String
+        /// Russian display name from Payne. nil on older server builds — the
+        /// sheet then falls back to the transliterated slug.
+        var nameRu: String?
+        /// sha256 of this exercise's demo image, so an accepted swap can add an
+        /// image-manifest entry and the runner resolves a real image.
+        var sha256: String?
         var id: String { slug }
+        /// What the user should read — never the raw slug when a name exists.
+        var displayName: String {
+            if let n = nameRu, !n.isEmpty { return n }
+            let p = slug.replacingOccurrences(of: "-", with: " ")
+            return p.prefix(1).uppercased() + p.dropFirst()
+        }
+        init(slug: String, why: String, nameRu: String? = nil, sha256: String? = nil) {
+            self.slug = slug; self.why = why; self.nameRu = nameRu; self.sha256 = sha256
+        }
     }
 }
 
@@ -32,8 +47,12 @@ enum SwapAction {
     case requestSuggestions
     /// User submitted their own choice — parent sends with `proposed: text`.
     case proposeOwn(text: String)
-    /// User confirmed a slug — parent sends `exercise_swap_confirm`.
-    case confirm(newSlug: String, persist: Bool)
+    /// User confirmed a slug — parent sends `exercise_swap_confirm` AND folds the
+    /// swap into the running plan. `nameRu` / `sha256` come from the chosen
+    /// alternative and are what make the fold visible: the new name on the card
+    /// and a manifest entry so the demo image resolves instead of a placeholder.
+    /// Both nil on the accepted-own-proposal path and on older server builds.
+    case confirm(newSlug: String, persist: Bool, nameRu: String?, sha256: String?)
     /// User dismissed.
     case cancel
 }
@@ -158,7 +177,7 @@ struct SwapSheet: View {
         return HStack(spacing: 10) {
             thumb(alt.slug, size: 52)
             VStack(alignment: .leading, spacing: 2) {
-                Text(prettify(alt.slug)).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary)
+                Text(alt.displayName).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary)
                 Text(alt.why).font(.caption).foregroundStyle(.white.opacity(0.5))
             }
             Spacer()
@@ -171,10 +190,13 @@ struct SwapSheet: View {
     }
 
     private func confirmBar(_ slug: String) -> some View {
-        VStack {
+        // The chosen alternative carries the name + image sha. Absent on the
+        // accepted-own-proposal path (server echoes only a slug there).
+        let alt = response?.alternatives.first(where: { $0.slug == slug })
+        return VStack {
             Spacer()
-            Button { confirm(newSlug: slug) } label: {
-                Text("Заменить на «\(prettify(slug))»")
+            Button { confirm(newSlug: slug, alt: alt) } label: {
+                Text("Заменить на «\(alt?.displayName ?? prettify(slug))»")
                     .font(.body.weight(.semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 50)
                     .background(Capsule().fill(Theme.accent))
@@ -210,8 +232,8 @@ struct SwapSheet: View {
         onAction(.proposeOwn(text: text))
     }
 
-    private func confirm(newSlug: String) {
-        onAction(.confirm(newSlug: newSlug, persist: persist))
+    private func confirm(newSlug: String, alt: SwapResponse.Alternative?) {
+        onAction(.confirm(newSlug: newSlug, persist: persist, nameRu: alt?.nameRu, sha256: alt?.sha256))
         dismiss()
     }
 }
