@@ -32,7 +32,10 @@ struct ContextBuilder {
             ctx["location"] = [
                 "lat":  (loc.coordinate.latitude  * 1e4).rounded() / 1e4,
                 "lon":  (loc.coordinate.longitude * 1e4).rounded() / 1e4,
-                "city": location.cityName ?? "",
+                // Key MUST be one WebSocketClientV2.makeInlineContext reads
+                // (`cityName`/`locality`). The old `city` key was silently dropped,
+                // so the inline context's `locality` was always nil on the wire.
+                "cityName": location.cityName ?? "",
             ]
         }
 

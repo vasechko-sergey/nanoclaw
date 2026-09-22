@@ -94,6 +94,31 @@ final class ContextBuilderTests: XCTestCase {
         // No device dict at all is also valid (sim returns -1, network nil, lowPower false).
     }
 
+    func testLocationCarriesCityUnderConsumerKey() {
+        // Regression: ContextBuilder must emit the resolved city under a key that
+        // WebSocketClientV2.makeInlineContext actually reads (`cityName`/`locality`),
+        // NOT the orphan key `city`. With `city`, the inline context's `locality`
+        // is always nil on the wire and the agent never learns the current city —
+        // which froze Jarvis's published location card on a months-old value.
+        let settings = AppSettings()
+        settings.useLocation = true
+        settings.useHealth = false
+        settings.useCalendar = false
+        let loc = LocationManager()
+        loc.lastLocation = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 8.6, longitude: 115.1),
+            altitude: 0, horizontalAccuracy: 10, verticalAccuracy: 10,
+            timestamp: Date()
+        )
+        loc.cityName = "Canggu"
+
+        let ctx = ContextBuilder.build(fields: [], settings: settings,
+                                       location: loc, health: HealthManager(), calendar: CalendarManager())
+        let location = ctx["location"] as? [String: Any]
+        XCTAssertEqual(location?["cityName"] as? String, "Canggu",
+                       "city must ride under `cityName` — a key makeInlineContext reads")
+    }
+
     func testFieldSubsetLocationOnly() {
         let settings = AppSettings()
         settings.useLocation = true
