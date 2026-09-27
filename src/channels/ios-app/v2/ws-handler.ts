@@ -9,8 +9,9 @@
 //     messages whose seq > client's last_seen_inbound_seq).
 //   - Per-inbound dispatch via InboundDispatcher. Translate the returned
 //     DispatchAction into ack:ack or control:pong frames.
-//   - Retry timer: every 1s, resend outbound rows whose age exceeds
-//     ACK_RETRY_MS (5s) — assumes client lost them.
+//   - Retry timer: every 1s, resend outbound rows still unacked ACK_RETRY_MS
+//     (5s) after this connection last finished writing them — assumes the
+//     client lost them.
 //   - App-level keepalive: send control:ping every APP_PING_INTERVAL_MS
 //     (60s). This is the protocol-level ping, distinct from ws low-level
 //     PING frames; the client replies with control:pong { nonce }.
@@ -83,6 +84,8 @@ interface ConnState {
   platform_id: PlatformId;
   retryInterval: NodeJS.Timeout;
   appPingInterval: NodeJS.Timeout;
+  /** seq → when this connection finished writing that row (Infinity while in flight). See sendRow. */
+  lastWrite: Map<number, number>;
 }
 
 export class WsHandler {
@@ -146,7 +149,7 @@ export class WsHandler {
       ts: envelope.ts ?? new Date().toISOString(),
       payload: envelope.payload,
     };
-    this.sendRaw(conn.ws, fullEnvelope);
+    this.sendRow(conn.ws, conn.lastWrite, fullEnvelope);
     log.info('[delivery] push', { to: platform_id, type: envelope.type, id, seq });
   }
 
@@ -340,8 +343,9 @@ export class WsHandler {
     });
 
     // Drain pending queue rows (everything still there post-ackUpTo).
+    const lastWrite = new Map<number, number>();
     for (const row of this.deps.queue.list(pid)) {
-      this.sendRaw(ws, {
+      this.sendRow(ws, lastWrite, {
         v: 2,
         kind: row.kind,
         type: row.type,
@@ -359,17 +363,21 @@ export class WsHandler {
 
     const retryInterval = setInterval(() => this.tickRetry(pid), this.retryTickMs);
     const appPingInterval = setInterval(() => this.sendAppPing(pid), this.appPingMs);
-    this.sockets.set(pid, { ws, platform_id: pid, retryInterval, appPingInterval });
+    this.sockets.set(pid, { ws, platform_id: pid, retryInterval, appPingInterval, lastWrite });
   }
 
   private tickRetry(pid: PlatformId): void {
     if (this.stopped) return;
     const conn = this.sockets.get(pid);
     if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
-    const cutoff = Date.now() - this.retryAgeMs;
-    const rows = this.deps.queue.listOlderThan(pid, cutoff);
+    const now = Date.now();
+    const rows = this.deps.queue.listOlderThan(pid, now - this.retryAgeMs);
     for (const row of rows) {
-      this.sendRaw(conn.ws, {
+      // Age counts from this connection's last write of the row, not from its
+      // created_at — see sendRow.
+      const written = conn.lastWrite.get(row.seq);
+      if (written !== undefined && now - written < this.retryAgeMs) continue;
+      this.sendRow(conn.ws, conn.lastWrite, {
         v: 2,
         kind: row.kind,
         type: row.type,
@@ -403,5 +411,22 @@ export class WsHandler {
   private sendRaw(ws: WebSocket, env: unknown): void {
     if (ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify(env));
+  }
+
+  /**
+   * Write one queued row and record when the write finished. The retry timer
+   * measures a row's age from here, not from its created_at: a drained backlog
+   * is already "old" by created_at, and a multi-MB photo can take longer than
+   * retryAgeMs just to cross a mobile link. Keyed off created_at, the timer
+   * re-sent such a row on every tick, stacking copies of the same bytes in
+   * front of everything behind it. A write still in flight counts as "just
+   * written" (Infinity) until ws reports it flushed.
+   */
+  private sendRow(ws: WebSocket, lastWrite: Map<number, number>, env: { seq: number; [key: string]: unknown }): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    lastWrite.set(env.seq, Infinity);
+    ws.send(JSON.stringify(env), (err) => {
+      if (!err) lastWrite.set(env.seq, Date.now());
+    });
   }
 }

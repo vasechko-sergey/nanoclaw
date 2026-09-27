@@ -39,7 +39,7 @@ import { WsHandler } from './ws-handler.js';
 import { HealthRequestsStore } from './health-requests-store.js';
 import { createIosHttpHandler } from './http-handler.js';
 import { PlanJsonSchema } from '../../../../shared/ios-app-protocol/index.js';
-import type { PlatformId, ContextField } from './types.js';
+import { MAX_ATTACHMENT_BYTES, type PlatformId, type ContextField } from './types.js';
 import { registerSummaryEmitter } from '../../../modules/summary-notify/emit-registry.js';
 import { getDevicePlatformIds } from '../../../modules/permissions/db/users.js';
 import { pluralRu } from '../../../modules/summary-notify/detector.js';
@@ -716,21 +716,39 @@ function createV2Adapter(): ChannelAdapter | null {
       // arrive on `message.files` as OutboundFile[]. The agent's raw
       // `content.files` is just a list of filename strings — those are not
       // useful to the device. Encode the buffers as base64 attachments here.
-      const attachments =
-        Array.isArray(message.files) && message.files.length > 0
-          ? message.files.map((f) => {
-              const mime = mimeFromFilename(f.filename);
-              return {
-                id: randomUUID(),
-                kind: mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : 'file',
-                name: f.filename,
-                mime_type: mime,
-                byte_size: f.data.length,
-                bytes_base64: f.data.toString('base64'),
-                remote_id: undefined as string | undefined,
-              };
-            })
-          : undefined;
+      //
+      // They all ride inline in ONE WebSocket frame, and the app refuses a
+      // frame above CLIENT_MAX_FRAME_BYTES (socket closes 1009, the row is never
+      // acked, every reconnect re-drains it first — the device never recovers).
+      // So a message carries at most MAX_ATTACHMENT_BYTES of files; one that
+      // doesn't fit is named in the text instead of poisoning the queue.
+      const attachments: Array<Record<string, unknown>> = [];
+      const tooBig: string[] = [];
+      let budget = MAX_ATTACHMENT_BYTES;
+      for (const f of message.files ?? []) {
+        if (f.data.length > budget) {
+          tooBig.push(`«${f.filename}» (${(f.data.length / 1024 / 1024).toFixed(1)} МБ)`);
+          continue;
+        }
+        budget -= f.data.length;
+        const mime = mimeFromFilename(f.filename);
+        attachments.push({
+          id: randomUUID(),
+          kind: mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : 'file',
+          name: f.filename,
+          mime_type: mime,
+          byte_size: f.data.length,
+          bytes_base64: f.data.toString('base64'),
+        });
+      }
+      if (tooBig.length > 0) {
+        logV2Warn('attachment over the per-message limit, not sent', { to: platformId, files: tooBig });
+      }
+      const limitNote =
+        tooBig.length > 0
+          ? `Не отправлено — больше ${MAX_ATTACHMENT_BYTES / 1024 / 1024} МБ на сообщение: ${tooBig.join(', ')}`
+          : '';
+      const fullText = [text, limitNote].filter(Boolean).join('\n\n');
 
       // If the caller (delivery.ts) supplied the originating agent_group_id,
       // resolve it to the canonical folder slug and stamp it on the envelope
@@ -751,8 +769,8 @@ function createV2Adapter(): ChannelAdapter | null {
         type: 'message',
         payload: {
           thread_id: threadId ?? 'default',
-          text,
-          ...(attachments && attachments.length > 0 ? { attachments } : {}),
+          text: fullText,
+          ...(attachments.length > 0 ? { attachments } : {}),
           ...(agentFolder ? { agent_id: agentFolder } : {}),
           ...(replyToId ? { reply_to_id: replyToId } : {}),
           ...(voiceOnly ? { voice_only: true } : {}),

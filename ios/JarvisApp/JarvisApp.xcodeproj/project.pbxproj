@@ -101,6 +101,7 @@
 		7538B26F3F54F0A20083FC22 /* ExerciseBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A07127DD756653FDA997A10 /* ExerciseBannerView.swift */; };
 		776CC332C08FABE24DB90627 /* AgentIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7602CA89C5703F581DB155 /* AgentIdentityTests.swift */; };
 		779371D3E740BB8D1F5975A5 /* TransportV2ReconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8070F31CC16528B94A74CB77 /* TransportV2ReconnectTests.swift */; };
+		77B938C19939F0A96652B436 /* URLSessionWebSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69889C4D6596E6E9DFD2A221 /* URLSessionWebSocketTests.swift */; };
 		79863C9C38EE621B71898E1D /* VoiceOnlyStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B15C373E9A1A762EDBE060A /* VoiceOnlyStoreTests.swift */; };
 		7C6244BC22EF9490B6F5527A /* WorkoutRunnerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAAE91150FB182B64898418C /* WorkoutRunnerLogic.swift */; };
 		7C833BBFCFDD41382E8448F4 /* StateBoardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72069FC546766200DF7310C7 /* StateBoardViewTests.swift */; };
@@ -316,6 +317,7 @@
 		692FF9CBB21BDC62448E95E9 /* LocalNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNotifierTests.swift; sourceTree = "<group>"; };
 		6931A58F122A71990D09EF46 /* JarvisApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JarvisApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		69538BC969A8B6C8645731A4 /* NotificationGating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationGating.swift; sourceTree = "<group>"; };
+		69889C4D6596E6E9DFD2A221 /* URLSessionWebSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionWebSocketTests.swift; sourceTree = "<group>"; };
 		6A7B2AACD776CE3B037E3691 /* HealthRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthRequests.swift; sourceTree = "<group>"; };
 		6C18FEBC87883D1730806373 /* ActiveAgentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAgentState.swift; sourceTree = "<group>"; };
 		6C904740E5DA9FD762F5645C /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
@@ -640,6 +642,7 @@
 				24E75D5AB84CECDD2D10E119 /* TransportV2WorkoutInboundTests.swift */,
 				834FF3E88E233A898EDBA444 /* TransportV2WorkoutTests.swift */,
 				8DE72F622364B3227A7566B6 /* UnreadCountingTests.swift */,
+				69889C4D6596E6E9DFD2A221 /* URLSessionWebSocketTests.swift */,
 				FD1862BB4D1C3A773681EBB8 /* V2SummaryReadyTests.swift */,
 				E0019FAF9AAB5DF5AB58588E /* VisibleMessageCacheTests.swift */,
 				2D63F33AD4D4289C68D1484A /* VoiceLoopControllerTests.swift */,
@@ -1125,6 +1128,7 @@
 				E550AC2144D0483451564D50 /* TransportV2Tests.swift in Sources */,
 				920E2AE3DB5215DAE666BF65 /* TransportV2WorkoutInboundTests.swift in Sources */,
 				3CBB91784B65C8CA4A702AF6 /* TransportV2WorkoutTests.swift in Sources */,
+				77B938C19939F0A96652B436 /* URLSessionWebSocketTests.swift in Sources */,
 				1703B3B99CF91384007D87BD /* UnreadCountingTests.swift in Sources */,
 				23DA7C08B5BB329264C71290 /* V2SummaryReadyTests.swift in Sources */,
 				3AB22C6DCC7F0626D8FA50DE /* VisibleMessageCacheTests.swift in Sources */,
@@ -1187,7 +1191,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 117;
+				CURRENT_PROJECT_VERSION = 118;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -1433,7 +1437,7 @@
 				CODE_SIGN_ENTITLEMENTS = JarvisApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 117;
+				CURRENT_PROJECT_VERSION = 118;
 				DEVELOPMENT_TEAM = 24Z6S27D7U;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = Info.plist;

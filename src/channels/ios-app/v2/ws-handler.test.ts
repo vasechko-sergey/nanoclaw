@@ -215,3 +215,53 @@ describe('WsHandler', () => {
     ws.close();
   });
 });
+
+describe('WsHandler retry', () => {
+  const TICK_MS = 20;
+  const AGE_MS = 400;
+  let h: Harness;
+  beforeEach(async () => {
+    h = await startTestServer({ retryTickMs: TICK_MS, retryAgeMs: AGE_MS });
+  });
+  afterEach(async () => {
+    await h.close();
+  });
+
+  /** Frames the device receives within the next `windowMs` (bounded even if they never stop). */
+  async function takeReceived(ws: WebSocket, windowMs = 60): Promise<any[]> {
+    const out: any[] = [];
+    const deadline = Date.now() + windowMs;
+    while (Date.now() < deadline) {
+      try {
+        out.push(await h.expectIncoming(ws, Math.max(1, deadline - Date.now())));
+      } catch {
+        break;
+      }
+    }
+    return out;
+  }
+
+  it('re-sends an unacked row retryAgeMs after it was WRITTEN, not after it was created', async () => {
+    // A drained backlog row is already "old" by created_at. Keying retry off
+    // created_at re-sent it on every tick — for a multi-MB photo on a mobile
+    // link that stacks copies of the same bytes ahead of everything after it.
+    h.db.upsertDevice(h.platformId, {});
+    const seq = h.queue.enqueue(h.platformId, {
+      id: 'msg-backlog',
+      kind: 'data',
+      type: 'message',
+      payload: { thread_id: 'thr', text: 'backlog' },
+    });
+    h.db.raw.prepare('UPDATE outbound_queue SET created_at = ? WHERE seq = ?').run(Date.now() - 60_000, seq);
+
+    const ws = await h.connectAuthed({ lastSeenInbound: 0 });
+    await new Promise((r) => setTimeout(r, 150)); // many ticks, all well inside AGE_MS of the drain write
+    const early = (await takeReceived(ws)).filter((e) => e.seq === seq);
+    expect(early).toHaveLength(1); // the drain copy only
+
+    await new Promise((r) => setTimeout(r, 300)); // now past AGE_MS since the write, still unacked
+    const later = (await takeReceived(ws)).filter((e) => e.seq === seq);
+    expect(later.length).toBeGreaterThanOrEqual(1); // retry still fires
+    ws.close();
+  });
+});

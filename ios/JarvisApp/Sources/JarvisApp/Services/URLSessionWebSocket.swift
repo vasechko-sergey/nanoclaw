@@ -14,8 +14,17 @@ import Foundation
 /// (receive/ping callbacks). Callers that read `onMessage` / `onClose` must accept the
 /// same threading assumption — `TransportV2` hops into its actor before mutating state.
 final class URLSessionWebSocket: NSObject, WebSocketLike, @unchecked Sendable {
+    /// Largest frame the app accepts. `URLSessionWebSocketTask` defaults to
+    /// 1 MiB and fails the receive on anything bigger: the socket closes with
+    /// 1009, the message is never acked, and the host re-sends it first on every
+    /// reconnect — the connection never recovers. The host inlines up to 30 MiB
+    /// of attachments per message (40 MiB as base64) and keeps every frame
+    /// within `CLIENT_MAX_FRAME_BYTES` (src/channels/ios-app/v2/types.ts); this
+    /// must match it.
+    static let maxMessageBytes = 48 * 1024 * 1024
+
     private let url: URL
-    private var task: URLSessionWebSocketTask?
+    private(set) var task: URLSessionWebSocketTask?
     private var session: URLSession?
     private var pingTimer: Timer?
     private var didFireClose = false
@@ -55,6 +64,7 @@ final class URLSessionWebSocket: NSObject, WebSocketLike, @unchecked Sendable {
         let session = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
         self.session = session
         let task = session.webSocketTask(with: url)
+        task.maximumMessageSize = Self.maxMessageBytes
         self.task = task
         didFireClose = false
         stateLock.unlock()

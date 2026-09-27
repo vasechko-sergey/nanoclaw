@@ -93,7 +93,7 @@ export interface Harness {
   connectAuthed(opts?: { lastSeenInbound?: number; capabilities?: string[] }): Promise<WebSocket>;
 }
 
-export async function startTestServer(): Promise<Harness> {
+export async function startTestServer(opts: { retryTickMs?: number; retryAgeMs?: number } = {}): Promise<Harness> {
   const validToken = 'test-token';
   const platformId = 'ios-app:dev-1';
   const db = openTransportDb(':memory:');
@@ -158,6 +158,8 @@ export async function startTestServer(): Promise<Harness> {
     contextBridge: bridge,
     imageCache,
     validateToken: async (token) => (token === validToken ? platformId : null),
+    retryTickMs: opts.retryTickMs,
+    retryAgeMs: opts.retryAgeMs,
   });
 
   const server = http.createServer();

@@ -44,6 +44,23 @@ export type { AnyEnvelope, InlineContext, ContextField };
 export const MAX_QUEUE_PER_DEVICE = 1000;
 
 /**
+ * Most attachment bytes (raw, all files together) one outbound message may
+ * carry. Attachments ride inline as base64 in a single WebSocket frame, so this
+ * is what bounds the frame; deliver() names a file that doesn't fit in the text
+ * instead of sending it.
+ */
+export const MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024;
+
+/**
+ * The iOS app's WebSocket receive limit (`URLSessionWebSocket.maxMessageBytes`).
+ * A bigger frame fails the receive and closes the socket with 1009; the row is
+ * never acked, so every reconnect re-drains it first and the device never
+ * recovers. Base64 inflates MAX_ATTACHMENT_BYTES by 4/3 (30 → 40 MiB), which
+ * leaves 8 MiB here for the text and JSON.
+ */
+export const CLIENT_MAX_FRAME_BYTES = 48 * 1024 * 1024;
+
+/**
  * Outbound envelope types the device should raise a local notification for.
  * The notification pull (`GET /ios/pending`) and the device-side notifier are
  * both restricted to these. `message` only for the MVP; extend (e.g.
