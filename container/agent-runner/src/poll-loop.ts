@@ -74,6 +74,24 @@ const FACTUALITY_MAX_RETRIES = 2;
 // Set is separate and uncapped, so L3's tool-grounded skip is unaffected either way.
 const GROUNDING_TEXT_BUDGET = 32000;
 
+/**
+ * Wording of every factuality bounce: `problem` is what the check found, `fix`
+ * what to do about it. Under the gate a reply is HELD until the verdict, so a
+ * bounced reply never reached the user — but the agent wrote a <message> block,
+ * which normally means "sent", and a bare "re-send your full reply" reads as a
+ * fact-check of a message the user already has. Told only that, Jarvis
+ * (2026-09-27) tried edit_message on its last DELIVERED bubble (an unrelated
+ * "context reset" notice — refused), then sent just "Поправка по цифрам…
+ * остальные выводы без изменений": the user got the correction, never the answer.
+ */
+function buildFactualityBounce(problem: string, fix: string): string {
+  return (
+    `<system>Your reply was NOT delivered: the fact-check held it, and the user has seen none of it. ` +
+    `${problem} ${fix}, then send the COMPLETE corrected reply in a <message> block — not edit_message ` +
+    `(nothing was sent, so there is nothing to edit) and not a correction note (the user never saw the original).</system>`
+  );
+}
+
 function log(msg: string): void {
   console.error(`[poll-loop] ${msg}`);
 }
@@ -1112,9 +1130,11 @@ export async function processQuery(
               );
               resultReceived = false; // a correction starts a fresh turn
               query.push(
-                `<system>Your reply stated these numbers with no source this turn: ${verdict.ungrounded.join(', ')}. ` +
-                  `Do not state a number you did not get from a tool/script output or the user this turn. ` +
-                  `Call the right tool/script to verify it, or remove/hedge the number, then re-send your full reply.</system>`,
+                buildFactualityBounce(
+                  `It stated these numbers with no source this turn: ${verdict.ungrounded.join(', ')}. ` +
+                    `Do not state a number you did not get from a tool/script output or the user this turn.`,
+                  'Call the right tool/script to verify it, or remove/hedge the number',
+                ),
               );
             } else {
               if (!verdict.grounded) {
@@ -1145,9 +1165,12 @@ export async function processQuery(
                     );
                     resultReceived = false; // a correction starts a fresh turn
                     query.push(
-                      `<system>A fact-check found these claims in your reply unsupported by this turn's tool output: ` +
-                        prose.unsupported.map((u) => `"${u.claim}" (${u.why})`).join('; ') +
-                        `. Re-check the tool/script output and correct or remove them, then re-send your full reply.</system>`,
+                      buildFactualityBounce(
+                        `These claims in it are unsupported by this turn's tool output: ` +
+                          prose.unsupported.map((u) => `"${u.claim}" (${u.why})`).join('; ') +
+                          '.',
+                        'Re-check the tool/script output and correct or remove them',
+                      ),
                     );
                     proseBounced = true;
                   }
@@ -1171,9 +1194,12 @@ export async function processQuery(
                     l3Retries++;
                     resultReceived = false; // a correction starts a fresh turn
                     query.push(
-                      `<system>A fact-check could not confirm these claims in your reply: ` +
-                        l3.failed.map((f) => `"${f.claim}" (${f.why})`).join('; ') +
-                        `. Verify each with a tool/web/source, or remove/clearly hedge it, then re-send your full reply.</system>`,
+                      buildFactualityBounce(
+                        `These claims in it could not be confirmed: ` +
+                          l3.failed.map((f) => `"${f.claim}" (${f.why})`).join('; ') +
+                          '.',
+                        'Verify each with a tool/web/source, or remove/clearly hedge it',
+                      ),
                     );
                     l3Bounced = true;
                   } else if (l3.failed.length > 0) {

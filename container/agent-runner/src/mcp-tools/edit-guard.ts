@@ -1,24 +1,19 @@
 /**
- * Guard for `edit_message`: distinguish a genuine CORRECTION (fix a number, a
- * typo, a wrong clause — a small delta) from REPURPOSING a bubble to deliver new
- * content (a list, a fresh answer — a near-total rewrite / large append). The
- * latter must be a new `send_message`, never an edit: editing an old message
- * moves the new content back to that message's timestamp, which reorders the
- * chat and hides the update. This is what went wrong when Scrooge edited an old
- * message to deliver a balances list.
+ * Guard for `edit_message`: an edit may only fix a SLIP — a number, a word, a
+ * typo. Anything bigger is a correction the user should see as such, so it goes
+ * as a separate message, never as a rewrite of the old bubble. A rewrite erases
+ * what the user already read (they can't tell what changed), and delivering new
+ * content by editing an old message moves it back to that message's timestamp,
+ * reordering the chat (Scrooge edited an old message to deliver a balances list).
  *
- * The signal is character-level change. Two knobs:
- *  - MIN_COMPARE_LEN: below this (both old and new are short), skip the check.
- *    Short messages are cheap to resend and their ratios are unstable — a
- *    3-char fix on a 5-char message reads as a "total" change. The abuse we care
- *    about always involves volume (a long new body), so the gate only needs to
- *    bite once a message is substantial.
- *  - MAX_CHANGE_RATIO: normalized Levenshtein distance above which the edit is a
- *    replacement, not a correction. A large append inflates the distance too, so
- *    one ratio catches both full rewrites and "stuff a list onto the end".
+ * The owner's rule: at most 10% of the message may change in place. The signal
+ * is normalized Levenshtein distance, which a large append inflates too, so one
+ * ratio covers rewrites, "stuff a list onto the end" and filling an empty
+ * message. It applies at every length: a short message is cheap to resend, and
+ * the old under-40-chars exemption let a short "on it" bubble be overwritten
+ * wholesale with the answer.
  */
-export const MIN_COMPARE_LEN = 40;
-export const MAX_CHANGE_RATIO = 0.6;
+export const MAX_CHANGE_RATIO = 0.1;
 
 /**
  * "Edit my last message" (no explicit id) is a convenience for a FRESH fix. If
@@ -61,24 +56,17 @@ export function changeRatio(a: string, b: string): number {
 }
 
 /**
- * Classify an edit: the change ratio (or null when exempt) and whether it counts
- * as a replacement. Short messages (both ends below MIN_COMPARE_LEN) and an empty
- * `prev` are exempt — nothing meaningful to compare — and report a null ratio so
- * telemetry can tell "not evaluated" from "evaluated at 0". Single source of
- * truth for the gate decision AND its logged ratio.
+ * Classify an edit: the change ratio and whether it exceeds what may change in
+ * place. Single source of truth for the gate decision AND its logged ratio.
  */
-export function classifyReplacement(prev: string, next: string): { ratio: number | null; isReplacement: boolean } {
-  const p = prev.trim();
-  const n = next.trim();
-  if (p.length === 0) return { ratio: null, isReplacement: false };
-  if (Math.max(p.length, n.length) < MIN_COMPARE_LEN) return { ratio: null, isReplacement: false };
-  const ratio = changeRatio(p, n);
+export function classifyReplacement(prev: string, next: string): { ratio: number; isReplacement: boolean } {
+  const ratio = changeRatio(prev.trim(), next.trim());
   return { ratio, isReplacement: ratio > MAX_CHANGE_RATIO };
 }
 
 /**
- * True when `next` is a replacement of `prev` rather than a correction — i.e.
- * the edit should have been a new message. Delegates to classifyReplacement.
+ * True when `next` changes more of `prev` than a slip fix may — i.e. the
+ * correction must be a new message. Delegates to classifyReplacement.
  */
 export function isReplacementEdit(prev: string, next: string): boolean {
   return classifyReplacement(prev, next).isReplacement;

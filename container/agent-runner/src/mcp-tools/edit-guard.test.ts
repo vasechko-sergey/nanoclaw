@@ -8,6 +8,7 @@ import {
   isStaleLastEdit,
   humanizeAge,
   EDIT_STALE_LAST_MS,
+  MAX_CHANGE_RATIO,
 } from './edit-guard.js';
 
 describe('changeRatio', () => {
@@ -27,15 +28,37 @@ describe('changeRatio', () => {
 });
 
 describe('isReplacementEdit', () => {
-  it('exempts short messages (a tiny fix reads as a big % change)', () => {
-    // The real "fix what I just said" case on toy strings.
-    expect(isReplacementEdit('oops', 'corrected')).toBe(false);
+  it('is the owner rule: at most 10% of a message changes in place', () => {
+    expect(MAX_CHANGE_RATIO).toBe(0.1);
   });
 
-  it('allows a genuine correction of a long message', () => {
+  it('allows a slip fix (a number, a word)', () => {
     const prev = 'Доход от продажи квартиры облагается 13% НДФЛ, если владел меньше 5 лет.';
     const next = 'Доход от продажи квартиры облагается 13% НДФЛ, если владел меньше 3 лет.';
     expect(isReplacementEdit(prev, next)).toBe(false);
+  });
+
+  it('refuses a correction bigger than 10% — that goes as a separate message', () => {
+    // Every number in a meal log changed (Gordon, 2026-07-11). The old 60% wall
+    // let rewrites like this overwrite the bubble; the user never sees what was
+    // wrong, only that the message silently changed.
+    const prev = 'Записал. 562 ккал, 24г белка, 55г углей, 27г жира.';
+    const next = 'Записал. 668 ккал, 53г белка, 19г углей, 42г жира.';
+    expect(changeRatio(prev, next)).toBeGreaterThan(0.1);
+    expect(changeRatio(prev, next)).toBeLessThan(0.6);
+    expect(isReplacementEdit(prev, next)).toBe(true);
+  });
+
+  it('holds short messages to the same rule — a rewritten ack is a new message', () => {
+    // Below 40 chars the old gate did not look at all, so a short "on it" bubble
+    // could be overwritten wholesale.
+    expect(isReplacementEdit('Щас дёрну Bybit, минуту...', 'Bybit: $952, остальное 🟡')).toBe(true);
+  });
+
+  it('boundary: exactly 10% passes, more does not', () => {
+    const prev = 'a'.repeat(100);
+    expect(isReplacementEdit(prev, 'b'.repeat(10) + 'a'.repeat(90))).toBe(false);
+    expect(isReplacementEdit(prev, 'b'.repeat(11) + 'a'.repeat(89))).toBe(true);
   });
 
   it('blocks repurposing a bubble into a new-content list (the Scrooge bug)', () => {
@@ -54,8 +77,8 @@ describe('isReplacementEdit', () => {
     expect(isReplacementEdit(prev, next)).toBe(true);
   });
 
-  it('exempts an empty prior text (nothing to compare)', () => {
-    expect(isReplacementEdit('', 'a brand new long-enough message body here')).toBe(false);
+  it('refuses filling an empty message — that is new content', () => {
+    expect(isReplacementEdit('', 'a brand new long-enough message body here')).toBe(true);
   });
 });
 
@@ -67,16 +90,12 @@ describe('classifyReplacement', () => {
       'Telegram wallet 1712$, Bybit 340$, итого около 2973$ по кошелькам.';
     const c = classifyReplacement(prev, next);
     expect(c.isReplacement).toBe(true);
-    expect(c.ratio).not.toBeNull();
-    expect(c.ratio!).toBeGreaterThan(0.6);
+    expect(c.ratio).toBeGreaterThan(MAX_CHANGE_RATIO);
   });
 
-  it('reports a null ratio when exempt (short pair or empty prev)', () => {
-    expect(classifyReplacement('oops', 'corrected')).toEqual({ ratio: null, isReplacement: false });
-    expect(classifyReplacement('', 'a brand new long-enough message body here')).toEqual({
-      ratio: null,
-      isReplacement: false,
-    });
+  it('measures every edit — no length or empty-text exemption', () => {
+    expect(classifyReplacement('oops', 'corrected').ratio).toBeGreaterThan(MAX_CHANGE_RATIO);
+    expect(classifyReplacement('', 'new text')).toEqual({ ratio: 1, isReplacement: true });
   });
 
   it('agrees with isReplacementEdit', () => {

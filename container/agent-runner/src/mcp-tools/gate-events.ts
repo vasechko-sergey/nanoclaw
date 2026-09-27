@@ -2,8 +2,8 @@
  * Edit-gate telemetry (container side).
  *
  * Every `edit_message` attempt that reaches the gate logic emits ONE event so
- * the thresholds (change-ratio 0.6, min-length 40, stale-age 60 min) can be
- * tuned against real traffic rather than guessed. The event rides the existing
+ * the thresholds (change-ratio 0.1, stale-age 60 min) can be checked against
+ * real traffic rather than guessed. The event rides the existing
  * system-action ferry: a `kind='system'` outbound row with
  * `{action:'log_gate_event', ...}`. The host's gate-log delivery handler stamps
  * the agent group + session and inserts it into the central `gate_events` table.
@@ -29,7 +29,7 @@ export interface GateEvent {
   seq: number | null;
   /** Was `messageId` omitted ("edit my last") vs. explicitly targeted? */
   omitId: boolean;
-  /** Change ratio from classifyReplacement; null when exempt (short/empty) or not evaluated. */
+  /** Change ratio from classifyReplacement; null when not evaluated (stale / not-own refusals). */
   ratio?: number | null;
   /** Age of the target for the stale gate; null when not evaluated. */
   ageMs?: number | null;

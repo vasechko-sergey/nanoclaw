@@ -7,7 +7,7 @@
  * session the message came in on, and inserts a row into the central
  * `gate_events` table (migration 023). Analysis via scripts/q.ts, e.g.
  *   SELECT decision, count(*), avg(change_ratio) FROM gate_events GROUP BY decision;
- *   SELECT * FROM gate_events WHERE decision='allowed' AND change_ratio > 0.5;  -- near-misses
+ *   SELECT * FROM gate_events WHERE decision='allowed' AND change_ratio > 0.08;  -- near-misses (wall is 0.1)
  *
  * Best-effort: a logging failure must never break message delivery, so the
  * insert is wrapped and only warns.

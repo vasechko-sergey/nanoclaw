@@ -113,15 +113,15 @@ describe('edit_message targeting', () => {
   it('edits the last user-facing message when messageId is omitted', async () => {
     const seq = writeMessageOut({
       id: 'm1', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
-      thread_id: null, content: JSON.stringify({ text: 'oops' }),
+      thread_id: null, content: JSON.stringify({ text: 'Встреча в 15:00 в офисе на Руставели' }),
     });
-    const res = await editMessage.handler({ text: 'corrected' });
+    const res = await editMessage.handler({ text: 'Встреча в 16:00 в офисе на Руставели' });
     expect(res.isError).toBeUndefined();
     expect(res.content[0].text).toContain(String(seq));
     // Verify the edit was actually written to outbound (not just the string echo).
     const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
     expect(edit).toBeTruthy();
-    expect(JSON.parse(edit!.content).text).toBe('corrected');
+    expect(JSON.parse(edit!.content).text).toBe('Встреча в 16:00 в офисе на Руставели');
   });
 
   it('errors when omitted and there is no prior message', async () => {
@@ -153,8 +153,23 @@ describe('edit_message targeting', () => {
         'Telegram wallet 1712$, Bybit 340$, итого около 2973$ по кошелькам.',
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain('send_message');
+    expect(res.content[0].text).toContain('10%');
+    expect(res.content[0].text).toContain('new message');
     // No edit was queued — the replacement was refused, not written.
+    const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
+    expect(edit).toBeUndefined();
+  });
+
+  it('refuses a correction that changes more than 10% of the message', async () => {
+    // The owner's rule: a slip is fixed in place, anything bigger is a separate
+    // message. Four numbers out of a short meal log is ~16% — the old 60% wall
+    // let it overwrite the bubble.
+    const seq = writeMessageOut({
+      id: 'meal', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
+      thread_id: null, content: JSON.stringify({ text: 'Записал. 562 ккал, 24г белка, 55г углей, 27г жира.' }),
+    });
+    const res = await editMessage.handler({ messageId: seq, text: 'Записал. 668 ккал, 53г белка, 19г углей, 42г жира.' });
+    expect(res.isError).toBe(true);
     const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
     expect(edit).toBeUndefined();
   });
@@ -169,15 +184,15 @@ describe('edit_message targeting', () => {
       thread_id: null, content: JSON.stringify({ text: original }),
     });
 
-    // Edit 1: first half a→b. changeRatio vs original = 0.5 ≤ 0.6 → allowed.
-    const e1 = 'b'.repeat(25) + 'a'.repeat(25);
+    // Edit 1: first 5 chars a→b. changeRatio vs original = 0.1 → allowed.
+    const e1 = 'b'.repeat(5) + 'a'.repeat(45);
     const r1 = await editMessage.handler({ messageId: seq, text: e1 });
     expect(r1.isError).toBeUndefined();
 
-    // Edit 2: second half a→c. vs the CURRENT text (e1) changeRatio = 0.5 → a
-    // legitimate correction. But vs the frozen ORIGINAL (50×a) it's 1.0 — the
-    // old original-baseline gate would have rejected it. Must be allowed now.
-    const e2 = 'b'.repeat(25) + 'c'.repeat(25);
+    // Edit 2: last 5 chars a→c. vs the CURRENT text (e1) changeRatio = 0.1 → a
+    // legitimate correction. But vs the frozen ORIGINAL (50×a) it's 0.2 — an
+    // original-baseline gate would reject it. Must be allowed.
+    const e2 = 'b'.repeat(5) + 'a'.repeat(40) + 'c'.repeat(5);
     const r2 = await editMessage.handler({ messageId: seq, text: e2 });
     expect(r2.isError).toBeUndefined();
 
@@ -221,7 +236,7 @@ describe('edit_message targeting', () => {
 
     const res = await editMessage.handler({ text: 'небольшая правка текста' });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain('send_message');
+    expect(res.content[0].text).toContain('new message');
     const edit = getUndeliveredMessages().find((m) => JSON.parse(m.content).operation === 'edit');
     expect(edit).toBeUndefined();
   });
@@ -238,13 +253,13 @@ describe('edit_message gate telemetry', () => {
       id: 'm', kind: 'chat', platform_id: 'p', channel_type: 'ios-app-v2',
       thread_id: null, content: JSON.stringify({ text: 'a'.repeat(50) }),
     });
-    // 20/50 chars differ → ratio 0.4, allowed.
-    await editMessage.handler({ text: 'b'.repeat(20) + 'a'.repeat(30) });
+    // 5/50 chars differ → ratio 0.1, allowed.
+    await editMessage.handler({ text: 'b'.repeat(5) + 'a'.repeat(45) });
     const ev = gateEvents();
     expect(ev).toHaveLength(1);
     expect(ev[0].decision).toBe('allowed');
     expect(ev[0].ratio).toBeGreaterThan(0);
-    expect(ev[0].ratio).toBeLessThan(0.6);
+    expect(ev[0].ratio).toBeLessThanOrEqual(0.1);
     expect(ev[0].nextLen).toBe(50);
     expect(ev[0].omitId).toBe(true);
   });
@@ -256,7 +271,7 @@ describe('edit_message gate telemetry', () => {
     });
     await editMessage.handler({ messageId: seq, text: 'b'.repeat(50) });
     const ev = gateEvents();
-    expect(ev.some((e) => e.decision === 'refused_replacement' && e.ratio > 0.6 && e.omitId === false)).toBe(true);
+    expect(ev.some((e) => e.decision === 'refused_replacement' && e.ratio > 0.1 && e.omitId === false)).toBe(true);
   });
 
   it('logs a refused stale omit-id edit with its age', async () => {

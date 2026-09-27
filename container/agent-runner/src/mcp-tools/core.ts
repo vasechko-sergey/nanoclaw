@@ -254,12 +254,11 @@ export const editMessage: McpToolDefinition = {
   tool: {
     name: 'edit_message',
     description:
-      'Correct an INACCURACY in a message you ALREADY sent — a factual error, a wrong number, a typo. ' +
+      'Fix a SLIP in a message you ALREADY sent — a wrong number, a word, a typo. ' +
       'Replaces its full text in place (the user sees the bubble change, marked edited). ' +
-      'STRICT — this is ONLY for fixing something wrong in an already-sent message. NEW content ' +
-      '(a new answer, a list, an added detail, any reply) must be a NEW message via send_message, ' +
+      'STRICT — at most 10% of the text may change; a bigger edit is rejected. A bigger correction, ' +
+      'and ANY new content (a new answer, a list, an added detail, a reply), goes as a NEW message — ' +
       'NEVER an edit of an old bubble. When in doubt, send a new message. ' +
-      'An edit that rewrites most of the message is rejected automatically. ' +
       'Omit `messageId` to edit the LAST message you sent (the common "fix what I just said" case). ' +
       'Pass `messageId` (the numeric id shown in messages) only to target an OLDER message YOU sent — ' +
       'you cannot edit the user\'s messages, only your own. ' +
@@ -305,7 +304,7 @@ export const editMessage: McpToolDefinition = {
         return err(
           `Your last message is ${humanizeAge(ageMs)} old — "edit my last message" is only for a fresh fix, ` +
             `not for speaking now. To correct that specific old message pass its #id explicitly; to say something ` +
-            `new, use send_message.`,
+            `new, send a new message.`,
         );
       }
       seq = last;
@@ -324,22 +323,20 @@ export const editMessage: McpToolDefinition = {
       return err(`#${seq} isn't a message you sent — you can only edit your own. Omit messageId to edit your last message.`);
     }
 
-    // Corrections only. A near-total rewrite — or stuffing a long list onto an
-    // old bubble — is delivering NEW content, which must be a new send_message,
-    // not an edit. Editing an old message moves the new text back to that
-    // message's timestamp, reordering the chat and hiding the update (the
-    // reported Scrooge bug). Compare against the CURRENT text (original + any
-    // prior edits) so a run of small corrections doesn't accumulate against a
-    // stale anchor and reject a legitimate later fix. Small corrections and
-    // short messages pass. See edit-guard.ts.
+    // Slip fixes only: at most 10% of the text changes in place (the owner's
+    // rule). A bigger correction or new content is a new message — a rewrite
+    // erases what the user already read, and new text edited into an old bubble
+    // lands at that message's timestamp, reordering the chat (the Scrooge bug).
+    // Compare against the CURRENT text (original + any prior edits) so a run of
+    // small fixes doesn't accumulate against a stale anchor and reject a
+    // legitimate later one. See edit-guard.ts.
     const prevText = getCurrentOutboundTextBySeq(seq);
-    const cls = classifyReplacement(prevText ?? '', text);
-    if (prevText !== null && cls.isReplacement) {
+    const cls = prevText === null ? null : classifyReplacement(prevText, text);
+    if (cls?.isReplacement) {
       logGate({ decision: 'refused_replacement', seq, omitId, ratio: cls.ratio, prev: prevText, next: text });
       return err(
-        `That edit replaces most of message #${seq} — edit_message is only for correcting an inaccuracy ` +
-          `(a wrong number, a typo, a bad clause). New content — a list, a fresh answer, an addition — must be a ` +
-          `NEW message: use send_message instead.`,
+        `That edit changes more than 10% of message #${seq} — edit_message only fixes a slip in place ` +
+          `(a number, a word, a typo). Send it as a new message instead; the original stays as the user read it.`,
       );
     }
 
@@ -361,7 +358,7 @@ export const editMessage: McpToolDefinition = {
       content: JSON.stringify({ operation: 'edit', messageId: platformId, text }),
     });
 
-    logGate({ decision: 'allowed', seq, omitId, ratio: cls.ratio, prev: prevText, next: text });
+    logGate({ decision: 'allowed', seq, omitId, ratio: cls?.ratio ?? null, prev: prevText, next: text });
     log(`edit_message: #${seq} → ${platformId}`);
     return ok(`Message edit queued for #${seq}`);
   },

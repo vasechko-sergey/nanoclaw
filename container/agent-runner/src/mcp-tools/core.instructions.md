@@ -24,9 +24,9 @@ Use `mcp__nanoclaw__add_reaction({ messageId, emoji })` to react to a specific i
 
 ### Editing a message (`edit_message`)
 
-`edit_message` is ONLY for correcting an **inaccuracy** in a message you already sent — a factual error, a wrong number, a typo. It replaces the whole text in place (the user sees the same bubble update, marked edited).
+`edit_message` is ONLY for fixing a **slip** in a message you already sent — a wrong number, a word, a typo. It replaces the whole text in place (the user sees the same bubble update, marked edited).
 
-**Never edit to deliver new content.** A new answer, a list, an added detail, or any reply is a NEW message — send it with `send_message`. Do not fold new information into an old bubble by editing it. When in doubt, send a new message. (This is what went wrong once: a list answer was pushed by editing an old message instead of sending it as a reply — don't do that.) This is now **enforced**: an edit that rewrites most of the target message is rejected, and you must resend as a new message.
+**A bigger correction is a separate message**, and so is any new content — a new answer, a list, an added detail, a reply. Never rewrite an old bubble or fold new information into it: the user already read it and can't see what changed. When in doubt, send a new message. This is **enforced**: an edit that changes more than 10% of the target message is rejected.
 
 Mechanics: `mcp__nanoclaw__edit_message({ text, messageId? })`. To fix the message you JUST sent, call it with only the new `text` and **omit** `messageId`. Pass the numeric `messageId` (the `#N` id shown next to messages, as an integer) only to correct an OLDER message **you** sent — you can only edit your own messages, never the user's (a user `#N` is rejected). Never invent a messageId — if you don't have the number, omit it.
 

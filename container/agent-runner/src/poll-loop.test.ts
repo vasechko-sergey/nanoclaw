@@ -1473,6 +1473,33 @@ describe('processQuery — silent-delivery-failure recovery', () => {
     expect(result.transientError).toBeFalsy();
     expect(ackStatus('m1')).toBe('completed');
   });
+
+  it('tells the agent a bounced reply never reached the user', async () => {
+    // Jarvis, 2026-09-27: the gate held a 5.6k-char answer over one ungrounded
+    // number and asked for a re-send without saying the answer was never
+    // delivered. The agent took the bounce for a fact-check of a message the user
+    // had already read: it tried edit_message on its last DELIVERED bubble (the
+    // "context reset" notice — refused), then sent only "Поправка по цифрам…
+    // остальные выводы без изменений". The answer itself never arrived.
+    const { markProcessing } = await import('./db/messages-in.js');
+    markProcessing(['m1']);
+    const pushed: string[] = [];
+    const query = fakeQuery([
+      { type: 'init', continuation: 'c1' },
+      { type: 'assistant_text', text: '<message to="family">Итого 4088500 ₽</message>' },
+      { type: 'result', text: '<message to="family">Итого 4088500 ₽</message>' }, // ungrounded → bounce
+      { type: 'result', text: '<message to="family">Проверил по выписке — всё сходится</message>' },
+    ]);
+    query.push = (message: string) => pushed.push(message);
+
+    await processQuery(query, routing, ['m1'], 'mock', true, new Set(), 1, []);
+
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0]).toContain('NOT delivered');
+    expect(pushed[0]).toContain('the user has seen none of it');
+    expect(pushed[0]).toContain('COMPLETE corrected reply');
+    expect(pushed[0]).toContain('not edit_message');
+  });
 });
 
 /**
