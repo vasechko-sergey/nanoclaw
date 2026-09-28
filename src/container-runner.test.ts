@@ -344,6 +344,27 @@ describe('buildMounts owner isolation', () => {
     expect(by('/workspace/agent/scripts/.env')).toMatchObject({ hostPath: path.join(mem, '.env'), readonly: false });
   });
 
+  it('shared-code model: the container sees the FRESH container.json, not a stale per-person copy', () => {
+    // materializeContainerJson writes groups/<folder>/container.json from the DB
+    // on every spawn. The legacy model copied it into the person's dir; the
+    // shared-code model copies nothing, so /workspace/agent/container.json was
+    // whatever copy that dir last got — frozen at the switch (2026-07-01): four
+    // agents ran fact-check level 1 instead of 3 and none got the configured model.
+    fs.mkdirSync(path.join(process.cwd(), 'agents', ISO_FOLDER), { recursive: true });
+    const fresh = path.join(GROUPS_DIR, ISO_FOLDER, 'container.json');
+    fs.mkdirSync(path.dirname(fresh), { recursive: true });
+    fs.writeFileSync(fresh, JSON.stringify({ factualityLevel: 3 }));
+    const mem = path.join(DATA_DIR, 'user-memory', 'isomnt', ISO_FOLDER);
+    fs.mkdirSync(mem, { recursive: true });
+    fs.writeFileSync(path.join(mem, 'container.json'), JSON.stringify({ factualityLevel: 1 }));
+
+    const mounts = mountsFor('isomnt');
+    expect(mounts.find((m) => m.containerPath === '/workspace/agent/container.json')).toMatchObject({
+      hostPath: fresh,
+      readonly: true,
+    });
+  });
+
   it('shared-code model: a PARTIAL agents/<folder> degrades gracefully (no mount for a missing piece)', () => {
     // agents/<folder> exists (→ shared-code) but skills/ is absent. buildMounts must
     // NOT push a skills mount — else Docker would create a root-owned empty dir.

@@ -569,6 +569,14 @@ export function buildMounts(
     if (fs.existsSync(instructionsPath)) {
       mounts.push({ hostPath: instructionsPath, containerPath: '/workspace/agent/INSTRUCTIONS.md', readonly: true });
     }
+    // The runner's config, freshly materialized from the DB on this spawn. The
+    // copy model delivered it by copying; without this mount the runner read
+    // whatever copy the person's dir last got (frozen at the switch to this
+    // model), so DB changes — model, fact-check level — never reached a container.
+    const containerJson = path.join(groupDir, 'container.json');
+    if (fs.existsSync(containerJson)) {
+      mounts.push({ hostPath: containerJson, containerPath: '/workspace/agent/container.json', readonly: true });
+    }
     const personalEnv = path.join(memRoot, '.env');
     if (fs.existsSync(personalEnv)) {
       mounts.push({ hostPath: personalEnv, containerPath: '/workspace/agent/scripts/.env', readonly: false });
