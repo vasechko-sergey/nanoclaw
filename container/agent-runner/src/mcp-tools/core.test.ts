@@ -50,6 +50,69 @@ describe('send_message MCP tool — in_reply_to plumbing', () => {
 });
 
 /**
+ * The factuality gate checks only `<message>` blocks — the poll-loop holds them
+ * until the verdict. send_message writes straight to messages_out, so while the
+ * gate is on it may carry only a short acknowledgement to a person. Jarvis
+ * (2026-09-27) re-sent a bounced answer through it, prices and all, unchecked.
+ */
+describe('send_message while fact-checking is on', () => {
+  beforeEach(() => {
+    process.env.FACTUALITY_LEVEL = '3';
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES ('sergei-iphone', 'Сергей', 'channel', 'ios-app-v2', 'ios-app-v2:default', NULL)`,
+      )
+      .run();
+  });
+
+  afterEach(() => {
+    delete process.env.FACTUALITY_LEVEL;
+  });
+
+  const chatRows = () => getUndeliveredMessages().filter((m) => m.kind === 'chat');
+
+  it('refuses content to a person and writes nothing', async () => {
+    const res = await sendMessage.handler({
+      to: 'sergei-iphone',
+      text: 'Allianz Care — $150–400/мес с человека, эвакуация включена.',
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('<message>');
+    expect(chatRows()).toHaveLength(0);
+  });
+
+  it('still sends a short acknowledgement to a person', async () => {
+    const res = await sendMessage.handler({ to: 'sergei-iphone', text: 'Ищу варианты, пара минут.' });
+    expect(res.isError).toBeUndefined();
+    expect(chatRows()).toHaveLength(1);
+  });
+
+  it('leaves agent-to-agent traffic alone', async () => {
+    const res = await sendMessage.handler({ to: 'peer', text: 'x'.repeat(1000) + ' итого $4088500' });
+    expect(res.isError).toBeUndefined();
+    expect(chatRows()).toHaveLength(1);
+  });
+
+  it('sends content unchanged when fact-checking is off', async () => {
+    delete process.env.FACTUALITY_LEVEL;
+    const res = await sendMessage.handler({ to: 'sergei-iphone', text: 'Итого 4088500 ₽ за месяц' });
+    expect(res.isError).toBeUndefined();
+    expect(chatRows()).toHaveLength(1);
+  });
+
+  it('logs the refusal so the ack limit can be checked against real traffic', async () => {
+    await sendMessage.handler({ to: 'sergei-iphone', text: 'Итого 4088500 ₽ за месяц' });
+    const ev = getUndeliveredMessages()
+      .map((m) => JSON.parse(m.content))
+      .filter((c) => c.action === 'log_gate_event');
+    expect(ev).toHaveLength(1);
+    expect(ev[0].decision).toBe('refused_send');
+    expect(ev[0].next).toBe('Итого 4088500 ₽ за месяц');
+  });
+});
+
+/**
  * Reactions are a platform affordance — the host renders them on Telegram,
  * Slack, iOS. Between agents there is nothing to render: the host has no a2a
  * reaction handling at all (zero references in delivery.ts or the

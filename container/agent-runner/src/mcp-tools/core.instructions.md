@@ -4,7 +4,7 @@
 
 ### Mid-turn updates (`send_message`)
 
-Use the `mcp__nanoclaw__send_message` tool to send a message while you're still working (before your final output). If you have one destination, `to` is optional; with multiple, specify it. Pace your updates to the length of the work:
+Use the `mcp__nanoclaw__send_message` tool to send a message while you're still working (before your final output). If you have one destination, `to` is optional; with multiple, specify it. While fact-checking is on, a message to a person this way is only an acknowledgement — at most 200 characters, no figures; anything more is refused, because only your `<message>` reply is fact-checked. Pace your updates to the length of the work:
 
 - **Short turn (≤2 quick tool calls):** Don't narrate. Output any response.
 - **Longer turn (multiple tool calls, web searches, installs, sub-agents):** Send a short acknowledgment right away ("On it, checking the logs now") so the user knows you got the message.

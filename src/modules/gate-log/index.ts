@@ -1,8 +1,9 @@
 /**
- * Gate-log module — durable, queryable telemetry for the `edit_message` gate.
+ * Gate-log module — durable, queryable telemetry for the outbound gates.
  *
- * The container emits one `log_gate_event` system action per edit attempt
- * (container/agent-runner/src/mcp-tools/gate-events.ts). This handler stamps the
+ * The container emits one `log_gate_event` system action per edit attempt, and
+ * per send_message to a person refused as more than an acknowledgement
+ * (decision `refused_send`; container/agent-runner/src/mcp-tools/gate-events.ts). This handler stamps the
  * emitting agent group + session (which the container doesn't know) from the
  * session the message came in on, and inserts a row into the central
  * `gate_events` table (migration 023). Analysis via scripts/q.ts, e.g.

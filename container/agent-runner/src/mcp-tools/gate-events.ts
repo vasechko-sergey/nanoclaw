@@ -1,8 +1,10 @@
 /**
- * Edit-gate telemetry (container side).
+ * Outbound-gate telemetry (container side).
  *
- * Every `edit_message` attempt that reaches the gate logic emits ONE event so
- * the thresholds (change-ratio 0.1, stale-age 60 min) can be checked against
+ * Every `edit_message` attempt that reaches the gate logic emits ONE event, and
+ * so does every `send_message` to a person refused as more than an
+ * acknowledgement (`refused_send`, send-guard.ts), so the thresholds
+ * (change-ratio 0.1, stale-age 60 min, ack 200 chars) can be checked against
  * real traffic rather than guessed. The event rides the existing
  * system-action ferry: a `kind='system'` outbound row with
  * `{action:'log_gate_event', ...}`. The host's gate-log delivery handler stamps
@@ -21,7 +23,7 @@ function cap(s: string | null): string | null {
   return s.length > GATE_TEXT_CAP ? s.slice(0, GATE_TEXT_CAP) : s;
 }
 
-export type GateDecision = 'allowed' | 'refused_replacement' | 'refused_stale' | 'refused_not_own';
+export type GateDecision = 'allowed' | 'refused_replacement' | 'refused_stale' | 'refused_not_own' | 'refused_send';
 
 export interface GateEvent {
   decision: GateDecision;

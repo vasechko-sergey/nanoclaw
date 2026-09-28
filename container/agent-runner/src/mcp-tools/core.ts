@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 
+import { loadConfig } from '../config.js';
 import { getCurrentInReplyTo } from '../current-batch.js';
 import { findByName, getAllDestinations, resolveDefaultRouting } from '../destinations.js';
 import {
@@ -23,6 +24,7 @@ import {
 import { getSessionRouting } from '../db/session-routing.js';
 import { classifyReplacement, humanizeAge, isStaleLastEdit, parseSqliteUtcMs } from './edit-guard.js';
 import { emitGateEvent, type GateEvent } from './gate-events.js';
+import { ackOnlyRefusal } from './send-guard.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -40,6 +42,20 @@ function ok(text: string) {
 
 function err(text: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
+}
+
+// Best-effort telemetry — a logging failure must never break the tool call.
+function logGate(ev: GateEvent): void {
+  try {
+    emitGateEvent(ev);
+  } catch (e) {
+    log(`gate-event emit failed: ${e}`);
+  }
+}
+
+// container.json is the source of truth; env is a test fallback (as in workout.ts).
+function factualityLevel(): number {
+  return loadConfig().factualityLevel || Number(process.env.FACTUALITY_LEVEL ?? 0);
 }
 
 function destinationList(): string {
@@ -110,7 +126,11 @@ function resolveRouting(
 export const sendMessage: McpToolDefinition = {
   tool: {
     name: 'send_message',
-    description: 'Send a message to a named destination. If you have only one destination, you can omit `to`.',
+    description:
+      'Send a message to a named destination. If you have only one destination, you can omit `to`. ' +
+      'To a person this is for a short mid-turn acknowledgement ("on it, checking…"): while fact-checking is on, ' +
+      'anything over 200 characters or with figures is refused here — your answer goes in your <message> reply, ' +
+      'which is fact-checked.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -129,6 +149,16 @@ export const sendMessage: McpToolDefinition = {
 
     const routing = resolveRouting(args.to as string | undefined);
     if ('error' in routing) return err(routing.error);
+
+    // Only <message> blocks are fact-checked, so while the gate is on a person
+    // gets nothing but a short acknowledgement from this path (send-guard.ts).
+    if (routing.channel_type !== 'agent') {
+      const refusal = ackOnlyRefusal(text, factualityLevel());
+      if (refusal) {
+        logGate({ decision: 'refused_send', seq: null, omitId: false, next: text });
+        return err(refusal);
+      }
+    }
 
     const id = generateId();
     const seq = writeMessageOut({
@@ -278,15 +308,6 @@ export const editMessage: McpToolDefinition = {
   async handler(args) {
     const text = args.text as string;
     if (!text) return err('text is required');
-
-    // Best-effort telemetry — a logging failure must never break the edit.
-    const logGate = (ev: GateEvent): void => {
-      try {
-        emitGateEvent(ev);
-      } catch (e) {
-        log(`gate-event emit failed: ${e}`);
-      }
-    };
 
     const omitId = args.messageId === undefined || args.messageId === null || args.messageId === '';
     let seq: number;
