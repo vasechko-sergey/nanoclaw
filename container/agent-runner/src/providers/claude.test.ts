@@ -1,5 +1,5 @@
 import { test, it, expect, describe } from 'bun:test';
-import { extractToolResultText, translateSdkMessage } from './claude.js';
+import { createCompactionTracker, extractToolResultText, translateSdkMessage } from './claude.js';
 
 test('extractToolResultText reads a string content block', () => {
   expect(extractToolResultText('TRC20 fee: 0.80 USDT')).toBe('TRC20 fee: 0.80 USDT');
@@ -116,5 +116,33 @@ describe('translateSdkMessage — harness errors vs agent text', () => {
     expect(translateSdkMessage({ type: 'system', subtype: 'rate_limit_event' })).toEqual([
       { type: 'error', message: 'Rate limit', retryable: false, classification: 'quota' },
     ]);
+  });
+});
+
+/**
+ * PreCompact fires, then the SDK goes silent for however long summarizing a
+ * 165k-token context takes — no events, no tool in flight. The tracker is
+ * what lets the poll-loop tell that window apart from a wedged stream.
+ */
+describe('compaction tracker', () => {
+  it('is idle until PreCompact fires', () => {
+    const t = createCompactionTracker();
+    expect(t.isBusy()).toBe(false);
+  });
+
+  it('reports busy from PreCompact until the next SDK message', () => {
+    const t = createCompactionTracker();
+    t.onPreCompact();
+    expect(t.isBusy()).toBe(true);
+    t.onMessage();
+    expect(t.isBusy()).toBe(false);
+  });
+
+  it('re-arms for a second compaction in the same turn', () => {
+    const t = createCompactionTracker();
+    t.onPreCompact();
+    t.onMessage();
+    t.onPreCompact();
+    expect(t.isBusy()).toBe(true);
   });
 });

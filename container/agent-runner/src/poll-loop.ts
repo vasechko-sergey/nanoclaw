@@ -56,7 +56,16 @@ const ACTIVE_POLL_INTERVAL_MS = 500;
  * fallback within 4 minutes — and only if nothing else was delivered this
  * turn (see the suppression in the abort branch below).
  */
-const STREAM_IDLE_TIMEOUT_MS = 240_000;
+const STREAM_IDLE_TIMEOUT_DEFAULT_MS = 240_000;
+/**
+ * Read per-call so an operator can retune a live deployment through the
+ * container env without a rebuild, and so tests can drive the watchdog in
+ * milliseconds instead of minutes.
+ */
+function streamIdleTimeoutMs(): number {
+  const raw = Number(process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : STREAM_IDLE_TIMEOUT_DEFAULT_MS;
+}
 // Cheapest cadence that still beats the host's minutes-long staleness sweep.
 const HEARTBEAT_TOUCH_INTERVAL_MS = 1_000;
 
@@ -876,8 +885,9 @@ export async function processQuery(
     while (true) {
       if (!pendingNext) pendingNext = iter.next();
       let idleHandle: ReturnType<typeof setTimeout> | undefined;
+      const idleMs = streamIdleTimeoutMs();
       const idleP = new Promise<{ idle: true }>((resolve) => {
-        idleHandle = setTimeout(() => resolve({ idle: true }), STREAM_IDLE_TIMEOUT_MS);
+        idleHandle = setTimeout(() => resolve({ idle: true }), idleMs);
         // Don't let the watchdog timer hold the event loop alive after the
         // poll-loop is abandoned (e.g. tests aborting via signal, host
         // shutdown). Without this, an orphaned 120s timer per iteration
@@ -896,12 +906,24 @@ export async function processQuery(
         // hung tool.
         if (inFlightTools.size > 0) {
           log(
-            `Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms with ${inFlightTools.size} tool(s) in flight — extending watchdog`,
+            `Stream idle ${idleMs}ms with ${inFlightTools.size} tool(s) in flight — extending watchdog`,
           );
           continue;
         }
 
-        // SDK stream went silent for STREAM_IDLE_TIMEOUT_MS without yielding
+        // Same tolerance, different silence: the provider says it is mid
+        // context-compaction. The SDK runs that summarization as its own
+        // request — no stream events, no tool_use — so an idle window here
+        // is work, not a wedge. Compacting a full context routinely outruns
+        // the ceiling (scrooge, 2026-10-01: PreCompact, then 240s of silence,
+        // then the turn aborted and the answer was gone). Wait it out; the
+        // host's 30-minute absolute ceiling is still the real backstop.
+        if (query.isBusy?.()) {
+          log(`Stream idle ${idleMs}ms during provider-reported busy window — extending watchdog`);
+          continue;
+        }
+
+        // SDK stream went silent for the idle ceiling without yielding
         // even an `activity` tick. Two cases:
         //   - Before `result`: the turn never completed. Tell the user
         //     something stalled, abort, let the next inbound message wake
@@ -914,7 +936,7 @@ export async function processQuery(
         //     the user already has the agent's full answer, the fallback
         //     message would just confuse them.
         if (resultReceived) {
-          log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms after result — ending turn cleanly`);
+          log(`Stream idle ${idleMs}ms after result — ending turn cleanly`);
           watchdogFired = true;
           // A follow-up push after the turn's result may have streamed a block
           // (closed or unclosed) that never got its own result event. Salvage it
@@ -931,7 +953,7 @@ export async function processQuery(
           }
           break;
         }
-        log(`Stream idle ${STREAM_IDLE_TIMEOUT_MS}ms — aborting turn`);
+        log(`Stream idle ${idleMs}ms — aborting turn`);
         watchdogFired = true;
         if (streamBuffer.length > 0) {
           // Rejects are dropped here on purpose: the turn is being aborted, so
@@ -1307,7 +1329,7 @@ export async function processQuery(
             // (bounded by MAX_TRIES) — the same recovery the transient-API path
             // uses. Break now rather than fall through: otherwise the query
             // stays open and the after-result watchdog burns a full
-            // STREAM_IDLE_TIMEOUT_MS before exiting (the reported 240s hang).
+            // full idle ceiling before exiting (the reported 240s hang).
             log('Result with no text and nothing deliverable after salvage — leaving batch un-acked for host retry');
             deliveryFailure = true;
             try {
@@ -1325,7 +1347,7 @@ export async function processQuery(
           if (turnRejects.length > 0) {
             // Dropped rather than nudged, deliberately: pushing a nudge would
             // re-arm the watchdog against a query that may already be dead,
-            // buying a full STREAM_IDLE_TIMEOUT_MS stall and a spurious
+            // buying a full idle-ceiling stall and a spurious
             // "[stream stalled]" for a turn that is over. They were logged at
             // reject time; Layer 2 (host) backstops anything already emitted.
             log(`Result with no text — dropping ${turnRejects.length} unreported reject(s) from this turn`);

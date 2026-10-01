@@ -357,8 +357,35 @@ const postToolUseHook: HookCallback = async () => {
   return { continue: true };
 };
 
-function createPreCompactHook(assistantName?: string): HookCallback {
+/**
+ * Tracks the one window where the SDK works without emitting anything: the
+ * auto-compaction request it fires when the context hits
+ * CLAUDE_CODE_AUTO_COMPACT_WINDOW. PreCompact marks its start; the next SDK
+ * message — the compact_boundary, or whatever follows it — marks its end.
+ * Clearing on ANY message rather than on the boundary specifically is
+ * deliberate: a compaction that errors out still produces a next message, so
+ * the flag can never latch and permanently disarm the watchdog.
+ */
+export function createCompactionTracker(): {
+  onPreCompact: () => void;
+  onMessage: () => void;
+  isBusy: () => boolean;
+} {
+  let compacting = false;
+  return {
+    onPreCompact: () => {
+      compacting = true;
+    },
+    onMessage: () => {
+      compacting = false;
+    },
+    isBusy: () => compacting,
+  };
+}
+
+function createPreCompactHook(assistantName?: string, onPreCompact?: () => void): HookCallback {
   return async (input) => {
+    onPreCompact?.();
     const preCompact = input as PreCompactHookInput;
     const { transcript_path: transcriptPath, session_id: sessionId } = preCompact;
 
@@ -450,6 +477,10 @@ export class ClaudeProvider implements AgentProvider {
     const stream = new MessageStream();
     stream.push(input.prompt);
 
+    // Compaction is invisible from the event stream, so the poll-loop can only
+    // tell it apart from a wedged stream if we say so explicitly.
+    const compaction = createCompactionTracker();
+
     const instructions = input.systemContext?.instructions;
 
     const sdkResult = sdkQuery({
@@ -485,7 +516,7 @@ export class ClaudeProvider implements AgentProvider {
           PreToolUse: [{ hooks: [preToolUseHook] }],
           PostToolUse: [{ hooks: [postToolUseHook] }],
           PostToolUseFailure: [{ hooks: [postToolUseHook] }],
-          PreCompact: [{ hooks: [createPreCompactHook(this.assistantName)] }],
+          PreCompact: [{ hooks: [createPreCompactHook(this.assistantName, compaction.onPreCompact)] }],
         },
       },
     });
@@ -496,6 +527,7 @@ export class ClaudeProvider implements AgentProvider {
       let messageCount = 0;
       for await (const message of sdkResult) {
         if (aborted) return;
+        compaction.onMessage();
         messageCount++;
 
         // Yield activity for every SDK event so the poll loop knows the agent is working
@@ -510,6 +542,7 @@ export class ClaudeProvider implements AgentProvider {
       push: (msg) => stream.push(msg),
       end: () => stream.end(),
       events: translateEvents(),
+      isBusy: compaction.isBusy,
       abort: () => {
         aborted = true;
         stream.end();

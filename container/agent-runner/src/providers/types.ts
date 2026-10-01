@@ -77,6 +77,14 @@ export interface AgentQuery {
 
   /** Force-stop the query. */
   abort(): void;
+
+  /**
+   * True while the provider is doing work that produces no stream events —
+   * today, SDK context compaction. The poll-loop's idle watchdog treats such
+   * a window like a tool in flight and waits instead of declaring the stream
+   * wedged. Optional: a provider that never goes silently busy omits it.
+   */
+  isBusy?(): boolean;
 }
 
 export type ProviderEvent =

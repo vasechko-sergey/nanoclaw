@@ -2014,3 +2014,86 @@ describe('follow-ups are acked with the turn, not on push', () => {
     expect(ackStatus('f1')).toBe('completed');
   });
 });
+
+/**
+ * Auto-compaction is a silent window. The SDK runs its summarization request
+ * with no stream events and no tool in flight, so the idle watchdog read a
+ * perfectly healthy compaction as a wedged stream and killed the turn
+ * (scrooge, 2026-10-01: "Archived conversation to …" followed by 240s of
+ * silence and "aborting turn" — a whole parser-writing turn lost, the user
+ * got "[stream stalled]"). The provider now reports that window via isBusy()
+ * and the watchdog waits it out, exactly as it already does for a tool in
+ * flight. The host's absolute ceiling stays the backstop.
+ */
+describe('idle watchdog waits out a provider-reported busy window', () => {
+  const routing: RoutingContext = { platformId: 'tg-1', channelType: 'telegram', threadId: null, inReplyTo: null };
+  const ANSWER = '<message to="family">Парсер Permata готов</message>';
+
+  beforeEach(() => {
+    process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS = '150';
+  });
+
+  afterEach(() => {
+    delete process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS;
+  });
+
+  function seedDest(): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES ('family', 'family', 'channel', 'telegram', 'tg-1', NULL)`,
+      )
+      .run();
+  }
+
+  const outText = () =>
+    (getOutboundDb().prepare('SELECT content FROM messages_out ORDER BY seq').all() as Array<{ content: string }>)
+      .map((r) => r.content)
+      .join('\n');
+
+  /**
+   * Goes quiet for `gapMs` — far past the idle ceiling — before answering.
+   * `busy` models the provider flag: raised for the silent window, lowered
+   * by the event that ends it, same as the SDK message after compaction.
+   */
+  function compactingQuery(gapMs: number, reportBusy: boolean): AgentQuery {
+    let busy = false;
+    return {
+      push: () => {},
+      end: () => {},
+      abort: () => {},
+      isBusy: () => reportBusy && busy,
+      events: {
+        async *[Symbol.asyncIterator]() {
+          yield { type: 'init', continuation: 'c1' } as ProviderEvent;
+          busy = true;
+          await new Promise((r) => setTimeout(r, gapMs));
+          busy = false;
+          yield { type: 'result', text: ANSWER } as ProviderEvent;
+        },
+      },
+    };
+  }
+
+  it('still aborts a silent stream when the provider reports nothing in flight', async () => {
+    const { markProcessing } = await import('./db/messages-in.js');
+    seedDest();
+    markProcessing(['m1']);
+
+    await processQuery(compactingQuery(500, false), routing, ['m1'], 'mock');
+
+    expect(outText()).toContain('stream stalled');
+  });
+
+  it('waits out the busy window and delivers the answer that follows it', async () => {
+    const { markProcessing } = await import('./db/messages-in.js');
+    seedDest();
+    markProcessing(['m1']);
+
+    await processQuery(compactingQuery(500, true), routing, ['m1'], 'mock');
+
+    const out = outText();
+    expect(out).not.toContain('stream stalled');
+    expect(out).toContain('Парсер Permata готов');
+  });
+});
