@@ -124,6 +124,23 @@ export function markCompleted(ids: string[]): void {
   })();
 }
 
+/**
+ * Highest retry count among `ids` (messages_in.tries, bumped by the host each
+ * time it hands an un-acked batch back). 0 for unknown ids.
+ */
+export function maxTries(ids: string[]): number {
+  if (ids.length === 0) return 0;
+  const inbound = openInboundDb();
+  try {
+    const row = inbound
+      .prepare(`SELECT MAX(tries) AS t FROM messages_in WHERE id IN (${ids.map(() => '?').join(',')})`)
+      .get(...ids) as { t: number | null } | undefined;
+    return row?.t ?? 0;
+  } finally {
+    inbound.close();
+  }
+}
+
 /** Mark a single message as failed — writes to processing_ack in outbound.db. */
 export function markFailed(id: string): void {
   getOutboundDb()

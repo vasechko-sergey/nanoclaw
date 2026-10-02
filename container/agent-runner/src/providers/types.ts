@@ -85,6 +85,16 @@ export interface AgentQuery {
    * wedged. Optional: a provider that never goes silently busy omits it.
    */
   isBusy?(): boolean;
+
+  /**
+   * True while the provider is actually executing a tool the model called —
+   * from the moment the tool starts to the moment it returns. Distinct from a
+   * `tool_use_start` event, which only says the model emitted the call: when
+   * the stream stalls right after that block, nothing runs. The poll-loop's
+   * watchdog waits out silence only while this is true. Optional: a provider
+   * without it keeps the older rule (started and not yet ended = running).
+   */
+  toolsExecuting?(): boolean;
 }
 
 export type ProviderEvent =

@@ -90,6 +90,18 @@ export function isContainerRunning(sessionId: string): boolean {
  * its next tick. Callers that care (e.g. the router's typing indicator)
  * can branch on the boolean.
  */
+type ContainerExitListener = (sessionId: string) => void;
+const containerExitListeners: ContainerExitListener[] = [];
+
+/**
+ * Subscribe to container exits — its own exit, a crash, a kill. host-sweep
+ * uses it to hand a still-claimed batch back right away instead of on its
+ * next tick.
+ */
+export function onContainerExit(listener: ContainerExitListener): void {
+  containerExitListeners.push(listener);
+}
+
 export function wakeContainer(session: Session): Promise<boolean> {
   if (activeContainers.has(session.id)) {
     log.debug('Container already running', { sessionId: session.id });
@@ -374,6 +386,13 @@ async function spawnContainer(session: Session): Promise<void> {
     markContainerStopped(session.id);
     stopTypingRefresh(session.id);
     log.info('Container exited', { sessionId: session.id, code, containerName });
+    for (const listener of containerExitListeners) {
+      try {
+        listener(session.id);
+      } catch (err) {
+        log.warn('Container exit listener failed', { sessionId: session.id, err });
+      }
+    }
   });
 
   container.on('error', (err) => {

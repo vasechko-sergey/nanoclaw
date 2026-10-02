@@ -1,5 +1,5 @@
 import { test, it, expect, describe } from 'bun:test';
-import { createCompactionTracker, extractToolResultText, translateSdkMessage } from './claude.js';
+import { createCompactionTracker, createToolExecutionTracker, extractToolResultText, translateSdkMessage } from './claude.js';
 
 test('extractToolResultText reads a string content block', () => {
   expect(extractToolResultText('TRC20 fee: 0.80 USDT')).toBe('TRC20 fee: 0.80 USDT');
@@ -144,5 +144,51 @@ describe('compaction tracker', () => {
     t.onMessage();
     t.onPreCompact();
     expect(t.isBusy()).toBe(true);
+  });
+});
+
+/**
+ * A tool_use block in the stream is the model asking for a tool — not the tool
+ * running. On 2026-10-02 Payne's stream stalled right after such a block: the
+ * message never completed, nothing ran, and the watchdog took the block for a
+ * running tool. The tracker reports only what the CLI actually executes:
+ * PreToolUse opens a call, PostToolUse(Failure) or its tool_result closes it.
+ */
+describe('tool execution tracker', () => {
+  it('nothing runs until PreToolUse', () => {
+    expect(createToolExecutionTracker().isRunning()).toBe(false);
+  });
+
+  it('runs from PreToolUse to PostToolUse', () => {
+    const t = createToolExecutionTracker();
+    t.started('t1');
+    expect(t.isRunning()).toBe(true);
+    t.finished('t1');
+    expect(t.isRunning()).toBe(false);
+  });
+
+  it('a subagent keeps the call open while its own tools come and go', () => {
+    const t = createToolExecutionTracker();
+    t.started('agent-1');
+    t.started('inner-1');
+    t.finished('inner-1');
+    expect(t.isRunning()).toBe(true);
+    t.finished('agent-1');
+    expect(t.isRunning()).toBe(false);
+  });
+
+  it('a tool_result closes a call whose Post hook never came', () => {
+    const t = createToolExecutionTracker();
+    t.started('t1');
+    t.onEvent({ type: 'tool_use_end', id: 't1' });
+    expect(t.isRunning()).toBe(false);
+  });
+
+  it("the turn's result clears whatever is left", () => {
+    const t = createToolExecutionTracker();
+    t.started('t1');
+    t.started('t2');
+    t.onEvent({ type: 'result', text: 'done' });
+    expect(t.isRunning()).toBe(false);
   });
 });

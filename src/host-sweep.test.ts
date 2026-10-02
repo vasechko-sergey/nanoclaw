@@ -4,7 +4,7 @@
  * don't have to mock the filesystem or the container runner.
  */
 import Database from 'better-sqlite3';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { deleteOrphanProcessingClaims, getProcessingClaims } from './db/session-db.js';
 import {
@@ -13,6 +13,7 @@ import {
   _resetStuckProcessingRowsForTesting,
   decideStuckAction,
   parseSqliteUtc,
+  scheduleExitSweeps,
 } from './host-sweep.js';
 import type { Session } from './types.js';
 
@@ -333,5 +334,32 @@ describe('parseSqliteUtc', () => {
     // bare string returns different values depending on the host TZ.)
     const bare = '2026-04-20T12:00:00';
     expect(parseSqliteUtc(bare)).toBe(Date.parse(bare + 'Z'));
+  });
+});
+
+/**
+ * A container that exits with its batch still claimed — a transient API error,
+ * a stream stalled mid-turn — is waiting for a sweep to hand the batch back.
+ * On the 60 s tick that took two sweeps (reset the claim, then wake after the
+ * backoff): up to two minutes of silence before the retry even started.
+ */
+describe('scheduleExitSweeps', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sweeps the session at once, and again just after the first retry backoff', () => {
+    vi.useFakeTimers();
+    const swept: string[] = [];
+    scheduleExitSweeps('sess-1', (id) => swept.push(id));
+
+    vi.advanceTimersByTime(0);
+    expect(swept).toEqual(['sess-1']); // returns the claimed batch (resetStuckProcessingRows)
+
+    vi.advanceTimersByTime(5_000);
+    expect(swept).toEqual(['sess-1']); // backoff (5 s) not over yet
+
+    vi.advanceTimersByTime(1_000);
+    expect(swept).toEqual(['sess-1', 'sess-1']); // due now → woken
   });
 });

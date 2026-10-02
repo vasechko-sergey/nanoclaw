@@ -1,7 +1,7 @@
 import { validateA2aKind } from '@shared/a2a/kinds.js';
 
 import { findByName, getAllDestinations, resolveDefaultRouting, type DestinationEntry } from './destinations.js';
-import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
+import { getPendingMessages, markProcessing, markCompleted, maxTries, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
 import { shouldTouchHeartbeat } from './heartbeat-throttle.js';
@@ -67,6 +67,25 @@ function streamIdleTimeoutMs(): number {
   const raw = Number(process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : STREAM_IDLE_TIMEOUT_DEFAULT_MS;
 }
+/**
+ * How long a tool call may sit between the model emitting it and the provider
+ * starting it (`toolsExecuting`). That gap is milliseconds — the message ends,
+ * the CLI runs the tool — so a minute of silence there is a stalled stream,
+ * not work: Payne, 2026-10-02, a tool_use block and then 3.5 minutes of
+ * nothing. Env-tunable like the idle ceiling, and for the same test reason.
+ */
+const TOOL_DISPATCH_TIMEOUT_DEFAULT_MS = 60_000;
+function toolDispatchTimeoutMs(): number {
+  const raw = Number(process.env.NANOCLAW_TOOL_DISPATCH_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : TOOL_DISPATCH_TIMEOUT_DEFAULT_MS;
+}
+/**
+ * Silent retries a stalled turn gets before the user is told. Each is a fresh
+ * container: the host bumps messages_in.tries on every hand-back.
+ */
+const STALL_SILENT_RETRIES = 2;
+/** How long the watchdog's abort waits for the provider iterator to wind down. */
+const ITERATOR_DRAIN_TIMEOUT_MS = 1_000;
 // Cheapest cadence that still beats the host's minutes-long staleness sweep.
 const HEARTBEAT_TOUCH_INTERVAL_MS = 1_000;
 
@@ -550,6 +569,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // can stamp it on outbound rows — needed for a2a return-path routing.
     setCurrentInReplyTo(routing.inReplyTo);
     let leaveForRetry = false;
+    let streamStalled = false;
     try {
       const result = await processQuery(query, routing, processingIds, config.providerName, gateOn, grounding, level, groundingText);
       if (result.continuation && result.continuation !== continuation) {
@@ -557,6 +577,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
         setContinuation(config.providerName, continuation);
       }
       leaveForRetry = result.transientError === true || result.deliveryFailure === true;
+      streamStalled = result.streamStalled === true;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
 
@@ -637,6 +658,17 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       // its series still advances (see resetStuckProcessingRows in
       // src/host-sweep.ts).
       log(`Left ${processingIds.length} message(s) un-acked — exiting for prompt host retry`);
+      return;
+    }
+
+    if (streamStalled) {
+      // The provider stream is wedged mid-turn and its SDK subprocess can't be
+      // reclaimed from here: a new query would resume the same session next
+      // to a CLI that may still write to it. Exit — the subprocess dies with
+      // the container. processQuery already decided the batch: still claimed
+      // (nothing reached the user, retries left → the host hands it to a fresh
+      // container) or completed (output already delivered, or retries used up).
+      log(`Stream stalled — exiting so a fresh container takes over`);
       return;
     }
 
@@ -728,6 +760,15 @@ interface QueryResult {
    * re-wakes it, rather than marking a silent turn `completed`.
    */
   deliveryFailure?: boolean;
+  /**
+   * True when the watchdog found the stream stalled mid-turn. The caller
+   * exits the container either way (the wedged SDK subprocess goes with it);
+   * the batch's fate is already set here. Nothing delivered and silent retries
+   * left → still claimed, so the host hands it to a fresh container that
+   * resumes the session. Output already delivered, or retries used up →
+   * completed (a retry would deliver that output twice).
+   */
+  streamStalled?: boolean;
 }
 
 /**
@@ -767,6 +808,9 @@ export async function processQuery(
   // Set when a `result` with no text left the user with nothing deliverable —
   // treated like `transientError` (batch left un-acked for host re-wake).
   let deliveryFailure = false;
+  // Set when the watchdog finds the stream stalled before anything reached the
+  // user (see QueryResult.streamStalled).
+  let streamStalled = false;
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open avoids
@@ -948,7 +992,12 @@ export async function processQuery(
     while (true) {
       if (!pendingNext) pendingNext = iter.next();
       let idleHandle: ReturnType<typeof setTimeout> | undefined;
-      const idleMs = streamIdleTimeoutMs();
+      // A tool call the model emitted that the provider hasn't started: the gap
+      // is normally milliseconds, so silence there gets the short timeout.
+      const awaitingDispatch = query.toolsExecuting !== undefined && inFlightTools.size > 0 && !query.toolsExecuting();
+      const idleMs = awaitingDispatch
+        ? Math.min(toolDispatchTimeoutMs(), streamIdleTimeoutMs())
+        : streamIdleTimeoutMs();
       const idleP = new Promise<{ idle: true }>((resolve) => {
         idleHandle = setTimeout(() => resolve({ idle: true }), idleMs);
         // Don't let the watchdog timer hold the event loop alive after the
@@ -961,16 +1010,17 @@ export async function processQuery(
       if (idleHandle) clearTimeout(idleHandle);
 
       if ('idle' in winner) {
-        // Tool-tolerant mode: at least one tool_use is still pending its
-        // tool_result. Long Bash/MCP calls emit no SDK events between
-        // start and end; treating that as a stall would kill perfectly
-        // healthy turns. Keep waiting on the same `pendingNext`; the
-        // host's 30-minute absolute-ceiling is the real backstop for a
-        // hung tool.
-        if (inFlightTools.size > 0) {
-          log(
-            `Stream idle ${idleMs}ms with ${inFlightTools.size} tool(s) in flight — extending watchdog`,
-          );
+        // Tool-tolerant mode: a running tool emits no SDK events between
+        // start and end (long Bash/MCP calls); treating that as a stall would
+        // kill perfectly healthy turns. Keep waiting on the same
+        // `pendingNext`; the host's 30-minute absolute-ceiling is the real
+        // backstop for a hung tool. "Running" is the provider's word when it
+        // has one: a streamed tool_use block is not a running tool — when the
+        // stream stalls right after it, nothing runs (Payne, 2026-10-02).
+        // Providers without the signal keep the older rule.
+        const toolRunning = query.toolsExecuting ? query.toolsExecuting() : inFlightTools.size > 0;
+        if (toolRunning) {
+          log(`Stream idle ${idleMs}ms with a tool running — extending watchdog`);
           continue;
         }
 
@@ -1016,7 +1066,11 @@ export async function processQuery(
           }
           break;
         }
-        log(`Stream idle ${idleMs}ms — aborting turn`);
+        log(
+          awaitingDispatch
+            ? `Stream idle ${idleMs}ms after a tool call that never started — stream stalled, aborting turn`
+            : `Stream idle ${idleMs}ms — aborting turn`,
+        );
         watchdogFired = true;
         if (streamBuffer.length > 0) {
           // Rejects are dropped here on purpose: the turn is being aborted, so
@@ -1028,15 +1082,30 @@ export async function processQuery(
           flushOpenBlock(remainder, routing, dispatchedKeys);
           streamBuffer = '';
         }
+        // Nothing reached the user and retries are left: hand the batch back
+        // un-acked. The caller exits; the host resets it with backoff and wakes
+        // a fresh container that resumes the session, so the request is
+        // retried rather than answered with an error. The streamBuffer flush
+        // above runs first so a just-salvaged block counts as delivered.
+        const delivered = getUserFacingDispatchCount();
+        const tries = maxTries(batchIds);
+        streamStalled = true;
+        if (delivered === 0 && tries < STALL_SILENT_RETRIES) {
+          log(`Stream stalled with nothing delivered (retry ${tries + 1} of ${STALL_SILENT_RETRIES}) — leaving the batch for a fresh container`);
+          try {
+            query.abort();
+          } catch (err) {
+            log(`query.abort() threw: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          break;
+        }
         markCompleted(batchIds);
         // Only surface the "[stream stalled]" error if the user got NOTHING
         // this turn. If real content already went out (streamed <message>
         // blocks, send_message / send_photo) — e.g. a forecast photo
         // followed by a stalled summary — the fallback is a misleading error
-        // stapled onto a good answer. Status pings don't count (see
-        // isUserFacing in messages-out.ts). The streamBuffer flush above runs
-        // first so a just-completed block is reflected in the count.
-        const delivered = getUserFacingDispatchCount();
+        // stapled onto a good answer, and a retry would send it twice. Status
+        // pings don't count (see isUserFacing in messages-out.ts).
         if (delivered === 0) {
           writeMessageOut({
             id: generateId(),
@@ -1442,16 +1511,26 @@ export async function processQuery(
       // Drain the iterator's return() so the underlying SDK subprocess (if
       // any) gets a chance to clean up. Swallow errors — we're already in
       // the abort path and any further failure is logged for debugging
-      // only.
+      // only. Bounded: on a stream stalled mid-turn the generator sits in an
+      // await that never settles, and an unbounded return() hung right here —
+      // the turn never ended and the container never exited.
+      let drainTimer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await iter.return?.(undefined);
+        await Promise.race([
+          iter.return?.(undefined),
+          new Promise((resolve) => {
+            drainTimer = setTimeout(resolve, ITERATOR_DRAIN_TIMEOUT_MS);
+          }),
+        ]);
       } catch (err) {
         log(`iterator return after watchdog threw: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        if (drainTimer) clearTimeout(drainTimer);
       }
     }
   }
 
-  return { continuation: queryContinuation, transientError, deliveryFailure };
+  return { continuation: queryContinuation, transientError, deliveryFailure, streamStalled };
 }
 
 function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {

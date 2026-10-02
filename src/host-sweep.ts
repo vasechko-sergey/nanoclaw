@@ -31,7 +31,7 @@ import fs from 'fs';
 
 import { AGENTS_DIR, DATA_DIR } from './config.js';
 import path from 'path';
-import { getActiveSessions } from './db/sessions.js';
+import { getActiveSessions, getSession } from './db/sessions.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import {
   countDueMessages,
@@ -48,7 +48,7 @@ import { log } from './log.js';
 import { openInboundDb, openOutboundDb, openOutboundDbRw, inboundDbPath, heartbeatPath } from './session-manager.js';
 import { projectAllPublicProfiles } from './public-profiles.js';
 import { writeAgentRegistry } from './agent-registry.js';
-import { isContainerRunning, killContainer, wakeContainer } from './container-runner.js';
+import { isContainerRunning, killContainer, onContainerExit, wakeContainer } from './container-runner.js';
 import type { Session } from './types.js';
 import { runSummaryNotify } from './modules/summary-notify/sweep.js';
 import { DEFAULT_SUMMARY_CFG } from './modules/summary-notify/detector.js';
@@ -125,11 +125,43 @@ export function decideStuckAction(args: {
 }
 
 let running = false;
+let exitSweepsWired = false;
+// Sessions with a sweep in progress. The periodic tick and an exit-triggered
+// sweep can land on the same session at once; handleRecurrence awaits between
+// reading a completed recurring row and inserting its successor, so two
+// concurrent sweeps would schedule the next occurrence twice.
+const sweeping = new Set<string>();
 
 export function startHostSweep(): void {
   if (running) return;
   running = true;
+  if (!exitSweepsWired) {
+    exitSweepsWired = true;
+    onContainerExit((sessionId) => scheduleExitSweeps(sessionId, sweepSessionById));
+  }
   sweep();
+}
+
+/**
+ * After a container exits, sweep its session at once — a batch it left
+ * claimed on purpose (transient API error, stream stalled mid-turn) goes back
+ * to pending with backoff — and again just after the first backoff, which
+ * wakes a fresh container. The periodic tick needed two passes for that: up
+ * to two minutes of silence before the retry even started. Later retries,
+ * with longer backoffs, are left to the tick.
+ */
+export function scheduleExitSweeps(sessionId: string, sweepOne: (sessionId: string) => void): void {
+  for (const delayMs of [0, BACKOFF_BASE_MS + 1_000]) {
+    const timer = setTimeout(() => sweepOne(sessionId), delayMs);
+    (timer as { unref?: () => void }).unref?.();
+  }
+}
+
+function sweepSessionById(sessionId: string): void {
+  if (!running) return;
+  const session = getSession(sessionId);
+  if (!session || session.status !== 'active') return;
+  sweepSession(session).catch((err) => log.error('Exit sweep error', { sessionId, err }));
 }
 
 export function stopHostSweep(): void {
@@ -185,6 +217,16 @@ async function sweep(): Promise<void> {
 }
 
 async function sweepSession(session: Session): Promise<void> {
+  if (sweeping.has(session.id)) return;
+  sweeping.add(session.id);
+  try {
+    await sweepSessionOnce(session);
+  } finally {
+    sweeping.delete(session.id);
+  }
+}
+
+async function sweepSessionOnce(session: Session): Promise<void> {
   const agentGroup = getAgentGroup(session.agent_group_id);
   if (!agentGroup) return;
 

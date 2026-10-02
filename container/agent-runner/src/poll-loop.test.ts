@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from './db/connection.js';
-import { getPendingMessages, markCompleted, type MessageInRow } from './db/messages-in.js';
+import { getPendingMessages, markCompleted, markProcessing, type MessageInRow } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
 import { formatMessages, extractRouting, type RoutingContext } from './formatter.js';
 import {
@@ -2076,14 +2076,14 @@ describe('idle watchdog waits out a provider-reported busy window', () => {
     };
   }
 
-  it('still aborts a silent stream when the provider reports nothing in flight', async () => {
+  it('still treats a silent stream as a stall when the provider reports nothing in flight', async () => {
     const { markProcessing } = await import('./db/messages-in.js');
     seedDest();
     markProcessing(['m1']);
 
-    await processQuery(compactingQuery(500, false), routing, ['m1'], 'mock');
+    const result = await processQuery(compactingQuery(500, false), routing, ['m1'], 'mock');
 
-    expect(outText()).toContain('stream stalled');
+    expect(result.streamStalled).toBe(true);
   });
 
   it('waits out the busy window and delivers the answer that follows it', async () => {
@@ -2194,5 +2194,173 @@ console.log(JSON.stringify({ day_name: 'Ноги А', week: 3, week_label: 'тя
     const survivors = serveWorkoutStartRequests(getPendingMessages(), paths());
     expect(survivors.map((m) => m.id).sort()).toEqual(['c1', 's1']);
     expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+});
+
+/**
+ * A stream that stalls after a tool call (Payne, 2026-10-02). The SDK handed
+ * over a tool_use block and then nothing: the API message never completed and
+ * the tool never ran. The watchdog took the streamed block for a running tool
+ * and waited with no end; only the user's follow-up got the host to kill the
+ * container, 3.5 minutes in. Had the watchdog fired, it would have acked the
+ * batch and the request was gone.
+ *
+ * Now a tool counts as running only while the provider says it executes it
+ * (hooks around the real run). A block the provider never ran times out fast.
+ * A stall that delivered nothing hands the batch back for a fresh container;
+ * one that already delivered something completes, so nothing is sent twice.
+ */
+describe('a stream that stalls after a tool call', () => {
+  const routing: RoutingContext = { platformId: 'tg-1', channelType: 'telegram', threadId: null, inReplyTo: null };
+  const init = { type: 'init', continuation: 'c1' } as ProviderEvent;
+  const toolStart = { type: 'tool_use_start', id: 't1' } as ProviderEvent;
+
+  beforeEach(() => {
+    process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS = '10000';
+    process.env.NANOCLAW_TOOL_DISPATCH_TIMEOUT_MS = '100';
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES ('family', 'family', 'channel', 'telegram', 'tg-1', NULL)`,
+      )
+      .run();
+  });
+
+  afterEach(() => {
+    delete process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS;
+    delete process.env.NANOCLAW_TOOL_DISPATCH_TIMEOUT_MS;
+  });
+
+  const outText = () =>
+    (getOutboundDb().prepare('SELECT content FROM messages_out ORDER BY seq').all() as Array<{ content: string }>)
+      .map((r) => r.content)
+      .join('\n');
+  const ackStatus = (id: string) =>
+    (getOutboundDb().prepare('SELECT status FROM processing_ack WHERE message_id = ?').get(id) as { status: string } | undefined)
+      ?.status;
+
+  /** Yields `before`, goes quiet for `quietMs`, then yields `after`. */
+  function stallingQuery(opts: {
+    before: ProviderEvent[];
+    quietMs: number;
+    after?: ProviderEvent[];
+    executing?: () => boolean;
+  }): AgentQuery {
+    return {
+      push: () => {},
+      end: () => {},
+      abort: () => {},
+      ...(opts.executing ? { toolsExecuting: opts.executing } : {}),
+      events: {
+        async *[Symbol.asyncIterator]() {
+          for (const e of opts.before) yield e;
+          await new Promise((r) => setTimeout(r, opts.quietMs));
+          for (const e of opts.after ?? []) yield e;
+        },
+      },
+    };
+  }
+
+  it('a tool call the provider never ran is a stall — the batch goes back for a retry, quietly', async () => {
+    insertMessage('m1', 'chat', { sender: 'Sergei', text: 'Давай план на сегодня' });
+    markProcessing(['m1']);
+    const t0 = Date.now();
+
+    const result = await processQuery(
+      stallingQuery({ before: [init, toolStart], quietMs: 5000, executing: () => false }),
+      routing,
+      ['m1'],
+      'mock',
+    );
+
+    expect(Date.now() - t0).toBeLessThan(3000); // the dispatch timeout + a bounded drain, not the idle ceiling
+    expect(result.streamStalled).toBe(true);
+    expect(ackStatus('m1')).toBe('processing');
+    expect(outText()).not.toContain('stream stalled');
+  });
+
+  it('a tool the provider is running is waited out, however quiet', async () => {
+    process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS = '150';
+    markProcessing(['m1']);
+
+    const result = await processQuery(
+      stallingQuery({
+        before: [init, toolStart],
+        quietMs: 500,
+        after: [
+          { type: 'tool_use_end', id: 't1' } as ProviderEvent,
+          { type: 'result', text: '<message to="family">План готов</message>' } as ProviderEvent,
+        ],
+        executing: () => true,
+      }),
+      routing,
+      ['m1'],
+      'mock',
+    );
+
+    expect(result.streamStalled).toBeFalsy();
+    expect(outText()).toContain('План готов');
+  });
+
+  it('a provider without the execution signal keeps the old tolerance for a started tool', async () => {
+    process.env.NANOCLAW_STREAM_IDLE_TIMEOUT_MS = '150';
+    markProcessing(['m1']);
+
+    const result = await processQuery(
+      stallingQuery({
+        before: [init, toolStart],
+        quietMs: 500,
+        after: [
+          { type: 'tool_use_end', id: 't1' } as ProviderEvent,
+          { type: 'result', text: '<message to="family">План готов</message>' } as ProviderEvent,
+        ],
+      }),
+      routing,
+      ['m1'],
+      'mock',
+    );
+
+    expect(result.streamStalled).toBeFalsy();
+    expect(outText()).toContain('План готов');
+  });
+
+  it('once something reached the user, a stall completes the batch — a retry would send it twice', async () => {
+    // Still a stall (the container exits, taking the wedged SDK process along),
+    // but the batch is acked: re-running the turn would repeat the message.
+    insertMessage('m1', 'chat', { sender: 'Sergei', text: 'Давай план на сегодня' });
+    markProcessing(['m1']);
+
+    const result = await processQuery(
+      stallingQuery({
+        before: [init, { type: 'assistant_text', text: '<message to="family">Щас соберу</message>' } as ProviderEvent, toolStart],
+        quietMs: 5000,
+        executing: () => false,
+      }),
+      routing,
+      ['m1'],
+      'mock',
+    );
+
+    expect(result.streamStalled).toBe(true);
+    expect(ackStatus('m1')).toBe('completed');
+    expect(outText()).toContain('Щас соберу');
+    expect(outText()).not.toContain('stream stalled');
+  });
+
+  it('a batch that already stalled twice tells the user instead of a third silent retry', async () => {
+    insertMessage('m1', 'chat', { sender: 'Sergei', text: 'Давай план на сегодня' });
+    getInboundDb().prepare('UPDATE messages_in SET tries = 2 WHERE id = ?').run('m1');
+    markProcessing(['m1']);
+
+    const result = await processQuery(
+      stallingQuery({ before: [init, toolStart], quietMs: 5000, executing: () => false }),
+      routing,
+      ['m1'],
+      'mock',
+    );
+
+    expect(result.streamStalled).toBe(true);
+    expect(ackStatus('m1')).toBe('completed');
+    expect(outText()).toContain('stream stalled');
   });
 });

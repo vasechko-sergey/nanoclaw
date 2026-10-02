@@ -383,6 +383,39 @@ export function createCompactionTracker(): {
   };
 }
 
+/**
+ * Which tool calls the CLI is actually executing. A tool_use block in the
+ * stream is only the model asking for a tool: on 2026-10-02 Payne's stream
+ * stalled right after one — the message never completed, nothing ran — and
+ * the poll-loop's watchdog, counting the block as a running tool, waited with
+ * no end. PreToolUse opens a call; PostToolUse / PostToolUseFailure closes it,
+ * and so does its tool_result should a Post hook never come. The turn's
+ * result clears whatever is left, so a lost hook can't disarm the watchdog
+ * past the turn. Keyed by tool_use_id: a subagent's own tools open and close
+ * inside its call.
+ */
+export function createToolExecutionTracker(): {
+  started: (toolUseId: string | undefined) => void;
+  finished: (toolUseId: string | undefined) => void;
+  onEvent: (event: ProviderEvent) => void;
+  isRunning: () => boolean;
+} {
+  const running = new Set<string>();
+  return {
+    started: (id) => {
+      if (id) running.add(id);
+    },
+    finished: (id) => {
+      if (id) running.delete(id);
+    },
+    onEvent: (event) => {
+      if (event.type === 'tool_use_end') running.delete(event.id);
+      else if (event.type === 'result') running.clear();
+    },
+    isRunning: () => running.size > 0,
+  };
+}
+
 function createPreCompactHook(assistantName?: string, onPreCompact?: () => void): HookCallback {
   return async (input) => {
     onPreCompact?.();
@@ -480,6 +513,10 @@ export class ClaudeProvider implements AgentProvider {
     // Compaction is invisible from the event stream, so the poll-loop can only
     // tell it apart from a wedged stream if we say so explicitly.
     const compaction = createCompactionTracker();
+    // What the CLI is really executing, as opposed to tool calls merely
+    // streamed — the watchdog's notion of "a tool is running".
+    const tools = createToolExecutionTracker();
+    const toolUseIdOf = (input: unknown, id: string | undefined) => (input as { tool_use_id?: string }).tool_use_id ?? id;
 
     const instructions = input.systemContext?.instructions;
 
@@ -513,9 +550,36 @@ export class ClaudeProvider implements AgentProvider {
         settingSources: ['project', 'user'],
         mcpServers: this.mcpServers,
         hooks: {
-          PreToolUse: [{ hooks: [preToolUseHook] }],
-          PostToolUse: [{ hooks: [postToolUseHook] }],
-          PostToolUseFailure: [{ hooks: [postToolUseHook] }],
+          PreToolUse: [
+            {
+              hooks: [
+                (input, id, opts) => {
+                  tools.started(toolUseIdOf(input, id));
+                  return preToolUseHook(input, id, opts);
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              hooks: [
+                (input, id, opts) => {
+                  tools.finished(toolUseIdOf(input, id));
+                  return postToolUseHook(input, id, opts);
+                },
+              ],
+            },
+          ],
+          PostToolUseFailure: [
+            {
+              hooks: [
+                (input, id, opts) => {
+                  tools.finished(toolUseIdOf(input, id));
+                  return postToolUseHook(input, id, opts);
+                },
+              ],
+            },
+          ],
           PreCompact: [{ hooks: [createPreCompactHook(this.assistantName, compaction.onPreCompact)] }],
         },
       },
@@ -533,7 +597,10 @@ export class ClaudeProvider implements AgentProvider {
         // Yield activity for every SDK event so the poll loop knows the agent is working
         yield { type: 'activity' };
 
-        for (const event of translateSdkMessage(message)) yield event;
+        for (const event of translateSdkMessage(message)) {
+          tools.onEvent(event);
+          yield event;
+        }
       }
       log(`Query completed after ${messageCount} SDK messages`);
     }
@@ -543,6 +610,7 @@ export class ClaudeProvider implements AgentProvider {
       end: () => stream.end(),
       events: translateEvents(),
       isBusy: compaction.isBusy,
+      toolsExecuting: tools.isRunning,
       abort: () => {
         aborted = true;
         stream.end();
