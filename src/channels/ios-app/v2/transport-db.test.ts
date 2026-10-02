@@ -24,12 +24,13 @@ describe('transport-db', () => {
     expect(JSON.parse(row!.capabilities_json!)).toEqual(['location']);
   });
 
-  it('advances last_seen_outbound_seq monotonically', () => {
+  it('last_seen_outbound_seq follows the latest seq, including a restarted app counter', () => {
     db.upsertDevice('ios-app:dev-1', {});
-    db.advanceLastSeenOutbound('ios-app:dev-1', 5);
-    db.advanceLastSeenOutbound('ios-app:dev-1', 3); // ignored — lower
-    db.advanceLastSeenOutbound('ios-app:dev-1', 10);
-    expect(db.getDevice('ios-app:dev-1')!.last_seen_outbound_seq).toBe(10);
+    db.setLastSeenOutbound('ios-app:dev-1', 698);
+    // App reinstalled: its send counter starts over. A cursor stuck at 698
+    // would tell the app "I have everything up to 698" on every reconnect.
+    db.setLastSeenOutbound('ios-app:dev-1', 1);
+    expect(db.getDevice('ios-app:dev-1')!.last_seen_outbound_seq).toBe(1);
   });
 
   it('allocates monotonic emitted seqs', () => {

@@ -63,10 +63,27 @@ describe('InboundDispatcher', () => {
     expect(onInbound).toHaveBeenCalledTimes(1);
   });
 
-  it('advances last_seen_outbound_seq monotonically', () => {
+  it('last_seen_outbound_seq is the seq of the latest new message', () => {
     d.dispatch(pid, env({ seq: 5, id: '11111111-1111-4111-8111-111111111111' }));
-    d.dispatch(pid, env({ seq: 3, id: '22222222-2222-4222-8222-222222222222' }));
-    expect(db.getDevice(pid)!.last_seen_outbound_seq).toBe(5);
+    d.dispatch(pid, env({ seq: 6, id: '22222222-2222-4222-8222-222222222222' }));
+    expect(db.getDevice(pid)!.last_seen_outbound_seq).toBe(6);
+  });
+
+  it('follows a restarted app counter, so auth_ok stops vouching for messages it never got', () => {
+    // On auth_ok the app marks every in-flight message with seq <= this cursor
+    // as sent and resends only the rest. After a reinstall the app counts from
+    // 1 again; a cursor held at the old maximum (698) silently dropped every
+    // message whose frame was lost when the app went to the background.
+    d.dispatch(pid, env({ seq: 698, id: '11111111-1111-4111-8111-111111111111' }));
+    d.dispatch(pid, env({ seq: 1, id: '22222222-2222-4222-8222-222222222222' }));
+    expect(db.getDevice(pid)!.last_seen_outbound_seq).toBe(1);
+  });
+
+  it('a resent duplicate does not move the cursor', () => {
+    d.dispatch(pid, env({ seq: 7, id: '11111111-1111-4111-8111-111111111111' }));
+    d.dispatch(pid, env({ seq: 8, id: '22222222-2222-4222-8222-222222222222' }));
+    d.dispatch(pid, env({ seq: 9, id: '11111111-1111-4111-8111-111111111111' })); // requeued resend, new seq
+    expect(db.getDevice(pid)!.last_seen_outbound_seq).toBe(8);
   });
 
   it('status:delivered records in ReceiptStore, never propagates', () => {

@@ -49,7 +49,7 @@ export interface TransportDb {
   raw: Database.Database;
   upsertDevice(platform_id: string, opts: { capabilities?: string[]; app_version?: string; build?: string }): void;
   getDevice(platform_id: string): DeviceRow | undefined;
-  advanceLastSeenOutbound(platform_id: string, seq: number): void;
+  setLastSeenOutbound(platform_id: string, seq: number): void;
   allocateInboundSeq(platform_id: string): number;
 }
 
@@ -101,11 +101,16 @@ export function openTransportDb(path: string): TransportDb {
     getDevice(platform_id) {
       return db.prepare(`SELECT * FROM devices WHERE platform_id = ?`).get(platform_id) as DeviceRow | undefined;
     },
-    advanceLastSeenOutbound(platform_id, seq) {
+    // Plain assignment, not MAX: the app's send counter starts over when it is
+    // reinstalled, and auth_ok hands this cursor back for the app to mark every
+    // in-flight message with seq <= cursor as sent. A cursor held at the old
+    // maximum vouched for messages the host never received. Too low only costs
+    // a resend, which inbound_dedup answers by id.
+    setLastSeenOutbound(platform_id, seq) {
       db.prepare(
         `
         UPDATE devices
-        SET last_seen_outbound_seq = MAX(last_seen_outbound_seq, ?), updated_at = ?
+        SET last_seen_outbound_seq = ?, updated_at = ?
         WHERE platform_id = ?
       `,
       ).run(seq, Date.now(), platform_id);

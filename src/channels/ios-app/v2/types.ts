@@ -4,7 +4,7 @@ export type PlatformId = string; // `ios-app:<deviceId>`
 
 export interface DeviceRow {
   platform_id: PlatformId;
-  last_seen_outbound_seq: number; // highest app→adapter seq we persisted
+  last_seen_outbound_seq: number; // seq of the latest new app→adapter message we persisted
   last_emitted_inbound_seq: number; // highest adapter→app seq we allocated
   capabilities_json: string | null;
   app_version: string | null; // CFBundleShortVersionString reported on auth

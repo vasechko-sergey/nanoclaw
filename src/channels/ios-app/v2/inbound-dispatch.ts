@@ -85,7 +85,7 @@ export class InboundDispatcher {
       `,
         )
         .run(platform_id, env.id, env.seq ?? 0, Date.now());
-      if (env.seq != null) this.deps.db.advanceLastSeenOutbound(platform_id, env.seq);
+      if (env.seq != null) this.deps.db.setLastSeenOutbound(platform_id, env.seq);
 
       // Payload-bearing envelope types may carry an optional `agent_id` slug so
       // the device can target a specific agent on a fanned-out messaging_group.
