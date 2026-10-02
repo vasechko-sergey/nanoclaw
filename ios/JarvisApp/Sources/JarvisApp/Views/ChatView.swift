@@ -56,6 +56,10 @@ struct ChatView: View {
     // window. Loaded on appear, on agent switch, and after the workout
     // fullScreenCover is dismissed — see `loadActiveWorkoutRecord()`.
     @State private var activeWorkoutRecord: ActiveWorkoutRecord? = nil
+    /// Spinner on Payne's plan chip between the request and the card (or the
+    /// model's reply, when the runner hands the request over). Cleared by the
+    /// next message in the chat, or after 20 s.
+    @State private var planRequestPending = false
 
     // Swap-exercise sheet (driven from the preview / runner "Заменить").
     private struct SwapSheetPresentation: Identifiable {
@@ -141,6 +145,34 @@ struct ChatView: View {
         // Manifest entry present but its sha isn't cached yet (sha drift or
         // not-yet-delivered) → newest cached blob for the slug.
         return coordinator.imageCache.latestPath(slug: slug)
+    }
+
+    /// A plan card's action — from the card itself or from Payne's plan chip:
+    /// resume the paused workout this card started, else open its preview.
+    private func openPlanCard(_ plan: WorkoutPlan, messageId: String) {
+        if let record = activeWorkoutRecord, record.messageId == messageId {
+            resumeWorkout(record)
+        } else {
+            startWorkout(plan, messageId: messageId)
+        }
+    }
+
+    /// Ask for today's plan card. The agent runner answers `workout_start_request`
+    /// itself (build-plan.js + Greg's readiness, no model turn), so the card lands
+    /// in seconds; a red day or a closed mesocycle comes back as Payne's reply.
+    private func requestTodayPlan() {
+        guard !planRequestPending, let transport = coordinator.ws.stack?.transport else { return }
+        planRequestPending = true
+        let today = TodayPlanChip.localDate()
+        Task {
+            do {
+                try await transport.sendWorkoutStartRequest(date: today)
+            } catch {
+                Log.warn(.ws, "plan request failed: \(error)")
+                await MainActor.run { planRequestPending = false }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { planRequestPending = false }
     }
 
     /// Card tap → open the PREVIEW (not the runner). The runner opens from preview.
@@ -230,6 +262,50 @@ struct ChatView: View {
         activeWorkout = WorkoutPresentation(
             plan: record.plan, phase: .running, coord: wc, messageId: record.messageId
         )
+    }
+
+    /// Payne's "plan for today" chip above the input — see `TodayPlanChip`.
+    @ViewBuilder
+    private var todayPlanChip: some View {
+        switch TodayPlanChip.state(messages: visibleMessages, today: TodayPlanChip.localDate()) {
+        case .request:
+            planChipButton(title: "План на сегодня", icon: "figure.strengthtraining.traditional", busy: planRequestPending) {
+                requestTodayPlan()
+            }
+            .disabled(!ws.isConnected || planRequestPending)
+        case .open(let plan, let messageId):
+            let resuming = activeWorkoutRecord?.messageId == messageId
+            planChipButton(title: resuming ? "Продолжить тренировку" : "Начать тренировку", icon: "play.fill", busy: false) {
+                openPlanCard(plan, messageId: messageId)
+            }
+        case .hidden:
+            EmptyView()
+        }
+    }
+
+    private func planChipButton(title: String, icon: String, busy: Bool, action: @escaping () -> Void) -> some View {
+        HStack {
+            Spacer()
+            Button(action: action) {
+                HStack(spacing: Theme.scaled(6)) {
+                    if busy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: icon)
+                    }
+                    Text(title)
+                        .font(.system(size: Theme.fontSubhead, weight: .semibold))
+                }
+                .foregroundStyle(Theme.accent)
+                .padding(.horizontal, Theme.scaled(12))
+                .padding(.vertical, Theme.scaled(7))
+                .background(Theme.accent.opacity(0.15))
+                .clipShape(Capsule())
+            }
+            .accessibilityLabel(title)
+        }
+        .padding(.horizontal, Theme.scaled(8))
+        .padding(.top, Theme.scaled(6))
     }
 
     /// Filter the shared workout bus to coach texts WITHOUT a `set_ref` so
@@ -334,7 +410,11 @@ struct ChatView: View {
                 EmptyStateView(
                     suggestions: active.active.suggestions,
                     onSuggestion: { suggestion in
-                        coordinator.sendMessage(suggestion, agentId: active.active.rawValue)
+                        if active.active.suggestions.first(where: { $0.text == suggestion })?.action == .todayPlan {
+                            requestTodayPlan()
+                        } else {
+                            coordinator.sendMessage(suggestion, agentId: active.active.rawValue)
+                        }
                     },
                     onStartVoice: {
                         withAnimation(.easeOut(duration: 0.25)) {
@@ -388,13 +468,7 @@ struct ChatView: View {
                                 coordinator.sendActionResponse(messageId: messageId, buttonId: buttonId, buttonLabel: buttonLabel)
                                 coordinator.markActionAnswered(rowId: messageId, choice: buttonId)
                             },
-                            onWorkoutStart: { plan, messageId in
-                                if let record = activeWorkoutRecord, record.messageId == messageId {
-                                    resumeWorkout(record)
-                                } else {
-                                    startWorkout(plan, messageId: messageId)
-                                }
-                            },
+                            onWorkoutStart: { plan, messageId in openPlanCard(plan, messageId: messageId) },
                             onWorkoutCancel: { coordinator.markWorkoutCardDone(messageId: $0) },
                             onRetry: { id in coordinator.ws.retrySend(id: id) },
                             onMessageRead: { id in ws.sendMessageRead(id) },
@@ -438,6 +512,11 @@ struct ChatView: View {
                     .padding(.top, Theme.scaled(6))
                 }
                 .accessibilityLabel("Остановить")
+            }
+
+            // MARK: – Payne's plan chip (the empty state offers the same as a starter)
+            if active.active == .payne && !visibleMessages.isEmpty {
+                todayPlanChip
             }
 
             // MARK: – Input (always visible — empty state shows orb+satellites above)
@@ -687,6 +766,10 @@ struct ChatView: View {
         // stayed cold. Re-run the load the moment the stack flips to non-nil.
         .onChange(of: ws.stackReady) {
             if ws.stackReady { loadActiveWorkoutRecord() }
+        }
+        // The plan card (or Payne's reply) arrived — the plan chip stops spinning.
+        .onChange(of: visibleMessages.count) {
+            planRequestPending = false
         }
         .onChange(of: autoStartVoice) {
             // When entering chat with voice trigger from home, activate input bar

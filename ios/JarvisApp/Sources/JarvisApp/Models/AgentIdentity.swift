@@ -4,8 +4,14 @@ import SwiftUI
 /// satellites. `text` is sent verbatim to the active agent on tap; `icon` is
 /// an SF Symbol name. `id == text` so a single agent never repeats a chip.
 struct AgentSuggestion: Identifiable, Equatable {
+    /// `.say` sends `text` to the agent. `.todayPlan` asks for today's workout
+    /// plan card instead — answered by the runner without a model turn
+    /// (see `TodayPlanChip`).
+    enum Action: Equatable { case say, todayPlan }
+
     let text: String
     let icon: String
+    var action: Action = .say
     var id: String { text }
 }
 
@@ -109,7 +115,7 @@ enum AgentIdentity: String, CaseIterable, Identifiable, Codable {
             ]
         case .payne:
             return [
-                AgentSuggestion(text: "Начать тренировку", icon: "figure.strengthtraining.traditional"),
+                AgentSuggestion(text: "План на сегодня", icon: "figure.strengthtraining.traditional", action: .todayPlan),
                 AgentSuggestion(text: "Моя программа",     icon: "list.bullet.clipboard"),
                 AgentSuggestion(text: "Прогресс",          icon: "chart.line.uptrend.xyaxis"),
                 AgentSuggestion(text: "Замена упражнения", icon: "arrow.triangle.2.circlepath"),
