@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -16,6 +16,7 @@ import {
   isWorkoutEventRow,
   isUnclaimedQuestionResponse,
   serveImageRequests,
+  serveWorkoutStartRequests,
   dispatchResultText,
   dispatchCompleteBlocks,
   flushOpenBlock,
@@ -2095,5 +2096,103 @@ describe('idle watchdog waits out a provider-reported busy window', () => {
     const out = outText();
     expect(out).not.toContain('stream stalled');
     expect(out).toContain('Парсер Permata готов');
+  });
+});
+
+/**
+ * The iOS "plan for today" button (workout_start_request) is answered by the
+ * runner itself: scripts/build-plan.js + Greg's signal file → the plan card.
+ * It used to wake the model, which ran the same script and re-typed its JSON
+ * (2026-10-02: ~45 s on a healthy run, 5.5 min when the stream stalled).
+ * Anything the script can't settle — red day, closed mesocycle, broken
+ * builder — still goes to the model, untouched.
+ */
+describe('serveWorkoutStartRequests — the plan button never wakes the model', () => {
+  let agentDir: string;
+  const BUILDER = `
+const args = process.argv.slice(2);
+console.log(JSON.stringify({ day_name: 'Ноги А', week: 3, week_label: 'тяжёлая',
+  exercises: [{ slug: 'zhim-nogami', name_ru: 'Жим ногами', target_sets: 4 }], _args: args }));
+`;
+  beforeEach(() => {
+    agentDir = realpathSync(mkdtempSync(join(tmpdir(), 'payne-')));
+    mkdirSync(join(agentDir, 'scripts'));
+    writeFileSync(join(agentDir, 'scripts', 'build-plan.js'), BUILDER);
+  });
+  afterEach(() => {
+    rmSync(agentDir, { recursive: true, force: true });
+  });
+
+  const paths = () => ({
+    agentDir,
+    healthSignalPath: join(agentDir, 'signal.json'),
+    exercisesDir: join(agentDir, 'exercises'),
+  });
+  const startRequest = (id: string, date = '2026-10-02') =>
+    insertMessage(id, 'system', { subtype: 'workout_event', event: 'workout_start_request', payload: { date } });
+  const signal = (s: object) => writeFileSync(join(agentDir, 'signal.json'), JSON.stringify(s));
+
+  it('answers with the plan card and consumes the request', () => {
+    startRequest('ws1');
+    const survivors = serveWorkoutStartRequests(getPendingMessages(), paths());
+    expect(survivors).toHaveLength(0);
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    const c = JSON.parse(out[0].content);
+    expect(c.type).toBe('workout_plan');
+    expect(c.payload.workout_id).toBe('2026-10-02');
+    expect(c.payload.plan_json.day_name).toBe('Ноги А');
+    expect(getPendingMessages()).toHaveLength(0);
+  });
+
+  it("applies Greg's yellow signal for that date", () => {
+    signal({ date: '2026-10-02', level: 'yellow', readiness: 55 });
+    startRequest('ws1');
+    serveWorkoutStartRequests(getPendingMessages(), paths());
+    const plan = JSON.parse(getUndeliveredMessages()[0].content).payload.plan_json;
+    expect(plan._args).toEqual(['--workout-id', '2026-10-02', '--health', 'yellow']);
+  });
+
+  it('a red day goes to the model untouched — no card', () => {
+    signal({ date: '2026-10-02', level: 'red', readiness: 38 });
+    startRequest('ws1');
+    const survivors = serveWorkoutStartRequests(getPendingMessages(), paths());
+    expect(survivors.map((m) => m.id)).toEqual(['ws1']);
+    expect(getUndeliveredMessages()).toHaveLength(0);
+    expect(getPendingMessages()).toHaveLength(1);
+  });
+
+  it('a closed mesocycle goes to the model', () => {
+    writeFileSync(join(agentDir, 'scripts', 'build-plan.js'), `console.log(JSON.stringify({ cycle_complete: true }))`);
+    startRequest('ws1');
+    expect(serveWorkoutStartRequests(getPendingMessages(), paths()).map((m) => m.id)).toEqual(['ws1']);
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it('a failing builder goes to the model', () => {
+    writeFileSync(join(agentDir, 'scripts', 'build-plan.js'), `process.exit(2)`);
+    startRequest('ws1');
+    expect(serveWorkoutStartRequests(getPendingMessages(), paths()).map((m) => m.id)).toEqual(['ws1']);
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it('an agent without the builder gets the request as before', () => {
+    rmSync(join(agentDir, 'scripts'), { recursive: true, force: true });
+    startRequest('ws1');
+    expect(serveWorkoutStartRequests(getPendingMessages(), paths()).map((m) => m.id)).toEqual(['ws1']);
+  });
+
+  it('a request without a valid date goes to the model', () => {
+    startRequest('ws1', 'today');
+    expect(serveWorkoutStartRequests(getPendingMessages(), paths()).map((m) => m.id)).toEqual(['ws1']);
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it('leaves chat and other workout events alone', () => {
+    insertMessage('c1', 'chat', { sender: 'Sergei', text: 'Давай план на сегодня' });
+    insertMessage('s1', 'system', { subtype: 'workout_event', event: 'set_log', payload: { workout_id: '2026-10-02' } });
+    const survivors = serveWorkoutStartRequests(getPendingMessages(), paths());
+    expect(survivors.map((m) => m.id).sort()).toEqual(['c1', 's1']);
+    expect(getUndeliveredMessages()).toHaveLength(0);
   });
 });

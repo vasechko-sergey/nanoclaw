@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initTestSessionDb, getInboundDb } from '../db/connection.js';
@@ -30,9 +30,17 @@ function seedRouting(channel = 'ios-app-v2', platform = 'ios-app-v2:default', th
 }
 
 describe('workout MCP tools', () => {
+  let agentDir: string;
   beforeEach(() => {
     initTestSessionDb();
     process.env.AGENT_GROUP_ID = 'payne';
+    // start_plan keeps a copy of every sent plan under <agent dir>/plans.
+    agentDir = mkdtempSync(join(tmpdir(), 'payne-agent-'));
+    process.env.WORKOUT_AGENT_DIR = agentDir;
+  });
+  afterEach(() => {
+    delete process.env.WORKOUT_AGENT_DIR;
+    rmSync(agentDir, { recursive: true, force: true });
   });
 
   it('workout.start_plan writes a workout_plan outbound row', async () => {
@@ -378,6 +386,95 @@ describe('workout MCP tools', () => {
     process.env.AGENT_GROUP_ID = 'jarvis';
     const res = await workoutCoach.handler({ workout_id: 'w1', text: 'x' });
     expect(res.isError).toBe(true);
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+});
+
+/**
+ * The plan is deterministic (scripts/build-plan.js), so the model no longer
+ * runs the builder and re-types ~1100 tokens of its JSON into the tool: it
+ * passes the workout id, the tool builds and sends. Greg's readiness comes
+ * from the host-kept /workspace/shared/health/signal.json.
+ */
+describe('workout.start_plan builds the plan itself when given only the id', () => {
+  let agentDir: string;
+  const BUILDER = `
+const args = process.argv.slice(2);
+console.log(JSON.stringify({ day_name: 'Ноги А', week: 3, week_label: 'тяжёлая',
+  exercises: [{ slug: 'zhim-nogami', name_ru: 'Жим ногами', target_sets: 4 }], _args: args }));
+`;
+  beforeEach(() => {
+    initTestSessionDb();
+    process.env.AGENT_GROUP_ID = 'payne';
+    agentDir = realpathSync(mkdtempSync(join(tmpdir(), 'payne-build-')));
+    mkdirSync(join(agentDir, 'scripts'));
+    writeFileSync(join(agentDir, 'scripts', 'build-plan.js'), BUILDER);
+    process.env.WORKOUT_AGENT_DIR = agentDir;
+    process.env.WORKOUT_HEALTH_SIGNAL = join(agentDir, 'signal.json');
+    process.env.WORKOUT_EXERCISES_DIR = join(agentDir, 'exercises');
+  });
+  afterEach(() => {
+    delete process.env.WORKOUT_AGENT_DIR;
+    delete process.env.WORKOUT_HEALTH_SIGNAL;
+    delete process.env.WORKOUT_EXERCISES_DIR;
+    rmSync(agentDir, { recursive: true, force: true });
+  });
+
+  const signal = (s: object) => writeFileSync(join(agentDir, 'signal.json'), JSON.stringify(s));
+  const sent = () => JSON.parse(getUndeliveredMessages().at(-1)!.content).payload.plan_json;
+
+  it('sends what the builder printed — nothing for the model to re-type', async () => {
+    const res = await workoutStartPlan.handler({ workout_id: '2026-10-02' });
+    expect(res.isError).toBeUndefined();
+    expect(sent().day_name).toBe('Ноги А');
+    expect(sent()._args).toEqual(['--workout-id', '2026-10-02']);
+    expect(res.content[0].text).toContain('Ноги А');
+  });
+
+  it("applies Greg's yellow signal for that day", async () => {
+    signal({ date: '2026-10-02', level: 'yellow', readiness: 55 });
+    await workoutStartPlan.handler({ workout_id: '2026-10-02' });
+    expect(sent()._args).toEqual(['--workout-id', '2026-10-02', '--health', 'yellow']);
+  });
+
+  it('ignores a signal about another day', async () => {
+    signal({ date: '2026-10-01', level: 'yellow', readiness: 45 });
+    await workoutStartPlan.handler({ workout_id: '2026-10-02' });
+    expect(sent()._args).toEqual(['--workout-id', '2026-10-02']);
+  });
+
+  it('takes a split day and an explicit readiness from the model', async () => {
+    await workoutStartPlan.handler({ workout_id: '2026-10-02', day: 'upper_a', health: 'yellow' });
+    expect(sent()._args).toEqual(['--workout-id', '2026-10-02', '--day', 'upper_a', '--health', 'yellow']);
+  });
+
+  it("an explicit health: 'green' overrides the file", async () => {
+    signal({ date: '2026-10-02', level: 'yellow', readiness: 55 });
+    await workoutStartPlan.handler({ workout_id: '2026-10-02', health: 'green' });
+    expect(sent()._args).toEqual(['--workout-id', '2026-10-02']);
+  });
+
+  it('red: no card, and the model is told it is a rest day', async () => {
+    signal({ date: '2026-10-02', level: 'red', readiness: 38 });
+    const res = await workoutStartPlan.handler({ workout_id: '2026-10-02' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('red');
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it('a closed mesocycle: no card, and the model is told why', async () => {
+    writeFileSync(join(agentDir, 'scripts', 'build-plan.js'), `console.log(JSON.stringify({ cycle_complete: true, sessions_done: 16 }))`);
+    const res = await workoutStartPlan.handler({ workout_id: '2026-10-02' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('cycle_complete');
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it("an unreadable signal file is the model's call, not a silent green", async () => {
+    writeFileSync(join(agentDir, 'signal.json'), '{broken');
+    const res = await workoutStartPlan.handler({ workout_id: '2026-10-02' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('health');
     expect(getUndeliveredMessages()).toHaveLength(0);
   });
 });

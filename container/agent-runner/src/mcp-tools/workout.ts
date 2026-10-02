@@ -15,9 +15,8 @@
  * (or any other agent) from accidentally pushing workout UI events.
  */
 import { loadConfig } from '../config.js';
-import { writeMessageOut } from '../db/messages-out.js';
-import { getSessionRouting } from '../db/session-routing.js';
 import { buildImageManifest, DEFAULT_EXERCISES_DIR, type ImageManifestEntry } from '../exercise-images.js';
+import { buildPlan, defaultPlanPaths, readinessFor, sendWorkoutPlan, writeWorkoutOut } from '../workout-plan.js';
 import type { McpToolDefinition } from './types.js';
 
 function ok(text: string) {
@@ -36,115 +35,76 @@ function guard(): { ok: true } | { ok: false; res: ReturnType<typeof err> } {
   return { ok: true };
 }
 
-function generateId(): string {
-  return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+/** The owner's calendar date (YYYY-MM-DD) in OWNER_TZ — what Greg's signal is dated by. */
+function ownerToday(): string {
+  const tz = process.env.OWNER_TZ || undefined;
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
 }
 
 /**
- * Nullish pick: first defined, non-null value among the candidates. Uses `??`
- * semantics so a legitimate 0 (target_rir: 0 = to-failure) or "" survives —
- * a `||` fallback would silently drop them.
+ * Build today's plan with the agent's own scripts/build-plan.js and send it.
+ * Greg's readiness for the day is read from the host-kept signal file unless
+ * the model states one (`health`). Every outcome that is not a card is an
+ * error the model must act on — rest day, closed mesocycle, broken builder.
  */
-function pick(...vals: unknown[]): unknown {
-  for (const v of vals) if (v !== undefined && v !== null) return v;
-  return undefined;
-}
-
-/**
- * Normalize one plan exercise onto the canonical iOS wire vocab
- * (shared/ios-app-protocol/v2.ts PlanExerciseSchema): slug / name_ru /
- * target_sets / target_reps / reps_in_reserve / rest_seconds / duration_seconds /
- * weight_kg_target / notes.
- *
- * Payne builds plan_json from its INTERNAL program vocab (exercise_slug / name /
- * target_rir / rest_sec / execution_duration_seconds / weight_kg |
- * starting_weight, plus a `sets` array iOS never reads). Left un-mapped, iOS
- * decodes the array length but every renamed field falls to its default: empty
- * slug (identical "" ids collapse the ForEach), blank name, no weight, no rest —
- * "8 упражнений" and a blank card. Accept BOTH vocabs so already-canonical plans
- * (e.g. the historical seq-389 envelope) pass through idempotently.
- */
-function normalizeExercise(e: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    slug: pick(e.slug, e.exercise_slug),
-    target_sets: e.target_sets ?? null,       // warmup/cardio → null
-    target_reps: e.target_reps ?? '',
-    reps_in_reserve: pick(e.reps_in_reserve, e.target_rir) ?? null,
-    rest_seconds: pick(e.rest_seconds, e.rest_sec) ?? 0,
-  };
-  const nameRu = pick(e.name_ru, e.name);
-  if (nameRu !== undefined) out.name_ru = nameRu;
-  const dur = pick(e.duration_seconds, e.execution_duration_seconds);
-  if (dur !== undefined) out.duration_seconds = dur;
-  const weight = pick(e.weight_kg_target, e.weight_kg, e.starting_weight);
-  if (weight !== undefined) out.weight_kg_target = weight;
-  if (e.notes !== undefined && e.notes !== null) out.notes = e.notes;
-  return out;
-}
-
-/**
- * Remap plan_json.exercises[] to the canonical wire vocab, passing plan-level
- * keys (day_name / week / week_label / …) through untouched — those already
- * match the wire. Defensive: a plan without an `exercises` array is returned
- * verbatim rather than throwing.
- */
-function normalizePlanJson(plan: unknown): unknown {
-  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return plan;
-  const p = plan as Record<string, unknown>;
-  if (!Array.isArray(p.exercises)) return plan;
-  return {
-    ...p,
-    exercises: (p.exercises as unknown[]).map((e) =>
-      e && typeof e === 'object' && !Array.isArray(e)
-        ? normalizeExercise(e as Record<string, unknown>)
-        : e,
-    ),
-  };
-}
-
-/** Canonical slugs from a normalized plan (post-normalizeExercise, so `slug`). */
-function planSlugs(plan: unknown): string[] {
-  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return [];
-  const ex = (plan as Record<string, unknown>).exercises;
-  if (!Array.isArray(ex)) return [];
-  return ex
-    .map((e) => (e && typeof e === 'object' ? (e as Record<string, unknown>).slug : undefined))
-    .filter((s): s is string => typeof s === 'string' && s.length > 0);
-}
-
-/**
- * Write a workout-family control row STAMPED with the current session's channel
- * routing. Without platform_id/channel_type the host delivery poller drops the
- * row ("Message missing routing fields") before it ever reaches the ios-app
- * adapter's workout-bridge — so the plan never leaves the host and no card ever
- * renders. Mirrors how status/scheduling tools route their outbound rows.
- */
-function writeWorkoutOut(content: Record<string, unknown>): void {
-  const routing = getSessionRouting();
-  writeMessageOut({
-    id: generateId(),
-    kind: 'control',
-    platform_id: routing.platform_id,
-    channel_type: routing.channel_type,
-    thread_id: routing.thread_id,
-    content: JSON.stringify(content),
-  });
+function buildAndSend(workoutId: string, day: string | undefined, healthArg: unknown) {
+  const paths = defaultPlanPaths();
+  let health: 'yellow' | null;
+  if (healthArg === 'yellow' || healthArg === 'green') {
+    health = healthArg === 'yellow' ? 'yellow' : null;
+  } else {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(workoutId) ? workoutId : ownerToday();
+    const r = readinessFor(date, paths.healthSignalPath);
+    if (r.kind === 'rest') {
+      return err(
+        `no plan sent: Greg's signal for ${date} is red. Tell the user today is rest or light cardio and wait for their confirmation — do not send a plan.`,
+      );
+    }
+    if (r.kind === 'unknown') {
+      return err(
+        `no plan sent: can't read Greg's readiness (${r.detail}). Decide the day's readiness yourself, then call again with health: 'yellow' (lighter) or health: 'green' (as planned).`,
+      );
+    }
+    health = r.health;
+  }
+  const built = buildPlan(workoutId, health, paths.agentDir, { day });
+  if (!built.ok && built.reason === 'cycle_complete') {
+    return err(
+      `no plan sent: the mesocycle is complete (${built.detail}). Tell the user and build the next program — never invent a day from the tail.`,
+    );
+  }
+  if (!built.ok) return err(`no plan sent: build-plan.js failed — ${built.detail}`);
+  const { images } = sendWorkoutPlan(workoutId, built.plan, paths);
+  const p = built.plan;
+  const n = Array.isArray(p.exercises) ? p.exercises.length : 0;
+  return ok(
+    `workout_plan sent for ${workoutId}: ${p.day_name}, week ${p.week} (${p.week_label})${health ? ', lighter (yellow)' : ''}, ${n} exercises` +
+      `${images ? `, ${images} images` : ''}. The card is in the chat — don't send it again or restate it.`,
+  );
 }
 
 export const workoutStartPlan: McpToolDefinition = {
   tool: {
     name: 'workout.start_plan',
     description:
-      'Send the full workout plan to the iOS app. App pre-caches everything (plan + image manifest) so the session runs offline. Call exactly once at the start of a workout.',
+      "Send today's workout plan to the iOS app as a card. Pass only workout_id (the owner's date, YYYY-MM-DD): the tool builds the plan with scripts/build-plan.js and applies Greg's readiness signal itself — never build or re-type plan_json. " +
+      "Optional: day (split key, e.g. upper_a) to force a day; health ('yellow' lighter / 'green' as planned) only to override Greg's signal. " +
+      'An error means no card was sent — rest day, closed mesocycle, or a broken builder; tell the user. plan_json is only for a plan you were explicitly asked to compose by hand.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        workout_id: { type: 'string', description: 'Stable id for this workout (UUID or yyyy-mm-dd slug).' },
-        plan_json: { type: 'object', description: 'Full plan tree: exercises, sets, reps, target RPE, rest seconds.' },
+        workout_id: { type: 'string', description: "The owner's date, YYYY-MM-DD (stable id for this workout)." },
+        day: { type: 'string', description: 'Optional split day key (upper_a / lower_a / upper_b / lower_b). Default: the next day in the cycle.' },
+        health: { type: 'string', enum: ['yellow', 'green'], description: "Optional override of Greg's signal for the day." },
+        plan_json: { type: 'object', description: 'Only for a hand-composed plan. Omit to have the tool build it.' },
         image_manifest: {
           type: 'array',
           description:
-            'Optional image references per exercise; iOS prefetches by slug+sha256. Omit (or pass []) when you have no images — the card renders with placeholders.',
+            'Optional image references per exercise; iOS prefetches by slug+sha256. Omit — the tool derives it from the exercise images.',
           items: {
             type: 'object',
             properties: {
@@ -156,36 +116,22 @@ export const workoutStartPlan: McpToolDefinition = {
           },
         },
       },
-      required: ['workout_id', 'plan_json'],
+      required: ['workout_id'],
     },
   },
   async handler(args) {
     const g = guard();
     if (!g.ok) return g.res;
-    // Map Payne's internal program vocab onto the canonical iOS wire vocab.
-    // Pass-through here left iOS with a blank card (see normalizePlanJson).
-    const planJson = normalizePlanJson(args.plan_json);
-    // image_manifest is the ONLY trigger for iOS image prefetch. Payne usually
-    // builds it, but on a drift run it shipped [] — no manifest, no images. When
-    // it's empty, derive it from the plan's slugs + the same on-disk assets the
-    // image_blob responder (poll-loop serveImageRequests) serves, so the sha256
-    // matches and iOS caches/looks-up under one key. A supplied manifest is
-    // trusted untouched.
-    const supplied = Array.isArray(args.image_manifest)
-      ? (args.image_manifest as ImageManifestEntry[])
-      : [];
-    const exercisesDir = process.env.WORKOUT_EXERCISES_DIR || DEFAULT_EXERCISES_DIR;
-    const imageManifest = supplied.length > 0 ? supplied : buildImageManifest(planSlugs(planJson), exercisesDir);
-    writeWorkoutOut({
-      type: 'workout_plan',
-      payload: {
-        workout_id: args.workout_id,
-        plan_json: planJson,
-        image_manifest: imageManifest,
-      },
-    });
-    const derived = supplied.length === 0 && imageManifest.length > 0 ? ` (auto-derived ${imageManifest.length} images)` : '';
-    return ok(`workout_plan sent for ${args.workout_id}${derived}`);
+    const workoutId = String(args.workout_id ?? '');
+    if (!workoutId) return err('workout_id is required');
+    if (args.plan_json === undefined || args.plan_json === null) {
+      return buildAndSend(workoutId, typeof args.day === 'string' ? args.day : undefined, args.health);
+    }
+    // A hand-composed plan: normalized onto the wire vocab, manifest derived
+    // when none is supplied (see sendWorkoutPlan).
+    const manifest = Array.isArray(args.image_manifest) ? (args.image_manifest as ImageManifestEntry[]) : [];
+    const { images } = sendWorkoutPlan(workoutId, args.plan_json, { ...defaultPlanPaths(), manifest });
+    return ok(`workout_plan sent for ${workoutId}${images ? ` (auto-derived ${images} images)` : ''}`);
   },
 };
 

@@ -176,6 +176,31 @@ describe('routeAgentMessage return-path', () => {
     if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
   });
 
+  it("keeps Greg's health_signal as the person's structured signal file", async () => {
+    // Payne's plan reads readiness from /workspace/shared/health/signal.json;
+    // the conversation context it used to rely on is gone after a reset.
+    await routeAgentMessage(
+      {
+        id: 'hs-1',
+        platform_id: B,
+        content: JSON.stringify({
+          text: JSON.stringify({ date: '2026-10-02', level: 'yellow', readiness: 55, factors: ['low_hrv'] }),
+          a2a_kind: 'health_signal',
+        }),
+        in_reply_to: null,
+      },
+      S1,
+    );
+    const file = path.join(TEST_DIR, 'user-memory', 'owner', 'shared', 'health', 'signal.json');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toMatchObject({
+      date: '2026-10-02',
+      level: 'yellow',
+      readiness: 55,
+      from: 'a', // the sender's folder — 'greg' in production
+    });
+    expect(readInbound(B, SB.id)).toHaveLength(1);
+  });
+
   it('forward direction: stamps source_session_id on the target inbound row', async () => {
     // A.S1 emits an outbound a2a to B.
     await routeAgentMessage(

@@ -32,7 +32,9 @@ import { wakeContainer } from '../../container-runner.js';
 import { log } from '../../log.js';
 import { openInboundDb, resolveSession, sessionDir, writeSessionMessage } from '../../session-manager.js';
 import type { Session } from '../../types.js';
+import { userSharedRoot } from '../../user-memory.js';
 import { hasDestination } from './db/agent-destinations.js';
+import { persistHealthSignal } from './health-signal-file.js';
 
 export { isSafeAttachmentName };
 
@@ -394,6 +396,9 @@ export async function routeAgentMessage(msg: RoutableAgentMessage, session: Sess
     hops: newHops,
     forwardedFileCount: countForwardedFiles(forwardedContent),
   });
+  // Greg's readiness signal also becomes the person's structured signal file,
+  // which today's plan is built from (health-signal-file.ts).
+  persistHealthSignal(forwardedContent, userSharedRoot(targetSession.owner_key || OWNER_PERSON_KEY));
   const fresh = getSession(targetSession.id);
   if (fresh) await wakeContainer(fresh);
 }

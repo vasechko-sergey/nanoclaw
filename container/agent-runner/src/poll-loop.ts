@@ -21,6 +21,7 @@ import { awaitingQuestionIds } from './mcp-tools/awaiting-questions.js';
 // Single source of truth for the exercise-image dir + extension priority, shared
 // with workout.start_plan's image_manifest auto-derive (exercise-images.ts).
 import { DEFAULT_EXERCISES_DIR, IMAGE_EXTS } from './exercise-images.js';
+import { buildPlan, defaultPlanPaths, readinessFor, sendWorkoutPlan, type PlanPaths } from './workout-plan.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 import type { FactualityLevel } from './config.js';
 import { extractDataNumbers } from './verification/numbers.js';
@@ -277,6 +278,68 @@ export function serveImageRequests(
   return survivors;
 }
 
+/**
+ * Answer the iOS "plan for today" button (`workout_start_request`) without the
+ * model: Greg's readiness from the host-kept signal file, the agent's own
+ * scripts/build-plan.js, then the `workout_plan` card — and CONSUME the
+ * request. The model used to run the same script and re-type its JSON into
+ * workout.start_plan: six round trips (~45 s on Opus, 5.5 min on 2026-10-02
+ * when the stream stalled mid-turn).
+ *
+ * Only what the script settles is served here. A red day, an unreadable
+ * signal, a closed mesocycle, a failing or absent builder, a bad date: the row
+ * passes through untouched and the model handles it (workout-mode skill).
+ *
+ * `paths` is injectable for tests; production reads /workspace/agent and
+ * /workspace/shared/health/signal.json.
+ */
+export function serveWorkoutStartRequests(rows: MessageInRow[], paths: PlanPaths = defaultPlanPaths()): MessageInRow[] {
+  const consumed: string[] = [];
+  const survivors: MessageInRow[] = [];
+  for (const row of rows) {
+    let ev: { event?: string; payload?: { date?: unknown } } | null = null;
+    if (isWorkoutEventRow(row)) {
+      try {
+        ev = JSON.parse(row.content);
+      } catch {
+        ev = null;
+      }
+    }
+    if (ev?.event !== 'workout_start_request') {
+      survivors.push(row);
+      continue;
+    }
+    const date = ev.payload?.date;
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      log(`workout_start_request with date ${JSON.stringify(date)} — handing to the model`);
+      survivors.push(row);
+      continue;
+    }
+    const readiness = readinessFor(date, paths.healthSignalPath);
+    if (readiness.kind !== 'ok') {
+      log(`workout_start_request ${date}: readiness ${readiness.kind} — handing to the model`);
+      survivors.push(row);
+      continue;
+    }
+    const built = buildPlan(date, readiness.health, paths.agentDir);
+    if (!built.ok) {
+      log(`workout_start_request ${date}: ${built.reason} (${built.detail.slice(0, 200)}) — handing to the model`);
+      survivors.push(row);
+      continue;
+    }
+    try {
+      const { images } = sendWorkoutPlan(date, built.plan, paths);
+      log(`Served workout_plan for ${date} without the model (${built.plan.day_name}${readiness.health ? ', yellow' : ''}, ${images} images)`);
+      consumed.push(row.id);
+    } catch (err) {
+      log(`workout_start_request ${date}: send failed (${err instanceof Error ? err.message : String(err)}) — handing to the model`);
+      survivors.push(row);
+    }
+  }
+  if (consumed.length > 0) markCompleted(consumed);
+  return survivors;
+}
+
 export interface PollLoopConfig {
   provider: AgentProvider;
   /**
@@ -336,7 +399,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // isUnclaimedQuestionResponse). Without that second clause a late answer
     // matched neither branch, never reached the agent, and the row sat
     // `pending` forever — this was the bug task-3b-brief.md traces.
-    const messages = serveImageRequests(dispatchSystemReplies(allPending)).filter(
+    const messages = serveWorkoutStartRequests(serveImageRequests(dispatchSystemReplies(allPending))).filter(
       (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
     );
     isFirstPoll = false;
@@ -758,7 +821,7 @@ export async function processQuery(
         // would never see it — consumed into this turn instead — and it
         // would hang to its full timeout despite the answer having arrived on
         // time. awaitingQuestionIds is what tells the two cases apart.
-        const newMessages = serveImageRequests(dispatchSystemReplies(pending)).filter(
+        const newMessages = serveWorkoutStartRequests(serveImageRequests(dispatchSystemReplies(pending))).filter(
           (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
         );
         if (newMessages.length === 0) return;
