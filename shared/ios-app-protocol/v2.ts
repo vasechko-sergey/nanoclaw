@@ -86,6 +86,10 @@ export const Envelopes = {
       commands: z.array(z.object({
         command: z.string(),
         description: z.string(),
+        // Absent = every agent. Older apps ignore these fields.
+        agent_id: z.string().optional(),
+        input: z.literal('compose').optional(),
+        action: z.literal('today_plan').optional(),
       })).optional(),
     }),
   }),

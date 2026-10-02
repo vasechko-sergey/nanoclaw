@@ -27,7 +27,7 @@ import { getAgentGroup, getAgentGroupByFolder } from '../../../db/agent-groups.j
 import { findSession, findSessionForAgent, getSession } from '../../../db/sessions.js';
 import { writeSessionMessage } from '../../../session-manager.js';
 
-import { BOT_COMMANDS } from '../../../commands.js';
+import { appCommands } from '../../../commands.js';
 import { openTransportDb } from './transport-db.js';
 import { OutboundQueue } from './outbound-queue.js';
 import { ReceiptStore } from './receipt-store.js';
@@ -425,10 +425,7 @@ function createV2Adapter(): ChannelAdapter | null {
     dispatcher,
     contextBridge,
     imageCache,
-    commands: BOT_COMMANDS.map((c) => ({
-      command: '/' + c.command,
-      description: c.description,
-    })),
+    commands: appCommands(),
     validateToken: async (clientToken) => {
       // Per-person token model: the bearer token resolves (via the ios_tokens
       // registry) to a platform_id + person_key. Unknown tokens are rejected.

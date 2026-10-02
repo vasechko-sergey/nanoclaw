@@ -10,7 +10,9 @@
     "server_time": "2026-05-31T12:00:00.100Z",
     "commands": [
       { "command": "/new", "description": "Start a new conversation" },
-      { "command": "/help", "description": "Show command list" }
+      { "command": "/surf", "description": "Surf forecast", "agent_id": "jarvis" },
+      { "command": "/workout", "description": "Start a workout", "agent_id": "payne", "action": "today_plan" },
+      { "command": "/food", "description": "Log a meal", "agent_id": "gordon", "input": "compose" }
     ]
   }
 }

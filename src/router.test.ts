@@ -623,15 +623,17 @@ describe('routeInbound: command gate', () => {
     expect(JSON.parse(out[0].content).text).toContain('Permission denied');
   });
 
-  it('rewrite command (/surf) is rewritten to plain text and routed normally', async () => {
-    const wake = await getMockWake();
-    await routeInbound(chatEvent({ text: '/surf' }));
+  it("an agent's own command reaches its container as the command's prompt, stamped for the runner", async () => {
+    createAgentGroup({ id: 'ag-greg', name: 'Greg', folder: 'greg', agent_provider: null, created_at: now() });
+    createMessagingGroupAgent(agentWiring({ id: 'mga-greg', agent_group_id: 'ag-greg', engage_pattern: '.' }));
+    await getMockWake();
+    await routeInbound(chatEvent({ text: '/health' }));
 
-    expect(wake).toHaveBeenCalledTimes(1);
-    const rows = readInbound('ag-1');
-    expect(rows).toHaveLength(1);
-    // /surf → 'прогноз серфинга' (see command-gate REWRITE_COMMANDS)
-    expect(JSON.parse(rows[0].content).text).toBe('прогноз серфинга');
+    const greg = JSON.parse(readInbound('ag-greg')[0].content);
+    expect(greg.text).toContain('analyze.js');
+    expect(greg.command).toEqual({ name: 'health', data: ['scripts/analyze.js'] });
+    // The same text to an agent that doesn't offer /health is just an unknown slash command.
+    expect(JSON.parse(readInbound('ag-1')[0].content).text).toBe('/health');
   });
 
   it('an unknown slash command passes through unchanged to the container', async () => {

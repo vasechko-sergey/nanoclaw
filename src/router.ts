@@ -18,7 +18,7 @@
  * for policy refusals.
  */
 import { getChannelAdapter } from './channels/channel-registry.js';
-import { gateCommand } from './command-gate.js';
+import { applyAgentCommand, gateCommand } from './command-gate.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import {
@@ -449,7 +449,7 @@ async function deliverToAgent(
   // closed and a fresh one created. Filtered commands are dropped silently.
   // Denied admin commands get a permission-denied response.
   if (event.message.kind === 'chat' || event.message.kind === 'chat-sdk') {
-    const gate = gateCommand(event.message.content, userId, agent.agent_group_id);
+    const gate = gateCommand(event.message.content, userId, agent.agent_group_id, agentGroup.folder);
     if (gate.action === 'filter') {
       log.debug('Filtered command dropped by gate', { agentGroupId: agent.agent_group_id });
       return;
@@ -481,10 +481,10 @@ async function deliverToAgent(
       });
       return;
     }
-    if (gate.action === 'rewrite') {
+    if (gate.action === 'agent_command') {
       event = {
         ...event,
-        message: { ...event.message, content: JSON.stringify({ text: gate.text }) },
+        message: { ...event.message, content: applyAgentCommand(event.message.content, gate) },
       };
     }
     if (gate.action === 'deny') {

@@ -25,6 +25,18 @@ describe('shared/ios-app-protocol envelope fixtures', () => {
     expect(envelopeFiles).toHaveLength(24);
   });
 
+  it('auth_ok_with_commands.json keeps the per-agent command fields', () => {
+    const raw = readFileSync(join(fixturesDir, 'auth_ok_with_commands.json'), 'utf8');
+    const env = AnyEnvelope.parse(JSON.parse(raw));
+    if (env.type !== 'auth_ok') throw new Error('expected auth_ok');
+    expect(env.payload.commands).toEqual([
+      { command: '/new', description: 'Start a new conversation' },
+      { command: '/surf', description: 'Surf forecast', agent_id: 'jarvis' },
+      { command: '/workout', description: 'Start a workout', agent_id: 'payne', action: 'today_plan' },
+      { command: '/food', description: 'Log a meal', agent_id: 'gordon', input: 'compose' },
+    ]);
+  });
+
   it('message_with_agent_id.json preserves agent_id through round-trip', () => {
     const raw = readFileSync(join(fixturesDir, 'message_with_agent_id.json'), 'utf8');
     const env = AnyEnvelope.parse(JSON.parse(raw));

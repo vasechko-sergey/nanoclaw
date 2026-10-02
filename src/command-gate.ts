@@ -5,8 +5,10 @@
  * - Filtered commands: dropped silently (never reach the container)
  * - Admin commands: checked against user_roles; denied senders get a
  *   "Permission denied" response written directly to messages_out
+ * - An agent's own command (src/commands.ts): swapped for its prompt
  * - Normal messages: pass through unchanged
  */
+import { findAgentCommand } from './commands.js';
 import { getDb, hasTable } from './db/connection.js';
 
 export type GateResult =
@@ -14,27 +16,24 @@ export type GateResult =
   | { action: 'filter' }
   | { action: 'deny'; command: string }
   | { action: 'new_session' }
-  | { action: 'rewrite'; text: string };
+  | { action: 'agent_command'; command: string; text: string; data?: string[] };
 
 const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/remote-control']);
 const ADMIN_COMMANDS = new Set(['/clear', '/compact', '/context', '/cost', '/files']);
 const SESSION_COMMANDS = new Set(['/new']);
 
-// Slash commands that Claude Code doesn't know — rewrite to plain text so the
-// agent handles them naturally via its CLAUDE.md instructions.
-const REWRITE_COMMANDS: Record<string, (rest: string) => string> = {
-  '/surf': () => 'прогноз серфинга',
-  '/people': () => 'покажи список людей из памяти',
-  '/find': (rest) => (rest ? `что знаешь о ${rest}` : 'кого помнишь?'),
-};
-
 /**
  * Classify a message and decide whether it should reach the container.
  * Returns 'pass' for normal messages and authorized admin commands,
  * 'filter' for silently-dropped commands, 'deny' for unauthorized
- * admin commands.
+ * admin commands, 'agent_command' for a command `agentFolder` offers.
  */
-export function gateCommand(content: string, userId: string | null, agentGroupId: string): GateResult {
+export function gateCommand(
+  content: string,
+  userId: string | null,
+  agentGroupId: string,
+  agentFolder?: string,
+): GateResult {
   let text: string;
   try {
     const parsed = JSON.parse(content);
@@ -51,10 +50,15 @@ export function gateCommand(content: string, userId: string | null, agentGroupId
 
   if (SESSION_COMMANDS.has(command)) return { action: 'new_session' };
 
-  const rewriter = REWRITE_COMMANDS[command];
-  if (rewriter) {
-    const rest = text.slice(command.length).trim();
-    return { action: 'rewrite', text: rewriter(rest) };
+  const own = agentFolder ? findAgentCommand(agentFolder, command.slice(1)) : undefined;
+  if (own) {
+    const args = text.slice(command.length).trim();
+    return {
+      action: 'agent_command',
+      command: own.command,
+      text: own.prompt(args),
+      ...(own.data ? { data: own.data } : {}),
+    };
   }
 
   if (ADMIN_COMMANDS.has(command)) {
@@ -66,6 +70,27 @@ export function gateCommand(content: string, userId: string | null, agentGroupId
 
   // Unknown slash commands pass through (the agent/SDK handles them)
   return { action: 'pass' };
+}
+
+/**
+ * The message content an agent command reaches the container as: `text` is
+ * the command's prompt, `command` tells the runner which data scripts to run
+ * first. Everything else the channel put there (attachments, iOS context,
+ * sender) stays — a /food photo must still reach the model.
+ */
+export function applyAgentCommand(content: string, gate: { command: string; text: string; data?: string[] }): string {
+  let parsed: Record<string, unknown>;
+  try {
+    const value: unknown = JSON.parse(content);
+    parsed = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  } catch {
+    parsed = {};
+  }
+  return JSON.stringify({
+    ...parsed,
+    text: gate.text,
+    command: { name: gate.command, ...(gate.data ? { data: gate.data } : {}) },
+  });
 }
 
 function isAdmin(userId: string | null, agentGroupId: string): boolean {

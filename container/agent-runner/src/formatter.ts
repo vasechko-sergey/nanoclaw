@@ -245,6 +245,7 @@ function formatSingleChat(msg: MessageInRow): string {
   const replyAttr = content.replyTo?.id ? ` reply_to="${escapeXml(String(content.replyTo.id))}"` : '';
   const replyPrefix = formatReplyContext(content.replyTo);
   const attachmentsSuffix = formatAttachments(content.attachments);
+  const commandDataSuffix = formatCommandData(content.commandData);
 
   const fromAttr = originAttr(msg);
 
@@ -273,7 +274,7 @@ function formatSingleChat(msg: MessageInRow): string {
       ? ` kind="${escapeXml(String(content.a2a_kind))}"`
       : '';
 
-  return `<message${idAttr}${fromAttr}${agentAttr}${kindAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${attachmentsSuffix}</message>`;
+  return `<message${idAttr}${fromAttr}${agentAttr}${kindAttr} sender="${escapeXml(sender)}" time="${escapeXml(time)}"${replyAttr}>${replyPrefix}${escapeXml(text)}${attachmentsSuffix}${commandDataSuffix}</message>`;
 }
 
 /**
@@ -359,6 +360,23 @@ function formatReplyContext(replyTo: any): string {
   const text = replyTo.text;
   if (!sender || !text) return '';
   return `\n  <quoted_message from="${escapeXml(sender)}">${escapeXml(text)}</quoted_message>\n`;
+}
+
+/**
+ * Output of an agent command's data scripts (command-data.ts). Raw, like a
+ * task's script output: it is JSON for the agent to read, and escaping would
+ * turn every quote into six characters.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatCommandData(data: any[] | undefined): string {
+  if (!Array.isArray(data)) return '';
+  return data
+    .map((d) => {
+      const source = escapeXml(String(d?.source ?? ''));
+      if (typeof d?.output === 'string') return `\n<command_data source="${source}">\n${d.output}\n</command_data>`;
+      return `\n<command_data source="${source}" error="${escapeXml(String(d?.error ?? 'unknown'))}"/>`;
+    })
+    .join('');
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

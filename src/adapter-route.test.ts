@@ -7,6 +7,8 @@ import { initTestDb, closeDb, createAgentGroup, createMessagingGroup } from './d
 import { createMessagingGroupAgent } from './db/messaging-groups.js';
 import { runMigrations } from './db/migrations/index.js';
 import { findSessionForAgent, getSession } from './db/sessions.js';
+import Database from 'better-sqlite3';
+import { inboundDbPath } from './session-manager.js';
 import { adapterRouteToAgent } from './adapter-route.js';
 import type { InboundEvent } from './channels/adapter.js';
 // Importing the permissions module installs the real sender resolver + access
@@ -31,6 +33,13 @@ function makeEvent(platformId: string, threadId: string | null, text: string): I
       timestamp: new Date().toISOString(),
     },
   };
+}
+
+function lastInboundContent(sessionId: string): string {
+  const db = new Database(inboundDbPath('payne', sessionId));
+  const row = db.prepare('SELECT content FROM messages_in ORDER BY rowid DESC LIMIT 1').get() as { content: string };
+  db.close();
+  return row.content;
 }
 
 describe('adapterRouteToAgent', () => {
@@ -97,6 +106,25 @@ describe('adapterRouteToAgent', () => {
     const after = findSessionForAgent('payne', 'mg-test', null);
     expect(after?.id).toBe(before?.id);
     expect(after?.status).toBe('active');
+  });
+
+  it("swaps an agent's own command for its prompt and keeps the attachments", async () => {
+    const event = makeEvent('ios:test', null, '/workout');
+    event.message.content = JSON.stringify({ text: '/workout', attachments: [{ name: 'note.txt' }] });
+    const res = await adapterRouteToAgent(event, 'payne', { wake: false });
+    expect(res.delivered).toBe(true);
+
+    const content = JSON.parse(lastInboundContent(res.sessionId!));
+    expect(content.text).toContain('workout-mode');
+    expect(content.command).toEqual({ name: 'workout' });
+    expect(content.attachments).toEqual([{ name: 'note.txt' }]);
+  });
+
+  it("passes another agent's command through untouched", async () => {
+    const res = await adapterRouteToAgent(makeEvent('ios:test', null, '/health'), 'payne', { wake: false });
+    const content = JSON.parse(lastInboundContent(res.sessionId!));
+    expect(content.text).toBe('/health');
+    expect(content.command).toBeUndefined();
   });
 
   it('resolves the agent group by folder when id lookup misses', async () => {

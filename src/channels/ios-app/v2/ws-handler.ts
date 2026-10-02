@@ -35,6 +35,7 @@ import type { ContextBridge } from './context-bridge.js';
 import type { ImageCache } from './image-cache.js';
 import { convertImageBlobToRef } from './image-ref.js';
 import { ACK_RETRY_MS, APP_PING_INTERVAL_MS, type PlatformId } from './types.js';
+import type { AppCommand } from '../../../commands.js';
 
 export const CLOSE_CODES = {
   protocol_violation: 4002,
@@ -61,8 +62,9 @@ export interface WsHandlerDeps {
    * Optional slash-command catalogue published on every `auth_ok`. The iOS
    * `UnifiedInputBar` consumes this to populate its suggestion popover.
    * Commands are expected to be `/`-prefixed (matches legacy adapter shape).
+   * An entry with `agent_id` belongs to that agent only (see src/commands.ts).
    */
-  commands?: Array<{ command: string; description: string }>;
+  commands?: AppCommand[];
   /**
    * Test/escape hatch: how often the retry timer fires. Default 1000ms.
    * Lower values make retry tests faster but should not be used in prod.

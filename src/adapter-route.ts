@@ -5,7 +5,7 @@
  * + session resolve + write + wake so the dropped_messages audit trail and
  * permissions checks stay intact.
  */
-import { gateCommand } from './command-gate.js';
+import { applyAgentCommand, gateCommand } from './command-gate.js';
 import { getAgentGroup, getAgentGroupByFolder } from './db/agent-groups.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import { getMessagingGroupByPlatform } from './db/messaging-groups.js';
@@ -81,7 +81,7 @@ export async function adapterRouteToAgent(
   // minutes on /new (it tries to summarize/clear in-band), while a host
   // kill-and-resolve cycle is sub-second.
   if (event.message.kind === 'chat' || event.message.kind === 'chat-sdk') {
-    const gate = gateCommand(event.message.content, userId, agentGroup.id);
+    const gate = gateCommand(event.message.content, userId, agentGroup.id, agentGroup.folder);
     if (gate.action === 'filter') {
       log.debug('adapterRouteToAgent: filtered command dropped', { agentGroupId: agentGroup.id });
       return { delivered: false, reason: 'filtered_command' };
@@ -120,10 +120,11 @@ export async function adapterRouteToAgent(
       });
       return { delivered: true, sessionId: target.id };
     }
-    if (gate.action === 'rewrite') {
+    if (gate.action === 'agent_command') {
+      // Merge, don't replace: a /food photo rides in `attachments`.
       event = {
         ...event,
-        message: { ...event.message, content: JSON.stringify({ text: gate.text }) },
+        message: { ...event.message, content: applyAgentCommand(event.message.content, gate) },
       };
     }
     if (gate.action === 'deny') {

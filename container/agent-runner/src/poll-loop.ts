@@ -1,5 +1,6 @@
 import { validateA2aKind } from '@shared/a2a/kinds.js';
 
+import { applyCommandData } from './command-data.js';
 import { findByName, getAllDestinations, resolveDefaultRouting, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, maxTries, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
@@ -506,6 +507,10 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     }
     // MODULE-HOOK:scheduling-pre-task:end
 
+    // An agent command's data scripts (/health, /money): fresh figures go into
+    // the prompt instead of costing the model a tool round trip each.
+    keep = await applyCommandData(keep);
+
     if (keep.length === 0) {
       log(`All ${normalMessages.length} non-command message(s) gated by script, skipping query`);
       continue;
@@ -889,6 +894,8 @@ export async function processQuery(
           log(`Pre-task script skipped ${skipped.length} follow-up task(s): ${skipped.join(', ')}`);
         }
         // MODULE-HOOK:scheduling-pre-task-followup:end
+
+        keep = await applyCommandData(keep);
 
         if (keep.length === 0) return;
         // Re-check done — the outer query may have finished while the script
