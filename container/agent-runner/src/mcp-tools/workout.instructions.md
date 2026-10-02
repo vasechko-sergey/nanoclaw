@@ -5,7 +5,7 @@ Default to silence — emit only the messages the user must see.
 
 | Tool | When |
 |------|------|
-| `workout.start_plan` | Exactly once, at the start. Full plan + image manifest. App runs the session offline from this. |
+| `workout.start_plan` | Today's plan as a card. Pass only `workout_id` (the owner's date): the tool builds it with `scripts/build-plan.js`, applies Greg's signal, derives images. An error means no card — rest day, closed mesocycle, broken builder. The iOS plan button is answered by the runner without you. |
 | `workout.coach`      | A personal record, a clear missed-set pattern, or a fatigue cue. Sparingly. |
 | `workout.swap`       | Mid-workout exercise replacement. 1–3 options, each with a reason. |
 
