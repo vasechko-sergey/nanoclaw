@@ -225,6 +225,45 @@ final class WebSocketClientV2Tests: XCTestCase {
         XCTAssertEqual(client.commands.first?.description, "start new")
     }
 
+    func testPerAgentCommandFieldsReachTheCatalogue() async throws {
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let env = V2.Envelope(
+            v: V2.protocolVersion, kind: .control, type: .authOk,
+            id: UUID().uuidString, seq: nil,
+            ts: ISO8601DateFormatter().string(from: Date()),
+            payload: .authOk(V2.AuthOk(
+                last_seen_outbound_seq: 0,
+                server_time: ISO8601DateFormatter().string(from: Date()),
+                commands: [
+                    V2.Command(command: "/new", description: "new"),
+                    V2.Command(command: "/workout", description: "workout", agent_id: "payne", action: "today_plan"),
+                    V2.Command(command: "/food", description: "food", agent_id: "gordon", input: "compose"),
+                ]
+            ))
+        )
+        try await transport.handleIncoming(JSONEncoder().encode(env))
+        let deadline = Date().addingTimeInterval(2.0)
+        while client.commands.count < 3 && Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(client.commands, [
+            BotCommand(command: "/new", description: "new"),
+            BotCommand(command: "/workout", description: "workout", agentId: "payne", action: "today_plan"),
+            BotCommand(command: "/food", description: "food", agentId: "gordon", compose: true),
+        ])
+    }
+
+    func testEachAgentSeesTheCommonCommandsAndOnlyItsOwn() {
+        let all = [
+            BotCommand(command: "/new", description: "new"),
+            BotCommand(command: "/surf", description: "surf", agentId: "jarvis"),
+            BotCommand(command: "/health", description: "health", agentId: "greg"),
+        ]
+        XCTAssertEqual(BotCommand.visible(all, for: .jarvis).map(\.command), ["/new", "/surf"])
+        XCTAssertEqual(BotCommand.visible(all, for: .greg).map(\.command), ["/new", "/health"])
+        XCTAssertEqual(BotCommand.visible(all, for: .scrooge).map(\.command), ["/new"])
+    }
+
     func testCommandsClearedWhenAuthOkOmitsThem() async throws {
         try await Task.sleep(nanoseconds: 100_000_000)
         // Seed with a stale catalogue.

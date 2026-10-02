@@ -6,7 +6,7 @@ struct CommandList: View {
     /// opened from the "+" menu (empty text), where there's otherwise no way to
     /// dismiss it without picking a command.
     var onClose: (() -> Void)? = nil
-    let onSelect: (String) -> Void
+    let onSelect: (BotCommand) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -30,7 +30,7 @@ struct CommandList: View {
             }
             ForEach(commands, id: \.command) { cmd in
                 Button {
-                    onSelect(cmd.command)
+                    onSelect(cmd)
                 } label: {
                     HStack(spacing: 0) {
                         Text(cmd.command)

@@ -11,6 +11,17 @@ import UIKit
 struct BotCommand: Equatable {
     let command: String
     let description: String
+    /// The only agent that offers it; nil = every agent.
+    var agentId: String? = nil
+    /// The tap puts the command into the input for the user to finish ("/food ").
+    var compose: Bool = false
+    /// The app answers the tap itself instead of sending it ("today_plan").
+    var action: String? = nil
+
+    /// What the active agent's command list shows: the common commands plus its own.
+    static func visible(_ all: [BotCommand], for agent: AgentIdentity) -> [BotCommand] {
+        all.filter { $0.agentId == nil || $0.agentId == agent.rawValue }
+    }
 }
 
 // MARK: - WebSocketClientV2
@@ -869,7 +880,8 @@ final class WebSocketClientV2 {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.commands = (payload.commands ?? []).map {
-                        BotCommand(command: $0.command, description: $0.description)
+                        BotCommand(command: $0.command, description: $0.description,
+                                   agentId: $0.agent_id, compose: $0.input == "compose", action: $0.action)
                     }
                 }
                 // Drain any persisted set_log + workout lifecycle events that

@@ -18,6 +18,10 @@ struct UnifiedInputBar: View {
     @Binding var autoStartVoice: Bool
     let onSend: () -> Void
     var onPinchOut: (() -> Void)? = nil
+    /// A picked command that runs straight away (`/new`, `/surf`, …). Commands
+    /// marked `compose` — and every command when this is nil — go into the
+    /// field instead, for the user to finish and send.
+    var onCommand: ((BotCommand) -> Void)? = nil
 
     @State private var speech = SpeechManager()
     @State private var showCommands = false
@@ -43,8 +47,14 @@ struct UnifiedInputBar: View {
             // Command suggestions
             if !filteredCommands.isEmpty {
                 CommandList(commands: filteredCommands, onClose: showCommands ? { showCommands = false } : nil) { cmd in
-                    text = cmd
                     showCommands = false
+                    if let onCommand, !cmd.compose {
+                        text = ""
+                        onCommand(cmd)
+                    } else {
+                        text = cmd.compose ? cmd.command + " " : cmd.command
+                        textFocused = true
+                    }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }

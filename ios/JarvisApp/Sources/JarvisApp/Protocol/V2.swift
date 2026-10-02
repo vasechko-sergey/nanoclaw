@@ -111,6 +111,12 @@ enum V2 {
     struct Command: Codable, Equatable {
         let command: String
         let description: String
+        /// The only agent that offers it; nil = every agent.
+        var agent_id: String? = nil
+        /// "compose": the tap puts the command into the input for the user to finish.
+        var input: String? = nil
+        /// "today_plan": the app answers the tap itself, no chat message.
+        var action: String? = nil
     }
 
     struct AuthFail: Codable, Equatable {

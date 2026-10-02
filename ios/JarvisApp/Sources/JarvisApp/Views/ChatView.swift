@@ -131,6 +131,26 @@ struct ChatView: View {
         drafts = []
     }
 
+    /// A command picked from the list. Payne's `/workout` is answered here like
+    /// his plan chip: today's card is requested (built by the runner, no model)
+    /// or opened. Everything else — and `/workout` on a day already trained — is
+    /// sent to the agent, whose host swaps it for a direct skill call.
+    private func runCommand(_ command: BotCommand) {
+        if command.action == "today_plan" {
+            switch TodayPlanChip.state(messages: visibleMessages, today: TodayPlanChip.localDate()) {
+            case .request:
+                requestTodayPlan()
+                return
+            case .open(let plan, let messageId):
+                openPlanCard(plan, messageId: messageId)
+                return
+            case .hidden:
+                break
+            }
+        }
+        coordinator.sendMessage(command.command, agentId: active.active.rawValue)
+    }
+
     /// Open the live WorkoutView for a plan delivered as a chat card. Holds the
     /// originating message id so the card can be marked done on close.
     /// Shared slug→cached-image-URL resolver (used by both preview and runner).
@@ -521,12 +541,13 @@ struct ChatView: View {
 
             // MARK: – Input (always visible — empty state shows orb+satellites above)
             UnifiedInputBar(text: $inputText, inputViaVoice: $inputViaVoice, drafts: $drafts,
-                            commands: ws.commands, isDisabled: !ws.stackReady,
+                            commands: BotCommand.visible(ws.commands, for: active.active), isDisabled: !ws.stackReady,
                             enterToSend: settings.enterToSend,
                             placeholder: "Спросить \(active.active.displayName)...",
                             autoStartVoice: $autoStartVoice,
                             onSend: sendCurrent,
-                            onPinchOut: { showVoiceFullscreen = true })
+                            onPinchOut: { showVoiceFullscreen = true },
+                            onCommand: runCommand)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         // Header lives in a TOP safe-area inset rather than as the first child
