@@ -153,18 +153,11 @@ struct ChatView: View {
 
     /// Open the live WorkoutView for a plan delivered as a chat card. Holds the
     /// originating message id so the card can be marked done on close.
-    /// Shared slug→cached-image-URL resolver (used by both preview and runner).
-    private func resolveImageURL(slug: String, plan: WorkoutPlan) -> URL? {
-        // No manifest entry → the plan carries no image for this exercise (e.g.
-        // one antitrainer has no demo for). Show the placeholder, NOT a stale
-        // cached blob from a past plan — keeps a unified "no demo" look.
-        guard let entry = plan.imageManifest.first(where: { $0.slug == slug }) else { return nil }
-        if coordinator.imageCache.has(slug: entry.slug, sha256: entry.sha256) {
-            return coordinator.imageCache.path(forSlug: entry.slug, sha256: entry.sha256)
-        }
-        // Manifest entry present but its sha isn't cached yet (sha drift or
-        // not-yet-delivered) → newest cached blob for the slug.
-        return coordinator.imageCache.latestPath(slug: slug)
+    /// Shared slug→cached-image-URL resolver (used by preview, runner, sheet).
+    /// `live` is the running coordinator's plan — it must win over the plan the
+    /// cover was opened with, which a mid-workout swap never updates.
+    private func resolveImageURL(slug: String, plan: WorkoutPlan, live: WorkoutPlan? = nil) -> URL? {
+        ExerciseImageResolution.url(slug: slug, live: live, snapshot: plan, cache: coordinator.imageCache)
     }
 
     /// A plan card's action — from the card itself or from Payne's plan chip:
@@ -350,7 +343,8 @@ struct ChatView: View {
     private func workoutRunnerView(for presentation: WorkoutPresentation) -> some View {
         WorkoutView(
             coordinator: presentation.coord!,
-            imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan) },
+            imageResolver: { resolveImageURL(slug: $0, plan: presentation.plan,
+                                             live: presentation.coord?.plan) },
             // Coach messages without a set anchor → coach line in the ПЕЙН panel
             // (Fix J). Filter at the boundary so WorkoutView doesn't know about
             // WorkoutInboundEvent.
@@ -673,7 +667,8 @@ struct ChatView: View {
                     currentName: activeWorkout?.plan.exercises.first(where: { $0.exerciseSlug == s.originalSlug })?.displayName ?? "",
                     thumbnail: { slug in
                         if let plan = activeWorkout?.plan,
-                           let url = resolveImageURL(slug: slug, plan: plan) { return url }
+                           let url = resolveImageURL(slug: slug, plan: plan,
+                                                     live: activeWorkout?.coord?.plan) { return url }
                         return coordinator.imageCache.latestPath(slug: slug)
                     },
                     refreshToken: swapImageToken,
@@ -687,7 +682,7 @@ struct ChatView: View {
                     case .proposeOwn(let text):
                         swapLoading = true
                         Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: text) }
-                    case .confirm(let newSlug, let persist, let nameRu, let sha256):
+                    case .confirm(let newSlug, let persist, let nameRu, let sha256, let weightTarget):
                         // F4: durable — outbox + drain on auth, not a lossy send.
                         coordinator.ws.enqueueExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist)
                         // Fix N: fold the swap into the running Coordinator's
@@ -696,7 +691,8 @@ struct ChatView: View {
                         // in attachCoachHint. Without this, the deviation-reply
                         // hint is silently dropped after any swap.
                         activeWorkout?.coord?.applySwap(originalSlug: s.originalSlug, newSlug: newSlug,
-                                                        newName: nameRu, newSha: sha256)
+                                                        newName: nameRu, newSha: sha256,
+                                                        newWeightTarget: weightTarget)
                         swapSheet = nil
                     case .cancel:
                         swapSheet = nil

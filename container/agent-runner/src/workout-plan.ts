@@ -117,6 +117,51 @@ export function buildPlan(
 }
 
 /**
+ * Prescribed working weight (kg) per candidate slug, from the agent's own
+ * scripts/weight-trend.js — the same engine that fills the plan card.
+ *
+ * A mid-workout swap used to keep the REPLACED exercise's weight, so the card
+ * showed 30 kg for a cable row the owner pulls at 60 and every logged set read
+ * as a weight deviation. `--like` hands the script the slot being replaced for
+ * its rep range only; the weight always comes from the candidate's own history.
+ *
+ * Never throws and never blocks the swap: a missing or broken script yields an
+ * empty map, and the sheet then offers the alternatives with no target weight.
+ */
+export function prescribeWeights(
+  slugs: string[],
+  likeSlug: string,
+  agentDir: string,
+  opts: { timeoutMs?: number } = {},
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (slugs.length === 0) return out;
+  const script = join(agentDir, 'scripts', 'weight-trend.js');
+  if (!existsSync(script)) return out;
+  const run = spawnSync(process.execPath, [script, '--prescribe', slugs.join(','), '--like', likeSlug], {
+    cwd: agentDir,
+    encoding: 'utf8',
+    timeout: opts.timeoutMs ?? BUILD_TIMEOUT_MS,
+  });
+  if (run.error || run.status !== 0) return out;
+  let rows: unknown;
+  try {
+    rows = JSON.parse(run.stdout);
+  } catch {
+    return out;
+  }
+  if (!Array.isArray(rows)) return out;
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const { exercise_slug: slug, prescribed_next_kg: kg } = row as Record<string, unknown>;
+    if (typeof slug === 'string' && typeof kg === 'number' && Number.isFinite(kg) && kg > 0) {
+      out.set(slug, kg);
+    }
+  }
+  return out;
+}
+
+/**
  * Nullish pick: first defined, non-null value among the candidates. Uses `??`
  * semantics so a legitimate 0 (target_rir: 0 = to-failure) or "" survives —
  * a `||` fallback would silently drop them.

@@ -243,14 +243,18 @@ final class WorkoutCoordinator: ObservableObject {
     /// other fields so weights / target reps / logged sets survive the swap.
     /// No-op if the workout is finished or the slug isn't in the plan (e.g.
     /// swap arrived for an already-swapped exercise).
-    /// `newName` / `newSha` come from the chosen swap alternative. They are what
-    /// make the swap VISIBLE: without a name the card keeps showing the replaced
-    /// exercise's `nameRu`, and without a manifest entry `resolveImageURL` finds
-    /// no entry for the new slug and renders a placeholder instead of the demo
-    /// (the bytes are already cached — the swap sheet fetched them). Both nil on
-    /// the accepted-own-proposal path and on older server builds, in which case
-    /// the old fallback behaviour stands.
-    func applySwap(originalSlug: String, newSlug: String, newName: String? = nil, newSha: String? = nil) {
+    /// `newName` / `newSha` / `newWeightTarget` come from the chosen swap
+    /// alternative. They are what make the swap CORRECT: without a name the card
+    /// keeps showing the replaced exercise's `nameRu`; without a manifest entry
+    /// the image resolver finds nothing for the new slug and renders a
+    /// placeholder instead of the demo (the bytes are already cached — the swap
+    /// sheet fetched them); and without a prescription the card would keep the
+    /// replaced exercise's working weight, which also makes every logged set
+    /// register as a weight deviation. All nil on the accepted-own-proposal path
+    /// and on older server builds — the card then shows no name/image/target for
+    /// the new exercise rather than the wrong one.
+    func applySwap(originalSlug: String, newSlug: String, newName: String? = nil, newSha: String? = nil,
+                   newWeightTarget: Double? = nil) {
         guard !isFinished else { return }
         guard let idx = plan.exercises.firstIndex(where: { $0.exerciseSlug == originalSlug }) else { return }
         guard originalSlug != newSlug else { return }
@@ -267,7 +271,12 @@ final class WorkoutCoordinator: ObservableObject {
             // the RIGHT exercise.
             nameRu: newName ?? nil,
             durationSec: old.durationSec,
-            weightKgTarget: old.weightKgTarget
+            // The prescription belongs to the exercise, not the slot: keeping
+            // the replaced one's weight showed 30 kg for a cable row pulled at
+            // 60 and made every set register as a weight deviation. No
+            // prescription from the server → no target; the wheel then seeds
+            // from the last logged set and the deviation detector stays quiet.
+            weightKgTarget: newWeightTarget
         )
         var newExercises = plan.exercises
         newExercises[idx] = replaced

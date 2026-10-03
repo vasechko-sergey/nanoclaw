@@ -16,7 +16,7 @@
  */
 import { loadConfig } from '../config.js';
 import { buildImageManifest, DEFAULT_EXERCISES_DIR, type ImageManifestEntry } from '../exercise-images.js';
-import { buildPlan, defaultPlanPaths, readinessFor, sendWorkoutPlan, writeWorkoutOut } from '../workout-plan.js';
+import { buildPlan, defaultPlanPaths, prescribeWeights, readinessFor, sendWorkoutPlan, writeWorkoutOut } from '../workout-plan.js';
 import type { McpToolDefinition } from './types.js';
 
 function ok(text: string) {
@@ -188,7 +188,9 @@ export const workoutSwap: McpToolDefinition = {
   tool: {
     name: 'workout.swap',
     description:
-      'Offer the user 1-3 swap options for an exercise mid-workout. User picks one in the iOS swap sheet.',
+      'Offer the user 1-3 swap options for an exercise mid-workout. User picks one in the iOS swap sheet. ' +
+      "The tool derives each option's image sha AND its prescribed working weight (from the owner's own logged " +
+      'history, via scripts/weight-trend.js) — never pass or compute a weight yourself.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -240,6 +242,15 @@ export const workoutSwap: McpToolDefinition = {
         exercisesDir,
       ).map((e) => [e.slug, e.sha256]),
     );
+    // And the weight the owner should actually use for the exercise they pick,
+    // computed from THEIR history by the same engine that fills the plan card.
+    // Without it iOS kept the replaced exercise's target: 30 kg on a cable row
+    // pulled at 60, plus a weight-deviation flag on every set of it.
+    const kgBySlug = prescribeWeights(
+      options.map((o) => o.slug),
+      String(args.from_exercise_slug ?? ''),
+      defaultPlanPaths().agentDir,
+    );
     writeWorkoutOut({
       type: 'exercise_swap_options',
       payload: {
@@ -250,6 +261,7 @@ export const workoutSwap: McpToolDefinition = {
           why: o.reason,
           ...(o.name_ru ? { name_ru: o.name_ru } : {}),
           ...(shaBySlug.has(o.slug) ? { sha256: shaBySlug.get(o.slug) } : {}),
+          ...(kgBySlug.has(o.slug) ? { weight_kg_target: kgBySlug.get(o.slug) } : {}),
         })),
       },
     });

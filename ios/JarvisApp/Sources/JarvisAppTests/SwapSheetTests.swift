@@ -17,11 +17,13 @@ final class SwapSheetTests: XCTestCase {
     func test_swapAction_caseEquality() {
         // Sanity that the enum cases distinguish.
         let a: SwapAction = .requestSuggestions
-        let b: SwapAction = .confirm(newSlug: "x", persist: true, nameRu: "Жим", sha256: "sha")
+        let b: SwapAction = .confirm(newSlug: "x", persist: true, nameRu: "Жим", sha256: "sha",
+                                     weightKgTarget: 52.5)
         if case .requestSuggestions = a {} else { XCTFail() }
-        if case let .confirm(slug, persist, nameRu, sha) = b {
+        if case let .confirm(slug, persist, nameRu, sha, weight) = b {
             XCTAssertEqual(slug, "x"); XCTAssertTrue(persist)
             XCTAssertEqual(nameRu, "Жим"); XCTAssertEqual(sha, "sha")
+            XCTAssertEqual(weight, 52.5)
         } else { XCTFail() }
     }
 

@@ -462,8 +462,15 @@ enum V2 {
         let why: String
         var name_ru: String?
         var sha256: String?
-        init(slug: String, why: String, name_ru: String? = nil, sha256: String? = nil) {
+        /// Payne's prescribed working weight for THIS exercise (kg), derived by
+        /// the swap tool from the owner's own history. Absent when the exercise
+        /// has never been logged — iOS then shows no target at all rather than
+        /// the replaced exercise's weight.
+        var weight_kg_target: Double?
+        init(slug: String, why: String, name_ru: String? = nil, sha256: String? = nil,
+             weight_kg_target: Double? = nil) {
             self.slug = slug; self.why = why; self.name_ru = name_ru; self.sha256 = sha256
+            self.weight_kg_target = weight_kg_target
         }
     }
 

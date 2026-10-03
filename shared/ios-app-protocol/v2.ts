@@ -387,17 +387,22 @@ export const Envelopes = {
       original_slug: z.string().min(1),
       accepted: z.object({ slug: z.string() }).optional(),
       rejected: z.object({ slug: z.string(), reason: z.string() }).optional(),
-      // `name_ru` + `sha256` are what let iOS actually COMPLETE a swap: without
-      // a name the sheet and the runner fall back to the transliterated slug
-      // ("Zhim ganteley sidya"), and without a sha the swapped-in exercise has
-      // no image-manifest entry, so the runner's resolver returns nil and shows
-      // a placeholder. Both optional for back-compat with older Payne builds.
+      // `name_ru`, `sha256` and `weight_kg_target` are what let iOS actually
+      // COMPLETE a swap: without a name the sheet and the runner fall back to
+      // the transliterated slug ("Zhim ganteley sidya"); without a sha the
+      // swapped-in exercise has no image-manifest entry, so the runner's
+      // resolver returns nil and shows a placeholder; and without a weight the
+      // card keeps the REPLACED exercise's target, which also flags every
+      // logged set as a weight deviation. All three optional for back-compat
+      // with older Payne builds — iOS then shows nothing rather than the wrong
+      // name / image / weight.
       alternatives: z.array(
         z.object({
           slug: z.string(),
           why: z.string(),
           name_ru: z.string().optional(),
           sha256: z.string().optional(),
+          weight_kg_target: z.number().positive().optional(),
         }),
       ),
       agent_id: z.string().min(1).optional(),

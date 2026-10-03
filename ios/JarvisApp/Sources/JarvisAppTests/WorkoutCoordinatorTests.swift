@@ -339,6 +339,43 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertTrue(coord.plan.imageManifest.isEmpty)
     }
 
+    /// The card's recommended weight must describe the NEW exercise. Copying it
+    /// from the replaced one showed "30 кг" for a cable row the owner actually
+    /// pulls at 60 (2026-10-03 session) — and because `detectDeviation` compares
+    /// every set against that target, each set read as a +100% weight deviation,
+    /// so Payne nagged about the weight all through the swapped exercise.
+    func test_applySwap_takesServerWeightTarget() throws {
+        let queue = try makeQueue()
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "Верх A", week: 2, intensityLabel: "тяжёлая",
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "10-12",
+                                     targetRir: 2, restSec: 120, nameRu: "Тяга гантели",
+                                     weightKgTarget: 30)],
+            imageManifest: []
+        )
+        let coord = WorkoutCoordinator(plan: plan, queue: queue)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt",
+                        newName: "Тяга блока", newSha: "sha-alt", newWeightTarget: 70)
+        XCTAssertEqual(coord.plan.exercises[0].weightKgTarget, 70)
+    }
+
+    /// No prescription for the new exercise (never logged, absent from the
+    /// program) → no target at all. The wheel then seeds from the last logged
+    /// set and the deviation detector stays silent; the replaced exercise's
+    /// weight must not survive as a confident-looking wrong number.
+    func test_applySwap_withoutServerWeight_dropsStaleTarget() throws {
+        let queue = try makeQueue()
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "Верх A", week: 2, intensityLabel: "тяжёлая",
+            exercises: [ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "10-12",
+                                     targetRir: 2, restSec: 120, weightKgTarget: 30)],
+            imageManifest: []
+        )
+        let coord = WorkoutCoordinator(plan: plan, queue: queue)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        XCTAssertNil(coord.plan.exercises[0].weightKgTarget)
+    }
+
     /// applySwap preserves target sets / reps / rest / logged sets.
     func test_applySwap_preservesFieldsAndLoggedSets() throws {
         let queue = try makeQueue()

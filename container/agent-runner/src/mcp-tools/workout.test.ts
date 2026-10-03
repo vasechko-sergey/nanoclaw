@@ -382,6 +382,80 @@ describe('workout MCP tools', () => {
     });
   });
 
+  describe('swap alternatives carry the new exercise\'s own prescribed weight', () => {
+    let exDir: string;
+    let agentDir: string;
+
+    /** Stand-in for the agent's scripts/weight-trend.js: echoes what it was asked. */
+    function seedTrendScript(body: string): void {
+      mkdirSync(join(agentDir, 'scripts'), { recursive: true });
+      writeFileSync(join(agentDir, 'scripts', 'weight-trend.js'), body);
+    }
+
+    beforeEach(() => {
+      exDir = mkdtempSync(join(tmpdir(), 'workout-swap-ex-'));
+      agentDir = mkdtempSync(join(tmpdir(), 'workout-swap-agent-'));
+      process.env.WORKOUT_EXERCISES_DIR = exDir;
+      process.env.WORKOUT_AGENT_DIR = agentDir;
+    });
+    afterEach(() => {
+      delete process.env.WORKOUT_EXERCISES_DIR;
+      delete process.env.WORKOUT_AGENT_DIR;
+      rmSync(exDir, { recursive: true, force: true });
+      rmSync(agentDir, { recursive: true, force: true });
+    });
+
+    it('attaches weight_kg_target per slug and omits it when there is no prescription', async () => {
+      // The script is asked for every candidate at once, with --like naming the
+      // exercise being replaced (its rep range, never its weight).
+      seedTrendScript(`
+        const a = process.argv.slice(2);
+        const slugs = a[a.indexOf('--prescribe') + 1].split(',');
+        const like = a[a.indexOf('--like') + 1];
+        console.log(JSON.stringify(slugs.map((s) => ({
+          exercise_slug: s,
+          prescribed_next_kg: s === 'leg_press' && like === 'squat' ? 72.5 : null,
+        }))));
+      `);
+      await workoutSwap.handler({
+        workout_id: 'w1',
+        from_exercise_slug: 'squat',
+        options: [
+          { slug: 'leg_press', reason: 'knee', name_ru: 'Жим ногами' },
+          { slug: 'hack_squat', reason: 'alt', name_ru: 'Гакк' },
+        ],
+      });
+      const body = JSON.parse(getUndeliveredMessages()[0].content);
+      expect(body.payload.alternatives).toEqual([
+        { slug: 'leg_press', why: 'knee', name_ru: 'Жим ногами', weight_kg_target: 72.5 },
+        // No history → no target at all. iOS must show an empty weight rather
+        // than the replaced exercise's.
+        { slug: 'hack_squat', why: 'alt', name_ru: 'Гакк' },
+      ]);
+    });
+
+    it('still sends the options when the prescription script is missing', async () => {
+      await workoutSwap.handler({
+        workout_id: 'w1',
+        from_exercise_slug: 'squat',
+        options: [{ slug: 'leg_press', reason: 'knee' }],
+      });
+      const body = JSON.parse(getUndeliveredMessages()[0].content);
+      expect(body.payload.alternatives).toEqual([{ slug: 'leg_press', why: 'knee' }]);
+    });
+
+    it('survives a broken prescription script', async () => {
+      seedTrendScript('console.log("not json"); process.exit(1);');
+      await workoutSwap.handler({
+        workout_id: 'w1',
+        from_exercise_slug: 'squat',
+        options: [{ slug: 'leg_press', reason: 'knee' }],
+      });
+      const body = JSON.parse(getUndeliveredMessages()[0].content);
+      expect(body.payload.alternatives).toEqual([{ slug: 'leg_press', why: 'knee' }]);
+    });
+  });
+
   it('refuses when AGENT_GROUP_ID is not payne', async () => {
     process.env.AGENT_GROUP_ID = 'jarvis';
     const res = await workoutCoach.handler({ workout_id: 'w1', text: 'x' });

@@ -28,6 +28,9 @@ struct SwapResponse: Equatable {
         /// sha256 of this exercise's demo image, so an accepted swap can add an
         /// image-manifest entry and the runner resolves a real image.
         var sha256: String?
+        /// Prescribed working weight for this exercise (kg), from the owner's
+        /// own logged history. nil ⇒ never logged, so there is no target.
+        var weightKgTarget: Double?
         var id: String { slug }
         /// What the user should read — never the raw slug when a name exists.
         var displayName: String {
@@ -35,8 +38,10 @@ struct SwapResponse: Equatable {
             let p = slug.replacingOccurrences(of: "-", with: " ")
             return p.prefix(1).uppercased() + p.dropFirst()
         }
-        init(slug: String, why: String, nameRu: String? = nil, sha256: String? = nil) {
+        init(slug: String, why: String, nameRu: String? = nil, sha256: String? = nil,
+             weightKgTarget: Double? = nil) {
             self.slug = slug; self.why = why; self.nameRu = nameRu; self.sha256 = sha256
+            self.weightKgTarget = weightKgTarget
         }
     }
 }
@@ -48,11 +53,14 @@ enum SwapAction {
     /// User submitted their own choice — parent sends with `proposed: text`.
     case proposeOwn(text: String)
     /// User confirmed a slug — parent sends `exercise_swap_confirm` AND folds the
-    /// swap into the running plan. `nameRu` / `sha256` come from the chosen
-    /// alternative and are what make the fold visible: the new name on the card
-    /// and a manifest entry so the demo image resolves instead of a placeholder.
-    /// Both nil on the accepted-own-proposal path and on older server builds.
-    case confirm(newSlug: String, persist: Bool, nameRu: String?, sha256: String?)
+    /// swap into the running plan. `nameRu` / `sha256` / `weightKgTarget` come
+    /// from the chosen alternative and are what make the fold correct: the new
+    /// name on the card, a manifest entry so the demo image resolves instead of
+    /// a placeholder, and the new exercise's own prescribed weight instead of
+    /// the replaced one's. All nil on the accepted-own-proposal path and on
+    /// older server builds.
+    case confirm(newSlug: String, persist: Bool, nameRu: String?, sha256: String?,
+                 weightKgTarget: Double?)
     /// User dismissed.
     case cancel
 }
@@ -233,7 +241,8 @@ struct SwapSheet: View {
     }
 
     private func confirm(newSlug: String, alt: SwapResponse.Alternative?) {
-        onAction(.confirm(newSlug: newSlug, persist: persist, nameRu: alt?.nameRu, sha256: alt?.sha256))
+        onAction(.confirm(newSlug: newSlug, persist: persist, nameRu: alt?.nameRu,
+                          sha256: alt?.sha256, weightKgTarget: alt?.weightKgTarget))
         dismiss()
     }
 }
