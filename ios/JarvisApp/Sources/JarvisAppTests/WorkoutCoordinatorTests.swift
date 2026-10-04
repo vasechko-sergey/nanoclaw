@@ -376,8 +376,9 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertNil(coord.plan.exercises[0].weightKgTarget)
     }
 
-    /// applySwap preserves target sets / reps / rest / logged sets.
-    func test_applySwap_preservesFieldsAndLoggedSets() throws {
+    /// applySwap preserves the SLOT (target sets / reps / rest) but never the
+    /// work: sets already logged belong to the exercise that was replaced.
+    func test_applySwap_preservesSlotFieldsAndDisplacesLoggedSets() throws {
         let queue = try makeQueue()
         let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2, setsPerExercise: 3), queue: queue)
         // Log a set on ex-0, then activate ex-1 and log there.
@@ -390,17 +391,147 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.plan.exercises[1].targetSets, 3)
         XCTAssertEqual(coord.plan.exercises[1].targetReps, "8-10")
         XCTAssertEqual(coord.logged[1].exerciseSlug, "ex-1-alt")
-        XCTAssertEqual(coord.logged[1].sets.count, 1)
-        XCTAssertEqual(coord.logged[1].sets[0].reps, 8)
+        XCTAssertTrue(coord.logged[1].sets.isEmpty)
+        // ex-0's own work is untouched.
+        XCTAssertEqual(coord.logged[0].sets.count, 1)
     }
 
-    /// After a swap, `attachCoachHint` with the NEW slug still lands.
+    // MARK: - Work displaced by a mid-exercise swap
+
+    /// Sets logged before the swap stay attributed to the exercise they were
+    /// done on. Re-labelling them with the new slug poisoned Payne's weight
+    /// history: `weight-trend.js` anchors on the mode of a slug's logged set
+    /// weights, so three sets of barbell bench at 70 followed by two dumbbell
+    /// sets at 25 would prescribe ~70 kg for the dumbbell press next time.
+    func test_applySwap_withLoggedSets_keepsThemUnderTheOriginalSlug() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2, setsPerExercise: 4), queue: queue)
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+
+        XCTAssertEqual(coord.swappedOut.count, 1)
+        XCTAssertEqual(coord.swappedOut[0].planIdx, 0)
+        XCTAssertEqual(coord.swappedOut[0].exercise.exerciseSlug, "ex-0")
+        XCTAssertEqual(coord.swappedOut[0].exercise.sets.map(\.weight), [70, 70])
+        // The new exercise starts clean.
+        XCTAssertTrue(coord.logged[0].sets.isEmpty)
+    }
+
+    /// The new exercise starts at set 1: its chip row is empty, so a cursor
+    /// left at "подход 3 из 4" would describe sets that are no longer there.
+    func test_applySwap_withLoggedSets_resetsTheSetCursor() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2, setsPerExercise: 4), queue: queue)
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        XCTAssertEqual(coord.currentSetIdx, 2)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        XCTAssertEqual(coord.currentSetIdx, 0)
+        XCTAssertEqual(coord.currentExerciseIdx, 0)
+    }
+
+    /// The common case — swapping before the first set — leaves no residue:
+    /// an empty record for the replaced exercise would show up in the session
+    /// as an exercise the owner never touched.
+    func test_applySwap_beforeAnySet_leavesNoEmptyRecord() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        XCTAssertTrue(coord.swappedOut.isEmpty)
+        let session = coord.complete(sessionFeeling: 4, sessionFeelingLabel: "ok")
+        XCTAssertEqual(session.exercises.map(\.exerciseSlug), ["ex-0-alt", "ex-1"])
+    }
+
+    /// `workout_complete.full_session_json` is the authoritative record Payne
+    /// overwrites `sessions/<date>.json` with — so displaced work must ship in
+    /// it, in the order the work actually happened.
+    func test_complete_reportsDisplacedWorkInPlanOrder() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2, setsPerExercise: 4), queue: queue)
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        // Swapped again, after logging on the replacement.
+        coord.logSet(reps: 10, weight: 25, repsInReserve: 2)
+        coord.applySwap(originalSlug: "ex-0-alt", newSlug: "ex-0-alt2")
+        coord.activate(idx: 1)
+        coord.logSet(reps: 12, weight: 40, repsInReserve: 2)
+
+        let session = coord.complete(sessionFeeling: 4, sessionFeelingLabel: "ok")
+        XCTAssertEqual(session.exercises.map(\.exerciseSlug), ["ex-0", "ex-0-alt", "ex-0-alt2", "ex-1"])
+        XCTAssertEqual(session.exercises[0].sets.map(\.weight), [70])
+        XCTAssertEqual(session.exercises[1].sets.map(\.weight), [25])
+        XCTAssertTrue(session.exercises[2].sets.isEmpty)
+        XCTAssertEqual(session.exercises[3].sets.map(\.weight), [40])
+    }
+
+    /// A deviation reply can land after the swap. The set it talks about is off
+    /// screen now, but the hint still belongs on the record (it ships in
+    /// workout_complete) and the text must still reach the user.
+    func test_attachCoachHint_forDisplacedSet_landsOnTheDisplacedRecord() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        coord.logSet(reps: 10, weight: 70, repsInReserve: 1)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        // Payne references the exercise it knew about.
+        coord.attachCoachHint(exerciseSlug: "ex-0", setIdx: 0, text: "70 — много для разогрева")
+        XCTAssertEqual(coord.swappedOut[0].exercise.sets[0].coachHint, "70 — много для разогрева")
+        XCTAssertEqual(coord.activeDeviationHint, "70 — много для разогрева")
+        XCTAssertNil(coord.logged[0].sets.first?.coachHint)
+    }
+
+    /// Same reply, but Payne already knows the new slug (it accepted the swap
+    /// before answering): the only set with that index is the displaced one.
+    func test_attachCoachHint_newSlugButDisplacedSet_stillLands() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        coord.logSet(reps: 10, weight: 70, repsInReserve: 1)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        coord.attachCoachHint(exerciseSlug: "ex-0-alt", setIdx: 0, text: "поправь наклон")
+        XCTAssertEqual(coord.swappedOut[0].exercise.sets[0].coachHint, "поправь наклон")
+    }
+
+    /// The finish sheet reports "подходов N" — it must count the work the
+    /// owner actually did, including sets a swap displaced.
+    func test_totalLoggedSets_countsDisplacedWork() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2, setsPerExercise: 4), queue: queue)
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+        coord.logSet(reps: 10, weight: 25, repsInReserve: 2)
+        XCTAssertEqual(coord.totalLoggedSets, 3)
+    }
+
+    /// Kill/restore must not lose displaced work — it only exists on the client
+    /// until workout_complete.
+    func test_restoringInit_preservesDisplacedWork() throws {
+        let queue = try makeQueue()
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue,
+                                       store: store, agentId: "payne", messageId: "m")
+        coord.logSet(reps: 8, weight: 70, repsInReserve: 1)
+        coord.applySwap(originalSlug: "ex-0", newSlug: "ex-0-alt")
+
+        let record = try XCTUnwrap(try store.load(agentId: "payne"))
+        let restored = WorkoutCoordinator(restoring: record, queue: queue, store: store)
+        XCTAssertEqual(restored.swappedOut.count, 1)
+        XCTAssertEqual(restored.swappedOut[0].exercise.exerciseSlug, "ex-0")
+        XCTAssertEqual(restored.swappedOut[0].exercise.sets.map(\.weight), [70])
+        let session = restored.complete(sessionFeeling: 4, sessionFeelingLabel: "ok")
+        XCTAssertEqual(session.exercises.map(\.exerciseSlug), ["ex-0", "ex-0-alt", "ex-1"])
+    }
+
+    /// After a swap, a hint for a set logged ON the replacement lands on the
+    /// live record as usual (the displaced-set case is covered above).
     func test_attachCoachHint_afterSwap_landsOnRightSet() throws {
         let queue = try makeQueue()
         let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
         coord.activate(idx: 1)
-        coord.logSet(reps: 10, weight: 25, repsInReserve: 1)
         coord.applySwap(originalSlug: "ex-1", newSlug: "ex-1-alt")
+        coord.logSet(reps: 10, weight: 25, repsInReserve: 1)
         coord.attachCoachHint(exerciseSlug: "ex-1-alt", setIdx: 0, text: "поправь наклон")
         XCTAssertEqual(coord.logged[1].sets[0].coachHint, "поправь наклон")
     }

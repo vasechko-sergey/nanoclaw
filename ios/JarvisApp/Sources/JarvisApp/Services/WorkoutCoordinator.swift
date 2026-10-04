@@ -17,6 +17,8 @@ final class WorkoutCoordinator: ObservableObject {
     @Published private(set) var currentExerciseIdx: Int = 0
     @Published private(set) var currentSetIdx: Int = 0
     @Published private(set) var logged: [LoggedExercise]
+    /// Work displaced by a mid-workout swap — see `SwappedOutExercise`.
+    @Published private(set) var swappedOut: [SwappedOutExercise] = []
     @Published private(set) var lastRepsInReserve: Int = -1
     @Published private(set) var isFinished: Bool = false
     /// Payne's latest *deviation* reply (a `coach_message` WITH `set_ref`),
@@ -63,6 +65,7 @@ final class WorkoutCoordinator: ObservableObject {
         self.queue = queue
         self.startedAt = record.cursor.startedAt ?? record.updatedAt
         self.logged = record.cursor.logged
+        self.swappedOut = record.cursor.swappedOut
         self.currentExerciseIdx = record.cursor.currentExerciseIdx
         self.currentSetIdx = record.cursor.currentSetIdx
         self.store = store
@@ -81,6 +84,13 @@ final class WorkoutCoordinator: ObservableObject {
     }
 
     var totalExercises: Int { plan.exercises.count }
+
+    /// Every set logged this session, work displaced by a swap included — the
+    /// owner did those sets, so the finish sheet must count them.
+    var totalLoggedSets: Int {
+        logged.reduce(0) { $0 + $1.sets.count }
+            + swappedOut.reduce(0) { $0 + $1.exercise.sets.count }
+    }
 
     /// True when the user just finished the last exercise of the last set
     /// — UI can switch the "Финиш" button to primary action.
@@ -208,26 +218,43 @@ final class WorkoutCoordinator: ObservableObject {
     /// user confirm so this branch stays a rare backstop.
     func attachCoachHint(exerciseSlug: String, setIdx: Int, text: String) {
         guard !isFinished else { return }
-        let exIdx: Int
-        if let found = plan.exercises.firstIndex(where: { $0.exerciseSlug == exerciseSlug }) {
-            exIdx = found
-        } else if plan.exercises.indices.contains(currentExerciseIdx),
-                  logged[currentExerciseIdx].sets.indices.contains(setIdx) {
-            // TODO: remove once server-side swap-apply is guaranteed to precede
-            // any coach_message that references the new slug (Fix N context).
-            exIdx = currentExerciseIdx
-        } else {
+        let planIdx = plan.exercises.firstIndex(where: { $0.exerciseSlug == exerciseSlug })
+        if let exIdx = planIdx, logged[exIdx].sets.indices.contains(setIdx) {
+            logged[exIdx].sets[setIdx].coachHint = text
+            surfaceCoachHint(text)
             return
         }
-        guard logged[exIdx].sets.indices.contains(setIdx) else { return }
-        logged[exIdx].sets[setIdx].coachHint = text
-        // Also surface it prominently above the set input (blend 1+3): the chip
-        // alone is easy to miss when the phone is lying down between sets.
+        // The set the reply is about may have been displaced by a swap: it is
+        // off screen now, but the hint still belongs on the record (it ships in
+        // workout_complete) and the text must still reach the user. Payne can
+        // reference either slug — the one it knew, or the replacement.
+        if let sIdx = swappedOut.firstIndex(where: { rec in
+            rec.exercise.sets.indices.contains(setIdx)
+                && (rec.exercise.exerciseSlug == exerciseSlug || rec.planIdx == planIdx)
+        }) {
+            swappedOut[sIdx].exercise.sets[setIdx].coachHint = text
+            surfaceCoachHint(text)
+            return
+        }
+        // TODO: remove once server-side swap-apply is guaranteed to precede
+        // any coach_message that references the new slug (Fix N context).
+        if planIdx == nil,
+           plan.exercises.indices.contains(currentExerciseIdx),
+           logged[currentExerciseIdx].sets.indices.contains(setIdx) {
+            logged[currentExerciseIdx].sets[setIdx].coachHint = text
+            surfaceCoachHint(text)
+        }
+    }
+
+    /// The user-visible half of a coach hint, in one place: the prominent line
+    /// above the set input (blend 1+3 — the chip alone is easy to miss when the
+    /// phone is lying down between sets) plus a success buzz. The haptic lives
+    /// here rather than in the view because the 💬 chip can be off-screen or the
+    /// runner backgrounded when Payne's reply lands, so the buzz is the only
+    /// reliable "coach said something" cue. @MainActor guarantees the
+    /// main-thread requirement.
+    private func surfaceCoachHint(_ text: String) {
         activeDeviationHint = text
-        // Haptic lives here (the single mutation site) rather than in the view:
-        // the 💬 chip can be off-screen or the runner backgrounded when Payne's
-        // reply lands, so a success buzz is the only reliable "coach said
-        // something" cue. @MainActor guarantees the main-thread requirement.
         #if canImport(UIKit)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         #endif
@@ -294,8 +321,18 @@ final class WorkoutCoordinator: ObservableObject {
             exercises: newExercises,
             imageManifest: newManifest
         )
+        // Work already done belongs to the exercise it was done ON: stash it
+        // under its own slug instead of re-labelling it, and start the
+        // replacement clean. Re-labelling is what poisoned Payne's history —
+        // see `SwappedOutExercise`.
         let oldLogged = logged[idx]
-        logged[idx] = LoggedExercise(exerciseSlug: newSlug, sets: oldLogged.sets, comment: oldLogged.comment)
+        if !oldLogged.sets.isEmpty || !(oldLogged.comment ?? "").isEmpty {
+            swappedOut.append(SwappedOutExercise(planIdx: idx, exercise: oldLogged))
+            // The replacement's chip row is empty, so a cursor left at set 3
+            // would label the first set of it "подход 3 из 4".
+            if idx == currentExerciseIdx { currentSetIdx = 0 }
+        }
+        logged[idx] = LoggedExercise(exerciseSlug: newSlug, sets: [], comment: nil)
         persist()
     }
 
@@ -310,12 +347,27 @@ final class WorkoutCoordinator: ObservableObject {
             week: plan.week,
             startedAt: startedAt,
             finishedAt: Date(),
-            exercises: logged,
+            exercises: sessionExercises(),
             perceivedOverallRir: nil,
             healthSignalAtStart: healthSignalAtStart,
             sessionFeeling: sessionFeeling,
             sessionFeelingLabel: sessionFeelingLabel
         )
+    }
+
+    /// `logged` plus any work a swap displaced, each displaced record folded in
+    /// right before the slot that replaced it, so the session reads in the order
+    /// the work actually happened.
+    private func sessionExercises() -> [LoggedExercise] {
+        guard !swappedOut.isEmpty else { return logged }
+        var out: [LoggedExercise] = []
+        for (idx, entry) in logged.enumerated() {
+            out.append(contentsOf: swappedOut.filter { $0.planIdx == idx }.map(\.exercise))
+            out.append(entry)
+        }
+        // A record whose slot no longer exists still ships — never drop logged work.
+        out.append(contentsOf: swappedOut.filter { $0.planIdx >= logged.count }.map(\.exercise))
+        return out
     }
 
     /// Abort without producing a final session — UI uses this for ✕ → confirm → abort.
@@ -334,7 +386,8 @@ final class WorkoutCoordinator: ObservableObject {
             currentExerciseIdx: currentExerciseIdx,
             currentSetIdx: currentSetIdx,
             logged: logged,
-            startedAt: startedAt
+            startedAt: startedAt,
+            swappedOut: swappedOut
         )
         try? store.save(agentId: agentId, workoutId: plan.workoutId,
                         plan: plan, cursor: cursor, messageId: messageId)

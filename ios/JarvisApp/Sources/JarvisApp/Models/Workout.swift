@@ -222,6 +222,26 @@ struct LoggedExercise: Codable, Equatable {
     }
 }
 
+/// Work a mid-workout swap displaced: sets logged on the exercise that was
+/// replaced, kept under THEIR OWN slug.
+///
+/// They cannot stay in `logged` — that array is index-parallel with
+/// `plan.exercises`, and the slot now holds the replacement. Re-labelling them
+/// with the new slug is what poisoned Payne's history: `weight-trend.js`
+/// anchors a prescription on the mode of a slug's logged set weights, so the
+/// replaced exercise's weights became the replacement's next target.
+struct SwappedOutExercise: Codable, Equatable {
+    /// Index in `plan.exercises` this work was logged at — used to fold the
+    /// record back into the final session right before its replacement.
+    let planIdx: Int
+    var exercise: LoggedExercise
+
+    enum CodingKeys: String, CodingKey {
+        case planIdx = "plan_idx"
+        case exercise
+    }
+}
+
 /// Final session payload sent in workout_complete and persisted by Payne.
 struct WorkoutSession: Codable, Equatable {
     let workoutId: String

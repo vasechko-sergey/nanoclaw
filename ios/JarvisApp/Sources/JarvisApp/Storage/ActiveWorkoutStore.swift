@@ -16,6 +16,31 @@ struct WorkoutCursor: Codable, Equatable {
     var currentSetIdx: Int
     var logged: [LoggedExercise]
     var startedAt: Date? = nil
+    /// Work displaced by a mid-workout swap. Client-only until
+    /// `workout_complete` ships it, so it has to survive a kill/restore.
+    var swappedOut: [SwappedOutExercise] = []
+
+    init(currentExerciseIdx: Int, currentSetIdx: Int, logged: [LoggedExercise],
+         startedAt: Date? = nil, swappedOut: [SwappedOutExercise] = []) {
+        self.currentExerciseIdx = currentExerciseIdx
+        self.currentSetIdx = currentSetIdx
+        self.logged = logged
+        self.startedAt = startedAt
+        self.swappedOut = swappedOut
+    }
+
+    /// Hand-written so a cursor saved by a build without `swappedOut` still
+    /// decodes: the synthesized decoder throws on a missing key even when the
+    /// property has a default, and a throw here loses a live workout on the
+    /// first restore after the update.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        currentExerciseIdx = try c.decode(Int.self, forKey: .currentExerciseIdx)
+        currentSetIdx = try c.decode(Int.self, forKey: .currentSetIdx)
+        logged = try c.decode([LoggedExercise].self, forKey: .logged)
+        startedAt = try c.decodeIfPresent(Date.self, forKey: .startedAt)
+        swappedOut = try c.decodeIfPresent([SwappedOutExercise].self, forKey: .swappedOut) ?? []
+    }
 }
 
 /// One row from the `active_workout` table.

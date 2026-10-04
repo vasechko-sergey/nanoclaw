@@ -68,7 +68,7 @@ struct WorkoutView: View {
             WorkoutFinishView(
                 dayName: coordinator.plan.dayName,
                 exerciseCount: coordinator.totalExercises,
-                setCount: coordinator.logged.reduce(0) { $0 + $1.sets.count },
+                setCount: coordinator.totalLoggedSets,
                 onCancel: { showFinish = false },
                 onDone: { feeling, label in
                     let session = coordinator.complete(sessionFeeling: feeling, sessionFeelingLabel: label)

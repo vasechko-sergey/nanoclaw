@@ -37,6 +37,44 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertNil(try store.load(agentId: "payne"))
     }
 
+    /// Work displaced by a mid-workout swap lives only in the cursor until
+    /// workout_complete, so it has to survive a save/load round-trip.
+    func test_roundtrip_keepsSwappedOutWork() throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let store = ActiveWorkoutStore(writer: dbq)
+
+        let displaced = SwappedOutExercise(
+            planIdx: 0,
+            exercise: LoggedExercise(
+                exerciseSlug: "ex-old",
+                sets: [LoggedSet(reps: 8, weight: 70, repsInReserve: 1, ts: Date(timeIntervalSince1970: 0))],
+                comment: nil))
+        let cursor = WorkoutCursor(
+            currentExerciseIdx: 0, currentSetIdx: 0,
+            logged: [LoggedExercise(exerciseSlug: "ex", sets: [], comment: nil)],
+            swappedOut: [displaced])
+        try store.save(agentId: "payne", workoutId: "w1", plan: plan(), cursor: cursor, messageId: "m1")
+
+        let loaded = try store.load(agentId: "payne")
+        XCTAssertEqual(loaded?.cursor.swappedOut, [displaced])
+    }
+
+    /// A cursor written by a build that predates swapped-out work must still
+    /// decode — otherwise installing the new build mid-workout loses the
+    /// session instead of restoring it.
+    func test_legacyCursorWithoutSwappedOut_decodesAsEmpty() throws {
+        let json = """
+        {"currentExerciseIdx":1,"currentSetIdx":2,
+         "logged":[{"exercise_slug":"ex","sets":[]}]}
+        """
+        let cursor = try JSONDecoder().decode(WorkoutCursor.self, from: Data(json.utf8))
+        XCTAssertEqual(cursor.currentExerciseIdx, 1)
+        XCTAssertEqual(cursor.currentSetIdx, 2)
+        XCTAssertTrue(cursor.swappedOut.isEmpty)
+        XCTAssertNil(cursor.startedAt)
+    }
+
     func test_save_overwrites_existing() throws {
         let dbq = try DatabaseQueue()
         try Schema.migrate(dbq)
