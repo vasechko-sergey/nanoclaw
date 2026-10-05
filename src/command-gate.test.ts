@@ -24,6 +24,17 @@ describe('gateCommand: agent commands', () => {
     expect(gate.data).toBeUndefined();
   });
 
+  it('hands a bare /surf to the runner script, and /surf with words to the model', () => {
+    const bare = gateCommand(msg('/surf'), null, 'ag-jarvis', 'jarvis');
+    expect(bare).toMatchObject({ action: 'agent_command', command: 'surf', serve: 'surf-forecast/forecast.cjs' });
+    // The script can't read "в Эрисейре на субботу" — the skill-following model can.
+    const worded = gateCommand(msg('/surf в Эрисейре на субботу'), null, 'ag-jarvis', 'jarvis');
+    expect(worded.action).toBe('agent_command');
+    if (worded.action !== 'agent_command') return;
+    expect(worded.serve).toBeUndefined();
+    expect(worded.text).toContain('в Эрисейре на субботу');
+  });
+
   it('matches the command case-insensitively', () => {
     expect(gateCommand(msg('/SURF'), null, 'ag-jarvis', 'jarvis').action).toBe('agent_command');
   });
@@ -78,6 +89,17 @@ describe('applyAgentCommand', () => {
       }),
     );
     expect(out.command).toEqual({ name: 'health', data: ['scripts/analyze.js'] });
+  });
+
+  it('stamps the serve script for the runner', () => {
+    const out = JSON.parse(
+      applyAgentCommand(JSON.stringify({ text: '/surf' }), {
+        command: 'surf',
+        text: 'прогноз',
+        serve: 'surf-forecast/forecast.cjs',
+      }),
+    );
+    expect(out.command).toEqual({ name: 'surf', serve: 'surf-forecast/forecast.cjs' });
   });
 
   it('wraps plain-text content', () => {

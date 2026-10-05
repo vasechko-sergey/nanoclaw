@@ -1,6 +1,7 @@
 import { validateA2aKind } from '@shared/a2a/kinds.js';
 
 import { applyCommandData } from './command-data.js';
+import { serveAgentCommands, servedNotesBlock } from './command-serve.js';
 import { findByName, getAllDestinations, resolveDefaultRouting, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, maxTries, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } from './db/messages-out.js';
@@ -419,9 +420,10 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // isUnclaimedQuestionResponse). Without that second clause a late answer
     // matched neither branch, never reached the agent, and the row sat
     // `pending` forever — this was the bug task-3b-brief.md traces.
-    const messages = serveWorkoutStartRequests(serveImageRequests(dispatchSystemReplies(allPending))).filter(
-      (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
-    );
+    // serveAgentCommands answers commands like /surf with a script, no model.
+    const messages = (
+      await serveAgentCommands(serveWorkoutStartRequests(serveImageRequests(dispatchSystemReplies(allPending))))
+    ).filter((m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m));
     isFirstPoll = false;
     pollCount++;
 
@@ -537,7 +539,9 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
     // Format messages: passthrough commands get raw text (only if the
     // provider natively handles slash commands), others get XML.
-    const prompt = formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands);
+    // What the runner already sent for the agent (a served /surf) goes first,
+    // so a question about that picture lands on an agent that knows of it.
+    const prompt = withServedNotes(formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands));
 
     log(`Processing ${keep.length} message(s), kinds: ${[...new Set(keep.map((m) => m.kind))].join(',')}`);
 
@@ -714,6 +718,12 @@ export function partitionMessagesBySource(messages: MessageInRow[]): MessageInRo
   return order.map((k) => groups.get(k)!);
 }
 
+/** Prefix the prompt with what the runner sent since the agent's last turn. */
+function withServedNotes(prompt: string): string {
+  const notes = servedNotesBlock();
+  return notes ? `${notes}\n\n${prompt}` : prompt;
+}
+
 /**
  * Format messages, handling passthrough commands differently.
  * When the provider handles slash commands natively (Claude Code),
@@ -870,9 +880,9 @@ export async function processQuery(
         // would never see it — consumed into this turn instead — and it
         // would hang to its full timeout despite the answer having arrived on
         // time. awaitingQuestionIds is what tells the two cases apart.
-        const newMessages = serveWorkoutStartRequests(serveImageRequests(dispatchSystemReplies(pending))).filter(
-          (m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m),
-        );
+        const newMessages = (
+          await serveAgentCommands(serveWorkoutStartRequests(serveImageRequests(dispatchSystemReplies(pending))))
+        ).filter((m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m));
         if (newMessages.length === 0) return;
 
         const newIds = newMessages.map((m) => m.id);
@@ -904,7 +914,7 @@ export async function processQuery(
         if (done) return;
 
         const keptIds = keep.map((m) => m.id);
-        const prompt = formatMessages(keep);
+        const prompt = withServedNotes(formatMessages(keep));
         log(`Pushing ${keep.length} follow-up message(s) into active query`);
         unwrappedNudged = false;
         rejectNudged = false;

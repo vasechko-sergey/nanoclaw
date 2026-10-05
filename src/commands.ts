@@ -25,6 +25,13 @@ export interface AgentCommand {
    * instead of spending a tool round trip on collecting them.
    */
   data?: string[];
+  /**
+   * A script under the container's skills mount (`<skill>/<name>.cjs`) that
+   * answers the bare command without a model turn — it makes the photo, the
+   * runner sends it. With words after the command, or when the script fails,
+   * the model gets `prompt` instead.
+   */
+  serve?: string;
   /** The app puts the command into the input for the user to finish instead of sending it. */
   input?: 'compose';
   /** The app answers the tap itself, without a chat message. */
@@ -37,6 +44,7 @@ export const AGENT_COMMANDS: AgentCommand[] = [
     command: 'surf',
     description: 'Прогноз серфинга',
     prompt: (args) => `Прогноз серфинга — сразу скилл surf-forecast.${args ? ` ${args}` : ''}`,
+    serve: 'surf-forecast/forecast.cjs',
   },
   {
     agent: 'payne',

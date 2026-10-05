@@ -29,6 +29,13 @@ describe('agent command catalogue', () => {
     }
   });
 
+  it('names serve scripts the runner will run (<skill>/<name>.cjs under the skills mount)', () => {
+    // Mirrors container/agent-runner/src/command-serve.ts SERVE_RE.
+    const served = AGENT_COMMANDS.filter((c) => c.serve);
+    expect(served.map((c) => c.command)).toEqual(['surf']);
+    for (const c of served) expect(c.serve).toMatch(/^[a-z0-9-]+\/[a-z0-9-]+\.cjs$/);
+  });
+
   it('finds a command only for the agent that offers it', () => {
     expect(findAgentCommand('greg', 'health')?.data).toEqual(['scripts/analyze.js']);
     expect(findAgentCommand('jarvis', 'health')).toBeUndefined();

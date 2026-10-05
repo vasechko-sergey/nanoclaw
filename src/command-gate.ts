@@ -16,7 +16,7 @@ export type GateResult =
   | { action: 'filter' }
   | { action: 'deny'; command: string }
   | { action: 'new_session' }
-  | { action: 'agent_command'; command: string; text: string; data?: string[] };
+  | { action: 'agent_command'; command: string; text: string; data?: string[]; serve?: string };
 
 const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/remote-control']);
 const ADMIN_COMMANDS = new Set(['/clear', '/compact', '/context', '/cost', '/files']);
@@ -58,6 +58,8 @@ export function gateCommand(
       command: own.command,
       text: own.prompt(args),
       ...(own.data ? { data: own.data } : {}),
+      // A script answers only the bare command; words after it need the model.
+      ...(own.serve && !args ? { serve: own.serve } : {}),
     };
   }
 
@@ -75,10 +77,13 @@ export function gateCommand(
 /**
  * The message content an agent command reaches the container as: `text` is
  * the command's prompt, `command` tells the runner which data scripts to run
- * first. Everything else the channel put there (attachments, iOS context,
+ * first, or which script answers the command instead of the model. Everything else the channel put there (attachments, iOS context,
  * sender) stays — a /food photo must still reach the model.
  */
-export function applyAgentCommand(content: string, gate: { command: string; text: string; data?: string[] }): string {
+export function applyAgentCommand(
+  content: string,
+  gate: { command: string; text: string; data?: string[]; serve?: string },
+): string {
   let parsed: Record<string, unknown>;
   try {
     const value: unknown = JSON.parse(content);
@@ -89,7 +94,11 @@ export function applyAgentCommand(content: string, gate: { command: string; text
   return JSON.stringify({
     ...parsed,
     text: gate.text,
-    command: { name: gate.command, ...(gate.data ? { data: gate.data } : {}) },
+    command: {
+      name: gate.command,
+      ...(gate.data ? { data: gate.data } : {}),
+      ...(gate.serve ? { serve: gate.serve } : {}),
+    },
   });
 }
 

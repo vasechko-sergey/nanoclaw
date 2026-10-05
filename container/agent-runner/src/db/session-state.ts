@@ -77,3 +77,38 @@ export function setContinuation(providerName: string, id: string): void {
 export function clearContinuation(providerName: string): void {
   deleteValue(continuationKey(providerName));
 }
+
+const SERVED_NOTES_KEY = 'served_notes';
+const SERVED_NOTES_MAX = 3;
+
+/** What the runner sent on the agent's behalf without a model turn (command-serve.ts). */
+export interface ServedNote {
+  command: string;
+  at: string; // ISO
+  summary: string;
+}
+
+/** Keep a note for the agent's next turn. Only the latest few survive. */
+export function appendServedNote(note: ServedNote): void {
+  const notes = readServedNotes();
+  notes.push(note);
+  setValue(SERVED_NOTES_KEY, JSON.stringify(notes.slice(-SERVED_NOTES_MAX)));
+}
+
+/** The pending notes, cleared — each reaches the model exactly once. */
+export function takeServedNotes(): ServedNote[] {
+  const notes = readServedNotes();
+  if (notes.length > 0) deleteValue(SERVED_NOTES_KEY);
+  return notes;
+}
+
+function readServedNotes(): ServedNote[] {
+  const raw = getValue(SERVED_NOTES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as ServedNote[]) : [];
+  } catch {
+    return [];
+  }
+}
