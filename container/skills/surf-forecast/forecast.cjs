@@ -13,12 +13,19 @@
  *                centre then stands in for the person
  *   --date       default: today in the area's time zone before 08:00, tomorrow after
  *   --out        default: /workspace/agent/scratch
+ *   --spots      the catalogue file; default: the person's (see below)
+ *   --check      only validate the catalogue
  *
  * Prints JSON { photo, params, summary } and also keeps it as surf_last.json
  * next to the photo, for questions about the picture later. Exits 1 with the
  * reason on stderr when anything is missing.
  *
- * Which spots: every spot of spots.json within reach_km of the person (≈20 min
+ * The spot catalogue is the person's: /workspace/agent/memories/self/surf-spots.json,
+ * seeded from this skill's spots.json. The agent changes it only through
+ * spots.cjs; its contract lives in catalog.cjs. A file that breaks the
+ * contract fails the run with what is wrong; `--check` validates it alone.
+ *
+ * Which spots: every catalogue spot within reach_km of the person (≈20 min
  * of driving), of the nearest one's area. They are all rated; the picture
  * shows the three best — green, then yellow, then red, the nearer first
  * within a colour. A time zone holds many spot sets (Canggu and Berawa are
@@ -32,7 +39,8 @@
  *   → red; above hi, or in range only briefly → yellow. A beach break is
  *   never worse than yellow on tide.
  * - Period at mid-window: ≥ min_period_s ok; up to 1 s short → yellow; more → red.
- * - Wave height at mid-window: ≥ min_swell_m ok; ≥ 0.5 m → yellow; less → red.
+ * - Wave height at mid-window: ≥ min_swell_m ok; ≥ 0.5 m → yellow; less → red;
+ *   above an optional max_swell_m → yellow.
  * - A spot is red on any red or on two yellows, yellow on one, green otherwise.
  * - Best window: the longest stretch with offshore wind and the tide in range
  *   for at least one shown spot that isn't red.
@@ -44,6 +52,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const { loadTides } = require('./tides.cjs');
+const { PERSON_SPOTS, loadCatalog } = require('./catalog.cjs');
 
 const MONTHS = [
   'ЯНВАРЯ',
@@ -201,6 +210,8 @@ function rateSpot(spot, ctx) {
   }
   if (hm < spot.min_swell_m) {
     verdicts.push({ level: hm >= 0.5 ? 'yellow' : 'red', why: `волна ${round1(hm)} м, нужно от ${spot.min_swell_m}` });
+  } else if (spot.max_swell_m != null && hm > spot.max_swell_m) {
+    verdicts.push({ level: 'yellow', why: `волна ${round1(hm)} м, больше ${spot.max_swell_m}` });
   }
 
   const reds = verdicts.filter((v) => v.level === 'red').length;
@@ -340,7 +351,11 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
-    if (!['lat', 'lon', 'area', 'date', 'out'].includes(key) || argv[i + 1] === undefined) {
+    if (key === 'check') {
+      args.check = true;
+      continue;
+    }
+    if (!['lat', 'lon', 'area', 'date', 'out', 'spots'].includes(key) || argv[i + 1] === undefined) {
       throw new Error(`unknown or empty option ${argv[i]}`);
     }
     args[key] = argv[++i];
@@ -366,7 +381,12 @@ async function fetchJson(url) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, 'spots.json'), 'utf8'));
+  const catalog = loadCatalog(args.spots || PERSON_SPOTS);
+  if (args.check) {
+    const areas = Object.keys(catalog.areas);
+    console.log(`ok: ${catalog.spots.length} spots in ${areas.length} areas (${areas.join(', ')})`);
+    return;
+  }
   const tz = process.env.OWNER_TZ || process.env.TZ || '';
 
   // Where the person is: the position given, else the centre of the asked (or

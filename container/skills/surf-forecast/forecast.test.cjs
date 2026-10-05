@@ -118,6 +118,23 @@ test('low tide all morning: yellow above 0.5 m under the band, red below, no win
   assert.equal(red.params.footer, 'окна нет');
 });
 
+test('above a spot’s band is yellow — each spot by its own band', () => {
+  // 2.0 m all morning: over 1.9 for the Canggu reefs, still inside Echo's 1.0–2.0.
+  const f = forecastAt(CANGGU_CENTRE, { tides: flatTide(2.0) });
+  assert.deepEqual(shown(f), ['Echo Beach green', 'Pererenan yellow', "Old Man's yellow"]);
+  assert.equal(f.params.spots[1].note, 'прилив от 2 м — высоко');
+});
+
+test('a swell over a spot’s max_swell_m is yellow', () => {
+  const spots = pickSpots(catalog, CANGGU_CENTRE).spots.map((s) =>
+    s.name === 'Echo Beach' ? { ...s, max_swell_m: 1.0 } : s,
+  );
+  const f = buildForecast({ ...sources, area: catalog.areas.canggu, spots });
+  const echo = f.params.spots.find((s) => s.name === 'Echo Beach');
+  assert.equal(echo, undefined); // yellow now, behind the three greens
+  assert.match(f.summary, /Echo Beach, 0\.8 км — жёлтый \(волна 1\.2 м, больше 1 · прилив всё утро\)/);
+});
+
 test('a falling tide gives the time it stays workable', () => {
   // 1.4 m at 06:00 falling 0.2 m an hour: under 1.0 m after 08:00.
   const tidePoints = Array.from({ length: 25 }, (_, h) => ({ h, v: 2.6 - 0.2 * h }));
