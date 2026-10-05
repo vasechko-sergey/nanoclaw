@@ -7,6 +7,8 @@ description: Use when user asks for a surf forecast for a specific break or regi
 
 Generic утренний surf-forecast: график волна/ветер/прилив + рейтинг спотов → одно фото. Локация не зашита — передаётся параметрами.
 
+Проходи шаги 0–4 по порядку и не заменяй источник или шаг своим вариантом. Если шаг не получается, скажи об этом, а не обходи его.
+
 ## 0. Собрать параметры
 
 Перед запуском skill нужны:
@@ -17,7 +19,7 @@ Generic утренний surf-forecast: график волна/ветер/пр�
 | `tz` | таймзона (`Asia/Makassar` для Бали, `Europe/Lisbon` для Эрисейры, итд) | по локации |
 | `shore_facing_deg` | в какую сторону смотрит берег (для оффшор-калькуляции) | 270° = запад (Кангу), 220° = ЮЗ (Эрисейра), итд |
 | `breaks[]` | список спотов `{name, type: "reef" \| "beach" \| "point", min_period_s, min_swell_m, ideal_tide_m: [lo, hi]}` | preset или вопрос |
-| `tide_url` | страница приливов на surf-forecast.com (опц.) | `https://www.surf-forecast.com/breaks/<NAME>/tides/latest` |
+| `tide_url` | страница приливов на surf-forecast.com | `https://www.surf-forecast.com/breaks/<NAME>/tides/latest` |
 | `swell_url` | страница свелла на surf-forecast.com (опц.) | `https://www.surf-forecast.com/breaks/<NAME>/forecasts/latest/six_day` |
 | `date` | YYYY-MM-DD | сегодня, или «завтра», или явная |
 | `window_hours` | часовое окно для анализа | `[5, 9]` по умолчанию (утро) |
@@ -32,12 +34,17 @@ Generic утренний surf-forecast: график волна/ветер/пр�
 **Ветер (Open-Meteo Forecast):**
 `https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m,wind_direction_10m&timezone={tz}&start_date={date}&end_date={date}`
 
-**Приливы:** `{tide_url}` — извлечь high/low времена и значения для нужной даты.
-Sanity: high обычно >1.5 м, low <1.0 м. Если метки кажутся перепутанными — проверять по значению.
+**Приливы — только скриптом, руками страницу не разбирать:**
+```bash
+node /app/skills/surf-forecast/tides.cjs "{tide_url}" {date}
+```
+Отдаёт JSON: `hourly` (`[{h, v}]` на каждый час, метры над нулём глубин — та же шкала, что `ideal_tide_m`), `extremes` (полная/малая вода с временем), а также готовые для рендера `tidePoints` и `tideMarkers`.
 
-**Кросс-чек свелла:** `{swell_url}` — высота, период, направление dawn/morning для нужной даты.
+Open-Meteo `sea_level_height_msl` для рейтинга **не годится**: это уровень относительно среднего моря, он уходит в минус, а пороги спотов абсолютные (2026-10-04 так получились неверные рейтинги). Только если `tides.cjs` упал, бери его с поправкой `msl_offset_m` из пресета. Совпадение с таблицей обычно ±0.2 м, бывает до 0.4, поэтому:
+- в `sources` пиши «прилив ≈ Open-Meteo»;
+- на границе диапазона зелёный не ставь.
 
-Если `tide_url` или `swell_url` не задан — пропусти этот источник, используй только Open-Meteo (приливы Open-Meteo тоже отдаёт на marine endpoint — добавь `tide_height` в hourly).
+**Кросс-чек свелла (необязательно):** `{swell_url}` — высота, период, направление dawn/morning для нужной даты.
 
 ## 2. Анализ утреннего окна
 
@@ -51,7 +58,7 @@ Sanity: high обычно >1.5 м, low <1.0 м. Если метки кажутс
 **Энергия (H²×T):**
 <8 → 1 точка | 8–18 → 2 | 18–28 → 3 | 28–40 → 4 | >40 → 5
 
-**Рейтинг спотов** (по середине окна, прилив + период):
+**Рейтинг спотов** (по середине окна, прилив из `hourly` + период):
 
 Для каждого `break` в `breaks[]`:
 - зелёный если `period >= min_period_s` И `tide` внутри `ideal_tide_m`
@@ -91,11 +98,16 @@ Renderer уже ship-аится со skill: `/app/skills/surf-forecast/render.cj
 ```
 
 **Поля:**
-- `tidePoints[]` — данные приливов в часах дня + 1–2 экстраполированные точки за пределы `[0, 24]` для гладкого сплайна по краям
-- `tideRange` — `[min, max]` для вертикальной оси приливов. Подбери под амплитуду; если пропустишь — авто из данных
+- `tidePoints[]`, `tideMarkers[]` — дословно из вывода `tides.cjs`
+- `tideRange` — `[min, max]` для вертикальной оси приливов; можно пропустить, тогда ось строится по данным
 - `windOffshore[]` — рассчитан **тобой** по `shore_facing_deg` из параметров локации (см. §2). Renderer не пересчитывает направление, он только красит.
 - `rating` спота: `green` | `yellow` | `red`
 - `hm`, `t` в spot — для расчёта энергии (H²×T → 1–5 точек)
+
+**Что помещается на холст:**
+- `spots` — ровно споты пресета, не больше трёх. Четвёртая карточка ещё влезает впритык, а пятая уходит за низ и уносит с собой итоговую строку. Рабочие приливы по спотам из памяти уточняют рейтинг этих трёх. Другие споты из памяти карточек не добавляют.
+- `footer` — до 45 символов. Он делит строку с `sources`, более длинный наезжает на них.
+- `note` — до 60 символов.
 
 ## 4. Отрендерить и отправить
 
@@ -111,7 +123,7 @@ NODE_PATH=/workspace/agent/node_modules \
 
 `NODE_PATH` нужен потому что `render.cjs` живёт в RO-mount `/app/skills/` где нет своих `node_modules` — без него `require('@napi-rs/canvas')` не разрешится.
 
-Затем: `mcp__nanoclaw__send_photo({ path: "/workspace/agent/surf_<slug>_<DDmon>.jpg" })`
+Затем: `mcp__nanoclaw__send_photo({ path: "/workspace/agent/surf_<slug>_<DDmon>.jpg" })`. Картинка встаёт прямо в чат и в iOS-приложении, и в Telegram. Пересобранную после правки шли так же.
 
 **Только фото. Никакого текста до или после.**
 
@@ -123,6 +135,7 @@ NODE_PATH=/workspace/agent/node_modules \
   lat: -8.65, lon: 115.13,
   tz: "Asia/Makassar",
   shore_facing_deg: 270,
+  msl_offset_m: 1.1,   // только для запасного Open-Meteo: таблица ≈ sea_level_height_msl + 1.1 (замер 2026-10-05, обычно ±0.2)
   tide_url: "https://www.surf-forecast.com/breaks/Canggu/tides/latest",
   swell_url: "https://www.surf-forecast.com/breaks/Canggu/forecasts/latest/six_day",
   breaks: [
