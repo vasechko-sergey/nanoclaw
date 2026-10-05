@@ -107,15 +107,18 @@ test('a tide that only touches the band at the end of the window does not count'
   assert.equal(berawa.params.spots[0].note, 'прилив 1.4–1.8 м, нужно 0.8–1.4');
 });
 
-test('low tide all morning: yellow above 0.5 m under the band, red below, no window', () => {
+test('low tide all morning: yellow above 0.5 m under the band; red below — and red is never drawn', () => {
   assert.equal(forecastAt(CANGGU_CENTRE, { tides: flatTide(0.7) }).params.spots[0].rating, 'yellow');
   const red = forecastAt(CANGGU_CENTRE, { tides: flatTide(0.2) });
-  assert.deepEqual(
-    red.params.spots.map((s) => s.rating),
-    ['red', 'red', 'red'],
-  );
+  assert.deepEqual(red.params.spots, []);
+  assert.equal(red.params.spotsNote, 'рядом ничего рабочего');
   assert.equal(red.params.bestWindow, undefined);
   assert.equal(red.params.footer, 'окна нет');
+  // Off the picture, still in the summary — for "and Echo?".
+  assert.match(
+    red.summary,
+    /Рабочих спотов рядом нет\. Ещё рядом: Echo Beach, 0\.8 км — красный \(прилив до 0\.2 м — мелко\)/,
+  );
 });
 
 test('above a spot’s band is yellow — each spot by its own band', () => {
@@ -148,8 +151,13 @@ test('short period and small swell: one miss is yellow, two are red', () => {
   // Echo needs 9 s and stays green; the 10 s reefs go yellow.
   assert.deepEqual(shown(one), ['Echo Beach green', 'Pererenan yellow', "Old Man's yellow"]);
   assert.equal(one.params.spots[1].note, 'период 9 с, нужно от 10 · прилив всё утро');
+  // Two misses (period and height) make the 10 s reefs red: off the picture.
   const two = forecastAt(CANGGU_CENTRE, { marine: swell(0.7, 9.4) });
-  assert.equal(two.params.spots[2].rating, 'red');
+  assert.deepEqual(shown(two), ['Echo Beach yellow']);
+  assert.match(
+    two.summary,
+    /Ещё рядом: Pererenan, 1 км — красный \(период 9 с, нужно от 10 · волна 0\.7 м, нужно от 0\.8/,
+  );
 });
 
 test('the date: today before 08:00 local, tomorrow from 08:00', () => {

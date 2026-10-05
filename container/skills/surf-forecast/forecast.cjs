@@ -27,9 +27,10 @@
  *
  * Which spots: every catalogue spot within reach_km of the person (≈20 min
  * of driving), of the nearest one's area. They are all rated; the picture
- * shows the three best — green, then yellow, then red, the nearer first
- * within a colour. A time zone holds many spot sets (Canggu and Berawa are
- * one zone, two sets), so the position decides, not the zone.
+ * shows the three best — green, then yellow, the nearer first within a
+ * colour. Red is never drawn (the owner's call); it stays in the summary.
+ * A time zone holds many spot sets (Canggu and Berawa are one zone, two
+ * sets), so the position decides, not the zone.
  *
  * Rules — the skill's §2 made exact, tide bands from the owner's spot notes:
  * - Surfable window: the area's window_hours, starting no earlier than sunrise.
@@ -266,7 +267,9 @@ function buildForecast({ area, spots, date, marine, wind, tides }) {
   const ranked = spots
     .map((spot) => ({ spot, ...rateSpot(spot, { tideAt, window, hm, period }) }))
     .sort((a, b) => RANK[a.rating] - RANK[b.rating] || (a.spot.distance_km ?? 0) - (b.spot.distance_km ?? 0));
-  const rated = ranked.slice(0, 3);
+  // Red spots stay off the picture; the summary still names them.
+  const rated = ranked.filter((r) => r.rating !== 'red').slice(0, 3);
+  const others = ranked.filter((r) => !rated.includes(r));
 
   const best = longestRun(window.grid, (h) => offshoreAt(h) && rated.some((r) => r.rating !== 'red' && r.tideOk(h)));
 
@@ -301,6 +304,7 @@ function buildForecast({ area, spots, date, marine, wind, tides }) {
       t: Math.round(period),
       note,
     })),
+    ...(rated.length === 0 ? { spotsNote: 'рядом ничего рабочего' } : {}),
     footer: best ? `окно ${hhmm(best.a)}–${hhmm(best.b)}` : 'окна нет',
     sources: 'Open-Meteo · surf-forecast.com (приливы)',
   };
@@ -318,10 +322,9 @@ function buildForecast({ area, spots, date, marine, wind, tides }) {
     `${best ? `окно ${hhmm(best.a)}–${hhmm(best.b)}` : 'хорошего окна нет'}; ` +
     `волна ${round1(hm)} м, период ${Math.round(period)} с; ветер ${labels} ${windState}; ` +
     `прилив: ${extremes}. ` +
-    rated.map(describe).join('; ') +
-    '.' +
+    (rated.length ? `${rated.map(describe).join('; ')}.` : 'Рабочих спотов рядом нет.') +
     // Off the picture but in reach — so "and Berawa?" has an answer.
-    (ranked.length > 3 ? ` Ещё рядом: ${ranked.slice(3).map(describe).join('; ')}.` : '');
+    (others.length ? ` Ещё рядом: ${others.map(describe).join('; ')}.` : '');
 
   return { params, summary };
 }

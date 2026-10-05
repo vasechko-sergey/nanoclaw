@@ -20,6 +20,7 @@
  *   "windOffshore": [true, true, true, true, true],     // precomputed per hour by skill (shore_facing_deg known)
  *   "waveFooter":   "период: 11 с  ·  NE кросс-оффшор всё утро",
  *   "spots":        [{ "name": "Batu Bolong", "rating": "green" | "yellow" | "red", "h": "1.0 м", "p": "11 с", "hm": 0.98, "t": 11, "note": "..." }, ...],
+ *   "spotsNote":    "рядом ничего рабочего",          // optional, shown in place of the cards when spots is empty
  *   "footer":       "лучшее окно  06:00 – 07:30  ·  BB/Per до 08:30",
  *   "sources":      "Open-Meteo · surf-forecast.com"   // optional, default "Open-Meteo"
  * }
@@ -122,6 +123,7 @@ const {
   windOffshore,
   waveFooter = '',
   spots = [],
+  spotsNote = '',
   footer = '',
   sources = 'Open-Meteo',
 } = input;
@@ -328,8 +330,15 @@ spots.forEach((spot, i) => {
   ctx.fillText(spot.note, PAD + 20, y + 124);
 });
 
+// No cards: say so instead of an empty block under the header.
+const spotsBlockH = spots.length ? spots.length * (cardH + cardGap) : spotsNote ? 56 : 0;
+if (!spots.length && spotsNote) {
+  ctx.fillStyle = MUTED; ctx.font = '19px sans-serif';
+  ctx.fillText(spotsNote, PAD, curY + 30);
+}
+
 // --- Render: Footer ---
-curY += spots.length * (cardH + cardGap) + 18;
+curY += spotsBlockH + 18;
 ctx.fillStyle = MUTED; ctx.font = '14px sans-serif';
 ctx.fillText(sources, PAD, curY);
 if (footer) {
