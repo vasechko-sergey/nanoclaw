@@ -27,8 +27,11 @@ test('gives render.cjs its tide fields, with one point either side of the day', 
   assert.equal(t.tidePoints.length, 26);
   assert.deepEqual(t.tidePoints[0], { h: -1, v: 1.331 }); // 23:00 on the 5th
   assert.deepEqual(t.tidePoints[25], { h: 24, v: 1.25 }); // 00:00 on the 7th
-  assert.deepEqual(t.tideMarkers[0], { h: 5.18, v: 1.83, t: '05:11', val: '1.8 м', above: true });
-  assert.equal(t.tideMarkers[1].above, false); // a low's label goes under the curve
+  // Labels sit inside the curve: under a high, over a low.
+  assert.deepEqual(t.tideMarkers[0], { h: 5.18, v: 1.83, t: '05:11', val: '1.8 м', above: false });
+  assert.equal(t.tideMarkers[1].above, true);
+  // 0.827 (13:00) … 1.833 (05:00): 12 % of the span below, 25 % above.
+  assert.deepEqual(t.tideRange, [0.71, 2.08]);
 });
 
 test('names the dates the page has when the asked one is missing', () => {

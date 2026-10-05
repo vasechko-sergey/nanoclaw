@@ -38,7 +38,7 @@ Generic утренний surf-forecast: график волна/ветер/пр�
 ```bash
 node /app/skills/surf-forecast/tides.cjs "{tide_url}" {date}
 ```
-Отдаёт JSON: `hourly` (`[{h, v}]` на каждый час, метры над нулём глубин — та же шкала, что `ideal_tide_m`), `extremes` (полная/малая вода с временем), а также готовые для рендера `tidePoints` и `tideMarkers`.
+Отдаёт JSON: `hourly` (`[{h, v}]` на каждый час, метры над нулём глубин — та же шкала, что `ideal_tide_m`), `extremes` (полная/малая вода с временем), а также готовые для рендера `tidePoints`, `tideMarkers` и `tideRange`.
 
 Open-Meteo `sea_level_height_msl` для рейтинга **не годится**: это уровень относительно среднего моря, он уходит в минус, а пороги спотов абсолютные (2026-10-04 так получились неверные рейтинги). Только если `tides.cjs` упал, бери его с поправкой `msl_offset_m` из пресета. Совпадение с таблицей обычно ±0.2 м, бывает до 0.4, поэтому:
 - в `sources` пиши «прилив ≈ Open-Meteo»;
@@ -98,8 +98,7 @@ Renderer уже ship-аится со skill: `/app/skills/surf-forecast/render.cj
 ```
 
 **Поля:**
-- `tidePoints[]`, `tideMarkers[]` — дословно из вывода `tides.cjs`
-- `tideRange` — `[min, max]` для вертикальной оси приливов; можно пропустить, тогда ось строится по данным
+- `tidePoints[]`, `tideMarkers[]`, `tideRange` — дословно из вывода `tides.cjs` (подписи полной и малой воды уже размещены так, что не обрезаются)
 - `windOffshore[]` — рассчитан **тобой** по `shore_facing_deg` из параметров локации (см. §2). Renderer не пересчитывает направление, он только красит.
 - `rating` спота: `green` | `yellow` | `red`
 - `hm`, `t` в spot — для расчёта энергии (H²×T → 1–5 точек)

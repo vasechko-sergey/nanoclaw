@@ -15,6 +15,7 @@
  *   extremes     [{ type: "high"|"low", t: "HH:MM", h, v }]
  *   tidePoints   render.cjs field, hourly plus one point either side of the day
  *   tideMarkers  render.cjs field, one per high/low
+ *   tideRange    render.cjs field, room for the marker labels
  * Exits 1 with the reason on stderr when the page or the date isn't there.
  */
 'use strict';
@@ -43,6 +44,10 @@ function localTime(point, hrdiff) {
     h: Math.round((hh + mm / 60) * 100) / 100,
     t: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`,
   };
+}
+
+function round2(x) {
+  return Math.round(x * 100) / 100;
 }
 
 function onTheHour(day, hrdiff) {
@@ -76,15 +81,24 @@ function tidesForDate(fcgon, date) {
     : undefined;
   const tidePoints = [...(prev ? [{ h: -1, v: prev.v }] : []), ...hourly, ...(next ? [{ h: 24, v: next.v }] : [])];
 
+  // Labels go inside the curve — under a high, over a low. Outside, a low's
+  // label falls off the bottom of the tide card and a high's runs into the
+  // "лучшее окно" caption at the top.
   const tideMarkers = extremes.map((e) => ({
     h: e.h,
     v: e.v,
     t: e.t,
     val: `${e.v.toFixed(1)} м`,
-    above: e.type === 'high',
+    above: e.type === 'low',
   }));
 
-  return { date, source: 'surf-forecast.com', hourly, extremes, tidePoints, tideMarkers };
+  // Headroom over the highest point keeps its marker clear of that caption.
+  const vs = tidePoints.map((p) => p.v);
+  const lo = Math.min(...vs);
+  const hi = Math.max(...vs);
+  const tideRange = [round2(lo - (hi - lo) * 0.12), round2(hi + (hi - lo) * 0.25)];
+
+  return { date, source: 'surf-forecast.com', hourly, extremes, tidePoints, tideMarkers, tideRange };
 }
 
 async function main() {
