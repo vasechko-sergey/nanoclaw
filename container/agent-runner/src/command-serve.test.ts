@@ -26,6 +26,10 @@ beforeAll(() => {
   );
   skill('fail.cjs', 'console.error("tides: HTTP 503"); process.exit(1);');
   skill('nothing.cjs', 'console.log(JSON.stringify({ summary: "no picture" }));');
+  skill(
+    'where.cjs',
+    `console.log(JSON.stringify({ photo: ${JSON.stringify(photo)}, summary: 'at ' + process.env.DEVICE_LAT + ',' + process.env.DEVICE_LON }));`,
+  );
   writeFileSync(join(root, 'escape.cjs'), 'require("fs").writeFileSync(process.argv[1] + ".ran", "x");');
 });
 
@@ -91,6 +95,18 @@ describe('serveAgentCommands', () => {
     expect(block).toContain('<served command="/surf"');
     expect(block).toContain('Кангу, окно 06:00–09:00');
     expect(servedNotesBlock()).toBe('');
+  });
+
+  it("passes the phone's position from the command message to the script", async () => {
+    const r = row({
+      ...surf('surf-forecast/where.cjs'),
+      ios_context: { location: { lat: -8.667, lon: 115.1394 }, locality: 'Canggu' },
+    });
+    await serveAgentCommands([r], { skillsDir, outboxDir, cwd: root });
+    expect(servedNotesBlock()).toContain('at -8.667,115.1394');
+    // No position in the message → none in the environment either.
+    await serveAgentCommands([row(surf('surf-forecast/where.cjs'))], { skillsDir, outboxDir, cwd: root });
+    expect(servedNotesBlock()).toContain('at undefined,undefined');
   });
 
   it('hands the row to the model when the script fails', async () => {

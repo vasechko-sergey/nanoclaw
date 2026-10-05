@@ -48,30 +48,46 @@ function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function runScript(path: string, cwd: string): Promise<{ ok: true; out: ServeOutput } | { ok: false; why: string }> {
+/**
+ * The script's environment: the runner's, plus where the phone was when the
+ * command was sent (iOS context) — the surf forecast picks spots by it, since
+ * one time zone holds many spot sets. No position, no variables.
+ */
+function scriptEnv(content: { ios_context?: { location?: { lat?: unknown; lon?: unknown } } }): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.DEVICE_LAT;
+  delete env.DEVICE_LON;
+  const loc = content.ios_context?.location;
+  if (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number') {
+    env.DEVICE_LAT = String(loc.lat);
+    env.DEVICE_LON = String(loc.lon);
+  }
+  return env;
+}
+
+function runScript(
+  path: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ ok: true; out: ServeOutput } | { ok: false; why: string }> {
   return new Promise((resolve) => {
     const beat = setInterval(touchHeartbeat, HEARTBEAT_EVERY_MS);
     touchHeartbeat();
-    execFile(
-      'node',
-      [path],
-      { cwd, timeout: RUN_TIMEOUT_MS, maxBuffer: 1024 * 1024, env: process.env },
-      (err, stdout, stderr) => {
-        clearInterval(beat);
-        touchHeartbeat();
-        if (err) {
-          const why = err.killed ? `timed out after ${RUN_TIMEOUT_MS / 1000} s` : `exit ${err.code ?? '?'}`;
-          resolve({ ok: false, why: `${why}: ${String(stderr).trim().slice(-300)}` });
-          return;
-        }
-        try {
-          const lines = String(stdout).trim().split('\n');
-          resolve({ ok: true, out: JSON.parse(lines[lines.length - 1]) as ServeOutput });
-        } catch {
-          resolve({ ok: false, why: `not JSON: ${String(stdout).trim().slice(0, 200)}` });
-        }
-      },
-    );
+    execFile('node', [path], { cwd, timeout: RUN_TIMEOUT_MS, maxBuffer: 1024 * 1024, env }, (err, stdout, stderr) => {
+      clearInterval(beat);
+      touchHeartbeat();
+      if (err) {
+        const why = err.killed ? `timed out after ${RUN_TIMEOUT_MS / 1000} s` : `exit ${err.code ?? '?'}`;
+        resolve({ ok: false, why: `${why}: ${String(stderr).trim().slice(-300)}` });
+        return;
+      }
+      try {
+        const lines = String(stdout).trim().split('\n');
+        resolve({ ok: true, out: JSON.parse(lines[lines.length - 1]) as ServeOutput });
+      } catch {
+        resolve({ ok: false, why: `not JSON: ${String(stdout).trim().slice(0, 200)}` });
+      }
+    });
   });
 }
 
@@ -86,14 +102,18 @@ export async function serveAgentCommands(rows: MessageInRow[], opts: ServeOption
   const survivors: MessageInRow[] = [];
 
   for (const row of rows) {
-    let command: { name?: unknown; serve?: unknown } | undefined;
+    let content: {
+      command?: { name?: unknown; serve?: unknown };
+      ios_context?: { location?: { lat?: unknown; lon?: unknown } };
+    } = {};
     if (row.kind === 'chat' || row.kind === 'chat-sdk') {
       try {
-        command = (JSON.parse(row.content) as { command?: typeof command }).command;
+        content = JSON.parse(row.content) as typeof content;
       } catch {
-        command = undefined;
+        content = {};
       }
     }
+    const command = content.command;
     if (!command || typeof command.serve !== 'string') {
       survivors.push(row);
       continue;
@@ -113,7 +133,7 @@ export async function serveAgentCommands(rows: MessageInRow[], opts: ServeOption
       continue;
     }
 
-    const run = await runScript(path, cwd);
+    const run = await runScript(path, cwd, scriptEnv(content));
     if (!run.ok) {
       log(`/${name}: ${run.why} — handing to the model`);
       survivors.push(row);
