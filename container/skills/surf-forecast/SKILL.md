@@ -5,9 +5,26 @@ description: Use when user asks for a surf forecast for a specific break or regi
 
 # surf-forecast
 
-Generic утренний surf-forecast: график волна/ветер/прилив + рейтинг спотов → одно фото. Локация не зашита — передаётся параметрами.
+Generic утренний surf-forecast: график волна/ветер/прилив + рейтинг спотов → одно фото.
 
-Проходи шаги 0–4 по порядку и не заменяй источник или шаг своим вариантом. Если шаг не получается, скажи об этом, а не обходи его.
+## Локация с пресетом — один вызов
+
+Пресеты локаций (споты, их приливы, берег, страница приливов) лежат в `presets.json`: `canggu`, `ericeira`. Для них весь скилл — это скрипт:
+
+```bash
+node /app/skills/surf-forecast/forecast.cjs [--spot canggu] [--date YYYY-MM-DD]
+```
+
+- Без `--spot` скрипт берёт пресет по поясу владельца (`$OWNER_TZ`).
+- Без `--date` берёт сегодня, если местное время до 08:00, иначе завтра.
+- Скрипт печатает JSON `{ photo, params, summary }`: отправь `photo` через `mcp__nanoclaw__send_photo` — и всё, без текста. Правила рейтинга записаны в шапке `forecast.cjs`, это §2 ниже в точном виде.
+- Упал — скажи человеку причину из его ошибки одной строкой, вручную не пересчитывай.
+
+Голую команду `/surf` раннер отвечает этим же скриптом без тебя. В следующем ходе у тебя будет `<served command="/surf">` со сводкой. Последний прогноз со всеми цифрами лежит в `/workspace/agent/scratch/surf_last.json`: на вопросы по картинке («почему Echo жёлтый?») отвечай по нему.
+
+## Локация без пресета — шаги 0–4
+
+Проходи шаги по порядку и не заменяй источник или шаг своим вариантом. Если шаг не получается, скажи об этом, а не обходи его. Новую локацию, куда человек будет ездить регулярно, предложи добавить в пресеты.
 
 ## 0. Собрать параметры
 
@@ -126,36 +143,11 @@ NODE_PATH=/workspace/agent/node_modules \
 
 **Только фото. Никакого текста до или после.**
 
-## Примеры пресетов
+## Пресеты
 
-**Кангу (Бали):**
-```js
-{
-  lat: -8.65, lon: 115.13,
-  tz: "Asia/Makassar",
-  shore_facing_deg: 270,
-  msl_offset_m: 1.1,   // только для запасного Open-Meteo: таблица ≈ sea_level_height_msl + 1.1 (замер 2026-10-05, обычно ±0.2)
-  tide_url: "https://www.surf-forecast.com/breaks/Canggu/tides/latest",
-  swell_url: "https://www.surf-forecast.com/breaks/Canggu/forecasts/latest/six_day",
-  breaks: [
-    { name: "Batu Bolong",  type: "reef",  min_period_s: 10, min_swell_m: 0.8, ideal_tide_m: [1.0, 2.0] },
-    { name: "Echo Beach",   type: "reef",  min_period_s: 9,  min_swell_m: 1.2, ideal_tide_m: [1.0, 2.0] },
-    { name: "Pererenan",    type: "reef",  min_period_s: 10, min_swell_m: 0.8, ideal_tide_m: [1.0, 2.0] }
-  ]
-}
-```
+Пресеты и их формат — в `presets.json`, рядом со скиллом:
+- `breaks[].ideal_tide_m: [низ, верх]` — рабочий прилив спота в метрах над нулём глубин; `верх` может быть `null`, тогда высокий прилив спот не портит;
+- `min_period_s`, `min_swell_m` — порог периода и высоты;
+- `msl_offset_m` — поправка для запасного Open-Meteo.
 
-**Эрисейра (Португалия):**
-```js
-{
-  lat: 38.96, lon: -9.42,
-  tz: "Europe/Lisbon",
-  shore_facing_deg: 250,
-  tide_url: "https://www.surf-forecast.com/breaks/Ericeira/tides/latest",
-  swell_url: "https://www.surf-forecast.com/breaks/Ericeira/forecasts/latest/six_day",
-  breaks: [
-    { name: "Ribeira d'Ilhas", type: "reef", min_period_s: 11, min_swell_m: 1.0, ideal_tide_m: [1.0, 3.0] },
-    { name: "Coxos",           type: "reef", min_period_s: 12, min_swell_m: 1.5, ideal_tide_m: [1.5, 3.0] }
-  ]
-}
-```
+Для локации без пресета собери те же поля (шаг 0).

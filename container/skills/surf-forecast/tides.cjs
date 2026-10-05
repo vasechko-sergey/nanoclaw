@@ -16,6 +16,7 @@
  *   tidePoints   render.cjs field, hourly plus one point either side of the day
  *   tideMarkers  render.cjs field, one per high/low
  *   tideRange    render.cjs field, room for the marker labels
+ *   sunrise, sunset  { h, t } local, or null when the page doesn't say
  * Exits 1 with the reason on stderr when the page or the date isn't there.
  */
 'use strict';
@@ -44,6 +45,10 @@ function localTime(point, hrdiff) {
     h: Math.round((hh + mm / 60) * 100) / 100,
     t: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`,
   };
+}
+
+function round1(x) {
+  return Math.round(x * 10) / 10;
 }
 
 function round2(x) {
@@ -88,7 +93,8 @@ function tidesForDate(fcgon, date) {
     h: e.h,
     v: e.v,
     t: e.t,
-    val: `${e.v.toFixed(1)} м`,
+    // Math.round, like everything else that prints these: toFixed reads 1.65 as 1.6.
+    val: `${round1(e.v).toFixed(1)} м`,
     above: e.type === 'low',
   }));
 
@@ -98,7 +104,30 @@ function tidesForDate(fcgon, date) {
   const hi = Math.max(...vs);
   const tideRange = [round2(lo - (hi - lo) * 0.12), round2(hi + (hi - lo) * 0.25)];
 
-  return { date, source: 'surf-forecast.com', hourly, extremes, tidePoints, tideMarkers, tideRange };
+  // Daylight bounds the surfable window: nobody paddles out before sunrise.
+  const sun = (epoch) => (typeof epoch === 'number' ? localTime({ timestamp: epoch }, hrdiff) : null);
+
+  return {
+    date,
+    source: 'surf-forecast.com',
+    sunrise: sun(day.sunrise),
+    sunset: sun(day.sunset),
+    hourly,
+    extremes,
+    tidePoints,
+    tideMarkers,
+    tideRange,
+  };
+}
+
+/** Fetch the tide page and read `date` off it. */
+async function loadTides(url, date) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko)' },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+  return tidesForDate(parseFcgon(await res.text()), date);
 }
 
 async function main() {
@@ -107,12 +136,7 @@ async function main() {
     console.error('Usage: node tides.cjs <tide_url> <YYYY-MM-DD>');
     process.exit(1);
   }
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko)' },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
-  console.log(JSON.stringify(tidesForDate(parseFcgon(await res.text()), date)));
+  console.log(JSON.stringify(await loadTides(url, date)));
 }
 
 if (require.main === module) {
@@ -122,4 +146,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseFcgon, tidesForDate };
+module.exports = { parseFcgon, tidesForDate, loadTides };

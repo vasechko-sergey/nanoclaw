@@ -30,8 +30,15 @@ test('gives render.cjs its tide fields, with one point either side of the day', 
   // Labels sit inside the curve: under a high, over a low.
   assert.deepEqual(t.tideMarkers[0], { h: 5.18, v: 1.83, t: '05:11', val: '1.8 м', above: false });
   assert.equal(t.tideMarkers[1].above, true);
+  assert.equal(t.tideMarkers[2].val, '1.7 м'); // 1.65: the summary says 1.7 too, not toFixed's 1.6
   // 0.827 (13:00) … 1.833 (05:00): 12 % of the span below, 25 % above.
   assert.deepEqual(t.tideRange, [0.71, 2.08]);
+});
+
+test('says when the sun rises and sets, local time', () => {
+  const t = tidesForDate(parseFcgon(page), '2026-10-06');
+  assert.deepEqual(t.sunrise, { h: 6, t: '06:00' });
+  assert.deepEqual(t.sunset, { h: 18.22, t: '18:13' });
 });
 
 test('names the dates the page has when the asked one is missing', () => {
