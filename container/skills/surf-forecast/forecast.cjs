@@ -5,26 +5,37 @@
  * one JPEG. A model following SKILL.md by hand cut corners on every step
  * (2026-10-04: tides from the wrong scale, five spots on a three-card canvas).
  *
- * Usage: node forecast.cjs [--spot <preset>] [--date YYYY-MM-DD] [--out <dir>]
- *   --spot  a key of presets.json; default: the preset for $OWNER_TZ
- *   --date  default: today in the spot's time zone before 08:00, tomorrow after
- *   --out   default: /workspace/agent/scratch
+ * Usage: node forecast.cjs [--lat <deg> --lon <deg>] [--area <key>] [--date YYYY-MM-DD] [--out <dir>]
+ *   --lat/--lon  where the person is; default $DEVICE_LAT/$DEVICE_LON (the
+ *                runner passes the phone's position from the command message)
+ *   --area       a key of spots.json areas, for "the forecast for Ericeira";
+ *                with no position either, the area for $OWNER_TZ — the area
+ *                centre then stands in for the person
+ *   --date       default: today in the area's time zone before 08:00, tomorrow after
+ *   --out        default: /workspace/agent/scratch
  *
  * Prints JSON { photo, params, summary } and also keeps it as surf_last.json
  * next to the photo, for questions about the picture later. Exits 1 with the
  * reason on stderr when anything is missing.
  *
+ * Which spots: every spot of spots.json within reach_km of the person (≈20 min
+ * of driving), of the nearest one's area. They are all rated; the picture
+ * shows the three best — green, then yellow, then red, the nearer first
+ * within a colour. A time zone holds many spot sets (Canggu and Berawa are
+ * one zone, two sets), so the position decides, not the zone.
+ *
  * Rules — the skill's §2 made exact, tide bands from the owner's spot notes:
- * - Surfable window: the preset's window_hours, starting no earlier than sunrise.
+ * - Surfable window: the area's window_hours, starting no earlier than sunrise.
  * - Wind is offshore when it blows from within 67.5° of shore_facing_deg + 180.
- * - Tide, per break: inside [lo, hi] (hi may be null) at some point of the
- *   window → ok; below lo but not below lo − 0.5 → yellow; lower → red;
- *   above hi → yellow. A beach break is never worse than yellow on tide.
+ * - Tide, per spot: inside [lo, hi] (hi may be null) for at least 30 minutes
+ *   of the window → ok; else below lo but not below lo − 0.5 → yellow, lower
+ *   → red; above hi, or in range only briefly → yellow. A beach break is
+ *   never worse than yellow on tide.
  * - Period at mid-window: ≥ min_period_s ok; up to 1 s short → yellow; more → red.
  * - Wave height at mid-window: ≥ min_swell_m ok; ≥ 0.5 m → yellow; less → red.
- * - A break is red on any red or on two yellows, yellow on one, green otherwise.
+ * - A spot is red on any red or on two yellows, yellow on one, green otherwise.
  * - Best window: the longest stretch with offshore wind and the tide in range
- *   for at least one break that isn't red.
+ *   for at least one shown spot that isn't red.
  */
 'use strict';
 
@@ -50,6 +61,8 @@ const MONTHS = [
 ];
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const STEP_H = 10 / 60; // the window is scanned in 10-minute steps
+const MIN_TIDE_SPAN_H = 0.5; // in range for less than this is no session
+const RANK = { green: 0, yellow: 1, red: 2 };
 
 const round1 = (x) => Math.round(x * 10) / 10;
 const round2 = (x) => Math.round(x * 100) / 100;
@@ -69,6 +82,37 @@ function isOffshore(windFromDeg, shoreFacingDeg) {
   const offshoreFrom = (shoreFacingDeg + 180) % 360;
   const diff = Math.abs(((windFromDeg - offshoreFrom + 540) % 360) - 180);
   return diff <= 67.5;
+}
+
+/** Great-circle distance in km. */
+function haversineKm(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const h =
+    Math.sin(rad(b.lat - a.lat) / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * The spots within reach of `at` ({lat, lon}), nearest first, all of one area
+ * (the nearest spot's), each with its distance_km.
+ */
+function pickSpots(catalog, at) {
+  const all = catalog.spots
+    .map((s) => ({ ...s, distance_km: Math.round(haversineKm(at, s) * 100) / 100 }))
+    .sort((a, b) => a.distance_km - b.distance_km);
+  const reach = all.filter((s) => s.distance_km <= catalog.reach_km);
+  if (reach.length === 0) {
+    const n = all[0];
+    throw new Error(
+      `no known spot within ${catalog.reach_km} km` +
+        (n ? ` — the nearest is ${n.name}, ${round1(n.distance_km)} km` : ''),
+    );
+  }
+  const areaKey = reach[0].area;
+  const area = catalog.areas[areaKey];
+  if (!area) throw new Error(`spot ${reach[0].name} names unknown area ${areaKey}`);
+  return { areaKey, area, spots: reach.filter((s) => s.area === areaKey) };
 }
 
 /** Linear interpolation over [{h, v}] sorted by h. */
@@ -126,11 +170,12 @@ function spanText(span, start, end) {
   return `${hhmm(span.a)}–${hhmm(span.b)}`;
 }
 
-function rateBreak(brk, ctx) {
+function rateSpot(spot, ctx) {
   const { tideAt, window, hm, period } = ctx;
-  const [lo, hi] = brk.ideal_tide_m;
+  const [lo, hi] = spot.ideal_tide_m;
   const tideOk = (h) => tideAt(h) >= lo && (hi == null || tideAt(h) <= hi);
-  const span = longestRun(window.grid, tideOk);
+  const run = longestRun(window.grid, tideOk);
+  const span = run && run.b - run.a >= MIN_TIDE_SPAN_H - 1e-9 ? run : null;
 
   const verdicts = []; // { level: 'yellow'|'red', why }
   if (!span) {
@@ -139,20 +184,23 @@ function rateBreak(brk, ctx) {
     const lowest = Math.min(...tides);
     if (highest < lo) {
       let level = highest >= lo - 0.5 ? 'yellow' : 'red';
-      if (brk.type === 'beach') level = 'yellow';
+      if (spot.type === 'beach') level = 'yellow';
       verdicts.push({ level, why: `прилив до ${round1(highest)} м — мелко` });
-    } else {
+    } else if (hi != null && lowest > hi) {
       verdicts.push({ level: 'yellow', why: `прилив от ${round1(lowest)} м — высоко` });
+    } else {
+      const band = hi == null ? `от ${lo}` : `${lo}–${hi}`;
+      verdicts.push({ level: 'yellow', why: `прилив ${round1(lowest)}–${round1(highest)} м, нужно ${band}` });
     }
   }
-  if (period < brk.min_period_s) {
+  if (period < spot.min_period_s) {
     verdicts.push({
-      level: period >= brk.min_period_s - 1 ? 'yellow' : 'red',
-      why: `период ${Math.round(period)} с, нужно от ${brk.min_period_s}`,
+      level: period >= spot.min_period_s - 1 ? 'yellow' : 'red',
+      why: `период ${Math.round(period)} с, нужно от ${spot.min_period_s}`,
     });
   }
-  if (hm < brk.min_swell_m) {
-    verdicts.push({ level: hm >= 0.5 ? 'yellow' : 'red', why: `волна ${round1(hm)} м, нужно от ${brk.min_swell_m}` });
+  if (hm < spot.min_swell_m) {
+    verdicts.push({ level: hm >= 0.5 ? 'yellow' : 'red', why: `волна ${round1(hm)} м, нужно от ${spot.min_swell_m}` });
   }
 
   const reds = verdicts.filter((v) => v.level === 'red').length;
@@ -164,20 +212,20 @@ function rateBreak(brk, ctx) {
   if (!note) note = tideNote;
   else if (tideNote && `${note} · ${tideNote}`.length <= 60) note = `${note} · ${tideNote}`;
 
-  return { rating, note, tideOk, why: verdicts.map((v) => v.why) };
+  return { rating, note, tideOk: span ? tideOk : () => false };
 }
 
 /**
  * Everything render.cjs needs, plus a one-line summary, from the three
  * sources. Pure: no network, no files.
  */
-function buildForecast({ preset, date, marine, wind, tides }) {
+function buildForecast({ area, spots, date, marine, wind, tides }) {
   const waveH = hourlySeries(marine, 'wave_height');
   const wavePeriod = hourlySeries(marine, 'wave_period');
   const windSpeed = hourlySeries(wind, 'wind_speed_10m');
   const windDir = hourlySeries(wind, 'wind_direction_10m');
 
-  const [w0, w1] = preset.window_hours;
+  const [w0, w1] = area.window_hours;
   const sunrise = tides.sunrise ? Math.ceil(tides.sunrise.h / STEP_H - 1e-9) * STEP_H : w0;
   const start = round2(Math.max(w0, sunrise));
   const end = w1;
@@ -199,10 +247,15 @@ function buildForecast({ preset, date, marine, wind, tides }) {
     return p.v;
   };
   const dirs = hours.map((h) => at(windDir, h));
-  const offshore = dirs.map((d) => isOffshore(d, preset.shore_facing_deg));
+  const offshore = dirs.map((d) => isOffshore(d, area.shore_facing_deg));
   const offshoreAt = (h) => offshore[Math.min(hours.length - 1, Math.max(0, Math.floor(h) - w0))];
 
-  const rated = preset.breaks.slice(0, 3).map((brk) => ({ brk, ...rateBreak(brk, { tideAt, window, hm, period }) }));
+  // Rate every spot in reach; the canvas holds three cards, so show the best
+  // three — a better colour first, the nearer within a colour.
+  const ranked = spots
+    .map((spot) => ({ spot, ...rateSpot(spot, { tideAt, window, hm, period }) }))
+    .sort((a, b) => RANK[a.rating] - RANK[b.rating] || (a.spot.distance_km ?? 0) - (b.spot.distance_km ?? 0));
+  const rated = ranked.slice(0, 3);
 
   const best = longestRun(window.grid, (h) => offshoreAt(h) && rated.some((r) => r.rating !== 'red' && r.tideOk(h)));
 
@@ -216,7 +269,7 @@ function buildForecast({ preset, date, marine, wind, tides }) {
 
   const [, mm, dd] = date.split('-').map(Number);
   const params = {
-    title: `${preset.title} · ${dd} ${MONTHS[mm - 1]} · УТРО`,
+    title: `${area.title} · ${dd} ${MONTHS[mm - 1]} · УТРО`,
     byline: 'by Jarvis',
     tidePoints: tides.tidePoints,
     tideMarkers: tides.tideMarkers,
@@ -228,8 +281,8 @@ function buildForecast({ preset, date, marine, wind, tides }) {
     windDir: dirs.map(compass),
     windOffshore: offshore,
     waveFooter: `период ${Math.round(period)} с  ·  ${labels} ${windState}`,
-    spots: rated.map(({ brk, rating, note }) => ({
-      name: brk.name,
+    spots: rated.map(({ spot, rating, note }) => ({
+      name: spot.name,
       rating,
       h: `${round1(hm).toFixed(1)} м`,
       p: `${Math.round(period)} с`,
@@ -242,16 +295,22 @@ function buildForecast({ preset, date, marine, wind, tides }) {
   };
 
   const ratingRu = { green: 'зелёный', yellow: 'жёлтый', red: 'красный' };
+  const describe = (r) => {
+    const away = r.spot.distance_km != null ? `, ${round1(r.spot.distance_km)} км` : '';
+    return `${r.spot.name}${away} — ${ratingRu[r.rating]} (${r.note})`;
+  };
   const extremes = tides.extremes
     .map((e) => `${e.type === 'high' ? 'полная' : 'малая'} вода ${e.t} ${round1(e.v)} м`)
     .join(', ');
   const summary =
-    `${preset.name}, ${dd} ${MONTHS[mm - 1].toLowerCase()}, утро: ` +
+    `${area.name}, ${dd} ${MONTHS[mm - 1].toLowerCase()}, утро: ` +
     `${best ? `окно ${hhmm(best.a)}–${hhmm(best.b)}` : 'хорошего окна нет'}; ` +
     `волна ${round1(hm)} м, период ${Math.round(period)} с; ветер ${labels} ${windState}; ` +
     `прилив: ${extremes}. ` +
-    rated.map((r) => `${r.brk.name} — ${ratingRu[r.rating]} (${r.note})`).join('; ') +
-    '.';
+    rated.map(describe).join('; ') +
+    '.' +
+    // Off the picture but in reach — so "and Berawa?" has an answer.
+    (ranked.length > 3 ? ` Ещё рядом: ${ranked.slice(3).map(describe).join('; ')}.` : '');
 
   return { params, summary };
 }
@@ -281,12 +340,20 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
-    if (!['spot', 'date', 'out'].includes(key) || argv[i + 1] === undefined) {
+    if (!['lat', 'lon', 'area', 'date', 'out'].includes(key) || argv[i + 1] === undefined) {
       throw new Error(`unknown or empty option ${argv[i]}`);
     }
     args[key] = argv[++i];
   }
   return args;
+}
+
+/** {lat, lon} from two raw strings, or null when either is missing or not a number. */
+function readPosition(rawLat, rawLon) {
+  if (rawLat == null || rawLon == null || String(rawLat).trim() === '' || String(rawLon).trim() === '') return null;
+  const lat = Number(rawLat);
+  const lon = Number(rawLon);
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 }
 
 async function fetchJson(url) {
@@ -299,26 +366,44 @@ async function fetchJson(url) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const presets = JSON.parse(fs.readFileSync(path.join(__dirname, 'presets.json'), 'utf8'));
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, 'spots.json'), 'utf8'));
   const tz = process.env.OWNER_TZ || process.env.TZ || '';
-  const key = args.spot || presets.default_by_tz[tz];
-  if (!key) throw new Error(`no preset for time zone "${tz}" — pass --spot (${Object.keys(presets.spots).join(', ')})`);
-  const preset = presets.spots[key];
-  if (!preset) throw new Error(`no preset "${key}" (have ${Object.keys(presets.spots).join(', ')})`);
-  const date = args.date || pickDate(new Date(), preset.tz);
+
+  // Where the person is: the position given, else the centre of the asked (or
+  // the time zone's) area.
+  // An explicit --area wins over the phone: "the forecast for Ericeira" asked from Bali.
+  const position = args.area
+    ? null
+    : readPosition(args.lat ?? process.env.DEVICE_LAT, args.lon ?? process.env.DEVICE_LON);
+  let at;
+  if (position) {
+    at = position;
+  } else {
+    const key = args.area || catalog.default_area_by_tz[tz];
+    const centre = key && catalog.areas[key];
+    if (!centre) {
+      throw new Error(
+        `no position and no area${key ? ` "${key}"` : ` for time zone "${tz}"`} — pass --lat/--lon or --area (${Object.keys(catalog.areas).join(', ')})`,
+      );
+    }
+    at = { lat: centre.lat, lon: centre.lon };
+  }
+  const { areaKey, area, spots } = pickSpots(catalog, at);
+
+  const date = args.date || pickDate(new Date(), area.tz);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`bad --date ${date}`);
 
-  const q = `latitude=${preset.lat}&longitude=${preset.lon}&timezone=${encodeURIComponent(preset.tz)}&start_date=${date}&end_date=${date}`;
+  const q = `latitude=${area.lat}&longitude=${area.lon}&timezone=${encodeURIComponent(area.tz)}&start_date=${date}&end_date=${date}`;
   const [marine, wind, tides] = await Promise.all([
     fetchJson(`https://marine-api.open-meteo.com/v1/marine?${q}&hourly=wave_height,wave_period`),
     fetchJson(`https://api.open-meteo.com/v1/forecast?${q}&hourly=wind_speed_10m,wind_direction_10m`),
-    loadTides(preset.tide_url, date),
+    loadTides(area.tide_url, date),
   ]);
-  const { params, summary } = buildForecast({ preset, date, marine, wind, tides });
+  const { params, summary } = buildForecast({ area, spots, date, marine, wind, tides });
 
   const outDir = args.out || '/workspace/agent/scratch';
   fs.mkdirSync(outDir, { recursive: true });
-  const base = path.join(outDir, `surf_${key}_${date}`);
+  const base = path.join(outDir, `surf_${areaKey}_${date}`);
   fs.writeFileSync(`${base}.json`, JSON.stringify(params));
   execFileSync(process.execPath, [path.join(__dirname, 'render.cjs'), `${base}.json`, `${base}.jpg`], {
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -329,7 +414,7 @@ async function main() {
     timeout: 60_000,
   });
   const result = { photo: `${base}.jpg`, params: `${base}.json`, summary };
-  fs.writeFileSync(path.join(outDir, 'surf_last.json'), JSON.stringify({ ...result, spot: key, date }));
+  fs.writeFileSync(path.join(outDir, 'surf_last.json'), JSON.stringify({ ...result, area: areaKey, date }));
   console.log(JSON.stringify(result));
 }
 
@@ -340,4 +425,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildForecast, pickDate, compass, isOffshore };
+module.exports = { buildForecast, pickSpots, pickDate, compass, isOffshore };

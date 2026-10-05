@@ -1,0 +1,39 @@
+{
+  "reach_km": 6,
+  "default_area_by_tz": {
+    "Asia/Makassar": "canggu",
+    "Europe/Lisbon": "ericeira"
+  },
+  "areas": {
+    "canggu": {
+      "title": "КАНГУ",
+      "name": "Кангу",
+      "tz": "Asia/Makassar",
+      "lat": -8.65,
+      "lon": 115.13,
+      "shore_facing_deg": 270,
+      "window_hours": [5, 9],
+      "msl_offset_m": 1.1,
+      "tide_url": "https://www.surf-forecast.com/breaks/Canggu/tides/latest"
+    },
+    "ericeira": {
+      "title": "ЭРИСЕЙРА",
+      "name": "Эрисейра",
+      "tz": "Europe/Lisbon",
+      "lat": 38.96,
+      "lon": -9.42,
+      "shore_facing_deg": 250,
+      "window_hours": [6, 10],
+      "tide_url": "https://www.surf-forecast.com/breaks/Ericeira/tides/latest"
+    }
+  },
+  "spots": [
+    { "name": "Batu Bolong", "area": "canggu", "lat": -8.65953, "lon": 115.13014, "type": "reef", "min_period_s": 10, "min_swell_m": 0.8, "ideal_tide_m": [1.0, null] },
+    { "name": "Old Man's", "area": "canggu", "lat": -8.65905, "lon": 115.13086, "type": "reef", "min_period_s": 10, "min_swell_m": 0.8, "ideal_tide_m": [1.0, null] },
+    { "name": "Pererenan", "area": "canggu", "lat": -8.65155, "lon": 115.12113, "type": "reef", "min_period_s": 10, "min_swell_m": 0.8, "ideal_tide_m": [1.0, null] },
+    { "name": "Echo Beach", "area": "canggu", "lat": -8.65481, "lon": 115.12489, "type": "reef", "min_period_s": 9, "min_swell_m": 1.2, "ideal_tide_m": [1.0, 2.0] },
+    { "name": "Berawa", "area": "canggu", "lat": -8.667, "lon": 115.1394, "type": "reef", "min_period_s": 9, "min_swell_m": 0.8, "ideal_tide_m": [0.8, 1.4] },
+    { "name": "Ribeira d'Ilhas", "area": "ericeira", "lat": 38.98775, "lon": -9.41911, "type": "reef", "min_period_s": 11, "min_swell_m": 1.0, "ideal_tide_m": [1.0, 3.0] },
+    { "name": "Coxos", "area": "ericeira", "lat": 39.00425, "lon": -9.42544, "type": "reef", "min_period_s": 12, "min_swell_m": 1.5, "ideal_tide_m": [1.5, 3.0] }
+  ]
+}
