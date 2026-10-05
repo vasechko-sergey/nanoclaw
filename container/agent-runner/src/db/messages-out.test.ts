@@ -112,6 +112,18 @@ describe('recent duplicate suppression', () => {
     expect(outboundRowCount()).toBe(2);
   });
 
+  it('does NOT suppress a re-sent file under the same name (its content names the file, not its bytes)', () => {
+    // 2026-10-04: jarvis re-rendered surf_canggu_05oct.jpg after a correction
+    // and sent it 32 s after the previous version. The rows were byte-identical
+    // ({operation, caption, files:[name]}), so the new picture was dropped while
+    // send_photo still answered "Photo sent" — and the agent concluded photos
+    // never reach iOS.
+    const photo = JSON.stringify({ operation: 'send_photo', caption: '', files: ['surf_canggu_05oct.jpg'] });
+    writeMessageOut({ ...base, id: 'm1', content: photo });
+    writeMessageOut({ ...base, id: 'm2', content: photo });
+    expect(outboundRowCount()).toBe(2);
+  });
+
   it('does NOT suppress scheduled (deliver_after) sends with identical content', () => {
     const body = JSON.stringify({ text: 'scheduled reminder' });
     writeMessageOut({ ...base, id: 'm1', deliver_after: '2099-01-01 00:00:00', content: body });

@@ -229,8 +229,8 @@ export const sendPhoto: McpToolDefinition = {
   tool: {
     name: 'send_photo',
     description:
-      'Send an image as an inline Telegram photo (displays in-chat rather than as a download). ' +
-      'Only works on Telegram destinations. If you have only one destination, you can omit `to`.',
+      'Send an image that displays in-chat rather than as a download (Telegram photo; the iOS app shows it ' +
+      'inline too). If you have only one destination, you can omit `to`.',
     inputSchema: {
       type: 'object' as const,
       properties: {

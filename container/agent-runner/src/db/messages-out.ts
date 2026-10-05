@@ -100,6 +100,22 @@ function isUserFacing(msg: WriteMessageOut): boolean {
 }
 
 /**
+ * A row that sends files (send_photo / send_file). Its content names the
+ * files, not their bytes, so a re-render under the same name reads as
+ * byte-identical and the dedup would drop the new picture — while the tool
+ * still answers "sent". Files never ride a <message> block, so the double-send
+ * the dedup exists for can't produce them.
+ */
+function carriesFiles(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content) as { files?: unknown };
+    return Array.isArray(parsed.files) && parsed.files.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Write a new outbound message, auto-assigning an odd seq number.
  * Container uses odd seq (1, 3, 5...), host uses even (2, 4, 6...).
  *
@@ -130,12 +146,13 @@ export function writeMessageOut(msg: WriteMessageOut): number {
 
   // Recent-duplicate suppression (see DEDUP_WINDOW_SECONDS). Immediate
   // (non-scheduled) user-facing rows only: scheduled sends (deliver_after) and
-  // non-user-facing rows (status pings, system kinds) legitimately recur.
+  // non-user-facing rows (status pings, system kinds) legitimately recur, and
+  // a file send can't be told from its re-render (see carriesFiles).
   // Matched against outbound.db so it spans BOTH the poll-loop process (which
   // writes <message> blocks) and the MCP subprocess (which writes send_message)
   // — a module-level set could not. IFNULL() so a NULL channel/platform/thread
   // matches another NULL rather than never matching.
-  if (userFacing && !msg.deliver_after) {
+  if (userFacing && !msg.deliver_after && !carriesFiles(msg.content)) {
     const prior = outbound
       .prepare(
         `SELECT seq FROM messages_out
