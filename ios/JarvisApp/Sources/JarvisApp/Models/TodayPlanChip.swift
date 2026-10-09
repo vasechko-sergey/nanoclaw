@@ -1,7 +1,8 @@
 import Foundation
 
-/// What Payne's "plan for today" chip does right now — a pure function of the
-/// chat, so it is testable without a view.
+/// What Payne's `/workout` does right now — a pure function of the chat, so it
+/// is testable without a view. (It once drove a chip above the input; the chip
+/// is gone, the name stayed.)
 ///
 /// - No plan card for today → ask for one. `workout_start_request` is answered
 ///   by the agent runner itself (scripts/build-plan.js + Greg's readiness), with

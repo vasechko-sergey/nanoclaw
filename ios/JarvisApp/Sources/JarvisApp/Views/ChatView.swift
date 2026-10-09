@@ -56,9 +56,9 @@ struct ChatView: View {
     // window. Loaded on appear, on agent switch, and after the workout
     // fullScreenCover is dismissed — see `loadActiveWorkoutRecord()`.
     @State private var activeWorkoutRecord: ActiveWorkoutRecord? = nil
-    /// Spinner on Payne's plan chip between the request and the card (or the
-    /// model's reply, when the runner hands the request over). Cleared by the
-    /// next message in the chat, or after 20 s.
+    /// A plan request is in flight — between the request and the card (or the
+    /// model's reply, when the runner hands the request over) a second tap is
+    /// dropped. Cleared by the next message in the chat, or after 20 s.
     @State private var planRequestPending = false
 
     // Swap-exercise sheet (driven from the preview / runner "Заменить").
@@ -131,9 +131,8 @@ struct ChatView: View {
         drafts = []
     }
 
-    /// A command picked from the list. Payne's `/workout` is answered here like
-    /// his plan chip: today's card is requested (built by the runner, no model)
-    /// or opened. Everything else — and `/workout` on a day already trained — is
+    /// A command picked from the list. Payne's `/workout` is answered here:
+    /// today's card is requested (built by the runner, no model) or opened. Everything else — and `/workout` on a day already trained — is
     /// sent to the agent, whose host swaps it for a direct skill call.
     private func runCommand(_ command: BotCommand) {
         if command.action == "today_plan" {
@@ -160,7 +159,7 @@ struct ChatView: View {
         ExerciseImageResolution.url(slug: slug, live: live, snapshot: plan, cache: coordinator.imageCache)
     }
 
-    /// A plan card's action — from the card itself or from Payne's plan chip:
+    /// A plan card's action — from the card itself or from Payne's `/workout`:
     /// resume the paused workout this card started, else open its preview.
     private func openPlanCard(_ plan: WorkoutPlan, messageId: String) {
         if let record = activeWorkoutRecord, record.messageId == messageId {
@@ -275,50 +274,6 @@ struct ChatView: View {
         activeWorkout = WorkoutPresentation(
             plan: record.plan, phase: .running, coord: wc, messageId: record.messageId
         )
-    }
-
-    /// Payne's "plan for today" chip above the input — see `TodayPlanChip`.
-    @ViewBuilder
-    private var todayPlanChip: some View {
-        switch TodayPlanChip.state(messages: visibleMessages, today: TodayPlanChip.localDate()) {
-        case .request:
-            planChipButton(title: "План на сегодня", icon: "figure.strengthtraining.traditional", busy: planRequestPending) {
-                requestTodayPlan()
-            }
-            .disabled(!ws.isConnected || planRequestPending)
-        case .open(let plan, let messageId):
-            let resuming = activeWorkoutRecord?.messageId == messageId
-            planChipButton(title: resuming ? "Продолжить тренировку" : "Начать тренировку", icon: "play.fill", busy: false) {
-                openPlanCard(plan, messageId: messageId)
-            }
-        case .hidden:
-            EmptyView()
-        }
-    }
-
-    private func planChipButton(title: String, icon: String, busy: Bool, action: @escaping () -> Void) -> some View {
-        HStack {
-            Spacer()
-            Button(action: action) {
-                HStack(spacing: Theme.scaled(6)) {
-                    if busy {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: icon)
-                    }
-                    Text(title)
-                        .font(.system(size: Theme.fontSubhead, weight: .semibold))
-                }
-                .foregroundStyle(Theme.accent)
-                .padding(.horizontal, Theme.scaled(12))
-                .padding(.vertical, Theme.scaled(7))
-                .background(Theme.accent.opacity(0.15))
-                .clipShape(Capsule())
-            }
-            .accessibilityLabel(title)
-        }
-        .padding(.horizontal, Theme.scaled(8))
-        .padding(.top, Theme.scaled(6))
     }
 
     /// Filter the shared workout bus to coach texts WITHOUT a `set_ref` so
@@ -526,11 +481,6 @@ struct ChatView: View {
                     .padding(.top, Theme.scaled(6))
                 }
                 .accessibilityLabel("Остановить")
-            }
-
-            // MARK: – Payne's plan chip (the empty state offers the same as a starter)
-            if active.active == .payne && !visibleMessages.isEmpty {
-                todayPlanChip
             }
 
             // MARK: – Input (always visible — empty state shows orb+satellites above)
@@ -784,7 +734,7 @@ struct ChatView: View {
         .onChange(of: ws.stackReady) {
             if ws.stackReady { loadActiveWorkoutRecord() }
         }
-        // The plan card (or Payne's reply) arrived — the plan chip stops spinning.
+        // The plan card (or Payne's reply) arrived — a new request may go out.
         .onChange(of: visibleMessages.count) {
             planRequestPending = false
         }
