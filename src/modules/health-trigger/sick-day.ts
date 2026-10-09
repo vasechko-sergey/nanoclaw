@@ -273,8 +273,12 @@ function readPriorSickDayCheck(
  */
 const SCORE_WORSENED_BY = 1.0;
 
-/** One `sick_day_check` row into the session's inbound DB. */
-function writeCheck(agentGroupId: string, sessionId: string, payload: unknown): void {
+/**
+ * One `sick_day_check` row into the session's inbound DB. The agent reads only
+ * `text`, so the payload goes there as JSON; the top-level fields stay for
+ * `readPriorSickDayCheck`. Without `text` Greg woke to an empty message.
+ */
+function writeCheck(agentGroupId: string, sessionId: string, payload: Record<string, unknown>): void {
   writeSessionMessage(agentGroupId, sessionId, {
     id: `sickday-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     kind: 'chat',
@@ -282,7 +286,7 @@ function writeCheck(agentGroupId: string, sessionId: string, payload: unknown): 
     platformId: 'host-sick-day',
     channelType: 'system',
     threadId: null,
-    content: JSON.stringify(payload),
+    content: JSON.stringify({ ...payload, text: JSON.stringify(payload), sender: 'system', senderId: 'system' }),
     sourceSessionId: null,
     a2aHops: 0,
   });

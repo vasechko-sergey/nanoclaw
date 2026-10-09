@@ -95,6 +95,12 @@ describe('sickDayCheck', () => {
     const content = JSON.parse(callArg[2].content);
     expect(content.kind).toBe('sick_day_check');
     expect(content.signal.rhr_delta_pct).toBeGreaterThan(0);
+    // The agent sees only `text`: without it Greg woke to an empty
+    // <message> on all 17 alarms of Sep–Oct 2026.
+    const { text, sender, senderId, ...payload } = content;
+    expect(JSON.parse(text)).toEqual(payload);
+    expect(sender).toBe('system');
+    expect(senderId).toBe('system');
     expect(wakeContainer).toHaveBeenCalledOnce();
   });
 
@@ -286,6 +292,7 @@ describe('sickDayCheck', () => {
     expect(content.retracted).toBe(true);
     expect(content.detection.date).toBe(rows[13].date);
     expect(content.prior).toEqual({ matched: 2, score: 3.75 });
+    expect(JSON.parse(content.text)).toMatchObject({ kind: 'sick_day_check', retracted: true });
     expect(wakeContainer).toHaveBeenCalledOnce();
   });
 
