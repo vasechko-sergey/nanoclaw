@@ -40,7 +40,8 @@ struct MarkdownText: View {
                                     .font(.system(size: fontSize))
                                     .foregroundStyle(Theme.accent)
                                     .frame(minWidth: Theme.scaled(10))
-                                inlineMarkdown(item)
+                                    .fixedSize()
+                                listItemText(item)
                             }
                         }
                     }
@@ -52,7 +53,8 @@ struct MarkdownText: View {
                                     .font(.system(size: fontSize))
                                     .foregroundStyle(Theme.accent)
                                     .frame(minWidth: Theme.scaled(18), alignment: .trailing)
-                                inlineMarkdown(item)
+                                    .fixedSize()
+                                listItemText(item)
                             }
                         }
                     }
@@ -61,7 +63,7 @@ struct MarkdownText: View {
                         RoundedRectangle(cornerRadius: 1)
                             .fill(Theme.accentMedium)
                             .frame(width: 2)
-                        inlineMarkdown(content)
+                        listItemText(content)
                             .foregroundStyle(Theme.textPrimary.opacity(0.7))
                     }
                     .padding(.leading, Theme.scaled(2))
@@ -84,6 +86,17 @@ struct MarkdownText: View {
             Text(content)
                 .font(.system(size: fontSize))
         }
+    }
+
+    /// Text beside a list marker or a quote bar. In the chat list's self-sizing
+    /// cells such text came out a line or two short and ended in «…» (a Payne
+    /// reply 2026-10-09: "Грудь и с…"); paragraphs, outside an HStack, never
+    /// did. It always takes the full height its lines need, and the full width
+    /// left beside the marker.
+    private func listItemText(_ content: String) -> some View {
+        inlineMarkdown(content)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: – Memoized inline AttributedString
