@@ -2014,6 +2014,48 @@ describe('follow-ups are acked with the turn, not on push', () => {
     expect(ackStatus('m1')).toBe('completed');
     expect(ackStatus('f1')).toBe('completed');
   });
+
+  it('gives a follow-up turn its own factuality bounces', async () => {
+    // Scrooge, 2026-10-02: one long query spent both bounces on its first turn,
+    // and every later answer went straight out with the "could not verify"
+    // footer instead of being bounced — seven in a row.
+    const { markProcessing } = await import('./db/messages-in.js');
+    seedDest();
+    markProcessing(['m1']);
+
+    const first = '<message to="family">Итого 4088500 ₽</message>';
+    const second = '<message to="family">Остаток 7311200 ₽</message>';
+    const grounded = '<message to="family">Проверил по выписке — сходится</message>';
+    const query: AgentQuery = {
+      push: () => {},
+      end: () => {},
+      abort: () => {},
+      events: {
+        async *[Symbol.asyncIterator]() {
+          yield { type: 'init', continuation: 'c1' } as ProviderEvent;
+          yield { type: 'result', text: first } as ProviderEvent; // bounce 1
+          yield { type: 'result', text: first } as ProviderEvent; // bounce 2
+          yield { type: 'result', text: first } as ProviderEvent; // spent → delivered with the footer
+          // The person writes again once that answer is out.
+          insertMessage('f1', 'chat', { text: 'а остаток?' });
+          await new Promise((r) => setTimeout(r, 1200));
+          yield { type: 'result', text: second } as ProviderEvent; // must bounce, not ship with the footer
+          yield { type: 'result', text: grounded } as ProviderEvent;
+        },
+      },
+    };
+
+    await processQuery(query, routing, ['m1'], 'mock', true, new Set(), 1, []);
+
+    const rows = getOutboundDb().prepare('SELECT content FROM messages_out ORDER BY seq').all() as {
+      content: string;
+    }[];
+    const texts = rows.map((r) => JSON.parse(r.content).text as string);
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toContain('4088500');
+    expect(texts[0]).toContain('⚠️');
+    expect(texts[1]).toBe('Проверил по выписке — сходится');
+  });
 });
 
 /**

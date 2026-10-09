@@ -106,6 +106,18 @@ const FACTUALITY_MAX_RETRIES = 2;
 const GROUNDING_TEXT_BUDGET = 32000;
 
 /**
+ * A hedge goes inside the reply's last <message> block. Appended after the
+ * closing tag it was scratch outside every block — dropped, so a reply the gate
+ * gave up on went out with no warning at all (none reached a person in
+ * Sep–Oct 2026).
+ */
+export function withHedge(text: string, hedge: string): string {
+  const close = text.lastIndexOf('</message>');
+  if (close < 0) return `${text}\n\n${hedge}`;
+  return `${text.slice(0, close).trimEnd()}\n\n${hedge}${text.slice(close)}`;
+}
+
+/**
  * Wording of every factuality bounce: `problem` is what the check found, `fix`
  * what to do about it. Under the gate a reply is HELD until the verdict, so a
  * bounced reply never reached the user — but the agent wrote a <message> block,
@@ -924,6 +936,12 @@ export async function processQuery(
         // judged on what THIS turn delivered.
         resultReceived = false;
         resetUserFacingDispatch();
+        // The gate's bounce budget is per turn too: left over from an earlier
+        // turn, a spent budget sent every later answer out with the "could not
+        // verify" footer instead of bouncing it (scrooge, 2026-10-02: seven).
+        factualityRetries = 0;
+        proseRetries = 0;
+        l3Retries = 0;
         query.push(prompt);
         // Fold follow-up user numbers into the grounding set too.
         if (gateOn) {
@@ -1380,11 +1398,14 @@ export async function processQuery(
               }
               if (!proseBounced && !l3Bounced) {
                 const finalText = !verdict.grounded
-                  ? `${event.text}\n\n⚠️ Часть чисел выше я не смог подтвердить по источнику — перепроверь перед использованием.`
+                  ? withHedge(event.text, '⚠️ Часть чисел выше я не смог подтвердить по источнику — перепроверь перед использованием.')
                   : proseHedge
-                    ? `${event.text}\n\n⚠️ Факты не проверены (проверяльщик недоступен).`
+                    ? withHedge(event.text, '⚠️ Факты не проверены (проверяльщик недоступен).')
                     : l3Hedge.length > 0
-                      ? `${event.text}\n\n⚠️ Эти утверждения я не смог подтвердить — перепроверь: ${l3Hedge.map((c) => `"${c}"`).join(', ')}.`
+                      ? withHedge(
+                          event.text,
+                          `⚠️ Эти утверждения я не смог подтвердить — перепроверь: ${l3Hedge.map((c) => `"${c}"`).join(', ')}.`,
+                        )
                       : event.text;
                 const { hasUnwrapped, rejects } = dispatchResultText(finalText, routing, dispatchedKeys);
                 const rejectsThisTurn = turnRejects.concat(rejects);
