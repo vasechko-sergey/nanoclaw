@@ -376,6 +376,39 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertNil(coord.plan.exercises[0].weightKgTarget)
     }
 
+    /// The set card re-seeds its weight wheel when `currentExerciseKey` changes.
+    /// A swap replaces the exercise in place — the index stays — so the card,
+    /// which re-seeded on the index alone, kept the replaced exercise's weight:
+    /// 20 кг of dumbbells on a hammer press prescribed 65 (2026-10-13).
+    func test_applySwap_ofCurrentExercise_changesKeyAndSeedsNewTarget() throws {
+        let queue = try makeQueue()
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "Верх Б", week: 4, intensityLabel: "разгрузочная",
+            exercises: [ExercisePlan(exerciseSlug: "zhim-ganteley", targetSets: 4, targetReps: "10-12",
+                                     targetRir: 2, restSec: 120, weightKgTarget: 20)],
+            imageManifest: []
+        )
+        let coord = WorkoutCoordinator(plan: plan, queue: queue)
+        coord.logSet(reps: 12, weight: 20, repsInReserve: 2)
+        let before = coord.currentExerciseKey
+        coord.applySwap(originalSlug: "zhim-ganteley", newSlug: "zhim-hammer", newWeightTarget: 65)
+        XCTAssertNotEqual(coord.currentExerciseKey, before)
+        let seeded = WorkoutRunnerLogic.defaultWeight(
+            target: coord.currentExercise.weightKgTarget,
+            lastLogged: coord.loggedForCurrentExercise.last?.weight)
+        XCTAssertEqual(seeded, 65)
+    }
+
+    /// Swapping an exercise the cursor is NOT on must leave the key alone — a
+    /// re-seed would throw away the weight already dialled in for the current set.
+    func test_applySwap_ofAnotherExercise_keepsCurrentExerciseKey() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2), queue: queue)
+        let before = coord.currentExerciseKey
+        coord.applySwap(originalSlug: "ex-1", newSlug: "ex-1-alt", newWeightTarget: 40)
+        XCTAssertEqual(coord.currentExerciseKey, before)
+    }
+
     /// applySwap preserves the SLOT (target sets / reps / rest) but never the
     /// work: sets already logged belong to the exercise that was replaced.
     func test_applySwap_preservesSlotFieldsAndDisplacesLoggedSets() throws {

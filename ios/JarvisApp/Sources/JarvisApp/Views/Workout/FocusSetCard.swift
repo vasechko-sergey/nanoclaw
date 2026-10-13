@@ -45,7 +45,7 @@ struct FocusSetCard: View {
         }
         .onAppear(perform: prefill)
         .onChange(of: coordinator.currentSetIdx) { _, _ in prefillKeepWeight() }
-        .onChange(of: coordinator.currentExerciseIdx) { _, _ in prefill() }
+        .onChange(of: coordinator.currentExerciseKey) { _, _ in prefill() }
     }
 
     @ViewBuilder

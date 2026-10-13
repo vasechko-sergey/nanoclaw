@@ -83,6 +83,13 @@ final class WorkoutCoordinator: ObservableObject {
         logged[currentExerciseIdx].sets
     }
 
+    /// Changes whenever a different exercise is under the cursor — moved to, or
+    /// swapped in at the same index. The set card re-seeds its wheels on it; keyed
+    /// on the index alone, a swap left the replaced exercise's weight on the wheel.
+    var currentExerciseKey: String {
+        "\(currentExerciseIdx)|\(currentExercise.exerciseSlug)"
+    }
+
     var totalExercises: Int { plan.exercises.count }
 
     /// Every set logged this session, work displaced by a swap included — the
@@ -301,8 +308,8 @@ final class WorkoutCoordinator: ObservableObject {
             // The prescription belongs to the exercise, not the slot: keeping
             // the replaced one's weight showed 30 kg for a cable row pulled at
             // 60 and made every set register as a weight deviation. No
-            // prescription from the server → no target; the wheel then seeds
-            // from the last logged set and the deviation detector stays quiet.
+            // prescription from the server → no target; the set card re-seeds
+            // its wheel (`currentExerciseKey`) and the deviation detector stays quiet.
             weightKgTarget: newWeightTarget
         )
         var newExercises = plan.exercises
