@@ -694,33 +694,41 @@ final class WebSocketClientV2 {
             let caption = row.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !caption.isEmpty {
                 var t = ChatMessage.text(row.id + "-text", role: role, text: row.text, timestamp: timestamp)
+                t.rowId = row.id
+                t.feedback = row.feedback
                 t.deliveryStatus = mapDelivery(row.status)
                 t.agentId = row.agentId
                 t.edited = row.edited
                 out.append(t)
             }
 
-            // Attachment bubble keeps the bare `row.id` so delivery-status
-            // updates (looked up by stored row id) still land on it.
-            var attMsg: ChatMessage
-            if first.kind == "image", let sha = first.sha256,
-               let thumb = ChatImageStore.shared.thumbnail(sha: sha) {
-                // New path: 480px thumbnail from the file store; tap resolves
-                // the full-res original via `imageSHA`.
-                attMsg = ChatMessage.image(row.id, role: role, image: thumb, filename: first.name, timestamp: timestamp)
-                attMsg.imageSHA = sha
-            } else if first.kind == "image", let b64 = first.bytes_base64,
-                      let image = cachedDownsampledImage(rowId: row.id, base64: b64) {
-                // Legacy un-migrated row: inline base64 → 720px decode (as before).
-                attMsg = ChatMessage.image(row.id, role: role, image: image, filename: first.name, timestamp: timestamp)
-            } else {
-                let info = FileInfo(name: first.name, size: Int64(first.byte_size),
-                                    mimeType: first.mime_type, url: nil, thumbnail: nil)
-                attMsg = ChatMessage.file(row.id, role: role, info: info, timestamp: timestamp)
+            // One bubble per attachment — a message sent with three photos
+            // shows all three. The first keeps the bare `row.id` so delivery-
+            // status updates (looked up by stored row id) still land on it; the
+            // rest are `<row>-attN`. Each carries `rowId` for row actions.
+            for (i, att) in atts.enumerated() {
+                let id = i == 0 ? row.id : "\(row.id)-att\(i)"
+                var attMsg: ChatMessage
+                if att.kind == "image", let sha = att.sha256,
+                   let thumb = ChatImageStore.shared.thumbnail(sha: sha) {
+                    // New path: 480px thumbnail from the file store; tap resolves
+                    // the full-res original via `imageSHA`.
+                    attMsg = ChatMessage.image(id, role: role, image: thumb, filename: att.name, timestamp: timestamp)
+                    attMsg.imageSHA = sha
+                } else if att.kind == "image", let b64 = att.bytes_base64,
+                          let image = cachedDownsampledImage(rowId: id, base64: b64) {
+                    // Legacy un-migrated row: inline base64 → 720px decode (as before).
+                    attMsg = ChatMessage.image(id, role: role, image: image, filename: att.name, timestamp: timestamp)
+                } else {
+                    let info = FileInfo(name: att.name, size: Int64(att.byte_size),
+                                        mimeType: att.mime_type, url: nil, thumbnail: nil)
+                    attMsg = ChatMessage.file(id, role: role, info: info, timestamp: timestamp)
+                }
+                attMsg.rowId = row.id
+                attMsg.deliveryStatus = mapDelivery(row.status)
+                attMsg.agentId = row.agentId
+                out.append(attMsg)
             }
-            attMsg.deliveryStatus = mapDelivery(row.status)
-            attMsg.agentId = row.agentId
-            out.append(attMsg)
             return out
         }
 

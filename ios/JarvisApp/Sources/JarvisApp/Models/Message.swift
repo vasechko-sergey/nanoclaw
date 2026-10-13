@@ -62,6 +62,11 @@ enum DeliveryStatus: String, Codable {
 
 struct ChatMessage: Identifiable {
     let id: String
+    /// The stored `messages` row this bubble came from. One row can map to
+    /// several bubbles (caption + one per attachment, ids `<row>-text`,
+    /// `<row>-attN`), so row-level actions like retry use this, not `id`.
+    /// nil = the bubble id IS the row id.
+    var rowId: String? = nil
     let role: Role
     let content: Content
     let timestamp: Date

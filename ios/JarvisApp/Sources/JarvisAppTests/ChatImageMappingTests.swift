@@ -40,6 +40,36 @@ final class ChatImageMappingTests: XCTestCase {
         XCTAssertNil(msgs[0].imageSHA)   // legacy → no store ref yet
     }
 
+    /// A message sent with three photos (and a caption) must show all three,
+    /// not just the first. Every bubble points back at the stored row so a
+    /// failed send can be retried from any of them.
+    func test_severalAttachments_eachGetsABubble() throws {
+        let shas = [jpeg(), jpeg(red: 0.5), jpeg(red: 0.2)].map { ChatImageStore.shared.write($0) }
+        XCTAssertEqual(Set(shas).count, 3)
+        let items = shas.enumerated().map { i, sha in
+            "{\"kind\":\"image\",\"name\":\"p\(i).jpg\",\"mime_type\":\"image/jpeg\",\"byte_size\":3,\"sha256\":\"\(sha)\"}"
+        }
+        let json = "[" + items.joined(separator: ",") + ",{\"kind\":\"file\",\"name\":\"doc.pdf\",\"mime_type\":\"application/pdf\",\"byte_size\":10,\"sha256\":\"abc\"}]"
+        let row = StoredMessage(id: "r1", dir: .out, seq: 1, text: "Смотри", attachmentsJSON: json,
+                                contextJSON: nil, status: .failed, failureReason: nil,
+                                ts: 1_700_000_000_000, serverTS: nil, createdAt: 1_700_000_000_000,
+                                agentId: "payne")
+
+        let msgs = WebSocketClientV2.toChatMessage(row)
+
+        guard msgs.count == 5 else {   // caption + 3 photos + 1 document
+            return XCTFail("expected 5 bubbles, got \(msgs.count)")
+        }
+        XCTAssertEqual(Set(msgs.map(\.id)).count, 5, "bubble ids must be unique")
+        guard case .text = msgs[0].content else { return XCTFail("caption first") }
+        XCTAssertEqual(msgs[1].id, "r1", "first attachment keeps the bare row id")
+        XCTAssertEqual(msgs[1...3].map(\.imageSHA), shas)
+        guard case .file(let info) = msgs[4].content else { return XCTFail("expected file content") }
+        XCTAssertEqual(info.name, "doc.pdf")
+        XCTAssertTrue(msgs.allSatisfy { $0.rowId == "r1" })
+        XCTAssertTrue(msgs.allSatisfy { $0.deliveryStatus == .failed })
+    }
+
     func test_fileRef_buildsFileBubble() throws {
         let json = "[{\"kind\":\"file\",\"name\":\"doc.pdf\",\"mime_type\":\"application/pdf\",\"byte_size\":10,\"sha256\":\"abc\"}]"
         let msgs = WebSocketClientV2.toChatMessage(row(attachmentsJSON: json))
@@ -92,9 +122,10 @@ final class ChatImageMappingTests: XCTestCase {
         else { return XCTFail("garbage workoutPlanJSON should fall through to text") }
     }
 
-    private func jpeg() -> Data {
+    private func jpeg(red: CGFloat = 0) -> Data {
         let r = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
-        return r.image { ctx in UIColor.blue.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }
+        let color = red == 0 ? UIColor.blue : UIColor(red: red, green: 0, blue: 1, alpha: 1)
+        return r.image { ctx in color.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }
             .jpegData(compressionQuality: 0.8)!
     }
 }

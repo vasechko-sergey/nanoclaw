@@ -208,7 +208,7 @@ struct MessageRow: View {
                 .foregroundStyle(Theme.timestamp)
             if isUser {
                 DeliveryChecks(status: message.deliveryStatus, onRetryTap: {
-                    onRetry?(message.id)
+                    onRetry?(message.rowId ?? message.id)
                 })
             }
             if !isUser && message.feedback != .none {
@@ -236,13 +236,13 @@ struct MessageRow: View {
                 // Toggle: tapping the lit thumb clears it, else set it. Emits the
                 // resulting state so the parent persists every transition; the
                 // host send fires only on a set (ChatView gates on `!= .none`).
-                onFeedback?(message.id, message.feedback == .up ? .none : .up)
+                onFeedback?(message.rowId ?? message.id, message.feedback == .up ? .none : .up)
             } label: {
                 Label(message.feedback == .up ? "Убрать оценку" : "Полезно",
                       systemImage: message.feedback == .up ? "hand.thumbsup.fill" : "hand.thumbsup")
             }
             Button {
-                onFeedback?(message.id, message.feedback == .down ? .none : .down)
+                onFeedback?(message.rowId ?? message.id, message.feedback == .down ? .none : .down)
             } label: {
                 Label(message.feedback == .down ? "Убрать оценку" : "Не полезно",
                       systemImage: message.feedback == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown")

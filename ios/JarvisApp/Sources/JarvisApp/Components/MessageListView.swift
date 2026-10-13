@@ -295,7 +295,7 @@ struct MessageListView: UIViewRepresentable {
             guard let item = dataSource.itemIdentifier(for: indexPath),
                   case .message(let id) = item,
                   let msg = messagesById[id], msg.role == .assistant else { return }
-            parent.onMessageRead(id)
+            parent.onMessageRead(msg.rowId ?? id)
         }
 
         // MARK: Keyboard — re-pin to newest if we were at the bottom
