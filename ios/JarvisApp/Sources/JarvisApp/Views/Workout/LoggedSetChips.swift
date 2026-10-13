@@ -13,6 +13,8 @@ struct LoggedSetChips: View {
     var onDeleteSet: (Int) -> Void = { _ in }
     /// Correct the set at this index → (setIdx, reps, weight, repsInReserve).
     var onEditSet: (Int, Int, Double, Int) -> Void = { _, _, _, _ in }
+    /// Correct a timed set's held time → (setIdx, seconds).
+    var onEditDuration: (Int, Int) -> Void = { _, _ in }
 
     @State private var tappedIdx: Int? = nil    // coach-hint sheet
     @State private var actionIdx: Int? = nil    // изменить / удалить action sheet
@@ -39,7 +41,9 @@ struct LoggedSetChips: View {
             titleVisibility: .visible
         ) {
             if let idx = actionIdx, logged.indices.contains(idx) {
-                Button("Изменить вес или повторы") { editIdx = idx; actionIdx = nil }
+                Button(logged[idx].durationSec != nil ? "Изменить время" : "Изменить вес или повторы") {
+                    editIdx = idx; actionIdx = nil
+                }
                 if logged[idx].coachHint != nil {
                     Button("Показать совет Пейна") { tappedIdx = idx; actionIdx = nil }
                 }
@@ -78,7 +82,12 @@ struct LoggedSetChips: View {
             get: { editIdx != nil },
             set: { if !$0 { editIdx = nil } }
         )) {
-            if let idx = editIdx, logged.indices.contains(idx) {
+            if let idx = editIdx, logged.indices.contains(idx), let held = logged[idx].durationSec {
+                EditHoldSheet(seconds: held, setNumber: idx + 1) { seconds in
+                    onEditDuration(idx, seconds)
+                    editIdx = nil
+                }
+            } else if let idx = editIdx, logged.indices.contains(idx) {
                 EditSetSheet(set: logged[idx], setNumber: idx + 1) { reps, weight, rir in
                     onEditSet(idx, reps, weight, rir)
                     editIdx = nil
@@ -98,7 +107,11 @@ struct LoggedSetChips: View {
             actionIdx = idx
         } label: {
             HStack(spacing: 4) {
-                Text("✓ \(set.reps)×\(WorkoutSetFormat.weight(set.weight))")
+                if let held = set.durationSec {
+                    Text("✓ \(WorkoutSetFormat.duration(held))")
+                } else {
+                    Text("✓ \(set.reps)×\(WorkoutSetFormat.weight(set.weight))")
+                }
                 if !set.deviations.isEmpty {
                     // Prominent enough to catch the eye mid-set: 14pt bubble in a
                     // filled 20pt accent circle, not a 10pt tint that blends in.
@@ -119,6 +132,51 @@ struct LoggedSetChips: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Correct the held time of an already-logged timed set (plank, warmup walk):
+/// the same minutes / seconds wheels as the live card, prefilled.
+private struct EditHoldSheet: View {
+    let setNumber: Int
+    let onSave: (Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var minutes: Int
+    @State private var seconds: Int
+
+    init(seconds held: Int, setNumber: Int, onSave: @escaping (Int) -> Void) {
+        self.setNumber = setNumber
+        self.onSave = onSave
+        let snapped = WorkoutRunnerLogic.holdSeconds(TimeInterval(held))
+        _minutes = State(initialValue: snapped / 60)
+        _seconds = State(initialValue: snapped % 60)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Подход \(setNumber)").font(.headline).foregroundStyle(Theme.textPrimary)
+                .padding(.top, 4)
+            HoldWheels(minutes: $minutes, seconds: $seconds)
+            Button {
+                Theme.hapticSend()
+                onSave(max(minutes * 60 + seconds, 5))
+                dismiss()
+            } label: {
+                Text("Сохранить").font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(Capsule().fill(Theme.accent))
+            }
+            Button("Отмена") { dismiss() }
+                .foregroundStyle(.white.opacity(0.6)).font(.subheadline)
+        }
+        .padding(16)
+        .preferredColorScheme(.dark)
+        .presentationDetents([.height(320), .medium])
+        .presentationBackground(Theme.background)
+        .presentationDragIndicator(.visible)
+        .accessibilityIdentifier("edit-hold-sheet")
     }
 }
 

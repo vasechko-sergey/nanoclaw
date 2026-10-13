@@ -10,6 +10,9 @@ import UIKit
 struct WorkoutView: View {
     @StateObject var coordinator: WorkoutCoordinator
     @StateObject var restTimer = RestTimer()
+    /// Stopwatch for timed sets (plank, warmup). Lives here, not in the card, so
+    /// a hold keeps running while the user swipes to look at another exercise.
+    @StateObject var holdTimer = HoldTimer()
     @Environment(\.scenePhase) private var scenePhase
 
     /// Resolve a slug to a local cached image URL (shared with inbound prefetch).
@@ -58,6 +61,7 @@ struct WorkoutView: View {
             Button("Прервать", role: .destructive) {
                 coordinator.abort()
                 restTimer.skip()
+                holdTimer.reset()
                 onClose(nil)
             }
             Button("Отмена", role: .cancel) {}
@@ -73,6 +77,7 @@ struct WorkoutView: View {
                 onDone: { feeling, label in
                     let session = coordinator.complete(sessionFeeling: feeling, sessionFeelingLabel: label)
                     restTimer.skip()
+                    holdTimer.reset()
                     showFinish = false
                     onClose(session)
                 }
@@ -80,9 +85,12 @@ struct WorkoutView: View {
         }
         .onAppear { previewIdx = coordinator.currentExerciseIdx; onAppearPrefetch() }
         .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
+        // A hold belongs to the exercise it was started on.
+        .onChange(of: coordinator.currentExerciseKey) { _, _ in holdTimer.reset() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 restTimer.refresh()
+                holdTimer.refresh()
                 // Blend 1+3: the phone was likely lying down during rest, so the
                 // card alone can go unseen. Re-announce an unread deviation hint
                 // with a haptic the moment the user picks the phone back up.
@@ -123,22 +131,16 @@ struct WorkoutView: View {
                 RecommendationPanel(exercise: preview, coachHint: coachHint)
 
                 if previewIdx == coordinator.currentExerciseIdx {
-                    if coordinator.currentExercise.isDuration {
-                        DurationCard(exercise: coordinator.currentExercise, onDone: advance)
-                            .padding(.horizontal, 16).padding(.top, 12)
+                    if coordinator.currentExercise.isTimed {
+                        VStack(spacing: 10) {
+                            loggedChips
+                            TimedSetCard(coordinator: coordinator, holdTimer: holdTimer,
+                                         restTimer: restTimer, onWarmupDone: advance)
+                        }
+                        .padding(.horizontal, 16).padding(.top, 10)
                     } else {
                         VStack(spacing: 10) {
-                            LoggedSetChips(
-                                logged: coordinator.loggedForCurrentExercise,
-                                currentSetIdx: coordinator.currentSetIdx,
-                                targetSets: coordinator.currentExercise.targetSets,
-                                onDeleteSet: { setIdx in
-                                    coordinator.deleteSet(exerciseIdx: coordinator.currentExerciseIdx, setIdx: setIdx)
-                                },
-                                onEditSet: { setIdx, reps, weight, rir in
-                                    coordinator.editSet(exerciseIdx: coordinator.currentExerciseIdx,
-                                                        setIdx: setIdx, reps: reps, weight: weight, repsInReserve: rir)
-                                })
+                            loggedChips
                             // Deviation hint (coach_message WITH set_ref) lands here,
                             // right above the input, so it's read before the next set.
                             if let hint = coordinator.activeDeviationHint {
@@ -158,6 +160,24 @@ struct WorkoutView: View {
                 toolbar
             }
         }
+    }
+
+    private var loggedChips: some View {
+        LoggedSetChips(
+            logged: coordinator.loggedForCurrentExercise,
+            currentSetIdx: coordinator.currentSetIdx,
+            targetSets: coordinator.currentExercise.targetSets,
+            onDeleteSet: { setIdx in
+                coordinator.deleteSet(exerciseIdx: coordinator.currentExerciseIdx, setIdx: setIdx)
+            },
+            onEditSet: { setIdx, reps, weight, rir in
+                coordinator.editSet(exerciseIdx: coordinator.currentExerciseIdx,
+                                    setIdx: setIdx, reps: reps, weight: weight, repsInReserve: rir)
+            },
+            onEditDuration: { setIdx, seconds in
+                coordinator.editTimedSet(exerciseIdx: coordinator.currentExerciseIdx,
+                                         setIdx: setIdx, seconds: seconds)
+            })
     }
 
     private var pinnedHeader: some View {

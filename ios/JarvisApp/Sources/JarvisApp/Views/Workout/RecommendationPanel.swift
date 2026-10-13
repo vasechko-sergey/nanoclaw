@@ -36,9 +36,19 @@ struct RecommendationPanel: View {
             Image(systemName: "bolt.fill").font(.system(size: 11)).foregroundStyle(copper)
             Text("ПЕЙН").font(.caption2).foregroundStyle(copper)
             if let w = exercise.weightKgTarget { chip("\(WorkoutSetFormat.weight(w)) кг") }
-            if exercise.targetSets > 0 { chip("\(exercise.targetSets)×\(exercise.targetReps)") }
-            chip("запас \(exercise.targetRir)")
-            if exercise.restSec > 0 { chip(restLabel(exercise.restSec)) }
+            if exercise.isTimedSets {
+                chip("\(exercise.targetSets)×\(WorkoutSetFormat.duration(exercise.durationSec ?? 0))")
+            } else if exercise.isDuration {
+                chip("цель \(WorkoutSetFormat.duration(exercise.durationSec ?? 0))")
+            } else if exercise.targetSets > 0 {
+                chip("\(exercise.targetSets)×\(exercise.targetReps)")
+            }
+            // A held time has no reps, so no reserve either (the warmup showed «запас 0»).
+            if !exercise.isTimed { chip("запас \(exercise.targetRir)") }
+            // Next to a hold time a bare «1:00» reads as another hold — name it.
+            if exercise.restSec > 0 {
+                chip(exercise.isTimed ? "отдых \(restLabel(exercise.restSec))" : restLabel(exercise.restSec))
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)

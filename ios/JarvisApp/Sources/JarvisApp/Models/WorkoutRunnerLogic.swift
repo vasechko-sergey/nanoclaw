@@ -90,6 +90,23 @@ enum WorkoutRunnerLogic {
     /// Reps wheel choices.
     static let repsOptions = Array(1...30)
 
+    /// Hold-time wheels (plank, warmup walk): minutes and 5-second steps.
+    static let holdMinuteOptions = Array(0...59)
+    static let holdSecondOptions = Array(stride(from: 0, through: 55, by: 5))
+
+    /// A stopwatch reading as the wheels can show it: nearest 5 s, at least 5 s,
+    /// at most 59:55.
+    static func holdSeconds(_ elapsed: TimeInterval) -> Int {
+        let snapped = Int((elapsed / 5).rounded()) * 5
+        return min(max(snapped, 5), 59 * 60 + 55)
+    }
+
+    /// Wheel start for a timed set: the time just held on this exercise, else
+    /// Payne's target, else a minute.
+    static func defaultHold(target: Int?, lastLogged: Int?) -> Int {
+        lastLogged ?? target ?? 60
+    }
+
     /// One cell of the top progress bar — one per exercise, equal width.
     struct ProgressSegment: Equatable {
         enum Kind: Equatable { case done, active, skipped, upcoming }

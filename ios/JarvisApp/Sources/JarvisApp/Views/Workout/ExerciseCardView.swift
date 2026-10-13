@@ -33,6 +33,10 @@ struct ExerciseCardView: View {
                     Text("Длительность \(WorkoutSetFormat.duration(exercise.durationSec ?? 0))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                } else if exercise.isTimedSets {
+                    Text("\(exercise.targetSets) × \(WorkoutSetFormat.duration(exercise.durationSec ?? 0)) · отдых \(exercise.restSec) сек")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 } else {
                     Text("\(exercise.targetSets) × \(exercise.targetReps) · запас \(exercise.targetRir) повторов · отдых \(exercise.restSec) сек")
                         .font(.footnote)

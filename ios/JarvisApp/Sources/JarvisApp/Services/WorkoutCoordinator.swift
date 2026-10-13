@@ -178,6 +178,29 @@ final class WorkoutCoordinator: ObservableObject {
         persist()
     }
 
+    /// Log a held time on the current exercise — a plank set, or the warmup walk
+    /// (the runner then advances past it). No `set_log`: that wire carries reps
+    /// and weight, a timed set has no deviation for Payne to answer mid-workout,
+    /// and the time reaches him in `workout_complete.full_session_json`.
+    func logTimedSet(seconds: Int, ts: Date = Date()) {
+        guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }
+        activeDeviationHint = nil
+        logged[currentExerciseIdx].sets.append(
+            LoggedSet(reps: 0, weight: 0, repsInReserve: 0, ts: ts, durationSec: seconds)
+        )
+        currentSetIdx += 1
+        persist()
+    }
+
+    /// Correct the time of an already-logged timed set. Local-only, like `editSet`.
+    func editTimedSet(exerciseIdx: Int, setIdx: Int, seconds: Int) {
+        guard !isFinished,
+              logged.indices.contains(exerciseIdx),
+              logged[exerciseIdx].sets.indices.contains(setIdx) else { return }
+        logged[exerciseIdx].sets[setIdx].durationSec = seconds
+        persist()
+    }
+
     /// Mark current exercise done and advance — or signal end of workout.
     func finishExercise(comment: String?) {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }

@@ -28,6 +28,15 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
     /// Timed exercise (treadmill, warmup) — show a duration card, not set logging.
     var isDuration: Bool { targetSets <= 0 && (durationSec ?? 0) > 0 }
 
+    /// Measured in seconds rather than reps × weight: the warmup above, or a
+    /// plank / isometric hold done in sets (`isTimedSets`). Logged with the
+    /// hold timer and the minutes:seconds wheels.
+    var isTimed: Bool { (durationSec ?? 0) > 0 }
+
+    /// Sets of a held time (plank, isometric hold) — `target_sets` > 0 plus
+    /// `duration_seconds`, no rep target and no weight.
+    var isTimedSets: Bool { targetSets > 0 && isTimed }
+
     /// Russian name when present; else a capitalized, de-hyphenated slug
     /// (so the UI never shows raw transliteration like "zhim shtangi lezha").
     var displayName: String {
@@ -160,6 +169,9 @@ struct LoggedSet: Codable, Equatable {
     /// surfaces each one to Payne instead of hiding all but the first.
     var deviations: [WorkoutRunnerLogic.SetDeviation]
     var coachHint: String?
+    /// Held time of a timed set (plank, hold, the warmup walk), seconds. nil on
+    /// a reps × weight set; on a timed one reps/weight/reserve are 0.
+    var durationSec: Int?
 
     enum CodingKeys: String, CodingKey {
         case reps, weight
@@ -169,12 +181,14 @@ struct LoggedSet: Codable, Equatable {
         /// Legacy single-object key (pre-array builds / hand-written fixtures).
         case deviation
         case coachHint = "coach_hint"
+        case durationSec = "duration_seconds"
     }
 
     init(reps: Int, weight: Double, repsInReserve: Int, ts: Date,
-         deviations: [WorkoutRunnerLogic.SetDeviation] = [], coachHint: String? = nil) {
+         deviations: [WorkoutRunnerLogic.SetDeviation] = [], coachHint: String? = nil,
+         durationSec: Int? = nil) {
         self.reps = reps; self.weight = weight; self.repsInReserve = repsInReserve; self.ts = ts
-        self.deviations = deviations; self.coachHint = coachHint
+        self.deviations = deviations; self.coachHint = coachHint; self.durationSec = durationSec
     }
 
     // Custom decode so a JSON that omits `deviations` (Payne's session records,
@@ -195,6 +209,7 @@ struct LoggedSet: Codable, Equatable {
             deviations = []
         }
         coachHint = try c.decodeIfPresent(String.self, forKey: .coachHint)
+        durationSec = try c.decodeIfPresent(Int.self, forKey: .durationSec)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -207,6 +222,7 @@ struct LoggedSet: Codable, Equatable {
         // "deviations present ⇒ something to say" contract reads cleanly.
         if !deviations.isEmpty { try c.encode(deviations, forKey: .deviations) }
         try c.encodeIfPresent(coachHint, forKey: .coachHint)
+        try c.encodeIfPresent(durationSec, forKey: .durationSec)
     }
 }
 

@@ -58,7 +58,7 @@ struct WorkoutPreviewView: View {
             header
             progressDots
             TabView(selection: $page) {
-                ForEach(Array(plan.exercises.enumerated()), id: \.element.id) { idx, exercise in
+                ForEach(Array(plan.exercises.enumerated()), id: \.offset) { idx, exercise in
                     ScrollView {
                         ExerciseCardView(
                             exercise: exercise,
