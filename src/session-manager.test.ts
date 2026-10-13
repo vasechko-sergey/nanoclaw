@@ -418,6 +418,34 @@ describe('inbound attachment extraction + safety', () => {
     expect(parsed.attachments[0].name).toBe('Statement.pdf');
   });
 
+  it('keeps every same-named attachment of one message (iOS names a photo batch by the second)', () => {
+    // The photo picker names each photo `photo-<unix seconds>.jpg`, so three
+    // photos picked together share one name. Each must still land on disk.
+    const photos = ['one', 'two', 'three'].map((s) => ({
+      name: 'photo-1791696792.jpg',
+      mime_type: 'image/jpeg',
+      bytes_base64: Buffer.from(s).toString('base64'),
+    }));
+    writeSessionMessage(TEST_AG, SESSION_ID, {
+      id: 'msg-batch',
+      kind: 'chat',
+      timestamp: now(),
+      content: JSON.stringify({ text: '', attachments: photos }),
+    });
+
+    const parsed = JSON.parse(storedContent('msg-batch'));
+    expect(parsed.attachments.map((a: { localPath: string }) => a.localPath)).toEqual([
+      'inbox/msg-batch/photo-1791696792.jpg',
+      'inbox/msg-batch/photo-1791696792 (2).jpg',
+      'inbox/msg-batch/photo-1791696792 (3).jpg',
+    ]);
+    const dir = path.join(sessionDir(TEST_AG, SESSION_ID), 'inbox', 'msg-batch');
+    expect(fs.readFileSync(path.join(dir, 'photo-1791696792.jpg'), 'utf8')).toBe('one');
+    expect(fs.readFileSync(path.join(dir, 'photo-1791696792 (2).jpg'), 'utf8')).toBe('two');
+    expect(fs.readFileSync(path.join(dir, 'photo-1791696792 (3).jpg'), 'utf8')).toBe('three');
+    expect(parsed.attachments.every((a: { bytes_base64?: string }) => a.bytes_base64 === undefined)).toBe(true);
+  });
+
   it('leaves non-JSON content untouched', () => {
     writeSessionMessage(TEST_AG, SESSION_ID, {
       id: 'plain',

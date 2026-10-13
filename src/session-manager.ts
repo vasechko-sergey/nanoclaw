@@ -389,6 +389,11 @@ function extractAttachmentFiles(
   }
 
   let changed = false;
+  // Names this message already wrote. One message can carry several files
+  // under the same name (the iOS photo picker names a batch by the second;
+  // two banks both export "Statement.pdf"). Each gets its own `name (N).ext`
+  // instead of the second tripping the wx guard and silently vanishing.
+  const written = new Set<string>();
   for (const att of attachments) {
     // Base64 bytes arrive as `data` (Chat SDK adapters) or `bytes_base64`
     // (ios-app v2 protocol). Accept either.
@@ -397,7 +402,7 @@ function extractAttachmentFiles(
     if (b64 === null) continue;
 
     const rawName = deriveAttachmentName(att);
-    const filename = isSafeAttachmentName(rawName) ? rawName : `attachment-${Date.now()}`;
+    const filename = uniqueName(isSafeAttachmentName(rawName) ? rawName : `attachment-${Date.now()}`, written);
     if (filename !== rawName) {
       log.warn('Refused unsafe attachment filename, would escape inbox', {
         messageId,
@@ -451,6 +456,7 @@ function extractAttachmentFiles(
       throw err;
     }
 
+    written.add(filename);
     att.name = filename;
     att.localPath = `inbox/${messageId}/${filename}`;
     delete att.data;
@@ -460,6 +466,17 @@ function extractAttachmentFiles(
   }
 
   return changed ? JSON.stringify(parsed) : contentStr;
+}
+
+/** `name` if this message hasn't written it yet, else `stem (N).ext` with the first free N. */
+function uniqueName(name: string, written: Set<string>): string {
+  if (!written.has(name)) return name;
+  const ext = path.extname(name);
+  const stem = ext ? name.slice(0, -ext.length) : name;
+  for (let n = 2; ; n++) {
+    const candidate = `${stem} (${n})${ext}`;
+    if (!written.has(candidate)) return candidate;
+  }
 }
 
 /** Open the inbound DB for a session (host reads/writes). */
