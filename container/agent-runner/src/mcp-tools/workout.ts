@@ -139,7 +139,7 @@ export const workoutCoach: McpToolDefinition = {
   tool: {
     name: 'workout.coach',
     description:
-      'Short in-workout message. Goes to the workout UI, not the chat scroll. Use sparingly: PR, missed-set pattern, fatigue cue. If replying to a deviating set, include set_ref so iOS anchors the reply on that set chip. Default to silence.',
+      'Short in-workout message. Goes to the workout screen, which covers the chat until the workout ends — mid-workout this is the only place the user reads you. Say what to do, never ask: the workout screen has no way to reply, so keep a question for the post-workout summary. Use sparingly: PR, missed-set pattern, fatigue cue. If replying to a deviating set, include set_ref so iOS anchors the reply on that set chip. Default to silence.',
     inputSchema: {
       type: 'object' as const,
       properties: {

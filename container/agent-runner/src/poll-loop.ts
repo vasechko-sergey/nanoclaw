@@ -8,7 +8,7 @@ import { writeMessageOut, resetUserFacingDispatch, getUserFacingDispatchCount } 
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
 import { shouldTouchHeartbeat } from './heartbeat-throttle.js';
 import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
-import { clearCurrentInReplyTo, setCurrentInReplyTo } from './current-batch.js';
+import { clearCurrentInReplyTo, getCurrentLiveWorkout, setCurrentInReplyTo, setCurrentLiveWorkout } from './current-batch.js';
 import {
   formatMessages,
   extractRouting,
@@ -23,7 +23,7 @@ import { awaitingQuestionIds } from './mcp-tools/awaiting-questions.js';
 // Single source of truth for the exercise-image dir + extension priority, shared
 // with workout.start_plan's image_manifest auto-derive (exercise-images.ts).
 import { DEFAULT_EXERCISES_DIR, IMAGE_EXTS } from './exercise-images.js';
-import { buildPlan, defaultPlanPaths, readinessFor, sendWorkoutPlan, type PlanPaths } from './workout-plan.js';
+import { buildPlan, defaultPlanPaths, readinessFor, sendWorkoutPlan, writeWorkoutOut, type PlanPaths } from './workout-plan.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 import type { FactualityLevel } from './config.js';
 import { extractDataNumbers } from './verification/numbers.js';
@@ -159,6 +159,37 @@ export function isWorkoutEventRow(m: MessageInRow): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Workout events the iOS app sends while its workout screen is up. That screen
+ * covers the chat, so a reply to them belongs on it. Left out on purpose:
+ * workout_start_request (the chat's plan button) and intro_request (an empty
+ * thread) come from the chat; workout_complete / workout_abort close the screen.
+ */
+const LIVE_WORKOUT_EVENTS: ReadonlySet<string> = new Set([
+  'set_log',
+  'exercise_done',
+  'exercise_swap_request',
+  'exercise_swap_confirm',
+]);
+
+/**
+ * The workout a turn's rows come from when every one of them is a live workout
+ * event of that one workout — else null (any chat row, a closed screen, two
+ * workouts, no rows).
+ */
+export function liveWorkoutIdOf(rows: MessageInRow[]): string | null {
+  let workoutId: string | null = null;
+  for (const m of rows) {
+    if (!isWorkoutEventRow(m)) return null;
+    const { event, payload } = JSON.parse(m.content) as { event?: string; payload?: { workout_id?: unknown } };
+    const id = payload?.workout_id;
+    if (!LIVE_WORKOUT_EVENTS.has(event ?? '') || typeof id !== 'string' || id === '') return null;
+    if (workoutId !== null && workoutId !== id) return null;
+    workoutId = id;
+  }
+  return workoutId;
 }
 
 /**
@@ -589,6 +620,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // Publish the batch's in_reply_to so MCP tools (send_message, send_file)
     // can stamp it on outbound rows — needed for a2a return-path routing.
     setCurrentInReplyTo(routing.inReplyTo);
+    setCurrentLiveWorkout(liveWorkoutIdOf(keep));
     let leaveForRetry = false;
     let streamStalled = false;
     try {
@@ -662,6 +694,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       }
     } finally {
       clearCurrentInReplyTo();
+      setCurrentLiveWorkout(null);
     }
 
     if (leaveForRetry) {
@@ -896,6 +929,13 @@ export async function processQuery(
           await serveAgentCommands(serveWorkoutStartRequests(serveImageRequests(dispatchSystemReplies(pending))))
         ).filter((m) => m.kind !== 'system' || isWorkoutEventRow(m) || isUnclaimedQuestionResponse(m));
         if (newMessages.length === 0) return;
+        // The outer loop's accumulate gate, applied to follow-ups too:
+        // trigger=0 rows (an on-plan set, an accumulate-policy group message)
+        // are context, not a turn. Left pending, they ride along with the next
+        // trigger=1 row. Pushed on their own while the query stayed open, each
+        // on-plan set cost Payne a model turn — and on 2026-10-13 one of those
+        // turns sent a chat message about a set that needed no reply.
+        if (!newMessages.some((m) => m.trigger === 1)) return;
 
         const newIds = newMessages.map((m) => m.id);
         markProcessing(newIds);
@@ -936,6 +976,7 @@ export async function processQuery(
         // judged on what THIS turn delivered.
         resultReceived = false;
         resetUserFacingDispatch();
+        setCurrentLiveWorkout(liveWorkoutIdOf(keep));
         // The gate's bounce budget is per turn too: left over from an earlier
         // turn, a spent budget sent every later answer out with the "could not
         // verify" footer instead of bouncing it (scrooge, 2026-10-02: seven).
@@ -1954,6 +1995,17 @@ function sendToDestination(
   routing: RoutingContext,
   kind?: string | null,
 ): void {
+  // Mid-workout the workout screen covers the chat: a message to the phone
+  // would land where the user can't see it (Payne, 2026-10-13: swap notes and
+  // a «Тянет?» read only after the workout). Put it on the screen's coach line
+  // instead; with the screen closed the app files a coach line into the chat
+  // itself, so nothing is lost.
+  const liveWorkout = getCurrentLiveWorkout();
+  if (liveWorkout && dest.type === 'channel' && dest.channelType === 'ios-app-v2') {
+    writeWorkoutOut({ type: 'coach_message', payload: { workout_id: liveWorkout, text: body } });
+    log(`Workout ${liveWorkout} is live — message to "${dest.name}" sent to the workout screen`);
+    return;
+  }
   const platformId = dest.type === 'channel' ? dest.platformId! : dest.agentGroupId!;
   const channelType = dest.type === 'channel' ? dest.channelType! : 'agent';
   // Resolve thread_id per-destination from the most recent inbound message

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from './db/connection.js';
 import { getPendingMessages, markCompleted, markProcessing, type MessageInRow } from './db/messages-in.js';
-import { getUndeliveredMessages } from './db/messages-out.js';
+import { getUndeliveredMessages, getUserFacingDispatchCount, resetUserFacingDispatch } from './db/messages-out.js';
 import { formatMessages, extractRouting, type RoutingContext } from './formatter.js';
 import {
   dispatchSystemReplies,
@@ -22,7 +22,9 @@ import {
   flushOpenBlock,
   buildRejectNudge,
   processQuery,
+  liveWorkoutIdOf,
 } from './poll-loop.js';
+import { setCurrentLiveWorkout } from './current-batch.js';
 import { MockProvider } from './providers/mock.js';
 import type { AgentQuery, ProviderEvent } from './providers/types.js';
 import { requestContextTool, onContextResponse } from './mcp-tools/request_context.js';
@@ -2404,5 +2406,200 @@ describe('a stream that stalls after a tool call', () => {
     expect(result.streamStalled).toBe(true);
     expect(ackStatus('m1')).toBe('completed');
     expect(outText()).toContain('stream stalled');
+  });
+});
+
+/**
+ * 2026-10-13: mid-workout Payne answered swaps and sets in the chat — hidden
+ * behind the workout screen, so his swap notes and a «Тянет?» were read only
+ * after the workout. Two causes: a reply to a workout event went wherever its
+ * <message> was addressed (the chat), and an on-plan set (trigger=0) arriving
+ * while the query was still open got a model turn of its own.
+ */
+describe('mid-workout replies', () => {
+  const routing: RoutingContext = { platformId: null, channelType: null, threadId: null, inReplyTo: null };
+  const base = {
+    seq: 1,
+    timestamp: '2026-10-13T02:24:38Z',
+    status: 'pending',
+    process_after: null,
+    recurrence: null,
+    tries: 0,
+    trigger: 1,
+    platform_id: null,
+    channel_type: null,
+    thread_id: null,
+    source_session_id: null,
+  };
+  const event = (id: string, name: string, payload: object): MessageInRow =>
+    ({ ...base, id, kind: 'system', content: JSON.stringify({ subtype: 'workout_event', event: name, payload, tag: 'workout' }) }) as MessageInRow;
+  const setLog = (id: string, workoutId = '2026-10-13') =>
+    event(id, 'set_log', { workout_id: workoutId, exercise_slug: 'obratnaya-babochka', set_idx: 0, reps: 15, weight: 35 });
+
+  function seedPhone(): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES ('sergei-iphone', 'sergei-iphone', 'channel', 'ios-app-v2', 'ios-app-v2:default', NULL)`,
+      )
+      .run();
+  }
+
+  function outRows(): Array<{ kind: string; content: string }> {
+    return getOutboundDb().prepare('SELECT kind, content FROM messages_out ORDER BY seq').all() as Array<{
+      kind: string;
+      content: string;
+    }>;
+  }
+
+  function ackStatus(id: string): string | undefined {
+    return (
+      getOutboundDb().prepare('SELECT status FROM processing_ack WHERE message_id = ?').get(id) as
+        | { status: string }
+        | undefined
+    )?.status;
+  }
+
+  function insertEvent(id: string, name: string, payload: object, trigger: 0 | 1): void {
+    insertMessage(id, 'system', { subtype: 'workout_event', event: name, payload, tag: 'workout' }, { trigger });
+  }
+
+  // Holds the stream open past the 500ms follow-up poll, recording pushes.
+  function openQuery(pushes: string[], tail: ProviderEvent[] = [], holdMs = 1200): AgentQuery {
+    return {
+      push: (m: string) => pushes.push(m),
+      end: () => {},
+      abort: () => {},
+      events: {
+        async *[Symbol.asyncIterator]() {
+          yield { type: 'init', continuation: 'c1' } as ProviderEvent;
+          await new Promise((r) => setTimeout(r, holdMs));
+          for (const e of tail) yield e;
+        },
+      },
+    };
+  }
+
+  afterEach(() => setCurrentLiveWorkout(null));
+
+  describe('liveWorkoutIdOf', () => {
+    it('names the workout when the turn answers only sets and swaps', () => {
+      const rows = [
+        setLog('a'),
+        event('b', 'exercise_swap_request', { workout_id: '2026-10-13', exercise_slug: 'zhim-ganteley-lezha' }),
+        event('c', 'exercise_swap_confirm', { workout_id: '2026-10-13', original_slug: 'x', new_slug: 'y' }),
+        event('d', 'exercise_done', { workout_id: '2026-10-13', exercise_slug: 'x' }),
+      ];
+      expect(liveWorkoutIdOf(rows)).toBe('2026-10-13');
+    });
+
+    it('is null once the workout screen has closed', () => {
+      expect(liveWorkoutIdOf([setLog('a'), event('b', 'workout_complete', { workout_id: '2026-10-13' })])).toBeNull();
+      expect(liveWorkoutIdOf([event('b', 'workout_abort', { workout_id: '2026-10-13' })])).toBeNull();
+    });
+
+    it('is null for events sent from the chat (plan button, empty thread)', () => {
+      expect(liveWorkoutIdOf([event('a', 'workout_start_request', { date: '2026-10-13' })])).toBeNull();
+      expect(liveWorkoutIdOf([event('a', 'intro_request', {})])).toBeNull();
+    });
+
+    it('is null when the user also wrote in the chat', () => {
+      const chat = { ...base, id: 'c', kind: 'chat', content: JSON.stringify({ text: 'локоть ок' }) } as MessageInRow;
+      expect(liveWorkoutIdOf([setLog('a'), chat])).toBeNull();
+    });
+
+    it('is null for no rows or for two different workouts', () => {
+      expect(liveWorkoutIdOf([])).toBeNull();
+      expect(liveWorkoutIdOf([setLog('a', '2026-10-12'), setLog('b', '2026-10-13')])).toBeNull();
+    });
+  });
+
+  it('puts a message to the phone on the workout screen while a workout is live', () => {
+    seedPhone();
+    setCurrentLiveWorkout('2026-10-13');
+    dispatchResultText('<message to="sergei-iphone">Локоть тянет — сбрось вес.</message>', routing, new Set());
+    const rows = outRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('control');
+    expect(JSON.parse(rows[0].content)).toEqual({
+      type: 'coach_message',
+      payload: { workout_id: '2026-10-13', text: 'Локоть тянет — сбрось вес.' },
+    });
+  });
+
+  it('counts the coach line as delivered, so the turn is not retried as silent', () => {
+    seedPhone();
+    setCurrentLiveWorkout('2026-10-13');
+    resetUserFacingDispatch();
+    dispatchResultText('<message to="sergei-iphone">Сбрось вес.</message>', routing, new Set());
+    expect(getUserFacingDispatchCount()).toBe(1);
+  });
+
+  it('keeps the chat when no workout is live', () => {
+    seedPhone();
+    dispatchResultText('<message to="sergei-iphone">Готово · Верх Б</message>', routing, new Set());
+    const rows = outRows();
+    expect(rows[0].kind).toBe('chat');
+    expect(JSON.parse(rows[0].content)).toEqual({ text: 'Готово · Верх Б' });
+  });
+
+  it('does not push an on-plan set into an open query', async () => {
+    markProcessing(['m1']);
+    insertEvent('s1', 'set_log', { workout_id: '2026-10-13', exercise_slug: 'obratnaya-babochka', set_idx: 0 }, 0);
+    const pushes: string[] = [];
+
+    await processQuery(openQuery(pushes, [{ type: 'result', text: '<internal>молчу</internal>' }]), routing, ['m1'], 'mock');
+
+    expect(pushes).toHaveLength(0);
+    expect(ackStatus('s1')).toBeUndefined();
+  });
+
+  it('an on-plan set rides along with the next waking event', async () => {
+    markProcessing(['m1']);
+    insertEvent('s1', 'set_log', { workout_id: '2026-10-13', exercise_slug: 'x', set_idx: 0 }, 0);
+    insertEvent('s2', 'set_log', { workout_id: '2026-10-13', exercise_slug: 'x', set_idx: 1, deviations: [{ kind: 'failure' }] }, 1);
+    const pushes: string[] = [];
+
+    await processQuery(openQuery(pushes, [{ type: 'result', text: '<internal>ок</internal>' }]), routing, ['m1'], 'mock');
+
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0]).toContain('"set_idx":0');
+    expect(pushes[0]).toContain('"set_idx":1');
+  });
+
+  it('a follow-up workout event moves the reply to the workout screen', async () => {
+    seedPhone();
+    markProcessing(['m1']);
+    insertEvent('s1', 'exercise_swap_request', { workout_id: '2026-10-13', exercise_slug: 'zhim-ganteley-lezha' }, 1);
+    const reply = '<message to="sergei-iphone">Первым стоит хамер.</message>';
+
+    await processQuery(
+      openQuery([], [{ type: 'assistant_text', text: reply }, { type: 'result', text: reply }]),
+      routing,
+      ['m1'],
+      'mock',
+    );
+
+    const rows = outRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('control');
+    expect(JSON.parse(rows[0].content).payload).toEqual({ workout_id: '2026-10-13', text: 'Первым стоит хамер.' });
+  });
+
+  it('a follow-up chat message moves the reply back to the chat', async () => {
+    seedPhone();
+    setCurrentLiveWorkout('2026-10-13');
+    markProcessing(['m1']);
+    insertMessage('c1', 'chat', { text: 'Ну всё ещё побаливает' });
+    const reply = '<message to="sergei-iphone">Больно в пояснице или в локте?</message>';
+
+    await processQuery(
+      openQuery([], [{ type: 'assistant_text', text: reply }, { type: 'result', text: reply }]),
+      routing,
+      ['m1'],
+      'mock',
+    );
+
+    expect(outRows()[0].kind).toBe('chat');
   });
 });

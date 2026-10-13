@@ -27,3 +27,19 @@ export function getCurrentInReplyTo(): string | null {
   return currentInReplyTo;
 }
 
+/**
+ * The workout the user is in the middle of, when the current turn answers only
+ * live workout events (a logged set, a swap) — null otherwise. The workout
+ * screen then covers the chat, so text for the user goes to the screen's coach
+ * line instead (poll-loop `sendToDestination`). Set per turn: for the initial
+ * batch and again for every follow-up pushed into the open query.
+ */
+let currentLiveWorkout: string | null = null;
+
+export function setCurrentLiveWorkout(workoutId: string | null): void {
+  currentLiveWorkout = workoutId;
+}
+
+export function getCurrentLiveWorkout(): string | null {
+  return currentLiveWorkout;
+}

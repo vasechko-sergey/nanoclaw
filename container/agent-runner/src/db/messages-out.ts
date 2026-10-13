@@ -49,7 +49,9 @@ export interface WriteMessageOut {
  *
  * Status pings (`{"type":"status"}`) are progress signals, not answers, so
  * they do not count — a turn that only emitted "working on it…" then stalled
- * should still get the fallback.
+ * should still get the fallback. A workout coach line (`coach_message`
+ * control row) does count: it is the user's answer mid-workout, when a
+ * <message> to the phone goes to the workout screen instead of the chat.
  */
 let userFacingDispatchCount = 0;
 
@@ -94,9 +96,18 @@ export function getUserFacingDispatchCount(): number {
 }
 
 function isUserFacing(msg: WriteMessageOut): boolean {
+  if (msg.kind === 'control') return isCoachLine(msg.content);
   if (msg.kind !== 'chat') return false;
   if (msg.content.includes('"type":"status"')) return false;
   return true;
+}
+
+function isCoachLine(content: string): boolean {
+  try {
+    return (JSON.parse(content) as { type?: unknown }).type === 'coach_message';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -145,14 +156,15 @@ export function writeMessageOut(msg: WriteMessageOut): number {
   const outbound = getOutboundDb();
 
   // Recent-duplicate suppression (see DEDUP_WINDOW_SECONDS). Immediate
-  // (non-scheduled) user-facing rows only: scheduled sends (deliver_after) and
-  // non-user-facing rows (status pings, system kinds) legitimately recur, and
-  // a file send can't be told from its re-render (see carriesFiles).
+  // (non-scheduled) user-facing chat rows only: scheduled sends (deliver_after)
+  // and non-user-facing rows (status pings, system kinds) legitimately recur, a
+  // file send can't be told from its re-render (see carriesFiles), and a coach
+  // line is a control row the double-send this guards against never produces.
   // Matched against outbound.db so it spans BOTH the poll-loop process (which
   // writes <message> blocks) and the MCP subprocess (which writes send_message)
   // — a module-level set could not. IFNULL() so a NULL channel/platform/thread
   // matches another NULL rather than never matching.
-  if (userFacing && !msg.deliver_after && !carriesFiles(msg.content)) {
+  if (userFacing && msg.kind === 'chat' && !msg.deliver_after && !carriesFiles(msg.content)) {
     const prior = outbound
       .prepare(
         `SELECT seq FROM messages_out
