@@ -20,8 +20,16 @@ enum WorkoutRunnerLogic {
     /// Default weight for a set: Payne's target, else last logged, else 20 kg,
     /// rounded to the wheel step.
     static func defaultWeight(target: Double?, lastLogged: Double?) -> Double {
-        let raw = target ?? lastLogged ?? 20
-        return (raw / weightStep).rounded() * weightStep
+        wheelWeight(target ?? lastLogged ?? 20)
+    }
+
+    /// A weight the wheel can actually show: on the step, within 0…300. A
+    /// Picker whose selection matches no row DISPLAYS the first row but KEEPS
+    /// the value — Payne's −5 for pull-ups (2026-09-28) showed as 0 and was
+    /// logged as −5. Everything that seeds the wheel goes through here.
+    static func wheelWeight(_ w: Double) -> Double {
+        let snapped = (w / weightStep).rounded() * weightStep
+        return min(max(snapped, weightOptions.first ?? 0), weightOptions.last ?? 300)
     }
 
     /// All selectable wheel weights, 0…300 kg by `weightStep`.

@@ -15,6 +15,16 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertEqual(WorkoutRunnerLogic.defaultWeight(target: nil, lastLogged: nil), 20)
     }
 
+    /// 2026-09-28: Payne prescribed −5 for pull-ups; the wheel (0…300) showed 0
+    /// but held −5, and three sets went to the log at −5 untouched.
+    func test_wheelSeed_staysOnTheWheel() {
+        XCTAssertEqual(WorkoutRunnerLogic.defaultWeight(target: -10, lastLogged: nil), 0)
+        XCTAssertEqual(WorkoutRunnerLogic.defaultWeight(target: nil, lastLogged: -5), 0)
+        XCTAssertEqual(WorkoutRunnerLogic.defaultWeight(target: 400, lastLogged: nil), 300)
+        XCTAssertEqual(WorkoutRunnerLogic.wheelWeight(-5), 0)
+        XCTAssertEqual(WorkoutRunnerLogic.wheelWeight(47.3), 47.5)
+    }
+
     func test_setLabel_bonusPastTarget() {
         XCTAssertEqual(WorkoutRunnerLogic.setLabel(currentSetIdx: 1, targetSets: 4), "подход 2 из 4")
         XCTAssertEqual(WorkoutRunnerLogic.setLabel(currentSetIdx: 3, targetSets: 3), "бонусный подход")

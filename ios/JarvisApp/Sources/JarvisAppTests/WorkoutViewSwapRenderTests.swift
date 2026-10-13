@@ -75,6 +75,55 @@ final class WorkoutViewSwapRenderTests: XCTestCase {
         XCTAssertEqual(wheelValue(after, title: "Вес"), "65", "after: \(after)")
     }
 
+    /// The bug as the user met it: a minus prescription, the wheel left alone,
+    /// «Записать подход» — the logged weight must be what the wheel shows.
+    func test_minusPrescription_untouchedWheel_logsZero() throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        let plan = WorkoutPlan(
+            workoutId: "w1", dayName: "Верх А", week: 2, intensityLabel: "средняя",
+            exercises: [
+                ExercisePlan(exerciseSlug: "podtyagivaniya", targetSets: 4, targetReps: "6-8",
+                             targetRir: 1, restSec: 180, nameRu: "Подтягивания", weightKgTarget: -10),
+            ],
+            imageManifest: []
+        )
+        let coord = WorkoutCoordinator(plan: plan, queue: SetLogQueue(writer: dbq))
+        let view = WorkoutView(
+            coordinator: coord,
+            imageResolver: { _ in nil },
+            coachMessages: Empty<String, Never>().eraseToAnyPublisher(),
+            onClose: { _ in },
+            onSwap: { _ in }
+        )
+        let host = UIHostingController(rootView: view)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        spin()
+        XCTAssertEqual(wheelValue(texts(in: host.view), title: "Вес"), "0")
+        let record = try XCTUnwrap(element(in: host.view, label: "Записать подход"))
+        XCTAssertTrue(record.accessibilityActivate())
+        spin()
+        XCTAssertEqual(coord.loggedForCurrentExercise.map(\.weight), [0])
+    }
+
+    private func element(in root: NSObject, label: String) -> NSObject? {
+        if root.accessibilityLabel == label { return root }
+        if let els = root.accessibilityElements as? [NSObject] {
+            for e in els { if let hit = element(in: e, label: label) { return hit } }
+        } else {
+            let n = root.accessibilityElementCount()
+            if n > 0 && n != NSNotFound {
+                for i in 0..<n {
+                    if let e = root.accessibilityElement(at: i) as? NSObject, let hit = element(in: e, label: label) { return hit }
+                }
+            }
+        }
+        if let v = root as? UIView { for s in v.subviews { if let hit = element(in: s, label: label) { return hit } } }
+        return nil
+    }
+
     /// The value the wheel titled `title` exposes ("Вес" → "value:65").
     private func wheelValue(_ texts: [String], title: String) -> String? {
         guard let i = texts.firstIndex(of: title), texts.indices.contains(i + 1),

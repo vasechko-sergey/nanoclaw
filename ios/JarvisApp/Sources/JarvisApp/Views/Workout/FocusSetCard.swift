@@ -100,7 +100,7 @@ struct FocusSetCard: View {
     private func prefillKeepWeight() {
         let prev = coordinator.loggedForCurrentExercise.last
         reps = min(max(prev?.reps ?? reps, 1), 30)
-        if let w = prev?.weight { weight = w }
+        if let w = prev?.weight { weight = WorkoutRunnerLogic.wheelWeight(w) }
         rir = WorkoutRunnerLogic.snapRir(coordinator.currentExercise.targetRir)
     }
 }

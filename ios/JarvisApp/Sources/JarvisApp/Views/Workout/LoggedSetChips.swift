@@ -200,7 +200,7 @@ private struct EditSetSheet: View {
         self.setNumber = setNumber
         self.onSave = onSave
         _reps = State(initialValue: set.reps)
-        _weight = State(initialValue: set.weight)
+        _weight = State(initialValue: WorkoutRunnerLogic.wheelWeight(set.weight))
         _rir = State(initialValue: set.repsInReserve)
     }
 
