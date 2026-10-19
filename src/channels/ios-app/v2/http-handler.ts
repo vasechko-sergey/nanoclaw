@@ -31,24 +31,26 @@ import { join } from 'node:path';
 import type { ChannelSetup } from '../../adapter.js';
 import type { ImageCache } from './image-cache.js';
 import { HealthUploadBody } from '../../../../shared/ios-app-protocol/index.js';
-import type { HealthUploadDay } from '../../../../shared/ios-app-protocol/index.js';
-import { sickDayCheck } from '../../../modules/health-trigger/sick-day.js';
+import { sickDayCheck, type SickDayRow } from '../../../modules/health-trigger/sick-day.js';
 import { noteDeviceTz } from '../../../modules/person-tz/index.js';
 import { readEnvFile } from '../../../env.js';
 import { userMemoryRoot, userGlobalRoot } from '../../../user-memory.js';
 import { appendHealthHistory } from './health-ingest.js';
 import { healthRequestsDir, isSafeRequestId, scanHealthRequestFiles } from './health-requests-scan.js';
-import { openHealthDb, readHealthDays } from './health-db.js';
+import { openHealthDb, readHealthDays, readNightPulse } from './health-db.js';
 import type { HealthRequestsStore } from './health-requests-store.js';
 import type { OutboundQueueRow } from './types.js';
 import { parseProfile } from './profiles.js';
 
-function loadAllHealthRows(agentRoot: string): HealthUploadDay[] {
+function loadAllHealthRows(agentRoot: string): SickDayRow[] {
   const dbPath = join(agentRoot, 'health', 'health.db');
   if (!existsSync(dbPath)) return [];
   const db = openHealthDb(dbPath);
   try {
-    return readHealthDays(db); // already sorted oldest→newest by date
+    // The sick-day rule caps Apple's resting heart rate by the night's pulse,
+    // which lives in the interval buckets, not in health_days.
+    const night = readNightPulse(db);
+    return readHealthDays(db).map((r) => ({ ...r, ...night.get(r.date) })); // oldest→newest by date
   } finally {
     db.close();
   }

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   openHealthDb,
+  readNightPulse,
   upsertHealthDays,
   readHealthDays,
   upsertHealthIntervals,
@@ -234,5 +235,37 @@ describe('health-db — interval buckets', () => {
     ] as HealthUploadDay[]);
     pruneHealthIntervals(db);
     expect(db.prepare(`SELECT date FROM health_intervals`).all()).toEqual([{ date: today }]);
+  });
+});
+
+describe('health-db — night pulse', () => {
+  const iv = (metric: string, start: number, mean: number, stage: string | null) =>
+    ({ metric, start, min: 30, n: 10, mean, stage }) as never;
+
+  it('reduces the asleep heartRate buckets to a mean and a lowest bucket', () => {
+    const db = openHealthDb(join(mkdtempSync(join(tmpdir(), 'hdb-night-')), 'health.db'));
+    upsertHealthIntervals(db, [
+      {
+        date: '2026-10-17',
+        intervals: [
+          iv('heartRate', 0, 56, 'core'),
+          iv('heartRate', 1, 50, 'deep'),
+          iv('heartRate', 2, 58, 'rem'),
+          iv('heartRate', 3, 53, 'core'),
+          // In bed, awake, and another metric's deep-sleep bucket: none of them is the night's pulse.
+          iv('heartRate', 4, 70, 'inBed'),
+          iv('heartRate', 5, 90, 'awake'),
+          iv('hrv', 1, 40, 'deep'),
+        ],
+      },
+      // Three asleep buckets is a nap's worth, not a night.
+      {
+        date: '2026-10-18',
+        intervals: [iv('heartRate', 0, 55, 'core'), iv('heartRate', 1, 51, 'deep'), iv('heartRate', 2, 57, 'rem')],
+      },
+    ] as HealthUploadDay[]);
+    const night = readNightPulse(db);
+    expect(night.get('2026-10-17')).toEqual({ sleepHr: 54, nightHrMin: 50 });
+    expect(night.has('2026-10-18')).toBe(false);
   });
 });

@@ -188,6 +188,46 @@ export function upsertHealthDays(db: Database.Database, days: HealthUploadDay[])
   tx(days);
 }
 
+// Stages that count as asleep, and the bucket count below which a night's pulse
+// is one nap rather than a night. Mirror of ASLEEP_STAGES / MIN_ASLEEP_BUCKETS in
+// groups/greg/scripts/analyze.js — `inBed` is in neither pool there either.
+const ASLEEP_STAGES = ['core', 'deep', 'rem'];
+const MIN_ASLEEP_BUCKETS = 4;
+
+/**
+ * Night pulse per date, from the asleep heartRate buckets: the night's mean
+ * (`sleepHr`) and its lowest bucket (`nightHrMin`). Mirror of the heart-rate half
+ * of analyze.js:deriveFromIntervals, which derives the same two figures for Greg.
+ *
+ * The sick-day rule needs them because Apple's resting heart rate is a figure for
+ * the calendar day: it is still being recomputed when the morning upload lands,
+ * and it soaks up the hours after a morning workout. The night is finished by the
+ * time the phone uploads it.
+ */
+export function readNightPulse(db: Database.Database): Map<string, { sleepHr: number; nightHrMin: number }> {
+  const rows = db
+    .prepare(
+      `SELECT date, mean FROM health_intervals
+       WHERE metric = 'heartRate' AND stage IN (${ASLEEP_STAGES.map(() => '?').join(', ')})
+       ORDER BY date, bucket_start`,
+    )
+    .all(...ASLEEP_STAGES) as { date: string; mean: number }[];
+  const byDate = new Map<string, number[]>();
+  for (const r of rows) {
+    if (!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date)!.push(r.mean);
+  }
+  const out = new Map<string, { sleepHr: number; nightHrMin: number }>();
+  for (const [date, means] of byDate) {
+    if (means.length < MIN_ASLEEP_BUCKETS) continue;
+    out.set(date, {
+      sleepHr: Math.round(means.reduce((a, b) => a + b, 0) / means.length),
+      nightHrMin: Math.round(Math.min(...means)),
+    });
+  }
+  return out;
+}
+
 export function readHealthDays(db: Database.Database): HealthUploadDay[] {
   const rows = db.prepare('SELECT * FROM health_days ORDER BY date').all() as Record<string, unknown>[];
   return rows.map((r) => {

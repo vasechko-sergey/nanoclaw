@@ -478,6 +478,50 @@ describe('detect — no verdict without resting heart rate', () => {
   });
 });
 
+describe('detect — Apple resting heart rate counts only as far as the night agrees', () => {
+  // quiet(14) plus a night pulse: asleep mean 52, lowest bucket 47.
+  const nights = (n: number) => quiet(n).map((r) => ({ ...r, sleepHr: 52, nightHrMin: 47 }));
+
+  it('a morning surf does not make a sick day (2026-10-17)', () => {
+    // Apple read 72 at 11:21 after a two-hour surf at 07:23 — +23% — over a
+    // night pulse below baseline. The old rule fired on that figure alone.
+    const rows = nights(14);
+    rows.push({ ...rows[0], date: '2026-07-15', restingHeartRate: 75, sleepHr: 51, nightHrMin: 46 });
+    expect(detect(rows)).toBeNull();
+  });
+
+  it('fires at the night pulse when both are up', () => {
+    const rows = nights(14);
+    rows.push({ ...rows[0], date: '2026-07-15', restingHeartRate: 75, sleepHr: 60, nightHrMin: 50 });
+    const d = detect(rows);
+    expect(d).not.toBeNull();
+    expect(d!.fires.rhr).toBe(true);
+    expect(d!.signal.rhr_delta_pct).toBe(23);
+    // max(asleep mean +15.4%, lowest bucket +6.4%)
+    expect(d!.signal.night_hr_delta_pct).toBe(15.4);
+    // Counted at the night's +15.4%, not Apple's +23%. Awake minutes at baseline
+    // are a ratio of 1.0 — half of their 2.0 bar — and add their own share.
+    const rhrPart = (SIGNAL_WEIGHTS.rhr * (((60 - 52) / 52) * 100)) / SICK_DAY_THRESHOLDS.rhrPct;
+    expect(d!.score).toBeCloseTo(rhrPart + SIGNAL_WEIGHTS.awake * 0.5, 2);
+  });
+
+  it('a night pulse above Apple never lifts it', () => {
+    const rows = nights(14);
+    rows.push({ ...rows[0], date: '2026-07-15', restingHeartRate: 66, sleepHr: 68, nightHrMin: 61 });
+    // Counted at Apple's +8.2%: 1.76 × 1.17 = 2.06, under the bar.
+    expect(detect(rows)).toBeNull();
+  });
+
+  it('without night buckets Apple counts as it always did', () => {
+    const rows = quiet(14);
+    rows.push({ ...rows[0], date: '2026-07-15', restingHeartRate: 75 });
+    const d = detect(rows);
+    expect(d).not.toBeNull();
+    expect(d!.fires.rhr).toBe(true);
+    expect(d!.signal.night_hr_delta_pct).toBeNull();
+  });
+});
+
 describe('detect — the subjective channel', () => {
   const withToday = (extra: Partial<HealthUploadDay>) => {
     const rows = quiet(14);

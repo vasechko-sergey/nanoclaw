@@ -63,6 +63,13 @@ const TOTAL_WEIGHT = Object.values(SIGNAL_WEIGHTS).reduce((a, b) => a + b, 0);
 // week. Raising it to 3.5 costs the onset-day detection this rule exists for.
 export const SICK_DAY_SCORE_T = 3.0;
 
+/**
+ * A day as the rule reads it: the stored upload row plus the night's pulse,
+ * derived from the asleep interval buckets (health-db.ts:readNightPulse). Both
+ * night fields are absent on a day with fewer than two hours of staged sleep.
+ */
+export type SickDayRow = HealthUploadDay & { sleepHr?: number; nightHrMin?: number };
+
 function median(xs: number[]): number {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
@@ -81,7 +88,11 @@ interface Detection {
    *  not evidence that is absent. */
   unavailable: string[];
   signal: {
+    /** Apple's resting heart rate against its baseline, as Apple reports it. */
     rhr_delta_pct: number | null;
+    /** The night's pulse against its baseline — the larger of the asleep mean
+     *  and the night's lowest bucket. Caps what `rhr_delta_pct` may count. */
+    night_hr_delta_pct: number | null;
     hrv_delta_pct: number | null;
     temp_delta_c: number | null;
     rr_delta_abs: number | null;
@@ -102,7 +113,7 @@ interface Detection {
   };
 }
 
-export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS): Detection | null {
+export function detect(rows: SickDayRow[], thresholds = SICK_DAY_THRESHOLDS): Detection | null {
   if (!rows || rows.length < 7) return null;
   const today = rows[rows.length - 1];
   const baseline = rows.slice(-15, -1);
@@ -111,10 +122,10 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
   // Mirror of analyze.js:sickDayDetect. Morning HRV is the recovery-grade
   // signal and whole-day SDNN only the fallback — buildRecovery already prefers
   // it, and on 2026-08-11 that difference alone kept this rule silent.
-  const hrvOf = (r: HealthUploadDay): number | null =>
+  const hrvOf = (r: SickDayRow): number | null =>
     typeof r.hrvMorning === 'number' ? r.hrvMorning : typeof r.hrv === 'number' ? r.hrv : null;
 
-  function medOf(pick: (r: HealthUploadDay) => number | null | undefined): number | null {
+  function medOf(pick: (r: SickDayRow) => number | null | undefined): number | null {
     const vs = baseline.map(pick).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
     return vs.length >= 4 ? median(vs) : null;
   }
@@ -140,8 +151,30 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
   const rrDelta = rrMed !== null && todayRr !== null ? todayRr - rrMed : null;
   const awakeRatio = awakeMed !== null && awakeMed > 0 && todayAwake !== null ? todayAwake / awakeMed : null;
 
+  // Apple's resting heart rate counts only as far as the night's pulse agrees.
+  // It is a figure for the calendar day: Apple is still recomputing it when the
+  // morning upload lands, and it absorbs the hours after a morning workout. The
+  // night is finished by then. Calibrated on June–August, when Apple's figure
+  // crossed +7% on 3% of healthy days; on September–October it crossed it on 18%
+  // — a two-hour surf at 07:00 read as +23% (2026-10-17) over a night pulse
+  // below baseline. Of 20 alarms from September to mid-October, 12 do not
+  // survive the cap — all false alarms, logged as such — while the onset day of
+  // the one real episode (2026-08-10) fires with or without it. The cap never
+  // lifts the figure: a night pulse above Apple's adds nothing. With no night
+  // buckets the rule falls back to Apple's figure as it stood before.
+  const sleepHrMed = medOf((r) => r.sleepHr);
+  const nightMinMed = medOf((r) => r.nightHrMin);
+  const todaySleepHr = num(today.sleepHr);
+  const todayNightMin = num(today.nightHrMin);
+  const nightDeltas = [
+    sleepHrMed && todaySleepHr !== null ? ((todaySleepHr - sleepHrMed) / sleepHrMed) * 100 : null,
+    nightMinMed && todayNightMin !== null ? ((todayNightMin - nightMinMed) / nightMinMed) * 100 : null,
+  ].filter((d): d is number => d !== null);
+  const nightDelta = nightDeltas.length ? Math.max(...nightDeltas) : null;
+  const pulseDelta = rhrDelta === null ? null : nightDelta === null ? rhrDelta : Math.min(rhrDelta, nightDelta);
+
   const fires = {
-    rhr: rhrDelta !== null && rhrDelta >= thresholds.rhrPct,
+    rhr: pulseDelta !== null && pulseDelta >= thresholds.rhrPct,
     hrv: hrvDelta !== null && hrvDelta <= -thresholds.hrvPct,
     temp: tempDelta !== null && tempDelta >= thresholds.tempC,
     rr: rrDelta !== null && rrDelta >= thresholds.rrAbs,
@@ -173,7 +206,7 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
   // carry the whole score. `awakeRatio` is already a ratio against its own 2.0
   // threshold, so it normalises the same way as the differences.
   const ex: Record<string, number | null> = {
-    rhr: rhrDelta === null ? null : Math.max(0, rhrDelta / thresholds.rhrPct),
+    rhr: pulseDelta === null ? null : Math.max(0, pulseDelta / thresholds.rhrPct),
     hrv: hrvDelta === null ? null : Math.max(0, -hrvDelta / thresholds.hrvPct),
     temp: tempDelta === null ? null : Math.max(0, tempDelta / thresholds.tempC),
     rr: rrDelta === null ? null : Math.max(0, rrDelta / thresholds.rrAbs),
@@ -217,6 +250,7 @@ export function detect(rows: HealthUploadDay[], thresholds = SICK_DAY_THRESHOLDS
     unavailable,
     signal: {
       rhr_delta_pct: rhrDelta !== null ? r1(rhrDelta) : null,
+      night_hr_delta_pct: nightDelta !== null ? r1(nightDelta) : null,
       hrv_delta_pct: hrvDelta !== null ? r1(hrvDelta) : null,
       temp_delta_c: tempDelta !== null ? r2(tempDelta) : null,
       rr_delta_abs: rrDelta !== null ? r2(rrDelta) : null,
@@ -237,7 +271,7 @@ export interface SickDayCheckArgs {
   /** Person performing the upload. Only their owned session will be woken.
    *  Uses OWNER_PERSON_KEY if not provided (single-user back-compat). */
   ownerKey: string;
-  allRows: HealthUploadDay[]; // entire raw.jsonl decoded, oldest→newest
+  allRows: SickDayRow[]; // entire health.db decoded, oldest→newest, night pulse attached
 }
 
 /** Most recent sick_day_check already written into this session for `date`. */
