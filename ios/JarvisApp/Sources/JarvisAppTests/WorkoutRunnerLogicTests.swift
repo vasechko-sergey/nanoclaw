@@ -107,6 +107,70 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertEqual(hint, WorkoutRunnerLogic.workoutFinishedHint)
     }
 
+    // MARK: - What comes next after leaving the plan order
+
+    private func ex(_ name: String, sets: Int) -> ExercisePlan {
+        ExercisePlan(exerciseSlug: name, targetSets: sets, targetReps: "10-12", targetRir: 2,
+                     restSec: 90, notes: nil, nameRu: name)
+    }
+
+    private func done(_ name: String, _ n: Int) -> LoggedExercise {
+        LoggedExercise(exerciseSlug: name,
+                       sets: (0..<n).map { _ in LoggedSet(reps: 10, weight: 20, repsInReserve: 2, ts: Date()) },
+                       comment: nil)
+    }
+
+    /// 2026-10-19, Верх А: Хаммер, then the vertical pull ahead of Смит and the
+    /// row (machines busy). Every rest on the pull said «Дальше: Смит» — the scan
+    /// ran from the top of the plan, not from the exercise in hand.
+    func test_restHint_afterJumpingAhead_continuesThePlan() {
+        let exs = [ex("Хаммер", sets: 3), ex("Смит", sets: 1), ex("Тяга гориз", sets: 2),
+                   ex("Тяга верт", sets: 1), ex("Разгибание", sets: 2)]
+        let logged = [done("Хаммер", 3), done("Смит", 0), done("Тяга гориз", 0),
+                      done("Тяга верт", 1), done("Разгибание", 0)]
+        XCTAssertEqual(WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 3),
+                       "Разгибание — подход 1")
+        XCTAssertEqual(WorkoutRunnerLogic.skippedHint(logged: logged, exercises: exs, activeIdx: 3),
+                       "пропущено: Смит, Тяга гориз")
+        XCTAssertEqual(WorkoutRunnerLogic.nextExerciseIdx(logged: logged, exercises: exs, activeIdx: 3), 4)
+    }
+
+    /// Back on a skipped exercise: the ones already done ahead of it are passed
+    /// over — «Дальше →» from Смит went to the row, done twenty minutes earlier.
+    func test_nextExercise_passesOverDoneOnes() {
+        let exs = [ex("Смит", sets: 1), ex("Тяга гориз", sets: 2), ex("Тяга верт", sets: 1), ex("Разгибание", sets: 2)]
+        let logged = [done("Смит", 2), done("Тяга гориз", 2), done("Тяга верт", 3), done("Разгибание", 0)]
+        XCTAssertEqual(WorkoutRunnerLogic.nextExerciseIdx(logged: logged, exercises: exs, activeIdx: 0), 3)
+        XCTAssertNil(WorkoutRunnerLogic.skippedHint(logged: logged, exercises: exs, activeIdx: 0))
+    }
+
+    /// Nothing left ahead: the earliest skipped one becomes «Дальше», the rest
+    /// stay listed as skipped.
+    func test_nextExercise_nothingAhead_wrapsToEarliestSkipped() {
+        let exs = [ex("A", sets: 2), ex("B", sets: 2), ex("C", sets: 2)]
+        let logged = [done("A", 0), done("B", 1), done("C", 2)]
+        XCTAssertEqual(WorkoutRunnerLogic.nextExerciseIdx(logged: logged, exercises: exs, activeIdx: 2), 0)
+        XCTAssertEqual(WorkoutRunnerLogic.restHint(logged: logged, exercises: exs, activeIdx: 2), "A — подход 1")
+        XCTAssertEqual(WorkoutRunnerLogic.skippedHint(logged: logged, exercises: exs, activeIdx: 2), "пропущено: B")
+    }
+
+    /// A warmup walked past is not skipped work, and nothing left means no next.
+    func test_nextExercise_warmupBehindIsNotSkipped() {
+        let exs = [
+            ExercisePlan(exerciseSlug: "walk", targetSets: 0, targetReps: "", targetRir: 0, restSec: 0,
+                         notes: nil, nameRu: "Ходьба", durationSec: 300),
+            ex("A", sets: 1),
+        ]
+        let logged = [done("walk", 0), done("A", 1)]
+        XCTAssertNil(WorkoutRunnerLogic.nextExerciseIdx(logged: logged, exercises: exs, activeIdx: 1))
+        XCTAssertNil(WorkoutRunnerLogic.skippedHint(logged: logged, exercises: exs, activeIdx: 1))
+        // Logged walk ahead of the cursor counts as done too.
+        let walked = [LoggedExercise(exerciseSlug: "walk",
+                                     sets: [LoggedSet(reps: 0, weight: 0, repsInReserve: 0, ts: Date(), durationSec: 420)],
+                                     comment: nil), done("A", 0)]
+        XCTAssertEqual(WorkoutRunnerLogic.nextExerciseIdx(logged: walked, exercises: exs, activeIdx: 0), 1)
+    }
+
     func test_restHint_allDone_matchesFinishedSentinel() {
         // The all-done string the rest overlay watches for must equal the sentinel.
         let exs = [ExercisePlan(exerciseSlug: "a", targetSets: 1, targetReps: "8", targetRir: 2, restSec: 60, notes: nil, nameRu: "A")]

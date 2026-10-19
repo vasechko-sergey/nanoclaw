@@ -45,15 +45,20 @@ struct WorkoutView: View {
     /// active exercise (`coordinator.currentExerciseIdx`) while browsing.
     @State private var previewIdx: Int = 0
 
+    /// Nothing left anywhere: the header button reads «Финиш».
     private var isLastExercise: Bool {
-        coordinator.currentExerciseIdx >= coordinator.totalExercises - 1
+        WorkoutRunnerLogic.nextExerciseIdx(
+            logged: coordinator.logged,
+            exercises: coordinator.plan.exercises,
+            activeIdx: coordinator.currentExerciseIdx
+        ) == nil
     }
 
     var body: some View {
         ZStack(alignment: .top) {
             Theme.background.ignoresSafeArea()
             content
-            RestTimerOverlay(timer: restTimer, nextHint: restHint)
+            RestTimerOverlay(timer: restTimer, nextHint: restHint, skippedHint: skippedHint)
                 .zIndex(3)
         }
         .preferredColorScheme(.dark)
@@ -256,8 +261,8 @@ struct WorkoutView: View {
         return coordinator.logged[idx].sets.isEmpty ? "ещё не начато" : "пройдено"
     }
 
-    /// Rest-overlay hint: the next unfinished set, scanning from the active
-    /// exercise across the whole plan (surfaces skipped-then-returned exercises).
+    /// Rest-overlay hint: the active exercise's next set, else where «Дальше →»
+    /// leads — next in plan order, skipped ones once nothing is left ahead.
     private var restHint: String {
         WorkoutRunnerLogic.restHint(
             logged: coordinator.logged,
@@ -266,7 +271,17 @@ struct WorkoutView: View {
         )
     }
 
-    /// "Дальше →": advance to the next exercise, or open the finish sheet if last.
+    /// «пропущено: …» under the rest hint.
+    private var skippedHint: String? {
+        WorkoutRunnerLogic.skippedHint(
+            logged: coordinator.logged,
+            exercises: coordinator.plan.exercises,
+            activeIdx: coordinator.currentExerciseIdx
+        )
+    }
+
+    /// "Дальше →": go where the rest hint points, or open the finish sheet if
+    /// nothing is left.
     private func advance() {
         if isLastExercise {
             showFinish = true

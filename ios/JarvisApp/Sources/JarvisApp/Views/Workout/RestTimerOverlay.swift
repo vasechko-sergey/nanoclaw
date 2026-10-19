@@ -7,6 +7,8 @@ struct RestTimerOverlay: View {
     @ObservedObject var timer: RestTimer
     /// Optional "подход 3 · 60 кг" hint for what's next.
     var nextHint: String? = nil
+    /// "пропущено: Смит, Тяга…" — work left behind after leaving the plan order.
+    var skippedHint: String? = nil
 
     var body: some View {
         if timer.running {
@@ -38,9 +40,18 @@ struct RestTimerOverlay: View {
                     .frame(width: 220, height: 220)
 
                     if let nextHint {
-                        Text("Дальше: \(nextHint)")
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.5))
+                        VStack(spacing: 6) {
+                            Text("Дальше: \(nextHint)")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.5))
+                            if let skippedHint {
+                                Text(skippedHint)
+                                    .font(.footnote)
+                                    .foregroundStyle(.white.opacity(0.35))
+                            }
+                        }
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
                     }
 
                     Button { timer.skip() } label: {

@@ -54,11 +54,8 @@ enum WorkoutRunnerLogic {
     /// on a workout that's already over.
     static let workoutFinishedHint = "Тренировка закончена"
 
-    /// Rest-overlay "next" hint. Scans all exercises for the first unfinished
-    /// set starting from the active exercise, so a skipped-then-returned-to
-    /// exercise earlier in the plan is still surfaced instead of being hidden
-    /// behind the active exercise's own completed sets. Once no set work
-    /// remains, a pending timed finisher (cardio/warmup) is surfaced too.
+    /// Rest-overlay "next" hint: the active exercise's next set while it has sets
+    /// left, else the exercise «Дальше» leads to (`nextExerciseIdx`).
     static func restHint(logged: [LoggedExercise], exercises: [ExercisePlan], activeIdx: Int) -> String {
         guard exercises.indices.contains(activeIdx), logged.indices.contains(activeIdx) else {
             return workoutFinishedHint
@@ -68,22 +65,46 @@ enum WorkoutRunnerLogic {
         if cur.targetSets > 0, curDone < cur.targetSets {
             return "подход \(curDone + 1) — \(cur.displayName)"
         }
-        for i in exercises.indices where exercises[i].targetSets > 0 {
-            if logged[i].sets.count < exercises[i].targetSets {
-                return "\(exercises[i].displayName) — подход \(logged[i].sets.count + 1)"
-            }
+        guard let i = nextExerciseIdx(logged: logged, exercises: exercises, activeIdx: activeIdx) else {
+            return workoutFinishedHint
         }
-        // No set work left — surface a pending timed finisher (cardio/warmup).
-        // Duration exercises carry no set count, so the scan above can't see
-        // them; without this the runner says "закончена" with cardio still to
-        // go. Duration completion has no reliable per-exercise flag (finish
-        // passes a nil comment), so position stands in: i >= activeIdx means
-        // "not yet reached", while a duration block the user already advanced
-        // past sits before activeIdx and stays quiet.
-        for i in exercises.indices where i >= activeIdx && exercises[i].isDuration {
-            return "кардио: \(exercises[i].displayName)"
-        }
-        return workoutFinishedHint
+        // A cardio/warmup block has no set count to name.
+        if exercises[i].isDuration { return "кардио: \(exercises[i].displayName)" }
+        return "\(exercises[i].displayName) — подход \(logged[i].sets.count + 1)"
+    }
+
+    /// Where «Дальше» leads — the rest screen's line and the header button alike:
+    /// the next exercise after the active one in plan order that still has work,
+    /// passing over ones already done; once nothing is left ahead, the earliest
+    /// one left behind. nil when nothing remains. 2026-10-19: the scan ran from
+    /// the top of the plan, so after jumping ahead (machine busy) every rest
+    /// pointed back at the skipped exercise, while the button went by number,
+    /// done or not.
+    static func nextExerciseIdx(logged: [LoggedExercise], exercises: [ExercisePlan], activeIdx: Int) -> Int? {
+        let ahead = exercises.indices.filter { $0 > activeIdx }
+        let behind = exercises.indices.filter { $0 < activeIdx }
+        return (ahead + behind).first { hasWorkLeft($0, logged: logged, exercises: exercises, activeIdx: activeIdx) }
+    }
+
+    /// Second line under «Дальше:» — set work left behind the active exercise
+    /// (jumped over, or left mid-way), bar the one «Дальше» already names.
+    static func skippedHint(logged: [LoggedExercise], exercises: [ExercisePlan], activeIdx: Int) -> String? {
+        let next = nextExerciseIdx(logged: logged, exercises: exercises, activeIdx: activeIdx)
+        let names = exercises.indices
+            .filter { $0 < activeIdx && $0 != next && exercises[$0].targetSets > 0
+                && hasWorkLeft($0, logged: logged, exercises: exercises, activeIdx: activeIdx) }
+            .map { exercises[$0].displayName }
+        return names.isEmpty ? nil : "пропущено: " + names.joined(separator: ", ")
+    }
+
+    /// Sets short of the target, or a timed block (warmup, cardio finisher) with
+    /// nothing logged. A timed block counts only ahead of the active exercise —
+    /// a warmup walked past is not skipped work.
+    private static func hasWorkLeft(_ i: Int, logged: [LoggedExercise], exercises: [ExercisePlan], activeIdx: Int) -> Bool {
+        guard logged.indices.contains(i), exercises.indices.contains(i) else { return false }
+        let e = exercises[i]
+        if e.targetSets > 0 { return logged[i].sets.count < e.targetSets }
+        return e.isDuration && i > activeIdx && logged[i].sets.isEmpty
     }
 
     /// Worded 1–5 session rating (1 = tough … 5 = easy).

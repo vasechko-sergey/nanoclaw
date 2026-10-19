@@ -64,6 +64,35 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.currentSetIdx, 0)
     }
 
+    /// 2026-10-19: back on a skipped exercise, «Дальше →» led to the next one by
+    /// number — already done — and its counter read «подход 1» over two logged
+    /// sets (the next set_log would reuse set_idx 0).
+    func test_finishExercise_passesOverDoneExercises() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 4, setsPerExercise: 1), queue: queue)
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)          // ex-0
+        coord.activate(idx: 2)
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)          // ex-2 ahead of ex-1
+        coord.activate(idx: 1)
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)          // back to ex-1
+        coord.finishExercise(comment: nil)
+        XCTAssertEqual(coord.currentExerciseIdx, 3)
+        XCTAssertEqual(coord.currentSetIdx, 0)
+    }
+
+    /// Nothing left ahead: «Дальше →» returns to the exercise left unfinished,
+    /// and the set count resumes where it stopped.
+    func test_finishExercise_wrapsToUnfinished_resumesSetCount() throws {
+        let queue = try makeQueue()
+        let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 2, setsPerExercise: 3), queue: queue)
+        coord.logSet(reps: 10, weight: 20, repsInReserve: 2)
+        coord.activate(idx: 1)
+        for _ in 0..<3 { coord.logSet(reps: 10, weight: 20, repsInReserve: 2) }
+        coord.finishExercise(comment: nil)
+        XCTAssertEqual(coord.currentExerciseIdx, 0)
+        XCTAssertEqual(coord.currentSetIdx, 1)
+    }
+
     func test_finishExercise_onLastExercise_marksReadyToComplete() throws {
         let queue = try makeQueue()
         let coord = WorkoutCoordinator(plan: makePlan(exerciseCount: 1, setsPerExercise: 2), queue: queue)

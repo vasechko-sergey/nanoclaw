@@ -201,16 +201,20 @@ final class WorkoutCoordinator: ObservableObject {
         persist()
     }
 
-    /// Mark current exercise done and advance — or signal end of workout.
+    /// Mark current exercise done and move to where «Дальше» leads
+    /// (`WorkoutRunnerLogic.nextExerciseIdx`) — or signal end of workout.
     func finishExercise(comment: String?) {
         guard !isFinished, currentExerciseIdx < plan.exercises.count else { return }
         activeDeviationHint = nil
         logged[currentExerciseIdx].comment = comment
-        if currentExerciseIdx + 1 < plan.exercises.count {
-            currentExerciseIdx += 1
-            currentSetIdx = 0
+        if let next = WorkoutRunnerLogic.nextExerciseIdx(
+            logged: logged, exercises: plan.exercises, activeIdx: currentExerciseIdx) {
+            currentExerciseIdx = next
+            // Resume a part-done exercise where it stopped: a fresh 0 read
+            // «подход 1» over logged sets and reused their set_idx.
+            currentSetIdx = logged[next].sets.count
         } else {
-            // Stay on last exercise; UI shows "финиш" button.
+            // Nothing left; stay put — the UI shows the "финиш" button.
             currentSetIdx = plan.exercises[currentExerciseIdx].targetSets
         }
         persist()
