@@ -1383,10 +1383,18 @@ scp groups/payne/skills/retro/SKILL.md root@148.253.211.164:/home/nanoclaw/nanoc
 ssh root@148.253.211.164 'cd /home/nanoclaw/nanoclaw/agents/payne && chown -R nanoclaw:nanoclaw scripts skills && find . -name "._*" -print -delete'
 ```
 
-- [ ] **Step 3: Push the host change and deploy it**
+- [ ] **Step 3: Bring the branch into main, push the host change and deploy it**
+
+The host work lives on `feat/payne-progress` in the worktree `/Users/serg/git/nanoclaw-progress`; main is `/Users/serg/git/nanoclaw` (other sessions work there). Integrate by fast-forward only:
 
 ```bash
-git push origin main
+git -C /Users/serg/git/nanoclaw fetch origin && git -C /Users/serg/git/nanoclaw merge --ff-only feat/payne-progress
+```
+
+If main has moved and the fast-forward is refused, STOP and report: a rebase is NOT allowed here. Otherwise:
+
+```bash
+git -C /Users/serg/git/nanoclaw push origin main
 ssh root@148.253.211.164 'sudo -u nanoclaw bash -c "cd ~/nanoclaw && git pull && pnpm run build" && systemctl --machine=nanoclaw@.host --user restart nanoclaw && ls /home/nanoclaw/nanoclaw/container/skills/payne-progress/'
 ```
 
@@ -1406,7 +1414,7 @@ Expected: one JSON line `{"photo":"/tmp/progress-<ts>.png","summary":"Прогр
 ssh root@148.253.211.164 'cd /home/nanoclaw/nanoclaw; IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "nanoclaw-agent-v2-.*:latest" | head -1); sudo -u nanoclaw docker run --rm --entrypoint bash -v $PWD/agents/payne/scripts:/workspace/agent/scripts -w /workspace/agent/scripts $IMG -c "bun test 2>&1 | tail -4"'
 ```
 
-Expected: all pass (the existing suites + 22 new).
+Expected: all pass (the existing suites + 35 new Payne tests: 30 in `progress.test.js`, 5 in `render-progress.test.js`).
 
 - [ ] **Step 6: Live check**
 
