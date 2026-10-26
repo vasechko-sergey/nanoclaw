@@ -35,6 +35,17 @@ describe('gateCommand: agent commands', () => {
     expect(worded.text).toContain('в Эрисейре на субботу');
   });
 
+  it("hands a bare /progress to Payne's runner script, and /progress with words to the model", () => {
+    const bare = gateCommand(msg('/progress'), null, 'payne', 'payne');
+    expect(bare).toMatchObject({ action: 'agent_command', command: 'progress', serve: 'payne-progress/serve.cjs' });
+    const worded = gateCommand(msg('/progress по ногам'), null, 'payne', 'payne');
+    expect(worded.action).toBe('agent_command');
+    if (worded.action !== 'agent_command') return;
+    expect(worded.serve).toBeUndefined();
+    expect(worded.text).toContain('скилл progress');
+    expect(worded.text).toContain('по ногам');
+  });
+
   it('matches the command case-insensitively', () => {
     expect(gateCommand(msg('/SURF'), null, 'ag-jarvis', 'jarvis').action).toBe('agent_command');
   });

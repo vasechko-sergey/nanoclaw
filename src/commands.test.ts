@@ -3,13 +3,13 @@ import { describe, it, expect } from 'vitest';
 import { AGENT_COMMANDS, appCommands, findAgentCommand } from './commands.js';
 
 describe('agent command catalogue', () => {
-  it('gives every agent /new plus exactly one command of its own', () => {
+  it('gives every agent /new plus its own commands', () => {
     const forAgent = (agent: string): string[] =>
       appCommands()
         .filter((c) => c.agent_id === undefined || c.agent_id === agent)
         .map((c) => c.command);
     expect(forAgent('jarvis')).toEqual(['/new', '/surf']);
-    expect(forAgent('payne')).toEqual(['/new', '/workout']);
+    expect(forAgent('payne')).toEqual(['/new', '/workout', '/progress']);
     expect(forAgent('gordon')).toEqual(['/new', '/food']);
     expect(forAgent('greg')).toEqual(['/new', '/health']);
     expect(forAgent('scrooge')).toEqual(['/new', '/money']);
@@ -32,7 +32,7 @@ describe('agent command catalogue', () => {
   it('names serve scripts the runner will run (<skill>/<name>.cjs under the skills mount)', () => {
     // Mirrors container/agent-runner/src/command-serve.ts SERVE_RE.
     const served = AGENT_COMMANDS.filter((c) => c.serve);
-    expect(served.map((c) => c.command)).toEqual(['surf']);
+    expect(served.map((c) => c.command)).toEqual(['surf', 'progress']);
     for (const c of served) expect(c.serve).toMatch(/^[a-z0-9-]+\/[a-z0-9-]+\.cjs$/);
   });
 

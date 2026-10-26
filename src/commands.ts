@@ -56,6 +56,15 @@ export const AGENT_COMMANDS: AgentCommand[] = [
     action: 'today_plan',
   },
   {
+    agent: 'payne',
+    command: 'progress',
+    description: 'Прогресс',
+    // A bare /progress is the picture from scripts/progress.js, served by the
+    // runner without a model turn. Words after it, or too little data → this prompt.
+    prompt: (args) => `Покажи прогресс — сразу скилл progress.${args ? ` ${args}` : ''}`,
+    serve: 'payne-progress/serve.cjs',
+  },
+  {
     agent: 'gordon',
     command: 'food',
     description: 'Залогировать еду',
