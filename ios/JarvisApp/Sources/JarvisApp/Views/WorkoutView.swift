@@ -36,6 +36,10 @@ struct WorkoutView: View {
     /// Fired on appear so the host can prefetch the plan's images.
     var onAppearPrefetch: () -> Void = {}
 
+    /// Opens the technique text on appear. Taps can't be driven from XCTest, so
+    /// the render test seeds the expanded state through this; the app never sets it.
+    var techniqueExpanded: Bool = false
+
     @State private var showAbortConfirm = false
     @State private var showFinish = false
     /// Payne's latest coach line (no `set_ref`). Persists until the next message
@@ -44,6 +48,8 @@ struct WorkoutView: View {
     /// Exercise currently being looked at (swipe/chevrons). May differ from the
     /// active exercise (`coordinator.currentExerciseIdx`) while browsing.
     @State private var previewIdx: Int = 0
+    /// The technique text is open over the image and the ПЕЙН panel.
+    @State private var techniqueOpen = false
 
     /// Nothing left anywhere: the header button reads «Финиш».
     private var isLastExercise: Bool {
@@ -93,8 +99,14 @@ struct WorkoutView: View {
                 }
             )
         }
-        .onAppear { previewIdx = coordinator.currentExerciseIdx; onAppearPrefetch() }
+        .onAppear {
+            previewIdx = coordinator.currentExerciseIdx
+            techniqueOpen = techniqueExpanded
+            onAppearPrefetch()
+        }
         .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
+        // The technique text belongs to the exercise being looked at.
+        .onChange(of: previewIdx) { _, _ in techniqueOpen = false }
         // A hold belongs to the exercise it was started on.
         .onChange(of: coordinator.currentExerciseKey) { _, _ in holdTimer.reset() }
         .onChange(of: holdTimer.running) { _, _ in keepScreenAwake() }
@@ -130,18 +142,32 @@ struct WorkoutView: View {
                 pinnedHeader
 
                 let preview = coordinator.plan.exercises[previewIdx]
-                ExerciseBannerView(
-                    exercise: preview,
-                    imageURL: imageResolver(preview.exerciseSlug),
-                    stateTag: stateTag(for: previewIdx),
-                    canPrev: previewIdx > 0,
-                    canNext: previewIdx < coordinator.totalExercises - 1,
-                    onPreview: movePreview
-                )
-                .frame(maxWidth: .infinity, minHeight: 120, maxHeight: geo.size.width * 9.0 / 16.0)
-                .clipped()
+                if let technique = preview.technique {
+                    TechniqueRow(technique: technique, expanded: $techniqueOpen)
+                }
 
-                RecommendationPanel(exercise: preview, coachHint: coachHint)
+                // Image + ПЕЙН panel: the technique text opens over exactly this
+                // area, so the set card below keeps its place.
+                VStack(spacing: 0) {
+                    ExerciseBannerView(
+                        exercise: preview,
+                        imageURL: imageResolver(preview.exerciseSlug),
+                        stateTag: stateTag(for: previewIdx),
+                        canPrev: previewIdx > 0,
+                        canNext: previewIdx < coordinator.totalExercises - 1,
+                        onPreview: movePreview
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 120, maxHeight: geo.size.width * 9.0 / 16.0)
+                    .clipped()
+
+                    RecommendationPanel(exercise: preview, coachHint: coachHint)
+                }
+                .overlay(alignment: .top) {
+                    if techniqueOpen, let technique = preview.technique {
+                        TechniqueText(technique: technique)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
 
                 if previewIdx == coordinator.currentExerciseIdx {
                     if coordinator.currentExercise.isTimed {

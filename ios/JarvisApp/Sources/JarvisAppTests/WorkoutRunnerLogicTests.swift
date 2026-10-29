@@ -427,6 +427,13 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertEqual(d.map(\.kind), [.failure])
     }
 
+    func test_techniqueLabel() {
+        XCTAssertEqual(TechniqueRow.label(steps: 1), "Техника · 1 шаг")
+        XCTAssertEqual(TechniqueRow.label(steps: 3), "Техника · 3 шага")
+        XCTAssertEqual(TechniqueRow.label(steps: 5), "Техника · 5 шагов")
+        XCTAssertEqual(TechniqueRow.label(steps: 0), "Техника")
+    }
+
     func test_isLightWeek_matchesRussianVariants() {
         XCTAssertTrue(WorkoutRunnerLogic.isLightWeek("Лёгкая"))
         XCTAssertTrue(WorkoutRunnerLogic.isLightWeek("легкая неделя"))
