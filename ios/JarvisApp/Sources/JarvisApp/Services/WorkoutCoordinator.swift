@@ -314,13 +314,15 @@ final class WorkoutCoordinator: ObservableObject {
     /// register as a weight deviation. All nil on the accepted-own-proposal path
     /// and on older server builds — the card then shows no name/image/target for
     /// the new exercise rather than the wrong one.
+    /// `newTechnique` — the new exercise's own; the replaced one's would describe
+    /// the wrong movement.
     func applySwap(originalSlug: String, newSlug: String, newName: String? = nil, newSha: String? = nil,
-                   newWeightTarget: Double? = nil) {
+                   newWeightTarget: Double? = nil, newTechnique: ExerciseTechnique? = nil) {
         guard !isFinished else { return }
         guard let idx = plan.exercises.firstIndex(where: { $0.exerciseSlug == originalSlug }) else { return }
         guard originalSlug != newSlug else { return }
         let old = plan.exercises[idx]
-        let replaced = ExercisePlan(
+        var replaced = ExercisePlan(
             exerciseSlug: newSlug,
             targetSets: old.targetSets,
             targetReps: old.targetReps,
@@ -339,6 +341,7 @@ final class WorkoutCoordinator: ObservableObject {
             // its wheel (`currentExerciseKey`) and the deviation detector stays quiet.
             weightKgTarget: newWeightTarget
         )
+        replaced.technique = newTechnique
         var newExercises = plan.exercises
         newExercises[idx] = replaced
         // Swap the manifest entry too: drop the replaced slug's (it's no longer

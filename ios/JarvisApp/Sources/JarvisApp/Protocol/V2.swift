@@ -467,10 +467,11 @@ enum V2 {
         /// has never been logged — iOS then shows no target at all rather than
         /// the replaced exercise's weight.
         var weight_kg_target: Double?
+        var technique: ExerciseTechnique?
         init(slug: String, why: String, name_ru: String? = nil, sha256: String? = nil,
-             weight_kg_target: Double? = nil) {
+             weight_kg_target: Double? = nil, technique: ExerciseTechnique? = nil) {
             self.slug = slug; self.why = why; self.name_ru = name_ru; self.sha256 = sha256
-            self.weight_kg_target = weight_kg_target
+            self.weight_kg_target = weight_kg_target; self.technique = technique
         }
     }
 

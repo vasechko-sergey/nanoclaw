@@ -98,4 +98,29 @@ final class WorkoutPlanDecodeTests: XCTestCase {
             imageManifest: [])
         XCTAssertTrue(ok.isRunnable)
     }
+
+    func test_exercisePlan_decodesTechnique_andToleratesItsAbsence() throws {
+        let json = """
+        {"slug":"zhim","target_sets":3,"target_reps":"8-10","reps_in_reserve":2,"rest_seconds":120,
+         "technique":{"steps":[{"title":"Жим","text":"На выдохе."}],"warnings":["Колени по линии стоп."]}}
+        """.data(using: .utf8)!
+        let ex = try JSONDecoder().decode(ExercisePlan.self, from: json)
+        XCTAssertEqual(ex.technique?.steps, [ExerciseTechnique.Step(title: "Жим", text: "На выдохе.")])
+        XCTAssertEqual(ex.technique?.warnings, ["Колени по линии стоп."])
+
+        let bare = try JSONDecoder().decode(ExercisePlan.self, from: #"{"slug":"zhim","target_sets":3,"target_reps":"8","reps_in_reserve":2,"rest_seconds":0}"#.data(using: .utf8)!)
+        XCTAssertNil(bare.technique)
+
+        // A malformed block must not cost the whole exercise.
+        let broken = try JSONDecoder().decode(ExercisePlan.self, from: #"{"slug":"zhim","target_sets":3,"target_reps":"8","reps_in_reserve":2,"rest_seconds":0,"technique":{"steps":"x"}}"#.data(using: .utf8)!)
+        XCTAssertNil(broken.technique)
+        XCTAssertEqual(broken.exerciseSlug, "zhim")
+    }
+
+    func test_exercisePlan_technique_roundTrips() throws {
+        var ex = ExercisePlan(exerciseSlug: "zhim", targetSets: 3, targetReps: "8", targetRir: 2, restSec: 0)
+        ex.technique = ExerciseTechnique(steps: [.init(title: "Жим", text: "На выдохе.")], warnings: [])
+        let back = try JSONDecoder().decode(ExercisePlan.self, from: JSONEncoder().encode(ex))
+        XCTAssertEqual(back.technique, ex.technique)
+    }
 }

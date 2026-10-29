@@ -1,5 +1,16 @@
 import Foundation
 
+/// How an exercise is done, from its card (antitrainer `rules` + `warnings`),
+/// shown in the runner's collapsible block. nil when the card has none.
+struct ExerciseTechnique: Codable, Equatable {
+    struct Step: Codable, Equatable {
+        let title: String
+        let text: String
+    }
+    let steps: [Step]
+    let warnings: [String]
+}
+
 /// One exercise as planned in `workout_plan.plan_json.exercises[]`.
 ///
 /// Keys are pinned to Payne's canonical plan_json vocab: `slug` /
@@ -22,6 +33,8 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
     /// Payne's recommended working weight (kg) for this exercise. Optional —
     /// warmups omit it. Drives the weight-wheel default + the recs panel.
     var weightKgTarget: Double?
+    /// Technique block from the card — nil hides the strip.
+    var technique: ExerciseTechnique?
 
     var id: String { exerciseSlug }
 
@@ -67,6 +80,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         case nameRu = "name_ru"
         case durationSec = "duration_seconds"
         case weightKgTarget = "weight_kg_target"
+        case technique
     }
 
     init(from decoder: Decoder) throws {
@@ -80,6 +94,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         nameRu = try? c.decode(String.self, forKey: .nameRu)
         durationSec = try? c.decode(Int.self, forKey: .durationSec)
         weightKgTarget = try? c.decode(Double.self, forKey: .weightKgTarget)
+        technique = try? c.decode(ExerciseTechnique.self, forKey: .technique)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -93,6 +108,7 @@ struct ExercisePlan: Codable, Equatable, Identifiable {
         try c.encodeIfPresent(nameRu, forKey: .nameRu)
         try c.encodeIfPresent(durationSec, forKey: .durationSec)
         try c.encodeIfPresent(weightKgTarget, forKey: .weightKgTarget)
+        try c.encodeIfPresent(technique, forKey: .technique)
     }
 }
 

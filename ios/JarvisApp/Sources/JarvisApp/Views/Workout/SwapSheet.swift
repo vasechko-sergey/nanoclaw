@@ -31,6 +31,9 @@ struct SwapResponse: Equatable {
         /// Prescribed working weight for this exercise (kg), from the owner's
         /// own logged history. nil ⇒ never logged, so there is no target.
         var weightKgTarget: Double?
+        /// How this exercise is done, from its card. nil ⇒ the card has none (or
+        /// an older server) — the runner then shows no technique strip.
+        var technique: ExerciseTechnique?
         var id: String { slug }
         /// What the user should read — never the raw slug when a name exists.
         var displayName: String {
@@ -39,9 +42,9 @@ struct SwapResponse: Equatable {
             return p.prefix(1).uppercased() + p.dropFirst()
         }
         init(slug: String, why: String, nameRu: String? = nil, sha256: String? = nil,
-             weightKgTarget: Double? = nil) {
+             weightKgTarget: Double? = nil, technique: ExerciseTechnique? = nil) {
             self.slug = slug; self.why = why; self.nameRu = nameRu; self.sha256 = sha256
-            self.weightKgTarget = weightKgTarget
+            self.weightKgTarget = weightKgTarget; self.technique = technique
         }
     }
 }
@@ -53,14 +56,15 @@ enum SwapAction {
     /// User submitted their own choice — parent sends with `proposed: text`.
     case proposeOwn(text: String)
     /// User confirmed a slug — parent sends `exercise_swap_confirm` AND folds the
-    /// swap into the running plan. `nameRu` / `sha256` / `weightKgTarget` come
-    /// from the chosen alternative and are what make the fold correct: the new
-    /// name on the card, a manifest entry so the demo image resolves instead of
-    /// a placeholder, and the new exercise's own prescribed weight instead of
-    /// the replaced one's. All nil on the accepted-own-proposal path and on
-    /// older server builds.
+    /// swap into the running plan. `nameRu` / `sha256` / `weightKgTarget` /
+    /// `technique` come from the chosen alternative and are what make the fold
+    /// correct: the new name on the card, a manifest entry so the demo image
+    /// resolves instead of a placeholder, the new exercise's own prescribed
+    /// weight instead of the replaced one's, and its own technique block (the
+    /// replaced one's would describe the wrong movement). All nil on the
+    /// accepted-own-proposal path and on older server builds.
     case confirm(newSlug: String, persist: Bool, nameRu: String?, sha256: String?,
-                 weightKgTarget: Double?)
+                 weightKgTarget: Double?, technique: ExerciseTechnique?)
     /// User dismissed.
     case cancel
 }
@@ -242,7 +246,8 @@ struct SwapSheet: View {
 
     private func confirm(newSlug: String, alt: SwapResponse.Alternative?) {
         onAction(.confirm(newSlug: newSlug, persist: persist, nameRu: alt?.nameRu,
-                          sha256: alt?.sha256, weightKgTarget: alt?.weightKgTarget))
+                          sha256: alt?.sha256, weightKgTarget: alt?.weightKgTarget,
+                          technique: alt?.technique))
         dismiss()
     }
 }

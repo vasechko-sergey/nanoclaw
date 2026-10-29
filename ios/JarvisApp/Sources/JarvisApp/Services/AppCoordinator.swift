@@ -562,7 +562,7 @@ final class AppCoordinator {
                 rejected: s.rejected.map { .init(slug: $0.slug, reason: $0.reason) },
                 alternatives: s.alternatives.map {
                     .init(slug: $0.slug, why: $0.why, nameRu: $0.name_ru, sha256: $0.sha256,
-                          weightKgTarget: $0.weight_kg_target)
+                          weightKgTarget: $0.weight_kg_target, technique: $0.technique)
                 }
             )
             workoutBus.events.send(

@@ -18,12 +18,13 @@ final class SwapSheetTests: XCTestCase {
         // Sanity that the enum cases distinguish.
         let a: SwapAction = .requestSuggestions
         let b: SwapAction = .confirm(newSlug: "x", persist: true, nameRu: "Жим", sha256: "sha",
-                                     weightKgTarget: 52.5)
+                                     weightKgTarget: 52.5, technique: nil)
         if case .requestSuggestions = a {} else { XCTFail() }
-        if case let .confirm(slug, persist, nameRu, sha, weight) = b {
+        if case let .confirm(slug, persist, nameRu, sha, weight, tech) = b {
             XCTAssertEqual(slug, "x"); XCTAssertTrue(persist)
             XCTAssertEqual(nameRu, "Жим"); XCTAssertEqual(sha, "sha")
             XCTAssertEqual(weight, 52.5)
+            XCTAssertNil(tech)
         } else { XCTFail() }
     }
 

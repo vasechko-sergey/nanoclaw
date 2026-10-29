@@ -350,6 +350,33 @@ final class WorkoutCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.plan.imageManifest.first(where: { $0.slug == "ex-0" })?.sha256, "sha-0")
     }
 
+    /// The technique block describes a movement, so a swap must carry the NEW
+    /// exercise's own and never leave the replaced one's behind.
+    func test_applySwap_carriesTheNewExercisesTechnique() throws {
+        let queue = try makeQueue()
+        var plan = makePlan(exerciseCount: 2)
+        plan = WorkoutPlan(
+            workoutId: plan.workoutId, dayName: plan.dayName, week: plan.week,
+            intensityLabel: plan.intensityLabel,
+            exercises: [
+                ExercisePlan(exerciseSlug: "ex-0", targetSets: 4, targetReps: "8-10",
+                             targetRir: 2, restSec: 120, nameRu: "Присед"),
+                ExercisePlan(exerciseSlug: "ex-1", targetSets: 4, targetReps: "8-10",
+                             targetRir: 2, restSec: 120, nameRu: "Жим лёжа"),
+            ],
+            imageManifest: [
+                .init(slug: "ex-0", sha256: "sha-0"),
+                .init(slug: "ex-1", sha256: "sha-1"),
+            ]
+        )
+        let coord = WorkoutCoordinator(plan: plan, queue: queue)
+        let tech = ExerciseTechnique(steps: [.init(title: "Жим", text: "На выдохе.")], warnings: ["Спина прижата."])
+        coord.applySwap(originalSlug: "ex-1", newSlug: "ex-1-alt", newTechnique: tech)
+        XCTAssertEqual(coord.plan.exercises[1].technique, tech)
+        coord.applySwap(originalSlug: "ex-1-alt", newSlug: "ex-1-alt-2")
+        XCTAssertNil(coord.plan.exercises[1].technique, "no technique from the server → none, not the replaced one's")
+    }
+
     /// Older server (no name/sha): the stale name must be DROPPED, not kept —
     /// `displayName` then prettifies the new slug, which at least names the
     /// right exercise instead of confidently showing the wrong one.

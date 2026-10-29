@@ -632,7 +632,7 @@ struct ChatView: View {
                     case .proposeOwn(let text):
                         swapLoading = true
                         Task { try? await coordinator.ws.stack?.transport.sendExerciseSwapRequest(workoutId: s.workoutId, slug: s.originalSlug, proposed: text) }
-                    case .confirm(let newSlug, let persist, let nameRu, let sha256, let weightTarget):
+                    case .confirm(let newSlug, let persist, let nameRu, let sha256, let weightTarget, let technique):
                         // F4: durable — outbox + drain on auth, not a lossy send.
                         coordinator.ws.enqueueExerciseSwapConfirm(workoutId: s.workoutId, original: s.originalSlug, new: newSlug, persist: persist)
                         // Fix N: fold the swap into the running Coordinator's
@@ -642,7 +642,8 @@ struct ChatView: View {
                         // hint is silently dropped after any swap.
                         activeWorkout?.coord?.applySwap(originalSlug: s.originalSlug, newSlug: newSlug,
                                                         newName: nameRu, newSha: sha256,
-                                                        newWeightTarget: weightTarget)
+                                                        newWeightTarget: weightTarget,
+                                                        newTechnique: technique)
                         swapSheet = nil
                     case .cancel:
                         swapSheet = nil
