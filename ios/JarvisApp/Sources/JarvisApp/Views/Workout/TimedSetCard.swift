@@ -4,10 +4,11 @@ import SwiftUI
 /// plank / isometric hold done in sets. Replaces FocusSetCard when
 /// `exercise.isTimed`.
 ///
-/// Idle: minutes / seconds wheels seeded from the last hold on this exercise or
-/// Payne's target, plus «Старт» and «Записать M:SS». Running: the stopwatch in
-/// the wheels' place and «Стоп», which drops the held time into the wheels to
-/// be corrected or recorded. The warmup records with «Засчитать» and moves on.
+/// Minutes / seconds wheels seeded from the last hold on this exercise or
+/// Payne's target, plus «Старт» and «Записать M:SS». Running: the full-screen
+/// HoldTimerOverlay (WorkoutView); its «Стоп» drops the held time into these
+/// wheels via `holdTimer.lastHeldSec`, to be corrected or recorded. The warmup
+/// records with «Засчитать» and moves on.
 struct TimedSetCard: View {
     @ObservedObject var coordinator: WorkoutCoordinator
     @ObservedObject var holdTimer: HoldTimer
@@ -24,57 +25,32 @@ struct TimedSetCard: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            if holdTimer.running {
-                stopwatch
-            } else {
-                HoldWheels(minutes: $minutes, seconds: $seconds)
-            }
-            if holdTimer.running {
-                Button(action: stop) {
-                    label("Стоп", icon: "stop.fill")
+            HoldWheels(minutes: $minutes, seconds: $seconds)
+            HStack(spacing: 10) {
+                Button(action: start) {
+                    label("Старт", icon: "play.fill")
+                        .foregroundStyle(Theme.accent)
+                        .background(Capsule().fill(Theme.surface))
+                        .overlay(Capsule().stroke(Theme.accent.opacity(0.5), lineWidth: 1))
+                }
+                .frame(maxWidth: 130)
+                Button(action: record) {
+                    label("\(exercise.isTimedSets ? "Записать" : "Засчитать") \(WorkoutSetFormat.duration(max(chosen, 5)))",
+                          icon: "checkmark")
                         .foregroundStyle(.white)
                         .background(Capsule().fill(Theme.accent))
                 }
-            } else {
-                HStack(spacing: 10) {
-                    Button(action: start) {
-                        label("Старт", icon: "play.fill")
-                            .foregroundStyle(Theme.accent)
-                            .background(Capsule().fill(Theme.surface))
-                            .overlay(Capsule().stroke(Theme.accent.opacity(0.5), lineWidth: 1))
-                    }
-                    .frame(maxWidth: 130)
-                    Button(action: record) {
-                        label("\(exercise.isTimedSets ? "Записать" : "Засчитать") \(WorkoutSetFormat.duration(max(chosen, 5)))",
-                              icon: "checkmark")
-                            .foregroundStyle(.white)
-                            .background(Capsule().fill(Theme.accent))
-                    }
-                    .accessibilityIdentifier("timed-set-record")
-                }
+                .accessibilityIdentifier("timed-set-record")
             }
         }
         .disabled(coordinator.isFinished)
         .onAppear(perform: prefill)
         .onChange(of: coordinator.currentSetIdx) { _, _ in prefill() }
         .onChange(of: coordinator.currentExerciseKey) { _, _ in prefill() }
-    }
-
-    /// The running watch, sized like the wheels so the card doesn't jump.
-    private var stopwatch: some View {
-        VStack(spacing: 4) {
-            Text(WorkoutSetFormat.duration(holdTimer.elapsedSec))
-                .font(.system(size: 48, weight: .ultraLight, design: .rounded).monospacedDigit())
-                .foregroundStyle(holdTimer.reachedTarget ? Theme.accent : .white)
-            if target > 0 {
-                Text(holdTimer.reachedTarget ? "цель \(WorkoutSetFormat.duration(target)) есть" : "цель \(WorkoutSetFormat.duration(target))")
-                    .font(.caption)
-                    .foregroundStyle(holdTimer.reachedTarget ? Theme.accent : .white.opacity(0.5))
-            }
+        // «Стоп» on the ring: the held time lands in the wheels.
+        .onChange(of: holdTimer.lastHeldSec) { _, held in
+            if let held { set(held) }
         }
-        .frame(maxWidth: .infinity, minHeight: 124)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
     }
 
     private func label(_ text: String, icon: String) -> some View {
@@ -89,11 +65,6 @@ struct TimedSetCard: View {
         Theme.hapticSend()
         restTimer.skip()
         holdTimer.start(targetSec: target)
-    }
-
-    private func stop() {
-        Theme.hapticSend()
-        set(WorkoutRunnerLogic.holdSeconds(holdTimer.stop()))
     }
 
     private func record() {

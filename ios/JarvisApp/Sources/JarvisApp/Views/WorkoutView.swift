@@ -60,6 +60,11 @@ struct WorkoutView: View {
             content
             RestTimerOverlay(timer: restTimer, nextHint: restHint, skippedHint: skippedHint)
                 .zIndex(3)
+            HoldTimerOverlay(timer: holdTimer, title: holdTitle) {
+                Theme.hapticSend()
+                holdTimer.stop()
+            }
+            .zIndex(4)
         }
         .preferredColorScheme(.dark)
         .alert("Прервать тренировку?", isPresented: $showAbortConfirm) {
@@ -92,6 +97,9 @@ struct WorkoutView: View {
         .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
         // A hold belongs to the exercise it was started on.
         .onChange(of: coordinator.currentExerciseKey) { _, _ in holdTimer.reset() }
+        .onChange(of: holdTimer.running) { _, _ in keepScreenAwake() }
+        .onChange(of: restTimer.running) { _, _ in keepScreenAwake() }
+        .onDisappear { setIdleTimerDisabled(false) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 restTimer.refresh()
@@ -205,6 +213,14 @@ struct WorkoutView: View {
         .background(Theme.background)
     }
 
+    /// «ПЛАНКА · ПОДХОД 1» over the hold ring — the active exercise, whatever is previewed.
+    private var holdTitle: String {
+        WorkoutRunnerLogic.holdTitle(
+            name: coordinator.currentExercise.displayName,
+            isTimedSets: coordinator.currentExercise.isTimedSets,
+            setIdx: coordinator.currentSetIdx)
+    }
+
     private var progressSegments: [WorkoutRunnerLogic.ProgressSegment] {
         WorkoutRunnerLogic.progressSegments(
             sets: coordinator.logged.map { $0.sets.count },
@@ -216,17 +232,24 @@ struct WorkoutView: View {
 
     @ViewBuilder
     private func segmentView(_ seg: WorkoutRunnerLogic.ProgressSegment) -> some View {
-        let fill: Color = {
+        let track = Color.white.opacity(0.2)
+        Group {
             switch seg.kind {
-            case .done: return Theme.accent
-            case .partial: return Theme.accent   // placeholder: the share-filled bar is drawn by the header redesign
-            case .active: return Color(red: 0.5, green: 0.89, blue: 0.92)
-            case .skipped: return .clear   // hollow — copper ring below carries the "passed, not done" cue
-            case .upcoming: return Color.white.opacity(0.2)
+            case .done: Capsule().fill(Theme.accent)
+            case .active: Capsule().fill(Color(red: 0.5, green: 0.89, blue: 0.92))
+            case .skipped: Capsule().fill(Color.clear)   // hollow — copper ring carries "passed, not done"
+            case .upcoming: Capsule().fill(track)
+            case .partial:
+                Capsule().fill(track).overlay(alignment: .leading) {
+                    GeometryReader { g in
+                        Capsule().fill(Theme.accent).frame(width: g.size.width * seg.fill)
+                    }
+                }
+                .clipShape(Capsule())
             }
-        }()
-        Capsule().fill(fill).frame(height: 5)
-            .overlay(previewRing(seg.kind == .active || seg.isPreview || seg.kind == .skipped))
+        }
+        .frame(height: 5)
+        .overlay(previewRing(seg.kind == .active || seg.isPreview || seg.kind == .skipped || seg.kind == .partial))
     }
 
     private func previewRing(_ on: Bool) -> some View {
@@ -260,7 +283,8 @@ struct WorkoutView: View {
                 currentSetIdx: coordinator.currentSetIdx,
                 targetSets: coordinator.currentExercise.targetSets) ?? ""
         }
-        return coordinator.logged[idx].sets.isEmpty ? "ещё не начато" : "пройдено"
+        return WorkoutRunnerLogic.previewStateTag(sets: coordinator.logged[idx].sets.count,
+                                                  targetSets: coordinator.plan.exercises[idx].targetSets)
     }
 
     /// Rest-overlay hint: the active exercise's next set, else where «Дальше →»
@@ -331,6 +355,18 @@ struct WorkoutView: View {
 }
 
 extension WorkoutView {
+    /// The phone lies on the floor during a plank and on the bench during rest:
+    /// no auto-lock while either timer runs, normal locking otherwise.
+    func keepScreenAwake() {
+        setIdleTimerDisabled(holdTimer.running || restTimer.running)
+    }
+
+    func setIdleTimerDisabled(_ on: Bool) {
+        #if canImport(UIKit)
+        UIApplication.shared.isIdleTimerDisabled = on
+        #endif
+    }
+
     /// Surface a coach_message as the persistent coach line in the ПЕЙН panel.
     /// It stays put until the next coach_message replaces it (no auto-dismiss) —
     /// so a hint that arrived mid-set is still readable when the user looks up.

@@ -120,6 +120,22 @@ final class WorkoutViewTimedRenderTests: XCTestCase {
         XCTAssertTrue(running.contains("1:12"), "running: \(running)")
         XCTAssertTrue(running.contains("цель 2:00"), "running: \(running)")
         XCTAssertTrue(running.contains { $0.contains("Стоп") }, "running: \(running)")
+        XCTAssertTrue(running.contains("ПЛАНКА · ПОДХОД 1"), "running: \(running)")
+        XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled, "screen must stay on during a hold")
+        // Past the target: ring full, the count keeps going.
+        clock = clock.addingTimeInterval(55)   // 127 s of 120
+        hold.refresh()
+        spin()
+        let over = texts(in: host.view)
+        snapshot(window, "3b-plank-overtime")
+        XCTAssertTrue(over.contains("цель есть · +0:07"), "over: \(over)")
+        // «Стоп» on the ring puts the held time into the wheels.
+        hold.stop()
+        spin()
+        let stopped = texts(in: host.view)
+        snapshot(window, "3c-plank-stopped")
+        XCTAssertTrue(stopped.contains { $0.contains("Записать 2:05") }, "stopped: \(stopped)")
+        XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled, "screen locks again once no timer runs")
 
         // First set logged: the chip reads the time, the wheels start from it.
         hold.reset()
