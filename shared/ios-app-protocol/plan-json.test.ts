@@ -18,6 +18,14 @@ describe('PlanJsonSchema', () => {
     const bad = { ...validPlan, exercises: [{ target_sets: 3, target_reps: '8', reps_in_reserve: 2, rest_seconds: 90 }] };
     expect(PlanJsonSchema.safeParse(bad).success).toBe(false);
   });
+  it('accepts an exercise technique block and rejects a malformed one', () => {
+    const base = { day_name: 'Верх', week: 1, week_label: 'лёгкая' };
+    const ex = { slug: 'zhim', target_sets: 3, target_reps: '8-10', reps_in_reserve: 2, rest_seconds: 120 };
+    const ok = PlanJsonSchema.safeParse({ ...base, exercises: [{ ...ex, technique: { steps: [{ title: 'Жим', text: 'На выдохе.' }], warnings: [] } }] });
+    expect(ok.success).toBe(true);
+    const bad = PlanJsonSchema.safeParse({ ...base, exercises: [{ ...ex, technique: { steps: 'нет' } }] });
+    expect(bad.success).toBe(false);
+  });
   it('rejects a plan missing week_label', () => {
     const { week_label, ...bad } = validPlan;
     expect(PlanJsonSchema.safeParse(bad).success).toBe(false);

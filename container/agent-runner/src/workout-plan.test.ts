@@ -173,6 +173,14 @@ describe('sendWorkoutPlan — the card and the copy the agent reads later', () =
     expect(ex).toMatchObject({ slug: 'zhim-nogami', reps_in_reserve: 0, rest_seconds: 180 });
   });
 
+  it('passes the technique block through to the wire', () => {
+    const technique = { steps: [{ title: 'Жим', text: 'На выдохе.' }], warnings: ['Колени по линии стоп.'] };
+    const plan = { day_name: 'Ноги А', week: 3, week_label: 'тяжёлая', exercises: [{ slug: 'zhim-nogami', target_sets: 4, technique }] };
+    sendWorkoutPlan('2026-10-02', plan, { agentDir: dir, exercisesDir: join(dir, 'exercises') });
+    const ex = JSON.parse(getUndeliveredMessages()[0].content).payload.plan_json.exercises[0];
+    expect(ex.technique).toEqual(technique);
+  });
+
   it('trusts a supplied manifest untouched', () => {
     const plan = { day_name: 'Ноги А', week: 3, week_label: 'тяжёлая', exercises: [] };
     sendWorkoutPlan('w1', plan, { agentDir: dir, exercisesDir: join(dir, 'exercises'), manifest: [{ slug: 'squat', sha256: 'abc' }] });

@@ -175,7 +175,7 @@ function pick(...vals: unknown[]): unknown {
  * Normalize one plan exercise onto the canonical iOS wire vocab
  * (shared/ios-app-protocol/v2.ts PlanExerciseSchema): slug / name_ru /
  * target_sets / target_reps / reps_in_reserve / rest_seconds / duration_seconds /
- * weight_kg_target / notes.
+ * weight_kg_target / notes / technique.
  *
  * Payne builds plan_json from its INTERNAL program vocab (exercise_slug / name /
  * target_rir / rest_sec / execution_duration_seconds / weight_kg |
@@ -200,6 +200,8 @@ function normalizeExercise(e: Record<string, unknown>): Record<string, unknown> 
   const weight = pick(e.weight_kg_target, e.weight_kg, e.starting_weight);
   if (weight !== undefined) out.weight_kg_target = weight;
   if (e.notes !== undefined && e.notes !== null) out.notes = e.notes;
+  // Technique text from the card (build-plan.js) — an object, passed as is.
+  if (e.technique && typeof e.technique === 'object') out.technique = e.technique;
   return out;
 }
 

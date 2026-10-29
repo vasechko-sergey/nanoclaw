@@ -371,6 +371,21 @@ describe('workout MCP tools', () => {
       ]);
     });
 
+    it('attaches the alternative\'s technique from its card', async () => {
+      writeFileSync(join(exDir, 'leg_press.json'), JSON.stringify({
+        rules: [{ text: 'Жим', description: 'На выдохе.' }],
+        warnings: [],
+      }));
+      await workoutSwap.handler({
+        workout_id: 'w1',
+        from_exercise_slug: 'squat',
+        options: [{ slug: 'leg_press', reason: 'knee' }, { slug: 'no_card', reason: 'x' }],
+      });
+      const alts = JSON.parse(getUndeliveredMessages()[0].content).payload.alternatives;
+      expect(alts[0].technique).toEqual({ steps: [{ title: 'Жим', text: 'На выдохе.' }], warnings: [] });
+      expect('technique' in alts[1]).toBe(false);
+    });
+
     it('omits name_ru when Payne does not supply it (older-skill back-compat)', async () => {
       await workoutSwap.handler({
         workout_id: 'w1',

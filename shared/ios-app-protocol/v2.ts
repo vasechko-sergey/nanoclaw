@@ -41,6 +41,14 @@ export const ContextFieldEnum = z.enum([
 ]);
 export type ContextField = z.infer<typeof ContextFieldEnum>;
 
+// Technique from the exercise card (antitrainer rules + warnings), shown in
+// the runner's collapsible block. Optional — cards without it send nothing.
+export const TechniqueSchema = z.object({
+  steps: z.array(z.object({ title: z.string(), text: z.string() })),
+  warnings: z.array(z.string()),
+});
+export type TechniqueSchema = z.infer<typeof TechniqueSchema>;
+
 export const PlanExerciseSchema = z.object({
   slug: z.string().min(1),
   name_ru: z.string().optional(),
@@ -51,6 +59,7 @@ export const PlanExerciseSchema = z.object({
   duration_seconds: z.number().int().nonnegative().optional(),
   weight_kg_target: z.number().nonnegative().optional(),
   notes: z.string().optional(),
+  technique: TechniqueSchema.optional(),
 });
 export type PlanExerciseSchema = z.infer<typeof PlanExerciseSchema>;
 
@@ -403,6 +412,7 @@ export const Envelopes = {
           name_ru: z.string().optional(),
           sha256: z.string().optional(),
           weight_kg_target: z.number().positive().optional(),
+          technique: TechniqueSchema.optional(),
         }),
       ),
       agent_id: z.string().min(1).optional(),

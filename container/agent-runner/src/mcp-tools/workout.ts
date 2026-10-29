@@ -16,6 +16,7 @@
  */
 import { loadConfig } from '../config.js';
 import { buildImageManifest, DEFAULT_EXERCISES_DIR, type ImageManifestEntry } from '../exercise-images.js';
+import { readTechnique } from '../exercise-technique.js';
 import { buildPlan, defaultPlanPaths, prescribeWeights, readinessFor, sendWorkoutPlan, writeWorkoutOut } from '../workout-plan.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -262,6 +263,7 @@ export const workoutSwap: McpToolDefinition = {
           ...(o.name_ru ? { name_ru: o.name_ru } : {}),
           ...(shaBySlug.has(o.slug) ? { sha256: shaBySlug.get(o.slug) } : {}),
           ...(kgBySlug.has(o.slug) ? { weight_kg_target: kgBySlug.get(o.slug) } : {}),
+          ...(() => { const t = readTechnique(exercisesDir, o.slug); return t ? { technique: t } : {}; })(),
         })),
       },
     });
