@@ -51,6 +51,13 @@ struct WorkoutView: View {
     /// The technique text is open over the image and the ПЕЙН panel.
     @State private var techniqueOpen = false
 
+    /// Slug of the exercise being looked at. A swap replaces it in place — the
+    /// preview index stays, this changes — so the technique block keys on both.
+    private var previewSlug: String? {
+        coordinator.plan.exercises.indices.contains(previewIdx)
+            ? coordinator.plan.exercises[previewIdx].exerciseSlug : nil
+    }
+
     /// Nothing left anywhere: the header button reads «Финиш».
     private var isLastExercise: Bool {
         WorkoutRunnerLogic.nextExerciseIdx(
@@ -105,8 +112,10 @@ struct WorkoutView: View {
             onAppearPrefetch()
         }
         .onChange(of: coordinator.currentExerciseIdx) { _, new in previewIdx = new }
-        // The technique text belongs to the exercise being looked at.
+        // The technique text belongs to the exercise being looked at: it starts
+        // collapsed whenever that changes — another one, or a swap in place.
         .onChange(of: previewIdx) { _, _ in techniqueOpen = false }
+        .onChange(of: previewSlug) { _, _ in techniqueOpen = false }
         // A hold belongs to the exercise it was started on.
         .onChange(of: coordinator.currentExerciseKey) { _, _ in holdTimer.reset() }
         .onChange(of: holdTimer.running) { _, _ in keepScreenAwake() }

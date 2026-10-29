@@ -93,5 +93,61 @@ final class WorkoutViewTechniqueRenderTests: XCTestCase {
         let other = texts(in: openHost.view)
         snapshot(window, "3-no-technique")
         XCTAssertFalse(other.contains { $0.hasPrefix("Техника") }, "other: \(other)")
+
+        // Back on the exercise that has technique: the block starts collapsed again
+        // (it was open when the preview left). Fails if the collapse is removed.
+        coord.activate(idx: 0)
+        spin()
+        let back = texts(in: openHost.view)
+        snapshot(window, "4-back-collapsed")
+        XCTAssertTrue(back.contains("Техника · 3 шага"), "back: \(back)")
+        XCTAssertFalse(back.contains { $0.contains("Спина прижата") }, "back: \(back)")
+    }
+
+    /// A swap replaces the previewed exercise in place — the preview index stays,
+    /// the exercise does not. The new one's block must start collapsed, and a block
+    /// left «open» on an exercise without technique must not come back later.
+    func test_techniqueStrip_swapOfThePreviewedExercise_collapses() throws {
+        let dbq = try DatabaseQueue()
+        try Schema.migrate(dbq)
+        var press = ExercisePlan(exerciseSlug: "zhim-nogami", targetSets: 3, targetReps: "10", targetRir: 2,
+                                 restSec: 120, nameRu: "Жим ногами", weightKgTarget: 160)
+        press.technique = ExerciseTechnique(
+            steps: [.init(title: "Исходное положение", text: "Спина прижата к спинке.")],
+            warnings: [])
+        let plan = WorkoutPlan(workoutId: "w1", dayName: "Ноги", week: 1, intensityLabel: "лёгкая",
+                               exercises: [press], imageManifest: [])
+        let coord = WorkoutCoordinator(plan: plan, queue: SetLogQueue(writer: dbq))
+        let openView = WorkoutView(coordinator: coord, imageResolver: { _ in nil },
+                                   coachMessages: Empty<String, Never>().eraseToAnyPublisher(),
+                                   onClose: { _ in }, onSwap: { _ in }, techniqueExpanded: true)
+        let host = UIHostingController(rootView: openView)
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        spin()
+
+        let opened = texts(in: host.view)
+        snapshot(window, "5-swap-0-open")
+        XCTAssertTrue(opened.contains { $0.contains("Спина прижата") }, "opened: \(opened)")
+
+        // Swap to an exercise WITHOUT technique while open: no strip, nothing hidden-open.
+        coord.applySwap(originalSlug: "zhim-nogami", newSlug: "zhim-v-gakk", newName: "Жим в гакк-машине")
+        spin()
+        let bare = texts(in: host.view)
+        snapshot(window, "5-swap-1-no-technique")
+        XCTAssertFalse(bare.contains { $0.hasPrefix("Техника") }, "bare: \(bare)")
+
+        // Swap again, to one WITH technique: the row is there, collapsed.
+        coord.applySwap(originalSlug: "zhim-v-gakk", newSlug: "zhim-smit", newName: "Жим в Смите",
+                        newTechnique: ExerciseTechnique(
+                            steps: [.init(title: "Старт", text: "Плечи под упоры грифа.")], warnings: []))
+        spin()
+        let swapped = texts(in: host.view)
+        snapshot(window, "5-swap-2-new-technique")
+        XCTAssertTrue(swapped.contains("Техника · 1 шаг"), "swapped: \(swapped)")
+        XCTAssertFalse(swapped.contains { $0.contains("Плечи под упоры") }, "swapped: \(swapped)")
     }
 }
