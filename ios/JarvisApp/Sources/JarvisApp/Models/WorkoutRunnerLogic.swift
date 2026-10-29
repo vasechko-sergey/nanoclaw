@@ -138,36 +138,71 @@ enum WorkoutRunnerLogic {
 
     /// One cell of the top progress bar — one per exercise, equal width.
     struct ProgressSegment: Equatable {
-        enum Kind: Equatable { case done, active, skipped, upcoming }
+        enum Kind: Equatable { case done, partial, active, skipped, upcoming }
         let kind: Kind
         let isPreview: Bool
+        /// Share of the bar to fill: 1 for done, sets/target for partial, 0 otherwise.
+        let fill: Double
     }
 
-    /// Equal segment per exercise, driven by TRUTH (not position): an exercise is
-    /// `.done` when it has logged work, `.active` when it's current. An exercise
-    /// left behind the active cursor with no work is `.skipped` (free-order lets
-    /// you jump ahead — the passed one is deferred, not done); a passed timed
-    /// exercise (treadmill/warmup, zero sets by design) counts as `.done`.
-    /// Everything ahead of the cursor with no work is `.upcoming`. `worked[i]`
-    /// wins over position so an exercise finished then jumped-back-past stays
-    /// `.done`. The previewed exercise (when ≠ active) is marked for an outline.
-    /// Set-level progress lives in the image scrim, not here.
-    static func progressSegments(worked: [Bool], isDuration: [Bool], activeIdx: Int, previewIdx: Int) -> [ProgressSegment] {
-        (0..<max(worked.count, 1)).map { i in
-            let hasWork = i < worked.count && worked[i]
+    /// Equal segment per exercise, driven by TRUTH (not position). `.done` once
+    /// the sets reach the target (bonus sets too) — or, without a set target
+    /// (warmup, cardio), once anything is logged. Sets short of the target are
+    /// `.partial` wherever the exercise sits: 2026-10-29 one set of three read
+    /// as done. The same rule as `hasWorkLeft` for the rest hints. Nothing
+    /// logged behind the cursor is `.skipped`, except a passed timed block
+    /// (warmup walked past), which is `.done`. The previewed exercise
+    /// (when ≠ active) is marked for an outline.
+    static func progressSegments(sets: [Int], targetSets: [Int], isDuration: [Bool],
+                                 activeIdx: Int, previewIdx: Int) -> [ProgressSegment] {
+        (0..<max(sets.count, 1)).map { i in
+            let done = i < sets.count ? sets[i] : 0
+            let target = i < targetSets.count ? targetSets[i] : 0
             let timed = i < isDuration.count && isDuration[i]
             let kind: ProgressSegment.Kind
+            var fill = 0.0
             if i == activeIdx {
                 kind = .active
-            } else if hasWork {
-                kind = .done
+            } else if done > 0 {
+                if target > 0 && done < target {
+                    kind = .partial
+                    fill = Double(done) / Double(target)
+                } else {
+                    kind = .done
+                    fill = 1
+                }
             } else if i < activeIdx {
                 kind = timed ? .done : .skipped
+                fill = timed ? 1 : 0
             } else {
                 kind = .upcoming
             }
-            return ProgressSegment(kind: kind, isPreview: i == previewIdx && previewIdx != activeIdx)
+            return ProgressSegment(kind: kind, isPreview: i == previewIdx && previewIdx != activeIdx, fill: fill)
         }
+    }
+
+    /// Image-scrim tag for an exercise looked at but not active.
+    static func previewStateTag(sets: Int, targetSets: Int) -> String {
+        if sets == 0 { return "ещё не начато" }
+        if targetSets > 0 && sets < targetSets {
+            let word = (targetSets % 10 == 1 && targetSets % 100 != 11) ? "подхода" : "подходов"
+            return "\(sets) из \(targetSets) \(word)"
+        }
+        return "пройдено"
+    }
+
+    /// Hold-ring header: «ПЛАНКА · ПОДХОД 1»; a warmup (no sets) shows its name.
+    static func holdTitle(name: String, isTimedSets: Bool, setIdx: Int) -> String {
+        let n = name.uppercased(with: Locale(identifier: "ru_RU"))
+        return isTimedSets ? "\(n) · ПОДХОД \(setIdx + 1)" : n
+    }
+
+    /// Under the hold-ring digits: the target, then «цель есть · +0:07» past it.
+    /// nil without a target.
+    static func holdCaption(target: Int, elapsed: Int) -> String? {
+        guard target > 0 else { return nil }
+        if elapsed >= target { return "цель есть · +\(WorkoutSetFormat.duration(elapsed - target))" }
+        return "цель \(WorkoutSetFormat.duration(target))"
     }
 
     /// "2/5" — exercises actually done over total, clamped. Counts real work, not

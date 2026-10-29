@@ -147,4 +147,42 @@ final class TimedExerciseTests: XCTestCase {
         XCTAssertFalse(timer.running)
         XCTAssertEqual(timer.elapsedSec, 0)
     }
+
+    func test_holdTimer_progressAndOvertime() {
+        var clock = Date(timeIntervalSince1970: 0)
+        let timer = HoldTimer()
+        timer.now = { clock }
+        timer.start(targetSec: 60)
+        clock = clock.addingTimeInterval(30); timer.refresh()
+        XCTAssertEqual(timer.progress, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(timer.overtimeSec, 0)
+        clock = clock.addingTimeInterval(37); timer.refresh()
+        XCTAssertEqual(timer.progress, 1)
+        XCTAssertEqual(timer.overtimeSec, 7)
+    }
+
+    func test_holdTimer_noTarget_noProgress() {
+        var clock = Date(timeIntervalSince1970: 0)
+        let timer = HoldTimer()
+        timer.now = { clock }
+        timer.start(targetSec: 0)
+        clock = clock.addingTimeInterval(40); timer.refresh()
+        XCTAssertEqual(timer.progress, 0)
+        XCTAssertEqual(timer.overtimeSec, 0)
+    }
+
+    func test_holdTimer_lastHeld_setOnStop_clearedOnStartAndReset() {
+        var clock = Date(timeIntervalSince1970: 0)
+        let timer = HoldTimer()
+        timer.now = { clock }
+        timer.start(targetSec: 60)
+        clock = clock.addingTimeInterval(52)
+        timer.stop()
+        XCTAssertEqual(timer.lastHeldSec, 52)
+        timer.start(targetSec: 60)
+        XCTAssertNil(timer.lastHeldSec)
+        timer.stop()
+        timer.reset()
+        XCTAssertNil(timer.lastHeldSec)
+    }
 }

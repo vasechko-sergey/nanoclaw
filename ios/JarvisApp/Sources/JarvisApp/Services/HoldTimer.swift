@@ -16,6 +16,19 @@ final class HoldTimer: ObservableObject {
     @Published private(set) var running: Bool = false
     @Published private(set) var reachedTarget: Bool = false
     @Published private(set) var targetSec: Int = 0
+    /// Time of the hold just stopped — the card drops it into its wheels.
+    /// nil once a new hold starts or the watch is reset.
+    @Published private(set) var lastHeldSec: Int?
+
+    /// Ring fill: elapsed over the target, capped at 1. 0 without a target.
+    var progress: Double {
+        targetSec > 0 ? min(1, Double(elapsedSec) / Double(targetSec)) : 0
+    }
+
+    /// Seconds past the target once reached; 0 before it or without one.
+    var overtimeSec: Int {
+        targetSec > 0 ? max(0, elapsedSec - targetSec) : 0
+    }
 
     /// Injectable clock for tests.
     var now: () -> Date = { Date() }
@@ -58,6 +71,7 @@ final class HoldTimer: ObservableObject {
         guard running, let start = startDate else { return TimeInterval(elapsedSec) }
         let elapsed = max(0, now().timeIntervalSince(start))
         elapsedSec = Int(elapsed)
+        lastHeldSec = Int(elapsed)
         halt()
         return elapsed
     }
@@ -68,6 +82,7 @@ final class HoldTimer: ObservableObject {
         elapsedSec = 0
         reachedTarget = false
         targetSec = 0
+        lastHeldSec = nil
     }
 
     private func halt() {

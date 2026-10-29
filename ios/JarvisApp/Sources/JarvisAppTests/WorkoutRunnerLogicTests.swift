@@ -194,42 +194,81 @@ final class WorkoutRunnerLogicTests: XCTestCase {
     }
 
     func test_progressSegments_skippedIsDistinctFromDone() {
-        // did 0,1 (sets logged) · skipped 2 (no sets) · active 3 · upcoming 4 — all strength.
-        // Old positional logic painted 2 as .done (i < activeIdx); it must be .skipped.
         let segs = WorkoutRunnerLogic.progressSegments(
-            worked: [true, true, false, false, false],
-            isDuration: [false, false, false, false, false],
-            activeIdx: 3, previewIdx: 3)
+            sets: [3, 3, 0, 0, 0], targetSets: [3, 3, 3, 3, 3],
+            isDuration: [false, false, false, false, false], activeIdx: 3, previewIdx: 3)
         XCTAssertEqual(segs.map(\.kind), [.done, .done, .skipped, .active, .upcoming])
-        XCTAssertFalse(segs[3].isPreview)   // preview == active → no separate mark, active ring covers it
+        XCTAssertFalse(segs[3].isPreview)
     }
 
     func test_progressSegments_passedDurationCountsAsDone() {
-        // treadmill warmup (duration, zero sets) at idx0 gets passed → done, not skipped.
         let segs = WorkoutRunnerLogic.progressSegments(
-            worked: [false, true, false],
-            isDuration: [true, false, false],
-            activeIdx: 2, previewIdx: 2)
+            sets: [0, 3, 0], targetSets: [0, 3, 3],
+            isDuration: [true, false, false], activeIdx: 2, previewIdx: 2)
         XCTAssertEqual(segs.map(\.kind), [.done, .done, .active])
     }
 
     func test_progressSegments_workedAfterActiveStaysDone_onJumpBack() {
-        // did idx2, jumped back to idx0 — idx2 keeps .done though it sits after active.
         let segs = WorkoutRunnerLogic.progressSegments(
-            worked: [false, false, true],
-            isDuration: [false, false, false],
-            activeIdx: 0, previewIdx: 0)
+            sets: [0, 0, 3], targetSets: [3, 3, 3],
+            isDuration: [false, false, false], activeIdx: 0, previewIdx: 0)
         XCTAssertEqual(segs.map(\.kind), [.active, .upcoming, .done])
     }
 
     func test_progressSegments_previewMarkOnNonActive() {
         let segs = WorkoutRunnerLogic.progressSegments(
-            worked: [true, false, false, false],
-            isDuration: [false, false, false, false],
-            activeIdx: 1, previewIdx: 3)
+            sets: [3, 0, 0, 0], targetSets: [3, 3, 3, 3],
+            isDuration: [false, false, false, false], activeIdx: 1, previewIdx: 3)
         XCTAssertEqual(segs.map(\.kind), [.done, .active, .upcoming, .upcoming])
         XCTAssertTrue(segs[3].isPreview)
         XCTAssertFalse(segs[1].isPreview)
+    }
+
+    /// 2026-10-29: one set of three on the press, then on to the row — the
+    /// header painted the press as done.
+    func test_progressSegments_oneOfThreeIsPartial_aThirdFilled() {
+        let segs = WorkoutRunnerLogic.progressSegments(
+            sets: [3, 1, 0, 0], targetSets: [3, 3, 3, 2],
+            isDuration: [false, false, false, false], activeIdx: 2, previewIdx: 2)
+        XCTAssertEqual(segs.map(\.kind), [.done, .partial, .active, .upcoming])
+        XCTAssertEqual(segs[1].fill, 1.0 / 3.0, accuracy: 0.0001)
+        XCTAssertEqual(segs[0].fill, 1)
+        XCTAssertEqual(segs[2].fill, 0)
+    }
+
+    func test_progressSegments_partialAheadOfActive_andBonusIsDone() {
+        let segs = WorkoutRunnerLogic.progressSegments(
+            sets: [4, 0, 2], targetSets: [3, 3, 4],
+            isDuration: [false, false, false], activeIdx: 1, previewIdx: 1)
+        XCTAssertEqual(segs.map(\.kind), [.done, .active, .partial])
+        XCTAssertEqual(segs[2].fill, 0.5, accuracy: 0.0001)
+    }
+
+    func test_progressSegments_warmupWithAnyLoggedTimeIsDone() {
+        let segs = WorkoutRunnerLogic.progressSegments(
+            sets: [1, 0], targetSets: [0, 3], isDuration: [true, false], activeIdx: 1, previewIdx: 1)
+        XCTAssertEqual(segs[0].kind, .done)
+    }
+
+    func test_previewStateTag() {
+        XCTAssertEqual(WorkoutRunnerLogic.previewStateTag(sets: 0, targetSets: 3), "ещё не начато")
+        XCTAssertEqual(WorkoutRunnerLogic.previewStateTag(sets: 1, targetSets: 3), "1 из 3 подходов")
+        XCTAssertEqual(WorkoutRunnerLogic.previewStateTag(sets: 3, targetSets: 21), "3 из 21 подхода")
+        XCTAssertEqual(WorkoutRunnerLogic.previewStateTag(sets: 3, targetSets: 3), "пройдено")
+        XCTAssertEqual(WorkoutRunnerLogic.previewStateTag(sets: 1, targetSets: 0), "пройдено")
+    }
+
+    func test_holdTitle() {
+        XCTAssertEqual(WorkoutRunnerLogic.holdTitle(name: "Планка", isTimedSets: true, setIdx: 0), "ПЛАНКА · ПОДХОД 1")
+        XCTAssertEqual(WorkoutRunnerLogic.holdTitle(name: "Ходьба на беговой дорожке", isTimedSets: false, setIdx: 0),
+                       "ХОДЬБА НА БЕГОВОЙ ДОРОЖКЕ")
+    }
+
+    func test_holdCaption() {
+        XCTAssertEqual(WorkoutRunnerLogic.holdCaption(target: 60, elapsed: 42), "цель 1:00")
+        XCTAssertEqual(WorkoutRunnerLogic.holdCaption(target: 60, elapsed: 60), "цель есть · +0:00")
+        XCTAssertEqual(WorkoutRunnerLogic.holdCaption(target: 60, elapsed: 67), "цель есть · +0:07")
+        XCTAssertNil(WorkoutRunnerLogic.holdCaption(target: 0, elapsed: 30))
     }
 
     func test_exerciseCounter_countsDoneNotPosition() {

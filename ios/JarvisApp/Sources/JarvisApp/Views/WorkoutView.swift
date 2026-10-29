@@ -207,7 +207,8 @@ struct WorkoutView: View {
 
     private var progressSegments: [WorkoutRunnerLogic.ProgressSegment] {
         WorkoutRunnerLogic.progressSegments(
-            worked: coordinator.logged.map { !$0.sets.isEmpty },
+            sets: coordinator.logged.map { $0.sets.count },
+            targetSets: coordinator.plan.exercises.map { $0.targetSets },
             isDuration: coordinator.plan.exercises.map { $0.isDuration },
             activeIdx: coordinator.currentExerciseIdx,
             previewIdx: previewIdx)
@@ -218,6 +219,7 @@ struct WorkoutView: View {
         let fill: Color = {
             switch seg.kind {
             case .done: return Theme.accent
+            case .partial: return Theme.accent   // placeholder: the share-filled bar is drawn by the header redesign
             case .active: return Color(red: 0.5, green: 0.89, blue: 0.92)
             case .skipped: return .clear   // hollow — copper ring below carries the "passed, not done" cue
             case .upcoming: return Color.white.opacity(0.2)
