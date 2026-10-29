@@ -74,7 +74,7 @@ struct TechniqueText: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(red: 0.08, green: 0.078, blue: 0.06).opacity(0.97))
+        .background(Color(red: 0.08, green: 0.078, blue: 0.06))
         .accessibilityIdentifier("technique-text")
     }
 }

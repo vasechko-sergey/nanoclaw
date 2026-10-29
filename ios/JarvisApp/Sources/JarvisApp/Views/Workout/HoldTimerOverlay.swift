@@ -12,7 +12,7 @@ struct HoldTimerOverlay: View {
     var body: some View {
         if timer.running {
             ZStack {
-                Theme.background.opacity(0.96).ignoresSafeArea()
+                Theme.background.ignoresSafeArea()
                 VStack(spacing: 28) {
                     Text(title)
                         .font(.subheadline)
