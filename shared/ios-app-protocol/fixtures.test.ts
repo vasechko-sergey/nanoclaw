@@ -37,6 +37,27 @@ describe('shared/ios-app-protocol envelope fixtures', () => {
     ]);
   });
 
+  it('workout_plan.json keeps an exercise technique block through the schema', () => {
+    const raw = readFileSync(join(fixturesDir, 'workout_plan.json'), 'utf8');
+    const env = AnyEnvelope.parse(JSON.parse(raw));
+    if (env.type !== 'workout_plan') throw new Error('expected workout_plan');
+    const technique = env.payload.plan_json.exercises[1].technique;
+    expect(technique?.steps[0]).toEqual({
+      title: 'Стойка',
+      text: 'Лопатки сведены и прижаты к скамье, стопы твёрдо стоят на полу.',
+    });
+    expect(technique?.warnings).toEqual(['Не разводите локти шире плеч.']);
+  });
+
+  it('exercise_swap_options.json keeps an alternative technique block through the schema', () => {
+    const raw = readFileSync(join(fixturesDir, 'exercise_swap_options.json'), 'utf8');
+    const env = AnyEnvelope.parse(JSON.parse(raw));
+    if (env.type !== 'exercise_swap_options') throw new Error('expected exercise_swap_options');
+    const technique = env.payload.alternatives[0].technique;
+    expect(technique?.steps).toEqual([{ title: 'Жим', text: 'Гантели идут вверх по дуге, на выдохе.' }]);
+    expect(technique?.warnings).toEqual(['Лопатки остаются прижатыми к скамье.']);
+  });
+
   it('message_with_agent_id.json preserves agent_id through round-trip', () => {
     const raw = readFileSync(join(fixturesDir, 'message_with_agent_id.json'), 'utf8');
     const env = AnyEnvelope.parse(JSON.parse(raw));

@@ -434,6 +434,13 @@ final class WorkoutRunnerLogicTests: XCTestCase {
         XCTAssertEqual(TechniqueRow.label(steps: 0), "Техника")
     }
 
+    func test_techniqueStepLine() {
+        XCTAssertEqual(TechniqueText.stepLine(index: 1, title: "Стойка"), "1. Стойка. ")
+        XCTAssertEqual(TechniqueText.stepLine(index: 2, title: "Важно:"), "2. Важно: ")
+        XCTAssertEqual(TechniqueText.stepLine(index: 3, title: "Выдох."), "3. Выдох. ")
+        XCTAssertEqual(TechniqueText.stepLine(index: 4, title: ""), "4. ")
+    }
+
     func test_isLightWeek_matchesRussianVariants() {
         XCTAssertTrue(WorkoutRunnerLogic.isLightWeek("Лёгкая"))
         XCTAssertTrue(WorkoutRunnerLogic.isLightWeek("легкая неделя"))

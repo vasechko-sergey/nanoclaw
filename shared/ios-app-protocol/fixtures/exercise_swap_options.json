@@ -9,7 +9,13 @@
     "workout_id": "01J6Z8W3K2N5A7B9C1D3E5F7G9",
     "original_slug": "incline-db-press",
     "alternatives": [
-      { "slug": "flat-db-press", "why": "та же грудь, без наклона" },
+      {
+        "slug": "flat-db-press", "why": "та же грудь, без наклона",
+        "technique": {
+          "steps": [{ "title": "Жим", "text": "Гантели идут вверх по дуге, на выдохе." }],
+          "warnings": ["Лопатки остаются прижатыми к скамье."]
+        }
+      },
       { "slug": "cable-fly", "why": "акцент на сведение, лёгкий вес" }
     ],
     "agent_id": "payne"

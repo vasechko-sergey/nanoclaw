@@ -76,6 +76,39 @@ final class ProtocolFixtureTests: XCTestCase {
         XCTAssertEqual(msg.agent_id, "payne")
     }
 
+    /// The technique block rides `workout_plan.plan_json.exercises[]` and
+    /// `exercise_swap_options.alternatives[]`; a dropped hop (schema, bridge,
+    /// decode) must fail here, not just leave the strip silently empty.
+    @MainActor
+    func testWorkoutPlanFixtureKeepsTechnique() throws {
+        let url = try fixturesDir().appendingPathComponent("workout_plan.json")
+        let env = try JSONDecoder().decode(V2.Envelope.self, from: Data(contentsOf: url))
+        guard case let .workoutPlan(p) = env.payload else {
+            XCTFail("expected workoutPlan payload, got \(env.payload)")
+            return
+        }
+        let plan = try AppCoordinator.decodeWorkoutPlan(payload: p)
+        XCTAssertNil(plan.exercises[0].technique)
+        let technique = try XCTUnwrap(plan.exercises[1].technique)
+        XCTAssertEqual(technique.steps.first, ExerciseTechnique.Step(
+            title: "Стойка",
+            text: "Лопатки сведены и прижаты к скамье, стопы твёрдо стоят на полу."))
+        XCTAssertEqual(technique.warnings, ["Не разводите локти шире плеч."])
+    }
+
+    func testExerciseSwapOptionsFixtureKeepsTechnique() throws {
+        let url = try fixturesDir().appendingPathComponent("exercise_swap_options.json")
+        let env = try JSONDecoder().decode(V2.Envelope.self, from: Data(contentsOf: url))
+        guard case let .exerciseSwapOptions(o) = env.payload else {
+            XCTFail("expected exerciseSwapOptions payload, got \(env.payload)")
+            return
+        }
+        XCTAssertNil(o.alternatives[1].technique)
+        let technique = try XCTUnwrap(o.alternatives[0].technique)
+        XCTAssertEqual(technique.steps, [ExerciseTechnique.Step(title: "Жим", text: "Гантели идут вверх по дуге, на выдохе.")])
+        XCTAssertEqual(technique.warnings, ["Лопатки остаются прижатыми к скамье."])
+    }
+
     /// A `message` envelope missing `thread_id` must decode (→ "default"), not
     /// throw. A throw here wedges the outbound queue: `V2.Envelope`'s all-or-
     /// nothing decode fails, the frame never acks, and it re-fails on every

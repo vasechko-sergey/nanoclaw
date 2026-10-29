@@ -11,7 +11,8 @@ struct WorkoutView: View {
     @StateObject var coordinator: WorkoutCoordinator
     @StateObject var restTimer = RestTimer()
     /// Stopwatch for timed sets (plank, warmup). Lives here, not in the card, so
-    /// a hold keeps running while the user swipes to look at another exercise.
+    /// it survives the card's re-creation and drives the full-screen
+    /// `HoldTimerOverlay` (which blocks swiping while a hold runs).
     @StateObject var holdTimer = HoldTimer()
     @Environment(\.scenePhase) private var scenePhase
 

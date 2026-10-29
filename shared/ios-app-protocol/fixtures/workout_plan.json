@@ -13,7 +13,16 @@
       "week_label": "тяжёлая",
       "exercises": [
         { "slug": "hodba", "name_ru": "Ходьба", "target_sets": null, "target_reps": "", "reps_in_reserve": null, "rest_seconds": 0, "duration_seconds": 300, "notes": "разминка" },
-        { "slug": "incline-db-press", "target_sets": 4, "target_reps": "8-10", "reps_in_reserve": 2, "rest_seconds": 120 }
+        {
+          "slug": "incline-db-press", "target_sets": 4, "target_reps": "8-10", "reps_in_reserve": 2, "rest_seconds": 120,
+          "technique": {
+            "steps": [
+              { "title": "Стойка", "text": "Лопатки сведены и прижаты к скамье, стопы твёрдо стоят на полу." },
+              { "title": "Жим", "text": "Гантели идут вверх по дуге, на выдохе, без удара в верхней точке." }
+            ],
+            "warnings": ["Не разводите локти шире плеч."]
+          }
+        }
       ]
     },
     "image_manifest": [

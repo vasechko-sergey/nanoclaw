@@ -235,6 +235,21 @@ function planSlugs(plan: unknown): string[] {
     .filter((s): s is string => typeof s === 'string' && s.length > 0);
 }
 
+/** The plan with each exercise's `technique` dropped — everything else untouched. */
+function withoutTechnique(plan: unknown): unknown {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return plan;
+  const p = plan as Record<string, unknown>;
+  if (!Array.isArray(p.exercises)) return plan;
+  return {
+    ...p,
+    exercises: (p.exercises as unknown[]).map((e) => {
+      if (!e || typeof e !== 'object' || Array.isArray(e)) return e;
+      const { technique: _technique, ...rest } = e as Record<string, unknown>;
+      return rest;
+    }),
+  };
+}
+
 function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -289,7 +304,9 @@ export function sendWorkoutPlan(
     const plansDir = join(opts.agentDir, 'plans');
     mkdirSync(plansDir, { recursive: true });
     const target = join(plansDir, `${workoutId.replace(/[^\w.-]/g, '_')}.json`);
-    writeFileSync(`${target}.tmp`, JSON.stringify(planJson, null, 2));
+    // The agent reads this copy and the technique text is for the app (~1 KB of
+    // Cyrillic per exercise), so the copy goes without it.
+    writeFileSync(`${target}.tmp`, JSON.stringify(withoutTechnique(planJson), null, 2));
     renameSync(`${target}.tmp`, target);
   } catch (err) {
     console.error(`[workout-plan] could not keep plans/${workoutId}.json: ${err instanceof Error ? err.message : String(err)}`);

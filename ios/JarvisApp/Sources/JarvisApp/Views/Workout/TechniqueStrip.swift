@@ -42,16 +42,26 @@ struct TechniqueText: View {
 
     private let copper = Color(red: 0.78, green: 0.57, blue: 0.35)
 
+    /// The copper prefix of a step: «1. Title. », «1. Title: » (the card's own
+    /// closing punctuation stays as it is), «1. » for an empty title. The
+    /// trailing space separates it from the step text.
+    static func stepLine(index: Int, title: String) -> String {
+        let t = title.trimmingCharacters(in: .whitespaces)
+        if t.isEmpty { return "\(index). " }
+        let closed = [".", ":", "!", "?"].contains { t.hasSuffix($0) }
+        return "\(index). \(t)\(closed ? "" : ".") "
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(technique.steps.enumerated()), id: \.offset) { i, step in
-                    (Text("\(i + 1). \(step.title)\(step.title.isEmpty ? "" : ".") ").foregroundColor(copper).bold()
+                    (Text(Self.stepLine(index: i + 1, title: step.title)).foregroundColor(copper).bold()
                      + Text(step.text).foregroundColor(.white.opacity(0.92)))
                         .font(.footnote)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                ForEach(technique.warnings, id: \.self) { w in
+                ForEach(Array(technique.warnings.enumerated()), id: \.offset) { _, w in
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "exclamationmark.triangle").font(.system(size: 11))
                             .foregroundStyle(Color(red: 0.94, green: 0.62, blue: 0.15))

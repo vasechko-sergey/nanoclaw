@@ -181,6 +181,17 @@ describe('sendWorkoutPlan — the card and the copy the agent reads later', () =
     expect(ex.technique).toEqual(technique);
   });
 
+  it('keeps the technique off the saved copy — the agent reads that copy, the text is for the app', () => {
+    const technique = { steps: [{ title: 'Жим', text: 'На выдохе.' }], warnings: ['Колени по линии стоп.'] };
+    const plan = { day_name: 'Ноги А', week: 3, week_label: 'тяжёлая', exercises: [{ slug: 'zhim-nogami', target_sets: 4, technique }] };
+    sendWorkoutPlan('2026-10-02', plan, { agentDir: dir, exercisesDir: join(dir, 'exercises') });
+    const wireEx = JSON.parse(getUndeliveredMessages()[0].content).payload.plan_json.exercises[0];
+    expect(wireEx.technique).toEqual(technique);
+    const savedEx = JSON.parse(readFileSync(join(dir, 'plans', '2026-10-02.json'), 'utf8')).exercises[0];
+    expect(savedEx).not.toHaveProperty('technique');
+    expect(savedEx.target_sets).toBe(4);
+  });
+
   it('trusts a supplied manifest untouched', () => {
     const plan = { day_name: 'Ноги А', week: 3, week_label: 'тяжёлая', exercises: [] };
     sendWorkoutPlan('w1', plan, { agentDir: dir, exercisesDir: join(dir, 'exercises'), manifest: [{ slug: 'squat', sha256: 'abc' }] });
